@@ -1,0 +1,34 @@
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="DEVPILOT_", env_file=".env", extra="ignore")
+
+    env: str = "development"
+    database_url: str = "sqlite:///./data/devpilot.db"
+    data_dir: Path = Path("./data")
+    repositories_dir: Path = Path("./data/repositories")
+    bootstrap_token: str = "development-only-token-change-me"
+    encryption_key: str = ""
+    execution_enabled: bool = False
+    allowed_git_hosts: str = "github.com"
+    openai_model: str = "gpt-5.4"
+    realtime_model: str = "gpt-realtime-2.1"
+
+    @property
+    def git_hosts(self) -> set[str]:
+        return {item.strip().lower() for item in self.allowed_git_hosts.split(",") if item.strip()}
+
+    def prepare(self) -> None:
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.repositories_dir.mkdir(parents=True, exist_ok=True)
+
+
+@lru_cache
+def get_settings() -> Settings:
+    settings = Settings()
+    settings.prepare()
+    return settings
