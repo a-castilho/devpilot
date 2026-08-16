@@ -1,0 +1,42 @@
+name: Deploy Homolog
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+environment:
+  name: homologation
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tested commit
+        id: commit
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            echo "sha=${{ github.event.workflow_run.head_sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy DevPilot to homologation
+        env:
+          HOOK: ${{ secrets.RENDER_HOMOLOG_DEPLOY_HOOK }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        shell: bash
+        run: |
+          if [ -z "$HOOK" ]; then
+            echo "::notice::RENDER_HOMOLOG_DEPLOY_HOOK not configured; deploy skipped."
+            exit 0
+          fi
+          SEP='?'; [[ "$HOOK" == *'?'* ]] && SEP='&'
+          curl --fail --show-error --silent --request POST "${HOOK}${SEP}ref=${SHA}"
