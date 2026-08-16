@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tests and static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && python -m pip install -e '.[test]'
+
+      - name: Run tests
+        run: pytest --cov=app --cov-report=term-missing
+
+      - name: Compile Python
+        run: python -m compileall -q app tests
+
+      - name: Check frontend JavaScript
+        run: node --check app/static/app.js
+
+      - name: Validate Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-only-not-a-production-secret
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          tags: devpilot:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
