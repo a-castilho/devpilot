@@ -64,5 +64,9 @@ jobs:
           context: .
           push: false
           tags: devpilot:ci
+          load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Smoke test PostgreSQL driver
+        run: docker run --rm devpilot:ci python -c "import psycopg"
