@@ -1,0 +1,49 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_DATA_DIR: /data
+      DEVPILOT_REPOSITORIES_DIR: /data/repositories
+    ports:
+      - "8080:8080"
+    volumes:
+      - devpilot_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: ["python", "-m", "app.worker"]
+    env_file: .env
+    environment:
+      DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_DATA_DIR: /data
+      DEVPILOT_REPOSITORIES_DIR: /data/repositories
+    volumes:
+      - devpilot_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: devpilot
+      POSTGRES_USER: devpilot
+      POSTGRES_PASSWORD: devpilot
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U devpilot -d devpilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  devpilot_data:
+  postgres_data:

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>DevPilot — seu desenvolvedor</title>
+  <link rel="manifest" href="/assets/manifest.webmanifest">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview"><span class="brand-mark">D</span><span>DevPilot<small>seu desenvolvedor</small></span></a>
+      <nav>
+        <button class="nav active" data-view="overview">Visão geral</button>
+        <button class="nav" data-view="projects">Projetos</button>
+        <button class="nav" data-view="tasks">Desenvolvimento</button>
+        <button class="nav" data-view="providers">Modelos de IA</button>
+        <button class="nav" data-view="audit">Auditoria</button>
+      </nav>
+      <div class="system-card"><span class="dot"></span><div><strong>Sistema operacional</strong><small>Worker conectado</small></div></div>
+    </aside>
+
+    <main>
+      <header>
+        <div><p class="eyebrow">Central de desenvolvimento</p><h1 id="page-title">Visão geral</h1></div>
+        <div class="header-actions"><button class="ghost" id="refresh">Atualizar</button><button class="primary" data-open="task-modal">+ Nova tarefa</button></div>
+      </header>
+
+      <section class="view active" id="overview-view">
+        <div class="hero">
+          <div><span class="pill">AUTOMAÇÃO AUDITÁVEL</span><h2>Transforme uma ideia em software.<br><em>Por texto ou por voz.</em></h2><p>Orquestre projetos, agentes, revisões e Git em um só fluxo — com você no controle de cada ação crítica.</p><div class="hero-actions"><button class="primary" data-open="task-modal">Criar desenvolvimento</button><button class="voice" id="voice-hero">● Falar com o DevPilot</button></div></div>
+          <div class="pulse-card"><div class="pulse-orb"><span></span></div><strong>Assistente disponível</strong><small>Toque para iniciar um comando de voz</small></div>
+        </div>
+        <div class="metrics" id="metrics"></div>
+        <div class="grid-two">
+          <article class="panel"><div class="panel-title"><div><span class="eyebrow">FLUXO AO VIVO</span><h3>Desenvolvimento em andamento</h3></div><button class="link" data-view="tasks">Ver tudo</button></div><div id="recent-tasks" class="list"></div></article>
+          <article class="panel"><div class="panel-title"><div><span class="eyebrow">INTELIGÊNCIA</span><h3>Radar de melhorias</h3></div></div><div class="insight warning"><b>!</b><div><strong>Aprovações pendentes</strong><p>Revise tarefas antes de liberar alterações no código.</p></div></div><div class="insight"><b>↗</b><div><strong>Mudanças menores, mais segurança</strong><p>O DevPilot cria uma branch por tarefa para facilitar revisão e rollback.</p></div></div></article>
+        </div>
+      </section>
+
+      <section class="view" id="projects-view"><div class="section-head"><div><p>Cadastre repositório, instruções do agente e perfil do Codex.</p></div><button class="primary" data-open="project-modal">+ Novo projeto</button></div><div class="cards" id="projects-list"></div></section>
+      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
+      <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
+      <section class="view" id="audit-view"><div class="section-head"><p>Histórico imutável de comandos, aprovações, configurações e execuções.</p></div><div class="panel timeline" id="audit-list"></div></section>
+    </main>
+  </div>
+
+  <div class="voice-dock"><button id="voice-dock" aria-label="Comando de voz">●</button><span>Comando de voz</span></div>
+  <div class="toast" id="toast"></div>
+
+  <dialog id="auth-modal"><form method="dialog" class="modal"><span class="eyebrow">ACESSO</span><h2>Conectar ao DevPilot</h2><p>Informe o token configurado em <code>DEVPILOT_BOOTSTRAP_TOKEN</code>.</p><label>Token<input id="token" type="password" autocomplete="current-password" required></label><button class="primary" id="save-token" value="default">Entrar</button></form></dialog>
+  <dialog id="project-modal"><form class="modal" id="project-form"><button class="close" type="button">×</button><span class="eyebrow">NOVO PROJETO</span><h2>Conectar repositório</h2><div class="form-grid"><label>Nome<input name="name" required></label><label>Slug<input name="slug" pattern="[a-z0-9][a-z0-9-]+" required></label></div><label>URL Git HTTPS<input name="repository_url" type="url" placeholder="https://github.com/empresa/projeto.git" required></label><label>Descrição<textarea name="description" rows="2"></textarea></label><label>AGENTS.md<textarea name="agents_md" rows="7" placeholder="# Regras do projeto..."></textarea></label><div class="form-grid"><label>Branch padrão<input name="default_branch" value="main"></label><label>Modelo Codex<input name="model" value="gpt-5.4"></label></div><button class="primary" type="submit">Criar projeto</button></form></dialog>
+  <dialog id="task-modal"><form class="modal" id="task-form"><button class="close" type="button">×</button><span class="eyebrow">NOVA TAREFA</span><h2>O que vamos desenvolver?</h2><label>Projeto<select name="project_id" id="task-project" required></select></label><label>Título<input name="title" required></label><label>Instruções<textarea name="prompt" rows="8" placeholder="Descreva o resultado esperado, restrições e critérios de aceite..." required></textarea></label><div class="form-grid"><label>Prioridade<input name="priority" type="number" min="0" max="100" value="50"></label><label class="check"><input name="requires_approval" type="checkbox" checked> Exigir aprovação</label></div><button class="primary" type="submit">Registrar tarefa</button></form></dialog>
+  <dialog id="provider-modal"><form class="modal" id="provider-form"><button class="close" type="button">×</button><span class="eyebrow">PROVEDOR DE IA</span><h2>Conectar modelo</h2><div class="form-grid"><label>Provedor<select name="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option><option value="custom">Custom</option></select></label><label>Nome da conexão<input name="label" value="Principal" required></label></div><label>API key<input name="api_key" type="password" required></label><label>Modelos, separados por vírgula<input name="models" value="gpt-5.4,gpt-realtime-2.1"></label><p class="hint">A chave é criptografada no servidor e nunca retorna pela API.</p><button class="primary" type="submit">Salvar conexão</button></form></dialog>
+  <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
