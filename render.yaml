@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: devpilot-homolog
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    autoDeployTrigger: off
+    healthCheckPath: /health
+    envVars:
+      - key: DEVPILOT_ENV
+        value: homologation
+      - key: DEVPILOT_DATABASE_URL
+        value: sqlite:////tmp/devpilot.db
+      - key: DEVPILOT_DATA_DIR
+        value: /tmp
+      - key: DEVPILOT_REPOSITORIES_DIR
+        value: /tmp/repositories
+      - key: DEVPILOT_BOOTSTRAP_TOKEN
+        generateValue: true
+      - key: DEVPILOT_ENCRYPTION_KEY
+        generateValue: true
+      - key: DEVPILOT_EXECUTION_ENABLED
+        value: "false"
+      - key: DEVPILOT_ALLOWED_GIT_HOSTS
+        value: github.com
+      - key: DEVPILOT_OPENAI_API_KEY
+        sync: false
