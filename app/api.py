@@ -12,6 +12,7 @@ from app.models import AuditEvent, Project, ProviderCredential, Run, Task, TaskS
 from app.schemas import ProjectCreate, ProjectUpdate, ProviderCreate, TaskCreate, VoiceCommand
 from app.security import require_access
 from app.services.audit import record
+from app.services.bootstrap import build_bootstrap_prompt
 from app.services.intent import interpret_voice
 from app.services.policy import evaluate_task, validate_repository_url
 from app.services.vault import Vault
@@ -52,7 +53,16 @@ def overview(db: Session = Depends(get_db)):
     completed = db.scalar(
         select(func.count(Task.id)).where(Task.workspace_id == ws.id, Task.status == TaskStatus.completed)
     ) or 0
-    return {"workspace": ws.name, "projects": projects, "tasks": tasks, "active": running, "completed": completed}
+    from app.config import get_settings
+
+    return {
+        "workspace": ws.name,
+        "projects": projects,
+        "tasks": tasks,
+        "active": running,
+        "completed": completed,
+        "execution_enabled": get_settings().execution_enabled,
+    }
 
 
 @router.get("/projects")
@@ -64,10 +74,20 @@ def list_projects(db: Session = Depends(get_db)):
 @router.post("/projects", status_code=201)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     ws = workspace(db)
+    existing = db.scalar(
+        select(Project.id).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
+    )
+    if existing:
+        raise HTTPException(409, f"Já existe um projeto com o slug '{payload.slug}'")
     try:
         validate_repository_url(str(payload.repository_url))
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
+    codex_config = dict(payload.codex_config)
+    codex_config.update(
+        auto_start=payload.auto_start,
+        generate_agents_md=payload.generate_agents_md,
+    )
     item = Project(
         workspace_id=ws.id,
         name=payload.name,
@@ -76,11 +96,36 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         repository_url=str(payload.repository_url),
         default_branch=payload.default_branch,
         agents_md=payload.agents_md,
-        codex_config=json.dumps(payload.codex_config),
+        codex_config=json.dumps(codex_config),
     )
     db.add(item)
     db.flush()
     record(db, workspace_id=ws.id, project_id=item.id, actor="owner", action="project.created", details={"slug": item.slug, "repository": item.repository_url})
+    if payload.auto_start:
+        bootstrap = Task(
+            workspace_id=ws.id,
+            project_id=item.id,
+            title=f"Inicialização automática de {item.name}",
+            prompt=build_bootstrap_prompt(
+                item,
+                generate_agents_md=payload.generate_agents_md,
+            ),
+            source="api",
+            status=TaskStatus.queued,
+            requires_approval=False,
+            priority=80,
+        )
+        db.add(bootstrap)
+        db.flush()
+        record(
+            db,
+            workspace_id=ws.id,
+            project_id=item.id,
+            task_id=bootstrap.id,
+            actor="system",
+            action="project.bootstrap_queued",
+            details={"generate_agents_md": payload.generate_agents_md},
+        )
     db.commit()
     return item
 

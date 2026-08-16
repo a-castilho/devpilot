@@ -58,10 +58,14 @@ def execute_task(project: Project, task: Task) -> dict:
         command.extend(["--model", str(model)])
     command.append(prompt)
     result = run(command, cwd=path, timeout=int(config.get("timeout_seconds", 1800)))
-    return {
+    response = {
         "mode": "execute",
         "exit_code": result.returncode,
         "stdout": result.stdout[-100_000:],
         "stderr": result.stderr[-20_000:],
         "branch": branch,
     }
+    agents_file = path / "AGENTS.md"
+    if result.returncode == 0 and agents_file.is_file():
+        response["generated_agents_md"] = agents_file.read_text(encoding="utf-8")[:100_000]
+    return response

@@ -70,6 +70,21 @@ python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 Mantenha `DEVPILOT_EXECUTION_ENABLED=false` até o host do worker ter Codex CLI e Git
 configurados, credenciais de escopo mínimo e diretório isolado.
 
+### Inicialização automática de projetos
+
+Por padrão, cada projeto cadastrado gera imediatamente uma tarefa de inicialização. O executor:
+
+1. inspeciona o repositório e sua documentação;
+2. gera ou melhora um `AGENTS.md` específico para a tecnologia encontrada;
+3. cria uma branch isolada;
+4. inicia a menor fundação útil quando o repositório está vazio, ou implementa uma melhoria
+   segura e focada quando já existe código;
+5. registra comandos, verificações e resultado na auditoria.
+
+Push, merge, deploy, publicação e operações destrutivas não fazem parte da inicialização
+automática. Essas ações continuam dependendo de aprovação explícita. Enquanto
+`DEVPILOT_EXECUTION_ENABLED=false`, tarefas automáticas permanecem na fila sem simular sucesso.
+
 ### Iniciar projetos Docker automaticamente na máquina de desenvolvimento
 
 O gerenciador local inicia apenas projetos explicitamente autorizados. Isso evita executar
