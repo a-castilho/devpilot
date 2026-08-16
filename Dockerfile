@@ -3,10 +3,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+COPY pyproject.toml README.md ./
 COPY app ./app
-COPY README.md AGENTS.md ./
+RUN pip install --no-cache-dir .
+COPY AGENTS.md ./
 
 RUN useradd --create-home --uid 10001 devpilot && mkdir -p /data/repositories && chown -R devpilot:devpilot /data /app
 USER devpilot
