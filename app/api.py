@@ -12,7 +12,7 @@ from app.models import AuditEvent, Project, ProviderCredential, Run, Task, TaskS
 from app.schemas import ProjectCreate, ProjectUpdate, ProviderCreate, TaskCreate, VoiceCommand
 from app.security import require_access
 from app.services.audit import record
-from app.services.bootstrap import build_bootstrap_prompt
+from app.services.bootstrap import bootstrap_title, build_bootstrap_prompt
 from app.services.intent import interpret_voice
 from app.services.policy import evaluate_task, validate_repository_url
 from app.services.vault import Vault
@@ -105,7 +105,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         bootstrap = Task(
             workspace_id=ws.id,
             project_id=item.id,
-            title=f"Inicialização automática de {item.name}",
+            title=bootstrap_title(item),
             prompt=build_bootstrap_prompt(
                 item,
                 generate_agents_md=payload.generate_agents_md,

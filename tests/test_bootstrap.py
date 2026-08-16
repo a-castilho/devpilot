@@ -1,5 +1,5 @@
 from app.models import Project
-from app.services.bootstrap import build_bootstrap_prompt
+from app.services.bootstrap import bootstrap_title, build_bootstrap_prompt
 from app import worker
 
 
@@ -19,6 +19,10 @@ def test_bootstrap_prompt_generates_project_specific_agents_file():
     assert "Tela Viva" in prompt
     assert "AGENTS.md" in prompt
     assert "actual project" in prompt
+
+
+def test_bootstrap_title_is_stable_for_idempotency():
+    assert bootstrap_title(project()) == "Inicialização automática de Tela Viva"
 
 
 def test_bootstrap_prompt_preserves_git_safety_boundaries():

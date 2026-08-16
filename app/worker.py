@@ -6,9 +6,57 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Project, Run, Task, TaskStatus
+from app.models import Project, ProjectStatus, Run, Task, TaskStatus
 from app.services.audit import record
+from app.services.bootstrap import bootstrap_title, build_bootstrap_prompt
 from app.services.executor import execute_task
+
+
+def enqueue_missing_bootstraps() -> int:
+    created = 0
+    with SessionLocal() as db:
+        projects = db.scalars(select(Project).where(Project.status == ProjectStatus.active)).all()
+        for project in projects:
+            title = bootstrap_title(project)
+            exists = db.scalar(
+                select(Task.id).where(Task.project_id == project.id, Task.title == title)
+            )
+            if exists:
+                continue
+            try:
+                config = json.loads(project.codex_config or "{}")
+            except json.JSONDecodeError:
+                config = {}
+            if config.get("auto_start", True) is False:
+                continue
+            generate_agents_md = config.get("generate_agents_md", not bool(project.agents_md))
+            task = Task(
+                workspace_id=project.workspace_id,
+                project_id=project.id,
+                title=title,
+                prompt=build_bootstrap_prompt(
+                    project,
+                    generate_agents_md=generate_agents_md,
+                ),
+                source="api",
+                status=TaskStatus.queued,
+                requires_approval=False,
+                priority=80,
+            )
+            db.add(task)
+            db.flush()
+            record(
+                db,
+                workspace_id=project.workspace_id,
+                project_id=project.id,
+                task_id=task.id,
+                actor="system",
+                action="project.bootstrap_queued",
+                details={"generate_agents_md": generate_agents_md, "backfill": True},
+            )
+            created += 1
+        db.commit()
+    return created
 
 
 def process_one() -> bool:
@@ -49,6 +97,7 @@ def process_one() -> bool:
 
 
 def main() -> None:
+    enqueue_missing_bootstraps()
     while True:
         if not process_one():
             time.sleep(2)

@@ -1,6 +1,10 @@
 from app.models import Project
 
 
+def bootstrap_title(project: Project) -> str:
+    return f"Inicialização automática de {project.name}"
+
+
 def build_bootstrap_prompt(project: Project, *, generate_agents_md: bool) -> str:
     agents_instruction = (
         "Inspect the repository and create or improve its root AGENTS.md. Derive concrete "
