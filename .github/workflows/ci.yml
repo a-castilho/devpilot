@@ -70,3 +70,8 @@ jobs:
 
       - name: Smoke test PostgreSQL driver
         run: docker run --rm devpilot:ci python -c "import psycopg"
+
+      - name: Smoke test development tools
+        run: |
+          docker run --rm devpilot:ci git --version
+          docker run --rm devpilot:ci codex --version

@@ -34,3 +34,24 @@ def test_up_command_is_detached_and_builds(tmp_path):
 
     assert command[-2:] == ["--detach", "--build"]
     assert command[:2] == ["docker", "compose"]
+
+
+def test_refresh_rebuilds_only_when_registered_project_changes(tmp_path, monkeypatch):
+    directory = tmp_path / "trusted"
+    directory.mkdir()
+    compose = directory / "compose.yaml"
+    compose.write_text("services: {}", encoding="utf-8")
+    project = docker_projects.Project("devpilot-test", directory, compose)
+    state_file = tmp_path / "state.json"
+    calls = []
+    monkeypatch.setattr(
+        docker_projects,
+        "run_projects",
+        lambda projects, action: calls.append((projects, action)) or 0,
+    )
+
+    assert docker_projects.refresh_changed([project], state_file) == 0
+    assert docker_projects.refresh_changed([project], state_file) == 0
+
+    assert len(calls) == 1
+    assert calls[0][1] == "up"

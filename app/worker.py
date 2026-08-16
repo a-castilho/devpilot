@@ -6,10 +6,25 @@ from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
-from app.models import Project, ProjectStatus, Run, Task, TaskStatus
+from app.models import ProviderCredential, Project, ProjectStatus, Run, Task, TaskStatus
 from app.services.audit import record
 from app.services.bootstrap import bootstrap_title, build_bootstrap_prompt
 from app.services.executor import execute_task
+from app.services.vault import Vault
+
+
+def provider_secret(db, workspace_id: str, provider: str) -> str:
+    item = db.scalar(
+        select(ProviderCredential)
+        .where(
+            ProviderCredential.workspace_id == workspace_id,
+            ProviderCredential.provider == provider,
+            ProviderCredential.enabled.is_(True),
+        )
+        .order_by(ProviderCredential.created_at.desc())
+        .limit(1)
+    )
+    return Vault().decrypt(item.encrypted_secret) if item else ""
 
 
 def enqueue_missing_bootstraps() -> int:
@@ -63,16 +78,30 @@ def process_one() -> bool:
     if not get_settings().execution_enabled:
         return False
     with SessionLocal() as db:
-        task = db.scalar(select(Task).where(Task.status == TaskStatus.queued).order_by(Task.priority.desc(), Task.created_at).limit(1))
+        task = db.scalar(
+            select(Task)
+            .where(Task.status == TaskStatus.queued)
+            .order_by(Task.priority.desc(), Task.created_at)
+            .limit(1)
+        )
         if not task:
             return False
         project = db.get(Project, task.project_id)
+        openai_api_key = provider_secret(db, task.workspace_id, "openai")
+        if not openai_api_key:
+            return False
+        github_token = provider_secret(db, task.workspace_id, "github")
         task.status = TaskStatus.running
         run = Run(task_id=task.id)
         db.add(run)
         db.commit()
         try:
-            result = execute_task(project, task)
+            result = execute_task(
+                project,
+                task,
+                openai_api_key=openai_api_key,
+                github_token=github_token,
+            )
             if result.get("mode") == "dry-run":
                 run.status = "blocked"
                 run.summary = result.get("summary", "Execution is disabled")
@@ -91,7 +120,16 @@ def process_one() -> bool:
             task.status = TaskStatus.failed
             outcome = "failed"
         run.finished_at = datetime.now(timezone.utc)
-        record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.executed", outcome=outcome, details={"run_id": run.id})
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor="worker",
+            action="task.executed",
+            outcome=outcome,
+            details={"run_id": run.id},
+        )
         db.commit()
         return True
 

@@ -7,13 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.models import AuditEvent, Project, ProviderCredential, Run, Task, TaskStatus, Workspace
-from app.schemas import ProjectCreate, ProjectUpdate, ProviderCreate, TaskCreate, VoiceCommand
+from app.schemas import ProjectCreate, ProjectUpdate, ProviderCreate, TaskCreate, TaskUpdate, VoiceCommand
 from app.security import require_access
 from app.services.audit import record
 from app.services.bootstrap import bootstrap_title, build_bootstrap_prompt
 from app.services.intent import interpret_voice
+from app.services.metrics import run_duration, run_usage, task_schedule, workspace_metrics
 from app.services.policy import evaluate_task, validate_repository_url
 from app.services.vault import Vault
 
@@ -39,6 +41,13 @@ def project_or_404(db: Session, workspace_id: str, project_id: str) -> Project:
     return item
 
 
+def task_or_404(db: Session, workspace_id: str, task_id: str) -> Task:
+    item = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
+    if not item:
+        raise HTTPException(404, "Task not found")
+    return item
+
+
 @router.get("/overview")
 def overview(db: Session = Depends(get_db)):
     ws = workspace(db)
@@ -53,8 +62,16 @@ def overview(db: Session = Depends(get_db)):
     completed = db.scalar(
         select(func.count(Task.id)).where(Task.workspace_id == ws.id, Task.status == TaskStatus.completed)
     ) or 0
-    from app.config import get_settings
-
+    metrics = workspace_metrics(db, ws.id)
+    has_openai = bool(
+        db.scalar(
+            select(ProviderCredential.id).where(
+                ProviderCredential.workspace_id == ws.id,
+                ProviderCredential.provider == "openai",
+                ProviderCredential.enabled.is_(True),
+            )
+        )
+    )
     return {
         "workspace": ws.name,
         "projects": projects,
@@ -62,6 +79,8 @@ def overview(db: Session = Depends(get_db)):
         "active": running,
         "completed": completed,
         "execution_enabled": get_settings().execution_enabled,
+        "execution_ready": get_settings().execution_enabled and has_openai,
+        **metrics,
     }
 
 
@@ -182,7 +201,30 @@ def list_tasks(project_id: str | None = None, limit: int = Query(100, ge=1, le=5
     query = select(Task).where(Task.workspace_id == ws.id)
     if project_id:
         query = query.where(Task.project_id == project_id)
-    return db.scalars(query.order_by(Task.created_at.desc()).limit(limit)).all()
+    items = db.scalars(query.order_by(Task.created_at.desc()).limit(limit)).all()
+    average = int(workspace_metrics(db, ws.id)["average_duration_seconds"])
+    schedule = task_schedule(items, average)
+    runs = db.scalars(select(Run).where(Run.task_id.in_([item.id for item in items]))).all() if items else []
+    run_counts: dict[str, int] = {}
+    for run in runs:
+        run_counts[run.task_id] = run_counts.get(run.task_id, 0) + 1
+    return [
+        {
+            "id": item.id,
+            "project_id": item.project_id,
+            "title": item.title,
+            "prompt": item.prompt,
+            "source": item.source,
+            "status": item.status,
+            "priority": item.priority,
+            "requires_approval": item.requires_approval,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at,
+            "run_count": run_counts.get(item.id, 0),
+            **schedule.get(item.id, {"estimated_seconds": average, "expected_completion_at": None}),
+        }
+        for item in items
+    ]
 
 
 @router.post("/tasks", status_code=201)
@@ -201,6 +243,61 @@ def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     record(db, workspace_id=ws.id, project_id=item.project_id, task_id=item.id, actor="owner", action="task.created", details={"source": item.source, "approval_reasons": decision.reasons})
     db.commit()
     return item
+
+
+@router.patch("/tasks/{task_id}")
+def update_task(task_id: str, payload: TaskUpdate, db: Session = Depends(get_db)):
+    ws = workspace(db)
+    item = task_or_404(db, ws.id, task_id)
+    if item.status in {TaskStatus.completed, TaskStatus.failed}:
+        raise HTTPException(409, "A prioridade de uma tarefa finalizada não pode ser alterada")
+    previous = item.priority
+    item.priority = payload.priority
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=item.project_id,
+        task_id=item.id,
+        actor="owner",
+        action="task.priority_changed",
+        details={"from": previous, "to": item.priority},
+    )
+    db.commit()
+    return item
+
+
+@router.get("/tasks/{task_id}/report")
+def task_report(task_id: str, db: Session = Depends(get_db)):
+    ws = workspace(db)
+    item = task_or_404(db, ws.id, task_id)
+    runs = db.scalars(
+        select(Run).where(Run.task_id == item.id).order_by(Run.started_at.desc())
+    ).all()
+    reports = []
+    for run in runs:
+        try:
+            result = json.loads(run.logs or "{}")
+        except json.JSONDecodeError:
+            result = {}
+        if not isinstance(result, dict):
+            result = {}
+        reports.append(
+            {
+                "id": run.id,
+                "status": run.status,
+                "summary": run.summary,
+                "output": result.get("summary") or result.get("stdout", "")[-20_000:],
+                "branch": result.get("branch", ""),
+                "usage": run_usage(run),
+                "duration_seconds": run_duration(run),
+                "started_at": run.started_at,
+                "finished_at": run.finished_at,
+            }
+        )
+    return {
+        "task": {"id": item.id, "title": item.title, "status": item.status, "prompt": item.prompt},
+        "runs": reports,
+    }
 
 
 @router.post("/tasks/{task_id}/approve")
@@ -243,6 +340,27 @@ def voice_command(payload: VoiceCommand, db: Session = Depends(get_db)):
     record(db, workspace_id=ws.id, project_id=project.id, task_id=task.id, actor="voice-owner", action="voice.command_interpreted", details={"transcript": payload.transcript, "intent": intent})
     db.commit()
     return {"task": task, "intent": intent, "message": "Comando registrado. Revise e aprove antes da execução."}
+
+
+@router.get("/voice/capabilities")
+def voice_capabilities(db: Session = Depends(get_db)):
+    ws = workspace(db)
+    realtime_configured = bool(
+        db.scalar(
+            select(ProviderCredential.id).where(
+                ProviderCredential.workspace_id == ws.id,
+                ProviderCredential.provider == "openai",
+                ProviderCredential.enabled.is_(True),
+            )
+        )
+    )
+    return {
+        "browser_speech": True,
+        "realtime_configured": realtime_configured,
+        "realtime_active": False,
+        "mode": "browser-speech",
+        "message": "Comandos por voz usam o reconhecimento do navegador e exigem revisão antes da execução.",
+    }
 
 
 @router.get("/providers")

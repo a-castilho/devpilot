@@ -33,6 +33,10 @@ class TaskCreate(BaseModel):
     requires_approval: bool = True
 
 
+class TaskUpdate(BaseModel):
+    priority: int = Field(ge=0, le=100)
+
+
 class VoiceCommand(BaseModel):
     project_id: str | None = None
     transcript: str = Field(min_length=2, max_length=20_000)
