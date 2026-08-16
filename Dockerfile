@@ -3,10 +3,17 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /app
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates git nodejs npm \
+    && npm install --global @openai/codex \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml README.md ./
 COPY app ./app
-COPY README.md AGENTS.md ./
+RUN pip install --no-cache-dir '.[postgres]'
+COPY AGENTS.md ./
+COPY scripts/devpilot-git-askpass.sh /usr/local/bin/devpilot-git-askpass
+RUN chmod 755 /usr/local/bin/devpilot-git-askpass
 
 RUN useradd --create-home --uid 10001 devpilot && mkdir -p /data/repositories && chown -R devpilot:devpilot /data /app
 USER devpilot

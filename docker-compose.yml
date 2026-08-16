@@ -3,7 +3,7 @@ services:
     build: .
     env_file: .env
     environment:
-      DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-devpilot}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-devpilot}
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
     ports:
@@ -13,6 +13,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
 
   worker:
@@ -20,7 +25,7 @@ services:
     command: ["python", "-m", "app.worker"]
     env_file: .env
     environment:
-      DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-devpilot}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-devpilot}
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
     volumes:
@@ -33,13 +38,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: devpilot
-      POSTGRES_USER: devpilot
-      POSTGRES_PASSWORD: devpilot
+      POSTGRES_DB: ${POSTGRES_DB:-devpilot}
+      POSTGRES_USER: ${POSTGRES_USER:-devpilot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U devpilot -d devpilot"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-devpilot} -d ${POSTGRES_DB:-devpilot}"]
       interval: 5s
       timeout: 5s
       retries: 20

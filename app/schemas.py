@@ -11,6 +11,8 @@ class ProjectCreate(BaseModel):
     default_branch: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
     agents_md: str = Field(default="", max_length=100_000)
     codex_config: dict[str, Any] = Field(default_factory=dict)
+    auto_start: bool = True
+    generate_agents_md: bool = True
 
 
 class ProjectUpdate(BaseModel):
@@ -29,6 +31,10 @@ class TaskCreate(BaseModel):
     source: str = Field(default="dashboard", pattern=r"^(dashboard|voice|api)$")
     priority: int = Field(default=50, ge=0, le=100)
     requires_approval: bool = True
+
+
+class TaskUpdate(BaseModel):
+    priority: int = Field(ge=0, le=100)
 
 
 class VoiceCommand(BaseModel):

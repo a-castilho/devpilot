@@ -13,6 +13,11 @@ uma trilha de auditoria encadeada por hash.
 - fila persistente e worker independente;
 - aprovação humana para ações de risco;
 - executor Codex com `subprocess` sem shell e timeout;
+- início automático após o cadastro, inclusive para repositórios vazios;
+- geração contextual de `AGENTS.md` pela IA;
+- edição de prioridade com recálculo da fila e previsão de conclusão;
+- consumo de tokens e relatório da resposta por execução;
+- Estúdio IA para transformar uma ideia em um novo projeto;
 - vault criptografado para múltiplos provedores de IA;
 - auditoria de comandos, configuração, aprovação e execução;
 - política de hosts Git permitidos e isolamento de diretórios;
@@ -67,8 +72,59 @@ Antes de produção, gere uma chave Fernet e configure `DEVPILOT_ENCRYPTION_KEY`
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
 
-Mantenha `DEVPILOT_EXECUTION_ENABLED=false` até o host do worker ter Codex CLI e Git
-configurados, credenciais de escopo mínimo e diretório isolado.
+As imagens Docker já incluem Git e Codex CLI. O exemplo habilita a execução automática, mas o
+worker mantém as tarefas na fila até existir uma credencial OpenAI ativa. No dashboard, abra
+**Modelos e credenciais**, cadastre a chave OpenAI e, para repositórios privados, cadastre também
+um token GitHub de escopo mínimo. O segredo é criptografado e não volta pela API.
+
+Para pausar qualquer execução sem perder a fila, altere
+`DEVPILOT_EXECUTION_ENABLED=false` e recrie `app` e `worker`.
+
+### Inicialização automática de projetos
+
+Por padrão, cada projeto cadastrado gera imediatamente uma tarefa de inicialização. O executor:
+
+1. inspeciona o repositório e sua documentação;
+2. gera ou melhora um `AGENTS.md` específico para a tecnologia encontrada;
+3. cria uma branch isolada;
+4. inicia a menor fundação útil quando o repositório está vazio, ou implementa uma melhoria
+   segura e focada quando já existe código;
+5. registra comandos, verificações e resultado na auditoria.
+
+O dashboard mostra o uso real reportado pela execução Codex, o tempo médio histórico, a previsão
+da fila e a resposta da IA. A estimativa inicial é de 30 minutos por tarefa e se ajusta a partir
+das execuções concluídas; ela é indicativa, não um prazo garantido.
+
+Push, merge, deploy, publicação e operações destrutivas não fazem parte da inicialização
+automática. Essas ações continuam dependendo de aprovação explícita. Enquanto
+`DEVPILOT_EXECUTION_ENABLED=false`, tarefas automáticas permanecem na fila sem simular sucesso.
+
+### Iniciar projetos Docker automaticamente na máquina de desenvolvimento
+
+O gerenciador local inicia apenas projetos explicitamente autorizados. Isso evita executar
+automaticamente um `compose.yaml` recebido de um repositório não confiável.
+
+```bash
+python tools/docker_projects.py register ~/Documents/devpilot
+python tools/docker_projects.py sync --root ~/Documents
+python tools/docker_projects.py install --root ~/Documents
+```
+
+O último comando instala um timer `systemd --user`. A cada 30 segundos ele calcula a assinatura
+dos arquivos e executa `docker compose up --detach --build` somente nos projetos registrados que
+mudaram. Assim, uma entrega local atualiza automaticamente o ambiente de desenvolvimento sem
+executar Compose de repositórios não autorizados. Cada projeto recebe um nome Compose isolado.
+Portas publicadas continuam sendo definidas pelo próprio projeto; uma colisão é registrada como
+falha, sem alterar arquivos automaticamente.
+
+Comandos operacionais:
+
+```bash
+python tools/docker_projects.py discover --root ~/Documents
+python tools/docker_projects.py refresh --root ~/Documents
+python tools/docker_projects.py status --root ~/Documents
+python tools/docker_projects.py down --root ~/Documents
+```
 
 ## Fluxo de uma tarefa
 

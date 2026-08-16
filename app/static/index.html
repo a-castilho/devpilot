@@ -7,6 +7,7 @@
   <title>DevPilot — seu desenvolvedor</title>
   <link rel="manifest" href="/assets/manifest.webmanifest">
   <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/enhancements.css">
 </head>
 <body>
   <div class="shell">
@@ -14,12 +15,13 @@
       <a class="brand" href="#overview"><span class="brand-mark">D</span><span>DevPilot<small>seu desenvolvedor</small></span></a>
       <nav>
         <button class="nav active" data-view="overview">Visão geral</button>
+        <button class="nav" data-view="studio">Estúdio IA</button>
         <button class="nav" data-view="projects">Projetos</button>
         <button class="nav" data-view="tasks">Desenvolvimento</button>
         <button class="nav" data-view="providers">Modelos de IA</button>
         <button class="nav" data-view="audit">Auditoria</button>
       </nav>
-      <div class="system-card"><span class="dot"></span><div><strong>Sistema operacional</strong><small>Worker conectado</small></div></div>
+      <div class="system-card" id="execution-card"><span class="dot"></span><div><strong>Executor</strong><small id="execution-status">Verificando...</small></div></div>
     </aside>
 
     <main>
@@ -40,8 +42,35 @@
         </div>
       </section>
 
+      <section class="view" id="studio-view">
+        <div class="studio-layout">
+          <article class="panel studio-copy">
+            <span class="pill">NOVO PRODUTO</span>
+            <h2>Descreva a ideia.<br><em>A IA cria a fundação.</em></h2>
+            <p>Conecte um repositório vazio ou existente. O DevPilot inspeciona o contexto, gera o <code>AGENTS.md</code>, cria uma branch de trabalho e inicia a primeira entrega automaticamente.</p>
+            <ul>
+              <li>Instruções do agente específicas para a tecnologia encontrada</li>
+              <li>Fila, prioridade, consumo de tokens e relatório auditável</li>
+              <li>Nenhum push, merge ou deploy sem uma etapa explícita de aprovação</li>
+            </ul>
+          </article>
+          <article class="panel">
+            <form id="studio-form" class="studio-form">
+              <span class="eyebrow">ESTÚDIO DE DESENVOLVIMENTO</span>
+              <h3>Qual sistema vamos criar?</h3>
+              <div class="form-grid"><label>Nome do produto<input name="name" minlength="2" maxlength="150" required></label><label>URL Git HTTPS<input name="repository_url" type="url" placeholder="https://github.com/empresa/projeto.git" required></label></div>
+              <label>Objetivo do produto<textarea name="objective" rows="5" placeholder="Quem usa, qual problema resolve e qual resultado deve entregar..." required></textarea></label>
+              <div class="form-grid"><label>Tecnologia preferida<input name="stack" placeholder="Ex.: FastAPI + React + PostgreSQL"></label><label>Modelo Codex<input name="model" value="gpt-5.4"></label></div>
+              <label>Restrições e critérios de aceite<textarea name="constraints" rows="3" placeholder="Segurança, desempenho, acessibilidade, prazo, integrações..."></textarea></label>
+              <button class="primary" type="submit">Criar projeto e iniciar IA</button>
+              <p class="hint">Requer execução habilitada e uma conexão OpenAI. Para repositório privado, conecte também um token GitHub de escopo mínimo.</p>
+            </form>
+          </article>
+        </div>
+      </section>
+
       <section class="view" id="projects-view"><div class="section-head"><div><p>Cadastre repositório, instruções do agente e perfil do Codex.</p></div><button class="primary" data-open="project-modal">+ Novo projeto</button></div><div class="cards" id="projects-list"></div></section>
-      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
+      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe prioridade, previsão, execução e resposta da IA.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Previsão</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
       <section class="view" id="audit-view"><div class="section-head"><p>Histórico imutável de comandos, aprovações, configurações e execuções.</p></div><div class="panel timeline" id="audit-list"></div></section>
     </main>
@@ -51,10 +80,11 @@
   <div class="toast" id="toast"></div>
 
   <dialog id="auth-modal"><form method="dialog" class="modal"><span class="eyebrow">ACESSO</span><h2>Conectar ao DevPilot</h2><p>Informe o token configurado em <code>DEVPILOT_BOOTSTRAP_TOKEN</code>.</p><label>Token<input id="token" type="password" autocomplete="current-password" required></label><button class="primary" id="save-token" value="default">Entrar</button></form></dialog>
-  <dialog id="project-modal"><form class="modal" id="project-form"><button class="close" type="button">×</button><span class="eyebrow">NOVO PROJETO</span><h2>Conectar repositório</h2><div class="form-grid"><label>Nome<input name="name" required></label><label>Slug<input name="slug" pattern="[a-z0-9][a-z0-9-]+" required></label></div><label>URL Git HTTPS<input name="repository_url" type="url" placeholder="https://github.com/empresa/projeto.git" required></label><label>Descrição<textarea name="description" rows="2"></textarea></label><label>AGENTS.md<textarea name="agents_md" rows="7" placeholder="# Regras do projeto..."></textarea></label><div class="form-grid"><label>Branch padrão<input name="default_branch" value="main"></label><label>Modelo Codex<input name="model" value="gpt-5.4"></label></div><button class="primary" type="submit">Criar projeto</button></form></dialog>
+  <dialog id="project-modal"><form class="modal" id="project-form"><button class="close" type="button">×</button><span class="eyebrow">NOVO PROJETO</span><h2>Conectar repositório</h2><div class="form-grid"><label>Nome<input name="name" minlength="2" maxlength="150" required></label><label>Slug<input name="slug" minlength="2" maxlength="100" pattern="[a-z0-9][a-z0-9-]+" autocapitalize="none" spellcheck="false" required><small>Gerado automaticamente, sem espaços ou acentos.</small></label></div><label>URL Git HTTPS<input name="repository_url" type="url" placeholder="https://github.com/empresa/projeto.git" required></label><label>Descrição<textarea name="description" rows="2"></textarea></label><label>AGENTS.md opcional<textarea name="agents_md" rows="7" placeholder="Deixe vazio para a IA gerar após inspecionar o projeto."></textarea></label><div class="form-grid"><label>Branch padrão<input name="default_branch" value="main"></label><label>Modelo Codex<input name="model" value="gpt-5.4"></label></div><label class="check"><input name="generate_agents_md" type="checkbox" checked> Gerar ou melhorar AGENTS.md com IA</label><label class="check"><input name="auto_start" type="checkbox" checked> Iniciar desenvolvimento automaticamente</label><button class="primary" type="submit">Criar projeto e iniciar</button></form></dialog>
   <dialog id="task-modal"><form class="modal" id="task-form"><button class="close" type="button">×</button><span class="eyebrow">NOVA TAREFA</span><h2>O que vamos desenvolver?</h2><label>Projeto<select name="project_id" id="task-project" required></select></label><label>Título<input name="title" required></label><label>Instruções<textarea name="prompt" rows="8" placeholder="Descreva o resultado esperado, restrições e critérios de aceite..." required></textarea></label><div class="form-grid"><label>Prioridade<input name="priority" type="number" min="0" max="100" value="50"></label><label class="check"><input name="requires_approval" type="checkbox" checked> Exigir aprovação</label></div><button class="primary" type="submit">Registrar tarefa</button></form></dialog>
-  <dialog id="provider-modal"><form class="modal" id="provider-form"><button class="close" type="button">×</button><span class="eyebrow">PROVEDOR DE IA</span><h2>Conectar modelo</h2><div class="form-grid"><label>Provedor<select name="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option><option value="custom">Custom</option></select></label><label>Nome da conexão<input name="label" value="Principal" required></label></div><label>API key<input name="api_key" type="password" required></label><label>Modelos, separados por vírgula<input name="models" value="gpt-5.4,gpt-realtime-2.1"></label><p class="hint">A chave é criptografada no servidor e nunca retorna pela API.</p><button class="primary" type="submit">Salvar conexão</button></form></dialog>
-  <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
+  <dialog id="provider-modal"><form class="modal" id="provider-form"><button class="close" type="button">×</button><span class="eyebrow">CREDENCIAL PROTEGIDA</span><h2>Conectar provedor</h2><div class="form-grid"><label>Provedor<select name="provider"><option value="openai">OpenAI</option><option value="github">GitHub</option><option value="anthropic">Anthropic</option><option value="google">Google</option><option value="custom">Custom</option></select></label><label>Nome da conexão<input name="label" value="Principal" required></label></div><label>API key ou token<input name="api_key" type="password" required></label><label>Modelos, separados por vírgula<input name="models" value="gpt-5.4,gpt-realtime-2.1"></label><p class="hint">O segredo é criptografado no servidor e nunca retorna pela API. Para GitHub, informe um token de escopo mínimo e deixe modelos vazio.</p><button class="primary" type="submit">Salvar conexão</button></form></dialog>
+  <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><div class="capability" id="voice-capability">Verificando recursos de voz…</div><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
+  <dialog id="report-modal"><div class="modal report-modal"><button class="close" type="button">×</button><span class="eyebrow">RELATÓRIO DA IA</span><h2 id="report-title">Resultado da tarefa</h2><div id="report-content" class="report-content"></div></div></dialog>
 
   <script src="/assets/app.js" defer></script>
 </body>
