@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
 from app.agentos.apps_router import router as agentos_apps_router
+from app.agentos.intelligence_router import router as agentos_intelligence_router
 from app.agentos.router import router as agentos_router
 from app.api import router
 from app.db import Base, engine
@@ -25,6 +26,7 @@ app = FastAPI(title="DevPilot API", version="1.1.0", lifespan=lifespan)
 app.include_router(router)
 app.include_router(agentos_router)
 app.include_router(agentos_apps_router)
+app.include_router(agentos_intelligence_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
