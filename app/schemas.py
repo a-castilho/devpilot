@@ -1,13 +1,13 @@
 from typing import Any
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,99}$")
     description: str = ""
-    repository_url: HttpUrl
+    repository_url: str = Field(min_length=3, max_length=500)
     default_branch: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
     agents_md: str = Field(default="", max_length=100_000)
     codex_config: dict[str, Any] = Field(default_factory=dict)
@@ -15,7 +15,7 @@ class ProjectCreate(BaseModel):
 
 class ProjectUpdate(BaseModel):
     description: str | None = None
-    repository_url: HttpUrl | None = None
+    repository_url: str | None = Field(default=None, min_length=3, max_length=500)
     default_branch: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._/-]+$")
     agents_md: str | None = Field(default=None, max_length=100_000)
     codex_config: dict[str, Any] | None = None
