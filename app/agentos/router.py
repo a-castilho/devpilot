@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from app.agentos.catalog import AGENT_CATALOG
 from app.agentos.contracts import ChatRequest, GoalCreate, KnowledgeIngest, RAGQuery
 from app.agentos.llm import LLMClient, ModelUnavailable
+from app.agentos.models import AgentGoal
 from app.agentos.orchestrator import plan_goal
 from app.agentos.rag import ingest, search
 from app.db import get_db
-from app.models import AgentGoal, Project, Workspace
+from app.models import Project, Workspace
 from app.security import require_access
 from app.services.audit import record
 
