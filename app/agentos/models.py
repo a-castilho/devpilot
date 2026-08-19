@@ -109,6 +109,20 @@ class AgentRepositoryIndex(Base):
     indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class AgentExtensionActivation(Base):
+    __tablename__ = "agent_extension_activations"
+    __table_args__ = (UniqueConstraint("workspace_id", "project_id", "extension_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    extension_key: Mapped[str] = mapped_column(String(100), index=True)
+    extension_version: Mapped[int] = mapped_column(Integer, default=1)
+    enabled: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
 
