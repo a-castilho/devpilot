@@ -59,14 +59,47 @@ def _ollama_check() -> tuple[bool, str]:
     return False, f"configured model {configured!r} not found; installed={sorted(models)[:8]}"
 
 
+def _agentos_model_check() -> tuple[bool, str]:
+    settings = get_settings()
+    provider = settings.agentos_model_provider.strip().lower() or "ollama"
+    fallback = settings.agentos_model_fallback.strip().lower()
+    supported = {"ollama", "openai", "anthropic", "google"}
+    if provider not in supported:
+        return False, f"unsupported provider {provider!r}"
+    if fallback not in {"", "ollama"}:
+        return False, f"unsupported fallback {fallback!r}"
+    if not 1 <= settings.agentos_model_max_output_tokens <= 8_192:
+        return False, "agentos_model_max_output_tokens must be between 1 and 8192"
+    return True, json.dumps(
+        {
+            "provider": provider,
+            "connection_label": settings.agentos_model_connection_label or "latest-enabled",
+            "model": settings.agentos_model_name or "first-configured",
+            "fallback": fallback or "fail-closed",
+            "max_output_tokens": settings.agentos_model_max_output_tokens,
+        },
+        ensure_ascii=False,
+    )
+
+
 def checks() -> list[Check]:
     settings = get_settings()
     git_ok, git_detail = _command_version(["git", "--version"])
     codex_ok, codex_detail = _command_version(["codex", "--version"])
     ollama_ok, ollama_detail = _ollama_check()
+    agentos_ok, agentos_detail = _agentos_model_check()
 
     python_ok = sys.version_info >= (3, 12)
     repository_dir_ok = settings.repositories_dir.exists() and settings.repositories_dir.is_dir()
+    ollama_required_for_tasks = (
+        settings.execution_enabled
+        and settings.local_readonly_enabled
+        and settings.task_executor in {"auto", "ollama"}
+    )
+    ollama_required_for_agentos = (
+        settings.agentos_model_provider.strip().lower() in {"", "ollama"}
+        or settings.agentos_model_fallback.strip().lower() == "ollama"
+    )
     return [
         Check("python", python_ok, sys.version.split()[0]),
         Check("git", git_ok, git_detail),
@@ -80,12 +113,9 @@ def checks() -> list[Check]:
             "ollama",
             ollama_ok,
             ollama_detail,
-            required=(
-                settings.execution_enabled
-                and settings.local_readonly_enabled
-                and settings.task_executor in {"auto", "ollama"}
-            ),
+            required=ollama_required_for_tasks or ollama_required_for_agentos,
         ),
+        Check("agentos_model", agentos_ok, agentos_detail),
         Check(
             "repositories_dir",
             repository_dir_ok,
