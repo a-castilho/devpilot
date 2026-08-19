@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, inspect, text
 
 import app.models  # noqa: F401
 from app.db import Base
+from app.services.executor import github_basic_authorization
 from app.services.organizations import normalize_github_repository, project_slug
 from app.services.schema import ensure_runtime_schema
 
@@ -59,3 +60,9 @@ def test_normalize_github_repository_removes_sensitive_noise():
         "visibility": "private",
         "archived": False,
     }
+
+
+def test_private_git_authorization_does_not_embed_raw_token():
+    header = github_basic_authorization("secret-token")
+    assert header.startswith("Authorization: Basic ")
+    assert "secret-token" not in header
