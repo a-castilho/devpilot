@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-08-19T17:25:48.039751+00:00",
+  "generated_at": "2026-08-19T17:26:54.079079+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -20,6 +20,13 @@
       "title": "Relatórios do Projeto",
       "source": "docs/PRODUCT_REPORTS.md",
       "content": "# Relatórios do Projeto\n\nPadrão organizacional para apresentar documentação de homologação dentro do produto sem expor dados sensíveis.\n\nA interface deve consumir apenas um relatório sanitizado gerado a partir de uma allowlist de documentos versionados. Não é permitido buscar o repositório privado diretamente do navegador nem enviar credenciais GitHub para o frontend.\n\nO relatório deve facilitar revisão, comparação entre planejado e entregue, cópia de contexto para conversas e registro de novas ideias."
+    },
+    {
+      "id": "docs-issues-issue-6",
+      "category": "Issues",
+      "title": "Issue #6 — homologação: validar central de Relatórios na tela",
+      "source": "docs/issues/issue-6.md",
+      "content": "# Issue #6 — homologação: validar central de Relatórios na tela\n\n> Documento gerado automaticamente a partir da issue. Edite a issue no GitHub; este arquivo será sincronizado novamente.\n\n## Metadados\n\n- **Status:** Aberta\n- **Autor:** @acastilho\n- **Responsáveis:** —\n- **Labels:** —\n- **Milestone:** —\n- **Criada em:** 2026-08-19T17:26:31Z\n- **Atualizada em:** 2026-08-19T17:26:31Z\n- **Fonte:** https://github.com/a-castilho/devpilot/issues/6\n\n## Planejado / descrição da issue\n\n## Objetivo\nValidar em homologação a nova área **Relatórios** do DevPilot e registrar evidência de que o comportamento implementado corresponde à interface entregue.\n\n## Implementado\n- [x] item Relatórios no menu\n- [x] leitura por categorias e busca\n- [x] Copiar para conversa\n- [x] atalho Nova ideia\n- [x] geração automática a partir de documentação permitida\n- [x] sanitização de padrões sensíveis\n- [x] relatório removido de `/assets`\n- [x] API `/api/project-report` protegida por autenticação\n\n## Segurança\nA projeção fica fora da pasta estática. O navegador recebe o conteúdo somente pela API autenticada do DevPilot; o GitHub privado não é consultado diretamente pelo frontend.\n\n## Critérios pendentes\n- [ ] abrir a área Relatórios na homologação real\n- [ ] registrar screenshot/evidência visual desktop\n- [ ] registrar screenshot/evidência visual mobile\n- [ ] testar busca e categorias\n- [ ] testar Copiar para conversa\n- [ ] confirmar 404 para a antiga cópia em `/assets/project-report.json`\n- [ ] comparar planejado x implementado x tela real\n\nReferência: `docs/ideas/RELATORIOS_HOMOLOGACAO_VALIDACAO.md`.\n\n## Regra de revisão\n\nA PR deve referenciar esta issue e comparar **planejado x implementado x resultado observável/tela**. Mudanças visuais exigem evidência antes/depois; mudanças não visuais exigem evidência equivalente."
     },
     {
       "id": "docs-reviews-pr-3",
