@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "project": "DevPilot",
+  "generated_at": "2026-08-19T17:20:00Z",
+  "privacy": {"mode":"sanitized_allowlist","notice":"Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."},
+  "documents": [
+    {"id":"governanca","category":"Governança","title":"Rastreabilidade de desenvolvimento","source":"docs/DEVELOPMENT_GOVERNANCE.md","content":"# Rastreabilidade de desenvolvimento\n\nIssue registra intenção; revisão compara planejado, implementado e resultado observável. Mudanças visuais exigem evidência antes do merge."},
+    {"id":"relatorios","category":"Governança","title":"Relatórios do Projeto","source":"docs/PRODUCT_REPORTS.md","content":"# Relatórios do Projeto\n\nA interface consome somente uma projeção sanitizada da documentação versionada e não busca o repositório privado diretamente do navegador."},
+    {"id":"ideia-relatorios","category":"Ideias","title":"Central de Relatórios de Homologação","source":"docs/ideas/RELATORIOS_HOMOLOGACAO.md","content":"# Central de Relatórios de Homologação\n\nLeitura de documentação, issues, revisões e ideias com busca, cópia de contexto para conversas e atalho para novas ideias."}
+  ]
+}
