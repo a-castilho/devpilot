@@ -4,7 +4,7 @@ import subprocess
 from types import SimpleNamespace
 
 from app.models import Project, Task
-from app.services import executor
+from app.services import executor, local_executor
 from app.services.local_executor import is_allowed_repository_path, is_read_only_task
 
 
@@ -59,6 +59,48 @@ def test_repository_path_filter_excludes_common_secret_files():
     assert not is_allowed_repository_path("certs/private.key")
     assert not is_allowed_repository_path("node_modules/pkg/index.js")
     assert not is_allowed_repository_path("../outside.py")
+
+
+def test_git_ref_context_does_not_touch_worktree_and_skips_env(monkeypatch, tmp_path):
+    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "devpilot@example.test"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "DevPilot Tests"], cwd=tmp_path, check=True)
+    (tmp_path / "README.md").write_text("# Safe project\n", encoding="utf-8")
+    (tmp_path / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("SECRET=do-not-index\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md", "main.py", ".env"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "fixture"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "untracked.txt").write_text("leave me alone\n", encoding="utf-8")
+    before = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+
+    monkeypatch.setattr(
+        local_executor,
+        "get_settings",
+        lambda: SimpleNamespace(
+            local_readonly_max_files=10,
+            local_readonly_max_file_chars=8_000,
+            local_readonly_max_context_chars=40_000,
+        ),
+    )
+    context = local_executor.collect_repository_context(tmp_path, ref="HEAD")
+    after = subprocess.run(
+        ["git", "status", "--porcelain=v1", "--untracked-files=all"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        check=True,
+    ).stdout
+
+    assert "README.md" in context.text
+    assert "main.py" in context.text
+    assert "SECRET=do-not-index" not in context.text
+    assert before == after
 
 
 def test_read_only_task_routes_to_ollama_without_writing_agents(monkeypatch, tmp_path):
