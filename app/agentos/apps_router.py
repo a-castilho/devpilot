@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.agentos.application.app_connections import AppConnectionConflict
 from app.agentos.container import build_agentos_services
 from app.agentos.contracts import KnownAppsConnect
+from app.agentos.domain.extensions import EXTENSION_CATALOG
 from app.db import get_db
 from app.models import Workspace
 from app.security import require_access
@@ -55,8 +56,9 @@ def list_app_connections(db: Session = Depends(get_db)):
 @router.post("/connect-known")
 def connect_known_apps(payload: KnownAppsConnect, db: Session = Depends(get_db)):
     ws = _workspace(db)
+    services = build_agentos_services(db)
     try:
-        items = build_agentos_services(db).app_connections.connect(
+        items = services.app_connections.connect(
             workspace_id=ws.id,
             keys=payload.keys or None,
             seed_memory=payload.seed_memory,
@@ -65,4 +67,42 @@ def connect_known_apps(payload: KnownAppsConnect, db: Session = Depends(get_db))
         raise HTTPException(409, str(error)) from error
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
-    return {"connected": len(items), "apps": items}
+
+    enriched = []
+    for item in items:
+        result = dict(item)
+        extensions: list[str] = []
+        index_result = None
+        bootstrap_errors: list[str] = []
+
+        if payload.activate_recommended_extensions:
+            for extension in EXTENSION_CATALOG.values():
+                if item["profile_key"] not in extension.recommended_apps:
+                    continue
+                try:
+                    services.marketplace.set_enabled(
+                        workspace_id=ws.id,
+                        project_id=item["project_id"],
+                        extension_key=extension.key,
+                        enabled=True,
+                    )
+                    extensions.append(extension.key)
+                except Exception as error:  # bootstrap is best-effort after the safe project binding
+                    bootstrap_errors.append(f"extension {extension.key}: {str(error)[:500]}")
+
+        if payload.index_repositories:
+            try:
+                index_result = services.intelligence.index_project(
+                    workspace_id=ws.id,
+                    project_id=item["project_id"],
+                    refresh=payload.refresh_repositories,
+                )
+            except Exception as error:
+                bootstrap_errors.append(f"repository index: {str(error)[:500]}")
+
+        result["extensions_enabled"] = extensions
+        result["repository_index"] = index_result
+        result["bootstrap_errors"] = bootstrap_errors
+        enriched.append(result)
+
+    return {"connected": len(enriched), "apps": enriched}
