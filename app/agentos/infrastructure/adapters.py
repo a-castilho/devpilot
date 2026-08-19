@@ -17,7 +17,11 @@ from app.agentos.llm import LLMClient, ModelUnavailable as ProviderModelUnavaila
 from app.agentos.models import AgentGoal
 from app.agentos.rag import ingest as rag_ingest
 from app.agentos.rag import search as rag_search
+from app.config import get_settings
+from app.models import ProviderCredential, Workspace
 from app.services.audit import record
+from app.services.provider_runtime import ProviderRuntimeError, run_provider_chat
+from app.services.vault import Vault
 
 
 class PlannerAdapter:
@@ -136,6 +140,110 @@ class OllamaLanguageModelAdapter:
             return self.client.chat(messages)
         except ProviderModelUnavailable as error:
             raise ApplicationModelUnavailable(str(error)) from error
+
+
+class ConfiguredLanguageModelAdapter:
+    """Resolve AgentOS text generation to Ollama or an encrypted saved provider connection.
+
+    External-provider selection is explicit through DEVPILOT_AGENTOS_MODEL_PROVIDER and optional
+    connection/model selectors. The adapter stays workspace-scoped to the current default workspace.
+    A configured Ollama fallback is used only for transient provider/network failures; credential,
+    model and configuration errors fail closed instead of silently switching providers.
+    """
+
+    SUPPORTED_EXTERNAL = {"openai", "anthropic", "google"}
+
+    def __init__(self, db: Session, *, ollama: OllamaLanguageModelAdapter | None = None) -> None:
+        self.db = db
+        self.settings = get_settings()
+        self.ollama = ollama or OllamaLanguageModelAdapter()
+
+    @staticmethod
+    def _stored_models(item: ProviderCredential) -> list[str]:
+        try:
+            values = json.loads(item.models or "[]")
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(values, list):
+            return []
+        return [str(value).strip() for value in values if str(value).strip()]
+
+    def _connection(self, provider: str) -> ProviderCredential:
+        ws = self.db.scalar(select(Workspace).where(Workspace.slug == "default"))
+        if not ws:
+            raise ApplicationModelUnavailable("Workspace padrão do AgentOS não encontrado.")
+
+        query = select(ProviderCredential).where(
+            ProviderCredential.workspace_id == ws.id,
+            ProviderCredential.provider == provider,
+            ProviderCredential.enabled.is_(True),
+        )
+        label = self.settings.agentos_model_connection_label.strip()
+        if label:
+            query = query.where(ProviderCredential.label == label)
+        item = self.db.scalar(query.order_by(ProviderCredential.created_at.desc()).limit(1))
+        if not item:
+            suffix = f" com o nome {label!r}" if label else ""
+            raise ApplicationModelUnavailable(
+                f"Nenhuma conexão {provider} ativa{suffix} está configurada para o AgentOS."
+            )
+        return item
+
+    def _external_chat(self, provider: str, messages: list[dict[str, str]]) -> dict[str, Any]:
+        item = self._connection(provider)
+        models = self._stored_models(item)
+        configured_model = self.settings.agentos_model_name.strip()
+        model = configured_model or (models[0] if models else "")
+        if not model:
+            raise ApplicationModelUnavailable("A conexão de IA não possui modelo configurado.")
+        if models and configured_model and configured_model not in models:
+            raise ApplicationModelUnavailable(
+                f"O modelo {configured_model!r} não pertence à conexão selecionada."
+            )
+
+        try:
+            secret = Vault().decrypt(item.encrypted_secret)
+        except (RuntimeError, ValueError) as error:
+            raise ApplicationModelUnavailable(
+                "A credencial do provedor não pôde ser aberta pelo cofre do DevPilot."
+            ) from error
+
+        try:
+            result = run_provider_chat(
+                provider,
+                secret,
+                model,
+                messages,
+                timeout_seconds=self.settings.model_timeout_seconds,
+                max_output_tokens=self.settings.agentos_model_max_output_tokens,
+            )
+        except ProviderRuntimeError as error:
+            fallback = self.settings.agentos_model_fallback.strip().lower()
+            if error.retryable and fallback == "ollama":
+                local = self.ollama.chat(messages)
+                return {
+                    **local,
+                    "fallback_from": provider,
+                    "fallback_reason": "transient_provider_failure",
+                }
+            raise ApplicationModelUnavailable(str(error)) from error
+
+        return {
+            "content": result.reply,
+            "provider": result.provider,
+            "model": result.model,
+            "latency_ms": result.latency_ms,
+        }
+
+    def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]:
+        provider = self.settings.agentos_model_provider.strip().lower() or "ollama"
+        if provider == "ollama":
+            return self.ollama.chat(messages)
+        if provider not in self.SUPPORTED_EXTERNAL:
+            raise ApplicationModelUnavailable(
+                f"Provedor AgentOS não suportado: {provider!r}."
+            )
+        return self._external_chat(provider, messages)
 
 
 class SQLAlchemyUnitOfWork:
