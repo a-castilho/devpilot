@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-08-19T20:43:10.622422+00:00",
+  "generated_at": "2026-08-19T23:07:29.728866+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -20,6 +20,13 @@
       "title": "Relatórios do Projeto",
       "source": "docs/PRODUCT_REPORTS.md",
       "content": "# Relatórios do Projeto\n\nPadrão organizacional para apresentar documentação de homologação dentro do produto sem expor dados sensíveis.\n\nA interface deve consumir apenas um relatório sanitizado gerado a partir de uma allowlist de documentos versionados. Não é permitido buscar o repositório privado diretamente do navegador nem enviar credenciais GitHub para o frontend.\n\nO relatório deve facilitar revisão, comparação entre planejado e entregue, cópia de contexto para conversas e registro de novas ideias."
+    },
+    {
+      "id": "docs-issues-issue-7",
+      "category": "Issues",
+      "title": "Issue #7 — Gravador de processos: mouse/teclado + comandos de terminal para sugerir automação",
+      "source": "docs/issues/issue-7.md",
+      "content": "# Issue #7 — Gravador de processos: mouse/teclado + comandos de terminal para sugerir automação\n\n> Documento gerado automaticamente a partir da issue. Edite a issue no GitHub; este arquivo será sincronizado novamente.\n\n## Metadados\n\n- **Status:** Aberta\n- **Autor:** @acastilho\n- **Responsáveis:** —\n- **Labels:** —\n- **Milestone:** —\n- **Criada em:** 2026-08-19T23:07:07Z\n- **Atualizada em:** 2026-08-19T23:07:07Z\n- **Fonte:** https://github.com/a-castilho/devpilot/issues/7\n\n## Planejado / descrição da issue\n\n## Ideia\nAdicionar ao DevPilot uma sessão curta de aprendizado operacional que observe padrões de interação web e comandos de terminal para identificar tarefas repetitivas candidatas a automação.\n\n## Requisitos\n- Botão para gravar por 1 minuto.\n- Botão para gravar por 2 minutos.\n- Suporte a outras durações sem mudar a arquitetura.\n- Coletar cliques de forma aproximada, sem conteúdo da página.\n- Coletar padrões de teclado sem armazenar texto digitado.\n- Capturar comandos executados no Bash durante uma sessão ativa.\n[conteúdo sensível omitido]\n- Cruzar eventos web + terminal.\n- Detectar comandos, sequências, cliques e atalhos repetidos.\n- Produzir score e candidatos à automação.\n- Não executar automaticamente a automação nesta primeira etapa; manter revisão humana.\n\n## Critérios de aceite\n- Sessão ativa expira automaticamente.\n- Somente uma sessão de gravação por workspace.\n- Dashboard principal continua capturando eventos enquanto a sessão está ativa.\n- Hook Bash não persiste nada quando não há sessão ativa.\n- Teste prova que conteúdo digitado não é armazenado.\n[conteúdo sensível omitido]\n- Teste prova que fluxo repetido terminal + browser gera candidato híbrido.\n- Documentação operacional disponível em `docs/process-learning-recorder.md`.\n\n## Segurança/privacidade\nA coleta deve ser explícita, temporizada e mínima. Não implementar keylogger de conteúdo. Não armazenar valores de inputs, texto DOM ou credenciais brutas.\n\n## Regra de revisão\n\nA PR deve referenciar esta issue e comparar **planejado x implementado x resultado observável/tela**. Mudanças visuais exigem evidência antes/depois; mudanças não visuais exigem evidência equivalente."
     },
     {
       "id": "docs-issues-issue-6",
