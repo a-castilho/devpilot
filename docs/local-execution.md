@@ -51,6 +51,18 @@ DEVPILOT_OLLAMA_CHAT_MODEL=gemma3:1b
 Project `codex_config` may override `executor` with `auto`, `codex`, or `ollama`. The `ollama` task
 executor is intentionally read-only; it refuses repository-writing tasks.
 
+## One-command preflight
+
+Run the local readiness check before starting real execution:
+
+```bash
+python -m app.preflight
+```
+
+It reports Python, Git, Codex, Ollama/model availability, repository-directory readiness and the
+active task-execution configuration. Checks become required according to the configured execution
+mode, so a missing local model is clearly distinguished from an optional capability.
+
 ## Ollama preflight
 
 Before running local analysis, ensure Ollama is available and the configured model exists. A typical
