@@ -181,6 +181,8 @@ class ToolPolicyPort(Protocol):
         agent: str,
         tools: list[str],
         approval_granted: bool,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
     ) -> None: ...
 
 
