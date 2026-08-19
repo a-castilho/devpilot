@@ -5,6 +5,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
+from app.agentos.application.errors import ModelUnavailable
 from app.agentos.llm import LLMClient
 from app.config import get_settings
 from app.models import Project, Task
@@ -230,20 +231,26 @@ def execute_read_only_ollama(project: Project, task: Task, *, path: Path) -> dic
     if project_policy:
         system += f"\n\nAdditional authoritative project policy:\n{project_policy[:20_000]}"
 
-    response = LLMClient().chat(
-        [
-            {"role": "system", "content": system},
-            {
-                "role": "user",
-                "content": (
-                    f"Task: {task.title}\n\n{task.prompt}\n\n"
-                    f"Repository ref: {context.ref}\n"
-                    f"Repository context ({context.files} files, {context.chars} chars):\n\n"
-                    f"{context.text}"
-                ),
-            },
-        ]
-    )
+    try:
+        response = LLMClient().chat(
+            [
+                {"role": "system", "content": system},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Task: {task.title}\n\n{task.prompt}\n\n"
+                        f"Repository ref: {context.ref}\n"
+                        f"Repository context ({context.files} files, {context.chars} chars):\n\n"
+                        f"{context.text}"
+                    ),
+                },
+            ]
+        )
+    except ModelUnavailable as error:
+        raise RuntimeError(
+            "Local read-only execution requires Ollama with the configured chat model available. "
+            f"Check DEVPILOT_OLLAMA_BASE_URL/DEVPILOT_OLLAMA_CHAT_MODEL. Detail: {error}"
+        ) from error
 
     after = _repository_status(path)
     if after != before:
