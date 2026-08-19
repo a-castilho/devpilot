@@ -1,11 +1,53 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-08-19T17:38:00Z",
-  "privacy": {"mode":"authenticated_sanitized_allowlist","notice":"Relatório disponível apenas para sessão autenticada e gerado somente de documentos permitidos; padrões de credenciais e segredos são omitidos."},
+  "generated_at": "2026-08-19T17:25:48.039751+00:00",
+  "privacy": {
+    "mode": "sanitized_allowlist",
+    "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
+  },
   "documents": [
-    {"id":"governanca","category":"Governança","title":"Rastreabilidade de desenvolvimento","source":"docs/DEVELOPMENT_GOVERNANCE.md","content":"# Rastreabilidade de desenvolvimento\n\nIssue registra intenção; revisão compara planejado, implementado e resultado observável. Mudanças visuais exigem evidência antes do merge."},
-    {"id":"relatorios","category":"Governança","title":"Relatórios do Projeto","source":"docs/PRODUCT_REPORTS.md","content":"# Relatórios do Projeto\n\nA interface consome somente uma projeção sanitizada da documentação versionada, entregue pela API autenticada do DevPilot."},
-    {"id":"ideia-relatorios","category":"Ideias","title":"Central de Relatórios de Homologação","source":"docs/ideas/RELATORIOS_HOMOLOGACAO.md","content":"# Central de Relatórios de Homologação\n\nLeitura de documentação, issues, revisões e ideias com busca, cópia de contexto para conversas e atalho para novas ideias."}
+    {
+      "id": "docs-DEVELOPMENT_GOVERNANCE",
+      "category": "Governança",
+      "title": "Regra de rastreabilidade, revisão e documentação",
+      "source": "docs/DEVELOPMENT_GOVERNANCE.md",
+      "content": "# Regra de rastreabilidade, revisão e documentação\n\nEsta regra é obrigatória para mudanças funcionais, correções, novas ideias e alterações visuais do projeto.\n\n## Fonte de verdade\n\n- **Issue = intenção:** descreve problema, objetivo, comportamento atual, comportamento esperado e critérios de aceite.\n- **PR = execução:** descreve o que foi implementado, arquivos alterados, testes e evidência da interface.\n- **Relatório = evidência:** documentos em `docs/issues/` e `docs/reviews/` são gerados automaticamente para auditoria e comparação histórica.\n\n## Regra para cada issue\n\nToda issue deve registrar contexto/problema, objetivo, estado atual, resultado esperado, critérios de aceite, impacto visual quando existir e riscos/dependências.\n\nO workflow `.github/workflows/issue-documentation.yml` mantém um espelho versionado em `docs/issues/issue-<numero>.md` sempre que a issue é criada, editada, reaberta, fechada ou tem metadados relevantes alterados.\n\n## Novas ideias\n\nUse o template **Nova ideia**. Separe hipótese, valor esperado, experiência/tela esperada, riscos e critérios para decidir se a ideia deve virar implementação.\n\n## Revisão de implementação\n\nToda Pull Request deve referenciar a issue, explicar o que mudou, indicar como validar, registrar testes e, para UI, incluir evidência antes/depois ou justificar por que não se aplica. Divergências entre solicitado e entregue devem ser registradas antes do merge.\n\nO workflow `.github/workflows/review-documentation.yml` gera `docs/reviews/pr-<numero>.md` com metadados, arquivos alterados, sinais de rastreabilidade e o corpo da PR.\n\n## Comparação planejado x implementado x tela\n\n1. **Planejado:** issue e critérios de aceite.\n2. **Implementado:** diff/arquivos e descrição da PR.\n3. **Tela/experiência real:** evidência visual, rota, fluxo ou resultado observável.\n4. **Divergências:** qualquer diferença deve ser documentada antes do merge.\n\nPara mudanças não visuais, use resposta de API, log, teste, consulta de banco, métrica ou saída reproduzível como evidência.\n\n## Definition of Done\n\nUma mudança só está pronta quando existe rastreabilidade para issue, critérios foram verificados, testes relevantes foram executados, comportamento observável foi comparado com o esperado, divergências foram registradas e a documentação afetada foi atualizada."
+    },
+    {
+      "id": "docs-PRODUCT_REPORTS",
+      "category": "Governança",
+      "title": "Relatórios do Projeto",
+      "source": "docs/PRODUCT_REPORTS.md",
+      "content": "# Relatórios do Projeto\n\nPadrão organizacional para apresentar documentação de homologação dentro do produto sem expor dados sensíveis.\n\nA interface deve consumir apenas um relatório sanitizado gerado a partir de uma allowlist de documentos versionados. Não é permitido buscar o repositório privado diretamente do navegador nem enviar credenciais GitHub para o frontend.\n\nO relatório deve facilitar revisão, comparação entre planejado e entregue, cópia de contexto para conversas e registro de novas ideias."
+    },
+    {
+      "id": "docs-reviews-pr-3",
+      "category": "Revisões",
+      "title": "Revisão PR #3 — feat: AgentOS platform, live provider catalogs and local execution",
+      "source": "docs/reviews/pr-3.md",
+      "content": "# Revisão PR #3 — feat: AgentOS platform, live provider catalogs and local execution\n\n> Baseline criado na adoção da nova regra de revisão.\n\n- **Estado:** aberta\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/3\n- **Issue relacionada detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada na descrição:** NÃO\n\n## Entrega declarada\nAgentOS em seis camadas, runtime persistente, MemoryOS, ToolHub/AppHub, inteligência de repositório, execução local endurecida, catálogos de modelos em tempo real, UX de resultados, especialistas e marketplace seguro.\n\n## Lacuna crítica de revisão\nO escopo é amplo e inclui dashboard, conexão de IA, catálogo de modelos, resultados e marketplace, mas a PR não contém screenshots. A revisão deve ser feita por fluxo/tela, distinguindo capacidades realmente acessíveis na interface de componentes apenas presentes no backend ou documentação.\n\n## Comparação obrigatória\n1. funcionalidades declaradas;\n2. endpoints/serviços realmente implementados;\n3. elementos realmente navegáveis na interface;\n4. estados de erro/segurança;\n5. divergências e itens ainda não expostos ao usuário."
+    },
+    {
+      "id": "docs-reviews-pr-2",
+      "category": "Revisões",
+      "title": "Revisão PR #2 — Add autonomous AI development operations",
+      "source": "docs/reviews/pr-2.md",
+      "content": "# Revisão PR #2 — Add autonomous AI development operations\n\n> Baseline criado na adoção da nova regra de revisão.\n\n- **Estado:** aberta\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/2\n- **Issue relacionada detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada na descrição:** NÃO\n\n## Entrega declarada\nCadastro iniciando tarefa real, Estúdio IA, fila/prioridade/ETA, dashboard de métricas, comandos por voz, integração Git privada, agente local e imagem Docker com Git/Codex.\n\n## Evidências declaradas\n- 21 testes aprovados;\n- compileall e node --check;\n- cobertura de 64%;\n- Docker delegado ao CI.\n\n## Lacuna crítica de revisão\nA PR declara mudanças importantes no dashboard, Estúdio IA e experiência de voz, mas não apresenta evidência visual. Antes do merge, comparar os fluxos reais de cadastro, fila, resultados, voz e estados de execução com o comportamento descrito."
+    },
+    {
+      "id": "docs-ideas-RELATORIOS_HOMOLOGACAO_VALIDACAO",
+      "category": "Ideias",
+      "title": "Validação — Central de Relatórios de Homologação",
+      "source": "docs/ideas/RELATORIOS_HOMOLOGACAO_VALIDACAO.md",
+      "content": "# Validação — Central de Relatórios de Homologação\n\n## Estado técnico\n\n- [x] item **Relatórios** no menu\n- [x] leitura por categorias e busca\n- [x] botão **Copiar para conversa**\n- [x] atalho **Nova ideia**\n- [x] geração automática a partir de documentação permitida\n- [x] sanitização de padrões sensíveis\n- [x] relatório removido de `/assets`\n- [x] leitura protegida pela API autenticada do DevPilot\n- [ ] evidência visual da tela em homologação\n- [ ] comparação final entre comportamento esperado e tela implantada\n\nA entrega não deve ser considerada visualmente homologada até os dois últimos itens serem registrados com evidência."
+    },
+    {
+      "id": "docs-ideas-RELATORIOS_HOMOLOGACAO",
+      "category": "Ideias",
+      "title": "Ideia — Central de Relatórios de Homologação",
+      "source": "docs/ideas/RELATORIOS_HOMOLOGACAO.md",
+      "content": "# Ideia — Central de Relatórios de Homologação\n\nCriar uma área **Relatórios** no produto para leitura de documentação, issues, revisões e ideias, com busca, cópia de contexto para conversas e atalho para novas ideias.\n\n[conteúdo sensível omitido]"
+    }
   ]
 }
