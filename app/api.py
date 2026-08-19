@@ -140,6 +140,17 @@ def list_tasks(project_id: str | None = None, limit: int = Query(100, ge=1, le=5
     return db.scalars(query.order_by(Task.created_at.desc()).limit(limit)).all()
 
 
+@router.get("/tasks/{task_id}/runs")
+def task_runs(task_id: str, db: Session = Depends(get_db)):
+    ws = workspace(db)
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == ws.id))
+    if not task:
+        raise HTTPException(404, "Task not found")
+    return db.scalars(
+        select(Run).where(Run.task_id == task.id).order_by(Run.started_at.desc())
+    ).all()
+
+
 @router.post("/tasks", status_code=201)
 def create_task(payload: TaskCreate, db: Session = Depends(get_db)):
     ws = workspace(db)
