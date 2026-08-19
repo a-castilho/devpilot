@@ -26,7 +26,15 @@ class Settings(BaseSettings):
     local_readonly_max_file_chars: int = 8_000
     local_readonly_max_context_chars: int = 40_000
 
-    # AgentOS model gateway. The API process stays light and talks to Ollama over HTTP.
+    # AgentOS text-generation gateway. Defaults preserve the local Ollama-only behavior.
+    # External providers use credentials already encrypted in provider_credentials.
+    agentos_model_provider: str = "ollama"
+    agentos_model_connection_label: str = ""
+    agentos_model_name: str = ""
+    agentos_model_fallback: str = ""
+    agentos_model_max_output_tokens: int = 1_200
+
+    # Local Ollama remains the lightweight default and optional transient-error fallback.
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_chat_enabled: bool = True
     ollama_chat_model: str = "gemma3:1b"
