@@ -1,7 +1,7 @@
 [project]
 name = "devpilot"
-version = "1.0.0"
-description = "DevPilot — desenvolvimento automatizado, auditável e orientado por voz"
+version = "1.1.0"
+description = "DevPilot AgentOS — desenvolvimento automatizado, auditável e orientado por agentes"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116,<1",
@@ -11,6 +11,7 @@ dependencies = [
   "cryptography>=45,<46",
   "python-multipart>=0.0.20,<1",
   "httpx>=0.28,<1",
+  "mcp>=2,<3",
 ]
 
 [project.optional-dependencies]
