@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4"
     realtime_model: str = "gpt-realtime-2.1"
 
+    # AgentOS model gateway. The API process stays light and talks to Ollama over HTTP.
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_chat_enabled: bool = True
+    ollama_chat_model: str = "gemma3:1b"
+    ollama_embeddings_enabled: bool = True
+    ollama_embedding_model: str = "embeddinggemma"
+    embedding_fallback_enabled: bool = True
+    model_timeout_seconds: float = 60.0
+
     @property
     def git_hosts(self) -> set[str]:
         return {item.strip().lower() for item in self.allowed_git_hosts.split(",") if item.strip()}
