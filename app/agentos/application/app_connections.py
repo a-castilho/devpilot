@@ -85,6 +85,7 @@ class KnownAppConnectionService:
                     workspace_id=workspace_id,
                     profile=profile,
                 )
+                created_project = connection.created_project
                 memory_seeded = False
                 if seed_memory and connection.memory_version < profile.memory_version:
                     self.knowledge.ingest(
@@ -115,7 +116,7 @@ class KnownAppConnectionService:
                         payload={
                             "profile_key": profile.key,
                             "repository_url": profile.repository_url,
-                            "created_project": connection.created_project,
+                            "created_project": created_project,
                             "memory_seeded": memory_seeded,
                             "profile_version": profile.profile_version,
                             "memory_version": connection.memory_version,
@@ -128,7 +129,7 @@ class KnownAppConnectionService:
                         "name": profile.name,
                         "project_id": connection.project_id,
                         "repository_url": profile.repository_url,
-                        "created_project": connection.created_project,
+                        "created_project": created_project,
                         "memory_seeded": memory_seeded,
                         "profile_version": connection.profile_version,
                         "memory_version": connection.memory_version,
