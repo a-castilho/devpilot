@@ -94,6 +94,21 @@ class AgentAppConnection(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class AgentRepositoryIndex(Base):
+    __tablename__ = "agent_repository_indexes"
+    __table_args__ = (UniqueConstraint("workspace_id", "project_id"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    snapshot_hash: Mapped[str] = mapped_column(String(64), index=True)
+    namespace: Mapped[str] = mapped_column(String(100), index=True)
+    file_count: Mapped[int] = mapped_column(Integer, default=0)
+    dependency_nodes: Mapped[int] = mapped_column(Integer, default=0)
+    dependency_edges: Mapped[int] = mapped_column(Integer, default=0)
+    indexed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
 
