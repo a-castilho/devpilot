@@ -7,7 +7,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agentos.embeddings import EmbeddingClient
+from app.agentos.embeddings import EmbeddingClient, hashing_embedding
 from app.agentos.models import KnowledgeChunk
 
 
@@ -87,7 +87,6 @@ def search(
     query: str,
     top_k: int,
 ) -> list[dict[str, Any]]:
-    query_embedding = EmbeddingClient().embed(query).vector
     statement = select(KnowledgeChunk).where(
         KnowledgeChunk.workspace_id == workspace_id,
         KnowledgeChunk.namespace == namespace,
@@ -95,13 +94,32 @@ def search(
     if project_id is not None:
         statement = statement.where(KnowledgeChunk.project_id == project_id)
 
+    items = db.scalars(statement).all()
+    if not items:
+        return []
+
+    current = EmbeddingClient().embed(query)
+    fallback_vector: list[float] | None = None
     scored: list[tuple[float, KnowledgeChunk]] = []
-    for item in db.scalars(statement).all():
+
+    for item in items:
         try:
             stored = [float(value) for value in json.loads(item.embedding)]
         except (TypeError, ValueError, json.JSONDecodeError):
             continue
-        score = cosine_similarity(query_embedding, stored)
+
+        if item.embedding_model == current.model and len(stored) == len(current.vector):
+            query_vector = current.vector
+        elif item.embedding_provider == "local-fallback" and item.embedding_model == "hashing-256":
+            if fallback_vector is None:
+                fallback_vector = hashing_embedding(query)
+            query_vector = fallback_vector
+        else:
+            # A changed semantic embedding model must be re-indexed rather than compared
+            # across incompatible vector spaces.
+            continue
+
+        score = cosine_similarity(query_vector, stored)
         if score >= 0:
             scored.append((score, item))
 
