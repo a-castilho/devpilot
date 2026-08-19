@@ -1,0 +1,3 @@
+.result-modal{width:min(860px,92vw)}
+.result-meta{display:block;margin:.25rem 0 1rem;color:var(--muted,#8fa3b8);line-height:1.5}
+.result-output{max-height:52vh;overflow:auto;white-space:pre-wrap;word-break:break-word;padding:1rem;border:1px solid rgba(148,163,184,.2);border-radius:12px;background:rgba(2,8,23,.55);font-size:.86rem;line-height:1.55}

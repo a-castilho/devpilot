@@ -4,15 +4,25 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select
 
+from app.agentos.container import build_agentos_services
 from app.db import SessionLocal
 from app.models import Project, Run, Task, TaskStatus
 from app.services.audit import record
 from app.services.executor import execute_task
 
 
-def process_one() -> bool:
+def _safe_log(value: str, limit: int = 240) -> str:
+    return " ".join(value.replace("\n", " ").split())[:limit]
+
+
+def process_task_one() -> bool:
     with SessionLocal() as db:
-        task = db.scalar(select(Task).where(Task.status == TaskStatus.queued).order_by(Task.priority.desc(), Task.created_at).limit(1))
+        task = db.scalar(
+            select(Task)
+            .where(Task.status == TaskStatus.queued)
+            .order_by(Task.priority.desc(), Task.created_at)
+            .limit(1)
+        )
         if not task:
             return False
         project = db.get(Project, task.project_id)
@@ -20,6 +30,11 @@ def process_one() -> bool:
         run = Run(task_id=task.id)
         db.add(run)
         db.commit()
+        print(
+            f"[worker] task={task.id[:8]} project={project.slug if project else '?'} status=running "
+            f"title={_safe_log(task.title)}",
+            flush=True,
+        )
         try:
             result = execute_task(project, task)
             run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
@@ -33,12 +48,39 @@ def process_one() -> bool:
             task.status = TaskStatus.failed
             outcome = "failed"
         run.finished_at = datetime.now(timezone.utc)
-        record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.executed", outcome=outcome, details={"run_id": run.id})
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor="worker",
+            action="task.executed",
+            outcome=outcome,
+            details={"run_id": run.id},
+        )
         db.commit()
+        print(
+            f"[worker] task={task.id[:8]} status={run.status} summary={_safe_log(run.summary)}",
+            flush=True,
+        )
         return True
 
 
+def process_agentos_one() -> bool:
+    with SessionLocal() as db:
+        return build_agentos_services(db).executions.process_one()
+
+
+def process_one() -> bool:
+    # Run delegated repository work before polling AgentOS checkpoints. This prevents an
+    # execution waiting on its child task from starving the existing DevPilot task queue.
+    task_work = process_task_one()
+    agent_work = process_agentos_one()
+    return task_work or agent_work
+
+
 def main() -> None:
+    print("[worker] DevPilot worker started", flush=True)
     while True:
         if not process_one():
             time.sleep(2)

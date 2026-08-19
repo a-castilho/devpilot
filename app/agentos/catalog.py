@@ -1,0 +1,103 @@
+from app.agentos.contracts import AgentDefinition
+
+
+AGENT_CATALOG: dict[str, AgentDefinition] = {
+    "supervisor": AgentDefinition(
+        name="supervisor",
+        role="orchestration",
+        description="Controls execution, budgets, approvals and final handoff.",
+        capabilities=["orchestrate", "prioritize", "stop", "approve-gates"],
+        default_tools=["agent.plan", "audit.read"],
+    ),
+    "planner": AgentDefinition(
+        name="planner",
+        role="planning",
+        description="Turns a natural-language objective into an explicit dependency graph.",
+        capabilities=["decompose", "estimate", "sequence"],
+        default_tools=["rag.search", "project.read"],
+    ),
+    "researcher": AgentDefinition(
+        name="researcher",
+        role="research",
+        description="Retrieves project, repository and knowledge-base context before implementation.",
+        capabilities=["retrieve", "summarize", "compare", "repo-index"],
+        default_tools=["rag.search", "project.read", "repo.index"],
+    ),
+    "architect": AgentDefinition(
+        name="architect",
+        role="architecture",
+        description="Defines boundaries, contracts, impact surfaces and non-functional constraints.",
+        capabilities=["design", "threat-model", "contract-design", "impact-analysis"],
+        default_tools=["rag.search", "project.read", "repo.index", "code.impact"],
+    ),
+    "backend": AgentDefinition(
+        name="backend",
+        role="implementation",
+        description="Implements APIs, domain logic, persistence and integrations.",
+        capabilities=["python", "fastapi", "sql", "integrations"],
+        default_tools=["repo.read", "code.impact", "repo.write", "tests.run"],
+    ),
+    "frontend": AgentDefinition(
+        name="frontend",
+        role="implementation",
+        description="Implements dashboard and client-side interactions.",
+        capabilities=["ui", "pwa", "accessibility", "api-client"],
+        default_tools=["repo.read", "code.impact", "repo.write", "tests.run"],
+    ),
+    "database": AgentDefinition(
+        name="database",
+        role="data",
+        description="Owns schema, migrations, query behavior, data integrity and persistence risk.",
+        capabilities=["schema-design", "migrations", "sql", "data-integrity", "query-review"],
+        default_tools=["rag.search", "project.read", "repo.read", "code.impact", "repo.write", "tests.run"],
+    ),
+    "security": AgentDefinition(
+        name="security",
+        role="assurance",
+        description="Reviews authentication, authorization, secrets, attack surface and unsafe changes.",
+        capabilities=["threat-model", "auth-review", "secret-review", "security-testing"],
+        default_tools=["rag.search", "project.read", "repo.index", "repo.read", "code.impact", "diff.read", "tests.read"],
+    ),
+    "performance": AgentDefinition(
+        name="performance",
+        role="assurance",
+        description="Reviews latency, memory, database and execution-cost regressions against resource budgets.",
+        capabilities=["profiling-plan", "query-performance", "memory-review", "capacity-review"],
+        default_tools=["rag.search", "repo.index", "repo.read", "code.impact", "diff.read", "tests.read"],
+    ),
+    "ux": AgentDefinition(
+        name="ux",
+        role="experience",
+        description="Reviews user journeys, interaction clarity, accessibility and product consistency.",
+        capabilities=["journey-review", "accessibility", "interaction-design", "content-clarity"],
+        default_tools=["rag.search", "project.read", "repo.read"],
+    ),
+    "docs": AgentDefinition(
+        name="docs",
+        role="documentation",
+        description="Maintains architecture, operational and user-facing documentation alongside code changes.",
+        capabilities=["architecture-docs", "runbooks", "api-docs", "change-notes"],
+        default_tools=["rag.search", "project.read", "repo.index", "repo.read", "diff.read", "repo.write"],
+    ),
+    "reviewer": AgentDefinition(
+        name="reviewer",
+        role="quality",
+        description="Reviews changes for correctness, security and maintainability.",
+        capabilities=["code-review", "security-review", "performance-review"],
+        default_tools=["repo.read", "repo.index", "code.impact", "diff.read", "tests.read"],
+    ),
+    "qa": AgentDefinition(
+        name="qa",
+        role="verification",
+        description="Creates and executes verification against acceptance criteria.",
+        capabilities=["test-design", "regression", "acceptance"],
+        default_tools=["tests.run", "repo.read", "code.impact"],
+    ),
+    "devops": AgentDefinition(
+        name="devops",
+        role="delivery",
+        description="Prepares controlled build, release and deployment actions.",
+        capabilities=["docker", "ci", "deploy", "rollback"],
+        default_tools=["ci.read", "deploy.plan"],
+    ),
+}

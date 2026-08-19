@@ -18,6 +18,23 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4"
     realtime_model: str = "gpt-realtime-2.1"
 
+    # DevPilot task execution. "auto" routes explicit read-only work to local Ollama and
+    # keeps repository-writing implementation work on the controlled Codex executor.
+    task_executor: str = "auto"
+    local_readonly_enabled: bool = True
+    local_readonly_max_files: int = 40
+    local_readonly_max_file_chars: int = 8_000
+    local_readonly_max_context_chars: int = 40_000
+
+    # AgentOS model gateway. The API process stays light and talks to Ollama over HTTP.
+    ollama_base_url: str = "http://127.0.0.1:11434"
+    ollama_chat_enabled: bool = True
+    ollama_chat_model: str = "gemma3:1b"
+    ollama_embeddings_enabled: bool = True
+    ollama_embedding_model: str = "embeddinggemma"
+    embedding_fallback_enabled: bool = True
+    model_timeout_seconds: float = 60.0
+
     @property
     def git_hosts(self) -> set[str]:
         return {item.strip().lower() for item in self.allowed_git_hosts.split(",") if item.strip()}

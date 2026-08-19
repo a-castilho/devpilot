@@ -7,6 +7,7 @@
   <title>DevPilot — seu desenvolvedor</title>
   <link rel="manifest" href="/assets/manifest.webmanifest">
   <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/results.css">
 </head>
 <body>
   <div class="shell">
@@ -55,6 +56,7 @@
   <dialog id="task-modal"><form class="modal" id="task-form"><button class="close" type="button">×</button><span class="eyebrow">NOVA TAREFA</span><h2>O que vamos desenvolver?</h2><label>Projeto<select name="project_id" id="task-project" required></select></label><label>Título<input name="title" required></label><label>Instruções<textarea name="prompt" rows="8" placeholder="Descreva o resultado esperado, restrições e critérios de aceite..." required></textarea></label><div class="form-grid"><label>Prioridade<input name="priority" type="number" min="0" max="100" value="50"></label><label class="check"><input name="requires_approval" type="checkbox" checked> Exigir aprovação</label></div><button class="primary" type="submit">Registrar tarefa</button></form></dialog>
   <dialog id="provider-modal"><form class="modal" id="provider-form"><button class="close" type="button">×</button><span class="eyebrow">PROVEDOR DE IA</span><h2>Conectar modelo</h2><div class="form-grid"><label>Provedor<select name="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option><option value="custom">Custom</option></select></label><label>Nome da conexão<input name="label" value="Principal" required></label></div><label>API key<input name="api_key" type="password" required></label><label>Modelos, separados por vírgula<input name="models" value="gpt-5.4,gpt-realtime-2.1"></label><p class="hint">A chave é criptografada no servidor e nunca retorna pela API.</p><button class="primary" type="submit">Salvar conexão</button></form></dialog>
   <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
+  <dialog id="result-modal"><div class="modal result-modal"><button class="close" type="button">×</button><span class="eyebrow">RESULTADO DA EXECUÇÃO</span><h2 id="result-title">Resultado da tarefa</h2><p id="result-summary"></p><small id="result-meta" class="result-meta"></small><pre id="result-output" class="result-output"></pre></div></dialog>
 
   <script src="/assets/app.js" defer></script>
 </body>
