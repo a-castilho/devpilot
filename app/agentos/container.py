@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.agentos.application.app_connections import KnownAppConnectionService
 from app.agentos.application.execution import GraphExecutionService
 from app.agentos.application.platform import (
     AppHubService,
@@ -41,6 +42,7 @@ class AgentOSServices:
     memory: MemoryOSService
     tools: ToolHubService
     apps: AppHubService
+    app_connections: KnownAppConnectionService
     council: CouncilService
 
 
@@ -59,7 +61,8 @@ def build_agentos_services(db: Session) -> AgentOSServices:
     runner = CompositeCommandRunner(db, model)
     kernel = KernelService()
     tools = ToolHubService()
-    apps = AppHubService(SQLAlchemyAppCatalog(db))
+    app_catalog = SQLAlchemyAppCatalog(db)
+    apps = AppHubService(app_catalog)
 
     return AgentOSServices(
         goals=GoalService(planner=planner, goals=goals, events=events, uow=uow),
@@ -83,6 +86,12 @@ def build_agentos_services(db: Session) -> AgentOSServices:
         ),
         tools=tools,
         apps=apps,
+        app_connections=KnownAppConnectionService(
+            catalog=app_catalog,
+            knowledge=knowledge,
+            events=events,
+            uow=uow,
+        ),
         council=CouncilService(
             knowledge=knowledge,
             model=model,
