@@ -62,7 +62,10 @@ def test_repository_path_filter_excludes_common_secret_files():
 
 
 def test_git_ref_context_does_not_touch_worktree_and_skips_env(monkeypatch, tmp_path):
-    subprocess.run(["git", "init", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
+    # Keep this fixture compatible with Git 2.25 (Ubuntu 20.04), where `git init -b`
+    # is not available yet.
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "checkout", "-b", "main"], cwd=tmp_path, check=True, capture_output=True)
     subprocess.run(["git", "config", "user.email", "devpilot@example.test"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "DevPilot Tests"], cwd=tmp_path, check=True)
     (tmp_path / "README.md").write_text("# Safe project\n", encoding="utf-8")
