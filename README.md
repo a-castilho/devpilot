@@ -5,9 +5,9 @@ voz ou agentes. Ele organiza múltiplos projetos e tarefas, aplica instruções 
 controla configurações do Codex, executa trabalho em branches isoladas e registra cada
 decisão em uma trilha de auditoria encadeada por hash.
 
-A partir da versão 1.1, o DevPilot também contém o núcleo **AgentOS**: catálogo de agentes,
-planejamento em grafo, memória/RAG local, gateway para modelos generativos e embeddings via
-Ollama e uma interface MCP para que outros hosts de IA consumam essas capacidades.
+O núcleo **AgentOS** adiciona catálogo de agentes, planejamento em grafo, execução persistente,
+memória/RAG local, gateway para modelos generativos e embeddings via Ollama e uma interface
+MCP para que outros hosts de IA consumam essas capacidades.
 
 ## O que o MVP entrega
 
@@ -23,6 +23,9 @@ Ollama e uma interface MCP para que outros hosts de IA consumam essas capacidade
 - Docker Compose com aplicação, worker e PostgreSQL;
 - SQLite para desenvolvimento local sem infraestrutura adicional;
 - AgentOS com agentes especialistas e grafo de dependências;
+- executor real do grafo com Command, State Machine e Saga;
+- idempotência por execução, retries com backoff e checkpoints persistentes;
+- retomada explícita depois de falha/compensação;
 - RAG local com chunking, embeddings e similaridade cosseno;
 - gateway HTTP para LLM/embeddings sem carregar frameworks de ML no processo FastAPI;
 - servidor MCP v2 com ferramentas de catálogo, planejamento e busca de conhecimento.
@@ -35,21 +38,28 @@ PWA / API / voz / MCP
         ▼
 DevPilot FastAPI ── política ── auditoria hash-chain
         │
-        ├── AgentOS supervisor / planner / specialists
-        │        │
-        │        ├── goal graph
-        │        ├── RAG / embeddings ── SQLite
-        │        └── model gateway ── Ollama HTTP ── transformer model
+        ├── AgentOS
+        │    ├── planner / specialists
+        │    ├── graph executor + state machine
+        │    ├── checkpoints / retries / saga
+        │    ├── RAG / embeddings ── SQLite
+        │    └── model gateway ── Ollama HTTP ── transformer model
         │
         ├── PostgreSQL/SQLite
         └── vault criptografado
 
-worker ── projeto isolado ── Codex CLI ── Git branch/PR
+worker
+  ├── AgentOS graph tick
+  └── DevPilot task ── projeto isolado ── Codex CLI ── Git branch
 ```
 
 O plano do AgentOS é determinístico por padrão. Isso mantém o plano de controle disponível
-mesmo quando nenhum modelo está carregado. O LLM entra onde agrega valor — conversa,
-interpretação e síntese — sem ser requisito para o sistema iniciar.
+mesmo quando nenhum modelo está carregado. Durante a execução, etapas de análise usam o
+Language Model Port; etapas de implementação que precisam de `repo.write` são delegadas ao
+executor existente do DevPilot e ficam em branch isolada, sem push/merge/deploy automático.
+
+A arquitetura detalhada e as regras SOLID/Hexagonal/Clean estão em
+`docs/agentos-architecture.md`.
 
 ## Perfil para Linux com 4 GB de RAM
 
@@ -62,9 +72,9 @@ Para desenvolvimento local de baixo consumo, prefira:
 5. uma tarefa/agente executando por vez;
 6. Docker/PostgreSQL apenas quando estiver validando o ambiente de produção.
 
-Se o serviço de embeddings estiver indisponível, o AgentOS possui um embedding hashing de
-256 dimensões como fallback operacional. Ele mantém busca básica funcionando, mas não
-substitui um embedding semântico baseado em transformer.
+O executor avança uma única transição/comando do grafo por tick do worker. Isso reduz picos de
+RAM e torna cada etapa retomável. Se o serviço de embeddings estiver indisponível, o AgentOS
+possui um embedding hashing de 256 dimensões como fallback operacional.
 
 ## Executar localmente
 
@@ -76,7 +86,7 @@ pip install -e '.[test]'
 uvicorn app.main:app --reload --port 8080
 ```
 
-Em outro terminal, quando precisar executar tarefas de desenvolvimento:
+Em outro terminal, quando precisar executar o grafo e tarefas de desenvolvimento:
 
 ```bash
 source .venv/bin/activate
@@ -90,8 +100,12 @@ Abra `http://localhost:8080` e use o valor de `DEVPILOT_BOOTSTRAP_TOKEN` para en
 Todos os endpoints usam a mesma autenticação do DevPilot:
 
 - `GET /api/agentos/agents` — catálogo de agentes especialistas;
-- `POST /api/agentos/goals` — transforma um objetivo em grafo de execução;
-- `GET /api/agentos/goals/{id}` — recupera plano e estado do objetivo;
+- `POST /api/agentos/goals` — transforma um objetivo em grafo;
+- `GET /api/agentos/goals/{id}` — recupera o plano do objetivo;
+- `POST /api/agentos/goals/{id}/executions` — inicia execução idempotente do grafo;
+- `GET /api/agentos/executions/{id}` — retorna estado, tentativas, outputs e checkpoints;
+- `POST /api/agentos/executions/{id}/steps/{step}/approve` — libera um approval gate;
+- `POST /api/agentos/executions/{id}/resume` — retoma execução falha/compensada;
 - `POST /api/agentos/knowledge` — quebra conteúdo em chunks, gera embeddings e persiste;
 - `POST /api/agentos/rag/query` — busca semântica local;
 - `POST /api/agentos/chat` — RAG + modelo generativo via gateway local.
@@ -105,10 +119,38 @@ Exemplo de objetivo:
 }
 ```
 
+Depois de criar o objetivo, inicie sua execução:
+
+```json
+{
+  "idempotency_key": "regulaai-rag-v1",
+  "max_attempts": 3
+}
+```
+
+O `idempotency_key` evita criar duas execuções quando um cliente repete a mesma requisição.
+Se omitido, o AgentOS deriva uma chave determinística do workspace e do objetivo.
+
+## Como o executor funciona
+
+O fluxo padrão é:
+
+```text
+Planner -> Researcher? -> Architect -> Backend/Frontend -> Reviewer -> QA -> Delivery?
+```
+
+Cada passo persiste status, tentativa, comando, output, checkpoint e erro. Falhas transitórias
+entram em `retry_wait` com backoff exponencial limitado. Quando as tentativas terminam, a
+execução entra em compensação Saga. Compensação é conservadora: trabalho pendente pode ser
+bloqueado, mas branches já executadas são preservadas para revisão em vez de sofrer rollback
+destrutivo automático.
+
+Etapas de delivery continuam aguardando aprovação explícita. `resume` nunca ignora esse gate.
+
 ## MCP
 
-O servidor MCP expõe somente ferramentas de leitura/planejamento nesta primeira etapa. Push,
-merge e deploy continuam atrás das políticas e aprovações do DevPilot.
+O servidor MCP expõe somente ferramentas de leitura/planejamento nesta etapa. Push, merge e
+deploy continuam atrás das políticas e aprovações do DevPilot.
 
 ```bash
 python -m app.mcp_server
@@ -153,22 +195,23 @@ python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 ```
 
 Mantenha `DEVPILOT_EXECUTION_ENABLED=false` até o host do worker ter Codex CLI e Git
-configurados, credenciais de escopo mínimo e diretório isolado.
+configurados, credenciais de escopo mínimo e diretório isolado. Nesse modo, tarefas delegadas
+são registradas e executadas como dry-run; o grafo e seus checkpoints ainda podem ser testados.
 
 ## Fluxo de uma tarefa
 
 1. Cliente dita ou escreve o objetivo.
-2. DevPilot registra transcript/prompt e avalia risco.
-3. AgentOS decompõe o objetivo em um grafo de agentes e dependências.
-4. Ações sensíveis aguardam aprovação.
-5. O worker cria uma branch exclusiva e chama o executor configurado.
-6. Revisor e QA validam a saída antes de qualquer etapa de entrega.
-7. Testes, logs e resumo ficam associados à execução.
-8. Push/PR/deploy permanecem etapas separadas e explicitamente aprovadas.
+2. DevPilot registra o objetivo e o AgentOS gera o grafo.
+3. Uma execução persistente é criada com chave de idempotência.
+4. O worker executa agentes conforme dependências e checkpoints.
+5. Etapas de `repo.write` viram tarefas DevPilot em branches isoladas.
+6. Revisor e QA recebem os outputs anteriores como contexto.
+7. Falhas usam retry; falhas terminais acionam compensação.
+8. Delivery aguarda aprovação humana.
+9. Push/PR/deploy permanecem etapas separadas e explicitamente aprovadas.
 
 ## Próximas etapas do AgentOS
 
-- executor real do grafo com estados por etapa e retomada após falha;
 - memória em níveis global, projeto, objetivo e tarefa;
 - adaptadores adicionais de provedores de LLM/embeddings;
 - ingestão automática dos repositórios RegulaAI, Máquina de Leads e TelaViva;
@@ -176,6 +219,7 @@ configurados, credenciais de escopo mínimo e diretório isolado.
 - cliente MCP para consumir ferramentas externas;
 - eventos ao vivo por SSE/WebSocket;
 - limites de RAM, CPU, tokens e custo por agente;
+- scheduler com fairness para múltiplas execuções;
 - avaliação automática de qualidade de respostas RAG e execuções.
 
 ## Próximas etapas para produção
@@ -193,5 +237,6 @@ configurados, credenciais de escopo mínimo e diretório isolado.
 
 Nunca envie chaves ao frontend após o cadastro. Em produção, use um KMS/secret manager,
 tokens curtos para GitHub Apps, runners sem privilégios e aprovação explícita para push,
-merge, deploy, dependências e operações destrutivas. O AgentOS mantém o MCP inicial em modo
-read/plan justamente para que a expansão de ferramentas ocorra com políticas explícitas.
+merge, deploy, dependências e operações destrutivas. Tarefas de implementação delegadas pelo
+AgentOS recebem instruções explícitas para não alterar dependências, credenciais, migrations
+destrutivas, configuração de deploy ou recursos de produção sem aprovação.
