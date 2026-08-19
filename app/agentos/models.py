@@ -77,6 +77,23 @@ class AgentStepExecution(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
 
 
+class AgentAppConnection(Base):
+    __tablename__ = "agent_app_connections"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "profile_key"),
+        UniqueConstraint("workspace_id", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    profile_key: Mapped[str] = mapped_column(String(100), index=True)
+    profile_version: Mapped[int] = mapped_column(Integer, default=1)
+    memory_version: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+
+
 class KnowledgeChunk(Base):
     __tablename__ = "knowledge_chunks"
 
