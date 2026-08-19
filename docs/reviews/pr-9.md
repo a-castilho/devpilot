@@ -4,11 +4,11 @@
 
 ## Metadados
 
-- **Estado:** Aberta
+- **Estado:** Merged
 - **Autor:** @acastilho
 - **Base:** `main`
 - **Head:** `fix/telemetry-duration-buttons`
-- **Atualizada em:** 2026-08-19T23:10:07Z
+- **Atualizada em:** 2026-08-19T23:11:08Z
 - **Fonte:** https://github.com/a-castilho/devpilot/pull/9
 
 ## Sinais automáticos de revisão
