@@ -88,6 +88,9 @@ class MemoryRecall(BaseModel):
 class KnownAppsConnect(BaseModel):
     keys: list[str] = Field(default_factory=list, max_length=10)
     seed_memory: bool = True
+    index_repositories: bool = False
+    refresh_repositories: bool = False
+    activate_recommended_extensions: bool = True
 
 
 class CouncilRequest(BaseModel):
