@@ -1,0 +1,28 @@
+#provider-models {
+  min-height: 12rem;
+}
+
+.model-catalog-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  margin: .35rem 0 .15rem;
+}
+
+.model-catalog-status {
+  color: var(--muted, #8fa3bd);
+  line-height: 1.4;
+}
+
+#provider-refresh-models:disabled {
+  cursor: wait;
+  opacity: .55;
+}
+
+@media (max-width: 640px) {
+  .model-catalog-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
