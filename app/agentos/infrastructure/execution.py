@@ -298,7 +298,10 @@ class CompositeCommandRunner:
             prompt=(
                 f"Agent role: {command.agent}\n\n{command.objective}\n\n"
                 "This task was delegated by AgentOS. Implement only this graph step. "
-                "Do not push, merge or deploy. Keep changes on the isolated DevPilot branch.\n\n"
+                "Do not push, merge or deploy. Keep changes on the isolated DevPilot branch. "
+                "Do not change dependencies, credentials, destructive migrations, deployment "
+                "configuration or production resources; report those as proposals that require "
+                "explicit approval.\n\n"
                 f"Dependency context: {json.dumps(command.context, ensure_ascii=False, default=str)[:30000]}"
             ),
             source="agentos",
