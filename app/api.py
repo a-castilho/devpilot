@@ -9,11 +9,23 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import AuditEvent, Project, ProviderCredential, Run, Task, TaskStatus, Workspace
-from app.schemas import ProjectCreate, ProjectUpdate, ProviderCreate, TaskCreate, VoiceCommand
+from app.schemas import (
+    ProjectCreate,
+    ProjectUpdate,
+    ProviderCreate,
+    ProviderModelDiscovery,
+    TaskCreate,
+    VoiceCommand,
+)
 from app.security import require_access
 from app.services.audit import record
 from app.services.intent import interpret_voice
 from app.services.policy import evaluate_task, validate_repository_url
+from app.services.provider_models import (
+    SUPPORTED_MODEL_PROVIDERS,
+    ProviderModelDiscoveryError,
+    discover_provider_models,
+)
 from app.services.vault import Vault
 
 
@@ -36,6 +48,20 @@ def project_or_404(db: Session, workspace_id: str, project_id: str) -> Project:
     if not item:
         raise HTTPException(404, "Project not found")
     return item
+
+
+def _stored_models(item: ProviderCredential) -> list[str]:
+    try:
+        values = json.loads(item.models or "[]")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(values, list):
+        return []
+    return [str(value) for value in values if str(value).strip()]
+
+
+def _model_payload(models) -> list[dict[str, str]]:
+    return [model.to_dict() for model in models]
 
 
 @router.get("/overview")
@@ -215,18 +241,142 @@ def voice_command(payload: VoiceCommand, db: Session = Depends(get_db)):
 def list_providers(db: Session = Depends(get_db)):
     ws = workspace(db)
     items = db.scalars(select(ProviderCredential).where(ProviderCredential.workspace_id == ws.id)).all()
-    return [{"id": item.id, "provider": item.provider, "label": item.label, "models": json.loads(item.models), "enabled": item.enabled, "created_at": item.created_at} for item in items]
+    return [{"id": item.id, "provider": item.provider, "label": item.label, "models": _stored_models(item), "enabled": item.enabled, "created_at": item.created_at} for item in items]
+
+
+@router.get("/providers/model-catalog")
+def provider_model_catalog(refresh: bool = True, db: Session = Depends(get_db)):
+    """Return the current provider catalog, refreshing saved connections when requested.
+
+    The modal calls this endpoint every time the user clicks "Conectar IA". Live refresh uses only
+    encrypted credentials already stored in the workspace. A first-time connection can use the
+    discovery endpoint below after the user types its API key.
+    """
+
+    ws = workspace(db)
+    credentials = db.scalars(
+        select(ProviderCredential)
+        .where(ProviderCredential.workspace_id == ws.id, ProviderCredential.enabled.is_(True))
+        .order_by(ProviderCredential.created_at.desc())
+    ).all()
+    latest_by_provider: dict[str, ProviderCredential] = {}
+    for credential in credentials:
+        latest_by_provider.setdefault(credential.provider, credential)
+
+    catalog: dict[str, dict] = {}
+    changed = False
+    for provider in sorted(SUPPORTED_MODEL_PROVIDERS):
+        credential = latest_by_provider.get(provider)
+        stored = _stored_models(credential) if credential else []
+        entry = {
+            "provider": provider,
+            "source": "stored" if stored else "credentials_required",
+            "models": [{"id": model_id, "label": model_id} for model_id in stored],
+            "connection_id": credential.id if credential else None,
+            "warning": "",
+        }
+        if refresh and credential:
+            try:
+                models = discover_provider_models(provider, Vault().decrypt(credential.encrypted_secret))
+            except (ProviderModelDiscoveryError, ValueError) as error:
+                entry["warning"] = str(error)
+            else:
+                model_ids = [model.id for model in models]
+                credential.models = json.dumps(model_ids)
+                entry.update(source="live", models=_model_payload(models), warning="")
+                record(
+                    db,
+                    workspace_id=ws.id,
+                    actor="owner",
+                    action="provider.models_refreshed",
+                    details={"provider": provider, "connection_id": credential.id, "count": len(models)},
+                )
+                changed = True
+        catalog[provider] = entry
+
+    catalog["custom"] = {
+        "provider": "custom",
+        "source": "manual",
+        "models": [],
+        "connection_id": None,
+        "warning": "Provedores customizados usam catálogo manual.",
+    }
+    if changed:
+        db.commit()
+    return {"refreshed_at": datetime.now(timezone.utc), "providers": catalog}
+
+
+@router.post("/providers/discover-models")
+def discover_models(payload: ProviderModelDiscovery, db: Session = Depends(get_db)):
+    ws = workspace(db)
+    try:
+        models = discover_provider_models(payload.provider, payload.api_key)
+    except ProviderModelDiscoveryError as error:
+        record(
+            db,
+            workspace_id=ws.id,
+            actor="owner",
+            action="provider.models_discovery",
+            outcome="failed",
+            details={"provider": payload.provider},
+        )
+        db.commit()
+        raise HTTPException(422, str(error)) from error
+    record(
+        db,
+        workspace_id=ws.id,
+        actor="owner",
+        action="provider.models_discovery",
+        details={"provider": payload.provider, "count": len(models)},
+    )
+    db.commit()
+    return {
+        "provider": payload.provider,
+        "source": "live",
+        "models": _model_payload(models),
+        "refreshed_at": datetime.now(timezone.utc),
+    }
 
 
 @router.post("/providers", status_code=201)
 def create_provider(payload: ProviderCreate, db: Session = Depends(get_db)):
     ws = workspace(db)
-    item = ProviderCredential(workspace_id=ws.id, provider=payload.provider, label=payload.label, encrypted_secret=Vault().encrypt(payload.api_key), models=json.dumps(payload.models))
+    models = [model.strip() for model in payload.models if model.strip()]
+
+    if payload.provider in SUPPORTED_MODEL_PROVIDERS:
+        try:
+            discovered = discover_provider_models(payload.provider, payload.api_key)
+        except ProviderModelDiscoveryError as error:
+            raise HTTPException(422, str(error)) from error
+        available = {model.id for model in discovered}
+        if models:
+            unavailable = sorted(set(models) - available)
+            if unavailable:
+                raise HTTPException(
+                    422,
+                    f"Modelos não disponíveis para esta chave: {', '.join(unavailable[:5])}",
+                )
+        else:
+            models = [model.id for model in discovered]
+
+    item = ProviderCredential(
+        workspace_id=ws.id,
+        provider=payload.provider,
+        label=payload.label,
+        encrypted_secret=Vault().encrypt(payload.api_key),
+        models=json.dumps(models),
+    )
     db.add(item)
     db.flush()
-    record(db, workspace_id=ws.id, actor="owner", action="provider.created", details={"provider": item.provider, "label": item.label})
+    record(
+        db,
+        workspace_id=ws.id,
+        actor="owner",
+        action="provider.created",
+        details={"provider": item.provider, "label": item.label, "model_count": len(models)},
+    )
     db.commit()
-    return {"id": item.id, "provider": item.provider, "label": item.label, "models": payload.models, "enabled": True}
+    return {"id": item.id, "provider": item.provider, "label": item.label, "models": models, "enabled": True}
 
 
 @router.get("/audit")
