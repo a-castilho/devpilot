@@ -89,6 +89,16 @@ class CommandResult:
     external_task_id: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class AppRecord:
+    id: str
+    name: str
+    slug: str
+    description: str
+    repository_url: str
+    status: str
+
+
 class PlannerPort(Protocol):
     def plan(self, objective: str, *, mode: str = "resource-light") -> AgentPlan: ...
 
@@ -164,6 +174,16 @@ class CommandRunnerPort(Protocol):
     def compensate(self, command: AgentCommand, step: StepExecutionRecord) -> dict[str, Any]: ...
 
 
+class ToolPolicyPort(Protocol):
+    def assert_allowed(
+        self,
+        *,
+        agent: str,
+        tools: list[str],
+        approval_granted: bool,
+    ) -> None: ...
+
+
 class KnowledgePort(Protocol):
     def ingest(
         self,
@@ -185,6 +205,10 @@ class KnowledgePort(Protocol):
         query: str,
         top_k: int,
     ) -> list[dict[str, Any]]: ...
+
+
+class AppCatalogPort(Protocol):
+    def list_apps(self, *, workspace_id: str) -> list[AppRecord]: ...
 
 
 class LanguageModelPort(Protocol):
