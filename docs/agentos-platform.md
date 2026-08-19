@@ -54,19 +54,54 @@ AppHub exposes DevPilot projects as AgentOS applications through an application 
 SQLAlchemy adapter returns project identity, description, repository URL and status without
 exposing provider credentials, Git credentials or environment secrets.
 
-This gives RegulaAI, Máquina de Leads, TelaViva and future projects a common platform contract
-once they are registered as DevPilot projects.
+AgentOS also has curated, versioned connection profiles for the first three product apps:
+
+- **RegulaAI** — regulatory intelligence, idempotent collectors, regulatory precision and
+  PostgreSQL history/guardrails;
+- **Máquina de Leads** — campaign-first prospecting, native backend orchestration and gradual
+  removal of n8n from the critical path;
+- **TelaViva** — live learning/creator commerce with authorization, WebSocket, payment and
+  recording lifecycle constraints.
+
+`POST /api/agentos/apps/connect-known` creates missing DevPilot projects for those repositories
+without overwriting an existing project bound to another repository. Every connection is stored
+in `agent_app_connections` with separate profile and MemoryOS versions.
+
+On the first connection (or when a future memory profile version increases), AgentOS seeds the
+project-scoped MemoryOS namespace with the product context, stack, guardrails and recommended
+specialist agents. Repeating the same request is idempotent: it neither creates duplicate
+projects nor re-seeds an already-current memory profile.
+
+Known app registration never writes `AGENTS.md` into a repository. Existing repository-specific
+instructions remain authoritative when the isolated DevPilot worker clones and executes the
+project. This is especially important for Máquina de Leads, whose repository already contains
+its own `AGENTS.md` migration and safety rules.
 
 ## 6. Interfaces
 
-FastAPI and MCP remain driving adapters. The current HTTP surface adds:
+FastAPI and MCP remain driving adapters. The current HTTP surface includes:
 
 - `GET /api/agentos/platform` — kernel/layer/resource profile;
 - `GET /api/agentos/tools` — ToolHub registry, optionally filtered by agent;
 - `GET /api/agentos/apps` — AppHub project applications;
+- `GET /api/agentos/apps/profiles` — curated product connection profiles;
+- `GET /api/agentos/apps/connections` — persisted AppHub/MemoryOS connection state;
+- `POST /api/agentos/apps/connect-known` — idempotently connect RegulaAI, Máquina de Leads and
+  TelaViva (all or selected profiles);
 - `POST /api/agentos/memory` — write scoped MemoryOS content;
 - `POST /api/agentos/memory/recall` — hierarchical recall;
 - `POST /api/agentos/council` — sequential advisory council deliberation.
+
+Example connection request:
+
+```json
+{
+  "keys": ["regulaai", "maquinadeleads", "telaviva"],
+  "seed_memory": true
+}
+```
+
+An empty `keys` array means all curated profiles.
 
 ## Council of Agents
 
