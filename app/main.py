@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
 from app.api import router
+from app.reports import router as reports_router
 from app.db import Base, engine
 from app.services.schema import ensure_runtime_schema
 
@@ -23,6 +24,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="DevPilot API", version="1.0.0", lifespan=lifespan)
 app.include_router(router)
+app.include_router(reports_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
