@@ -41,3 +41,8 @@ class ProviderCreate(BaseModel):
     label: str = Field(min_length=2, max_length=100)
     api_key: str = Field(min_length=8, max_length=10_000)
     models: list[str] = Field(default_factory=list)
+
+
+class ProviderModelDiscovery(BaseModel):
+    provider: str = Field(pattern=r"^(openai|anthropic|google)$")
+    api_key: str = Field(min_length=8, max_length=10_000)
