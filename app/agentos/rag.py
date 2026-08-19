@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agentos.embeddings import EmbeddingClient
-from app.models import KnowledgeChunk
+from app.agentos.models import KnowledgeChunk
 
 
 def chunk_text(text: str, max_chars: int = 1200, overlap: int = 150) -> list[str]:
