@@ -25,6 +25,12 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Put SQLAlchemy, Ollama, audit and external-tool integrations in infrastructure adapters.
 - Wire concrete dependencies only in `app/agentos/container.py`; routes and MCP handlers consume use cases.
 - Prefer Strategy/Factory for replaceable planning/model behavior and Repository/Unit of Work for persistence boundaries.
+- Represent executable graph work as Commands and keep lifecycle rules in the explicit execution State Machine.
+- Persist execution/step checkpoints before advancing dependent work; never rely on in-memory state for recovery.
+- Keep execution starts idempotent and bounded by retry limits with backoff.
+- Use Saga compensation conservatively: block pending side effects when possible, but do not destructively revert completed isolated work automatically.
+- Never bypass approval gates during retry, resume, compensation, or delegated execution.
+- Repository-writing AgentOS steps must delegate to the existing isolated DevPilot task executor instead of adding a second Git execution path.
 - Publish cross-cutting side effects as domain events when practical; keep the local profile in-process until a broker is justified.
 - Preserve the modular-monolith deployment for the 4 GB development profile; extract services only when independent scaling is measurable.
 
