@@ -6,6 +6,7 @@ import httpx
 
 
 SUPPORTED_MODEL_PROVIDERS = {"openai", "anthropic", "google"}
+REFERENCE_CATALOG_DATE = "2026-08-19"
 
 
 class ProviderModelDiscoveryError(RuntimeError):
@@ -23,6 +24,54 @@ class ProviderModel:
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
+
+
+# Public reference catalogs keep the UI useful before a credential exists. They are intentionally
+# conservative: only broadly documented, generative models are listed. The provider Models API is
+# still the source of truth for the models actually available to a specific credential/account.
+REFERENCE_MODEL_CATALOG: dict[str, tuple[ProviderModel, ...]] = {
+    "openai": (
+        ProviderModel("gpt-5.6-sol", "GPT-5.6 Sol"),
+        ProviderModel("gpt-5.6-terra", "GPT-5.6 Terra"),
+        ProviderModel("gpt-5.6-luna", "GPT-5.6 Luna"),
+        ProviderModel("gpt-5.5", "GPT-5.5"),
+        ProviderModel("gpt-5.5-pro", "GPT-5.5 Pro"),
+        ProviderModel("gpt-5.4", "GPT-5.4"),
+        ProviderModel("gpt-5.4-pro", "GPT-5.4 Pro"),
+        ProviderModel("gpt-5.4-mini", "GPT-5.4 Mini"),
+        ProviderModel("gpt-5.4-nano", "GPT-5.4 Nano"),
+        ProviderModel("gpt-realtime-2.1", "GPT Realtime 2.1"),
+    ),
+    "anthropic": (
+        ProviderModel("claude-fable-5", "Claude Fable 5"),
+        ProviderModel("claude-opus-5", "Claude Opus 5"),
+        ProviderModel("claude-sonnet-5", "Claude Sonnet 5"),
+        ProviderModel("claude-haiku-4-5-20251001", "Claude Haiku 4.5"),
+    ),
+    "google": (
+        ProviderModel("gemini-3.6-flash", "Gemini 3.6 Flash"),
+        ProviderModel("gemini-3.5-flash", "Gemini 3.5 Flash"),
+        ProviderModel("gemini-3.5-flash-lite", "Gemini 3.5 Flash-Lite"),
+        ProviderModel("gemini-3.1-flash-lite", "Gemini 3.1 Flash-Lite"),
+        ProviderModel("gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview"),
+        ProviderModel("gemini-3-flash-preview", "Gemini 3 Flash Preview"),
+        ProviderModel("gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ProviderModel("gemini-2.5-flash", "Gemini 2.5 Flash"),
+        ProviderModel("gemini-2.5-flash-lite", "Gemini 2.5 Flash-Lite"),
+        ProviderModel("gemini-3.1-flash-live-preview", "Gemini 3.1 Flash Live Preview"),
+    ),
+}
+
+
+def reference_provider_models(provider: str) -> list[ProviderModel]:
+    """Return the built-in public reference catalog for a provider.
+
+    This catalog is UI bootstrap data, not an authorization/availability guarantee. Call
+    ``discover_provider_models`` with the user's credential to validate the account-specific live
+    catalog before saving a managed provider connection.
+    """
+
+    return list(REFERENCE_MODEL_CATALOG.get(provider.strip().lower(), ()))
 
 
 def _dedupe(models: list[ProviderModel]) -> list[ProviderModel]:
