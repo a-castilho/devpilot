@@ -1,0 +1,49 @@
+name: Implementação ou mudança
+description: Registrar correção, melhoria ou nova funcionalidade com critérios verificáveis
+title: "[Implementação] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Contexto / problema
+      description: O que acontece hoje e por que precisa mudar?
+    validations:
+      required: true
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objetivo
+      description: Qual resultado esta issue deve produzir?
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Estado atual / o que está na tela
+      description: Descreva a tela, rota, fluxo, API ou comportamento atual. Anexe imagem quando útil.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Resultado esperado / o que deve aparecer
+      description: Descreva de forma observável como o produto deve se comportar após a mudança.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Critérios de aceite
+      description: Liste verificações objetivas.
+      placeholder: "- [ ] Critério 1\n- [ ] Critério 2"
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Escopo, riscos e dependências
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidências atuais
+      description: Screenshots, logs, respostas de API ou outros elementos para comparação posterior.

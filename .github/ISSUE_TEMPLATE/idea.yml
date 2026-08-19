@@ -1,0 +1,35 @@
+name: Nova ideia
+description: Documentar uma hipótese de produto ou melhoria antes da implementação
+title: "[Ideia] "
+body:
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto / oportunidade
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Ideia proposta
+      description: Explique a proposta sem assumir que ela já foi aprovada.
+    validations:
+      required: true
+  - type: textarea
+    id: value
+    attributes:
+      label: Valor esperado
+    validations:
+      required: true
+  - type: textarea
+    id: experience
+    attributes:
+      label: Experiência / tela imaginada
+  - type: textarea
+    id: validation
+    attributes:
+      label: Como validar a ideia
+  - type: textarea
+    id: risks
+    attributes:
+      label: Riscos, dúvidas e alternativas
