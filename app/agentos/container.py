@@ -69,7 +69,8 @@ def build_agentos_services(db: Session) -> AgentOSServices:
     model = OllamaLanguageModelAdapter()
     runner = CompositeCommandRunner(db, model)
     kernel = KernelService()
-    tools = ToolHubService()
+    extension_activations = SQLAlchemyExtensionActivations(db)
+    tools = ToolHubService(extension_activations)
     app_catalog = SQLAlchemyAppCatalog(db)
     apps = AppHubService(app_catalog)
     snapshots = LocalRepositorySnapshotAdapter(
@@ -115,7 +116,7 @@ def build_agentos_services(db: Session) -> AgentOSServices:
             uow=uow,
         ),
         marketplace=ExtensionMarketplaceService(
-            activations=SQLAlchemyExtensionActivations(db),
+            activations=extension_activations,
             events=events,
             uow=uow,
         ),
