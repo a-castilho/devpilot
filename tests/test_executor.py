@@ -106,7 +106,7 @@ def test_git_ref_context_does_not_touch_worktree_and_skips_env(monkeypatch, tmp_
     assert before == after
 
 
-def test_read_only_task_routes_to_ollama_without_writing_agents(monkeypatch, tmp_path):
+def test_read_only_task_routes_to_agentos_without_writing_agents(monkeypatch, tmp_path):
     item = project(agents_md="# policy")
     work = task("Leia o projeto em modo somente leitura. Não altere nenhum arquivo.")
     monkeypatch.setattr(executor, "get_settings", lambda: settings())
@@ -115,12 +115,12 @@ def test_read_only_task_routes_to_ollama_without_writing_agents(monkeypatch, tmp
 
     def local(project_arg, task_arg, *, path):
         called.update(project=project_arg, task=task_arg, path=path)
-        return {"mode": "execute", "executor": "ollama-read-only", "exit_code": 0}
+        return {"mode": "execute", "executor": "agentos-read-only", "exit_code": 0}
 
-    monkeypatch.setattr(executor, "execute_read_only_ollama", local)
+    monkeypatch.setattr(executor, "execute_read_only_agentos", local)
     result = executor.execute_task(item, work)
 
-    assert result["executor"] == "ollama-read-only"
+    assert result["executor"] == "agentos-read-only"
     assert called["path"] == tmp_path
     assert not (tmp_path / "AGENTS.md").exists()
 

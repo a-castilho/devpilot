@@ -7,7 +7,7 @@ from pathlib import Path
 
 from app.config import get_settings
 from app.models import Project, Task
-from app.services.local_executor import execute_read_only_ollama, is_read_only_task
+from app.services.local_executor import execute_read_only_agentos, execute_read_only_ollama, is_read_only_task
 
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
@@ -108,7 +108,12 @@ def execute_task(project: Project, task: Task) -> dict:
 
     read_only = is_read_only_task(task)
     if not settings.execution_enabled:
-        planned = "ollama-read-only" if read_only and configured_executor != "codex" else "codex"
+        if read_only and configured_executor == "auto":
+            planned = "agentos-read-only"
+        elif read_only and configured_executor == "ollama":
+            planned = "ollama-read-only"
+        else:
+            planned = "codex"
         return {
             "mode": "dry-run",
             "executor": planned,
@@ -120,10 +125,12 @@ def execute_task(project: Project, task: Task) -> dict:
     path = ensure_repository(project)
 
     # True read-only work never checks out a task branch and never writes the configured AGENTS.md.
-    # Repository context is read directly from origin/<default_branch> and sent to local Ollama.
+    # auto uses the configured AgentOS model gateway; explicit ollama preserves local-only behavior.
     if read_only and configured_executor in {"auto", "ollama"}:
         if not settings.local_readonly_enabled:
             raise RuntimeError("Local read-only execution is disabled")
+        if configured_executor == "auto":
+            return execute_read_only_agentos(project, task, path=path)
         return execute_read_only_ollama(project, task, path=path)
 
     if configured_executor == "ollama":

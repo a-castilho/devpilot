@@ -6,6 +6,9 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from app.agentos.application.errors import ModelUnavailable
+from sqlalchemy.orm import object_session
+
+from app.agentos.infrastructure.adapters import ConfiguredLanguageModelAdapter
 from app.agentos.llm import LLMClient
 from app.config import get_settings
 from app.models import Project, Task
@@ -212,8 +215,15 @@ def collect_repository_context(path: Path, *, ref: str) -> RepositoryContext:
     return RepositoryContext(text="\n".join(blocks), files=files, chars=total_chars, ref=ref)
 
 
-def execute_read_only_ollama(project: Project, task: Task, *, path: Path) -> dict:
-    """Analyze committed repository content with Ollama while preserving worktree state exactly."""
+def execute_read_only_ollama(
+    project: Project,
+    task: Task,
+    *,
+    path: Path,
+    model_client=None,
+    executor_name: str = "ollama-read-only",
+) -> dict:
+    """Analyze committed repository content while preserving worktree state exactly."""
 
     settings = get_settings()
     ref = f"origin/{project.default_branch}"
@@ -232,7 +242,7 @@ def execute_read_only_ollama(project: Project, task: Task, *, path: Path) -> dic
         system += f"\n\nAdditional authoritative project policy:\n{project_policy[:20_000]}"
 
     try:
-        response = LLMClient().chat(
+        response = (model_client or LLMClient()).chat(
             [
                 {"role": "system", "content": system},
                 {
@@ -248,8 +258,8 @@ def execute_read_only_ollama(project: Project, task: Task, *, path: Path) -> dic
         )
     except ModelUnavailable as error:
         raise RuntimeError(
-            "Local read-only execution requires Ollama with the configured chat model available. "
-            f"Check DEVPILOT_OLLAMA_BASE_URL/DEVPILOT_OLLAMA_CHAT_MODEL. Detail: {error}"
+            "Read-only model execution failed. "
+            f"Check the configured AgentOS/Ollama model provider. Detail: {error}"
         ) from error
 
     after = _repository_status(path)
@@ -259,11 +269,11 @@ def execute_read_only_ollama(project: Project, task: Task, *, path: Path) -> dic
     content = str(response.get("content", "")).strip()
     return {
         "mode": "execute",
-        "executor": "ollama-read-only",
+        "executor": executor_name,
         "provider": response.get("provider", "ollama"),
         "model": response.get("model", settings.ollama_chat_model),
         "exit_code": 0,
-        "summary": "Read-only repository analysis completed locally with Ollama.",
+        "summary": "Read-only repository analysis completed through the configured model gateway.",
         "stdout": content[-100_000:],
         "stderr": "",
         "branch": "",
@@ -272,3 +282,19 @@ def execute_read_only_ollama(project: Project, task: Task, *, path: Path) -> dic
         "files_considered": context.files,
         "context_chars": context.chars,
     }
+
+
+def execute_read_only_agentos(project: Project, task: Task, *, path: Path) -> dict:
+    """Run the same immutable repository analysis through the configured AgentOS model gateway."""
+
+    db = object_session(task) or object_session(project)
+    if db is None:
+        raise RuntimeError("AgentOS read-only execution requires an active database session")
+
+    return execute_read_only_ollama(
+        project,
+        task,
+        path=path,
+        model_client=ConfiguredLanguageModelAdapter(db),
+        executor_name="agentos-read-only",
+    )
