@@ -110,9 +110,18 @@ class RuntimeService:
 
 
 class MemoryOSService:
-    def __init__(self, *, knowledge: KnowledgePort, kernel: KernelService) -> None:
+    def __init__(
+        self,
+        *,
+        knowledge: KnowledgePort,
+        kernel: KernelService,
+        events: EventBusPort,
+        uow: UnitOfWorkPort,
+    ) -> None:
         self.knowledge = knowledge
         self.kernel = kernel
+        self.events = events
+        self.uow = uow
 
     def ingest(
         self,
@@ -134,14 +143,37 @@ class MemoryOSService:
         )
         enriched = dict(metadata)
         enriched.update({"memory_scope": scope, "goal_id": goal_id, "task_id": task_id})
-        return self.knowledge.ingest(
-            workspace_id=workspace_id,
-            project_id=project_id,
-            namespace=namespace,
-            source=source,
-            content=content,
-            metadata=enriched,
-        )
+        try:
+            result = self.knowledge.ingest(
+                workspace_id=workspace_id,
+                project_id=project_id,
+                namespace=namespace,
+                source=source,
+                content=content,
+                metadata=enriched,
+            )
+            self.events.publish(
+                DomainEvent(
+                    name="agentos.memory.ingested",
+                    workspace_id=workspace_id,
+                    project_id=project_id,
+                    task_id=task_id,
+                    payload={
+                        "scope": scope,
+                        "goal_id": goal_id,
+                        "namespace": namespace,
+                        "source": source,
+                        "chunks": result.chunks,
+                        "providers": result.providers,
+                        "models": result.models,
+                    },
+                )
+            )
+            self.uow.commit()
+            return result
+        except Exception:
+            self.uow.rollback()
+            raise
 
     def recall(
         self,
