@@ -75,7 +75,12 @@ def build_agentos_services(db: Session) -> AgentOSServices:
         ),
         kernel=kernel,
         runtime=RuntimeService(executions=executions, kernel=kernel),
-        memory=MemoryOSService(knowledge=knowledge, kernel=kernel),
+        memory=MemoryOSService(
+            knowledge=knowledge,
+            kernel=kernel,
+            events=events,
+            uow=uow,
+        ),
         tools=tools,
         apps=apps,
         council=CouncilService(
