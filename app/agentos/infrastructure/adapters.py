@@ -8,11 +8,12 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agentos.application.errors import ModelUnavailable as ApplicationModelUnavailable
 from app.agentos.application.planning import PlanningStrategyFactory
 from app.agentos.application.ports import GoalRecord, KnowledgeIngestResult
 from app.agentos.contracts import AgentPlan
 from app.agentos.domain.events import DomainEvent
-from app.agentos.llm import LLMClient
+from app.agentos.llm import LLMClient, ModelUnavailable as ProviderModelUnavailable
 from app.agentos.models import AgentGoal
 from app.agentos.rag import ingest as rag_ingest
 from app.agentos.rag import search as rag_search
@@ -131,7 +132,10 @@ class OllamaLanguageModelAdapter:
         self.client = client or LLMClient()
 
     def chat(self, messages: list[dict[str, str]]) -> dict[str, Any]:
-        return self.client.chat(messages)
+        try:
+            return self.client.chat(messages)
+        except ProviderModelUnavailable as error:
+            raise ApplicationModelUnavailable(str(error)) from error
 
 
 class SQLAlchemyUnitOfWork:
