@@ -7,6 +7,7 @@
   <title>DevPilot — seu desenvolvedor</title>
   <link rel="manifest" href="/assets/manifest.webmanifest">
   <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/reports.css">
 </head>
 <body>
   <div class="shell">
@@ -18,6 +19,7 @@
         <button class="nav" data-view="projects">Projetos</button>
         <button class="nav" data-view="tasks">Desenvolvimento</button>
         <button class="nav" data-view="providers">Modelos de IA</button>
+        <button class="nav" data-view="reports">Relatórios</button>
         <button class="nav" data-view="audit">Auditoria</button>
       </nav>
       <div class="system-card"><span class="dot"></span><div><strong>Sistema operacional</strong><small>Worker conectado</small></div></div>
@@ -45,6 +47,14 @@
       <section class="view" id="projects-view"><div class="section-head"><div><p>Cadastre repositório, instruções do agente e perfil do Codex.</p></div><button class="primary" data-open="project-modal">+ Novo projeto</button></div><div class="cards" id="projects-list"></div></section>
       <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
+      <section class="view" id="reports-view">
+        <div class="reports-shell">
+          <div class="reports-hero"><div><span class="eyebrow">HOMOLOGAÇÃO · DOCUMENTAÇÃO VIVA</span><h2>Leia o projeto como um relatório.</h2><p>Issues, revisões, ideias e governança em uma visão simples para comparar intenção, implementação e resultado.</p></div><div class="reports-actions"><button class="primary" id="report-copy">Copiar para conversa</button><button class="ghost" id="report-new-idea">+ Nova ideia</button></div></div>
+          <div class="reports-note"><b>✓</b><span id="report-privacy">Somente documentação sanitizada é exibida.</span></div>
+          <div class="reports-toolbar"><input id="report-search" placeholder="Buscar em relatórios, issues e ideias..."><select id="report-category"><option>Todos</option></select></div>
+          <div class="reports-grid"><aside class="report-list" id="report-list"><div class="empty">Carregando documentação...</div></aside><article class="report-reader" id="report-reader"><div class="empty">Selecione um documento.</div></article></div>
+        </div>
+      </section>
       <section class="view" id="audit-view"><div class="section-head"><p>Histórico imutável de comandos, aprovações, configurações e execuções.</p></div><div class="panel timeline" id="audit-list"></div></section>
     </main>
   </div>
@@ -60,5 +70,6 @@
   <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
 
   <script src="/assets/app.js" defer></script>
+  <script src="/assets/reports.js" defer></script>
 </body>
 </html>
