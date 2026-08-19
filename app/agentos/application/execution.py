@@ -13,6 +13,7 @@ from app.agentos.application.ports import (
     ExecutionRepositoryPort,
     GoalRepositoryPort,
     StepExecutionRecord,
+    ToolPolicyPort,
     UnitOfWorkPort,
 )
 from app.agentos.domain.events import DomainEvent
@@ -64,12 +65,14 @@ def restore_command(step: StepExecutionRecord) -> AgentCommand:
 
 class GraphExecutionService:
     def __init__(self, *, goals: GoalRepositoryPort, executions: ExecutionRepositoryPort,
-                 runner: CommandRunnerPort, events: EventBusPort, uow: UnitOfWorkPort) -> None:
+                 runner: CommandRunnerPort, events: EventBusPort, uow: UnitOfWorkPort,
+                 tool_policy: ToolPolicyPort | None = None) -> None:
         self.goals = goals
         self.executions = executions
         self.runner = runner
         self.events = events
         self.uow = uow
+        self.tool_policy = tool_policy
 
     def start(self, *, workspace_id: str, goal_id: str, idempotency_key: str | None,
               max_attempts: int = 3) -> ExecutionRecord:
@@ -230,6 +233,26 @@ class GraphExecutionService:
         )
         self.executions.set_execution(execution_id=execution.id, current_step_id=runnable.step_id)
         self.uow.commit()
+
+        if self.tool_policy is not None:
+            try:
+                self.tool_policy.assert_allowed(
+                    agent=running.agent,
+                    tools=running.tools,
+                    approval_granted=running.approved_at is not None,
+                )
+            except CommandExecutionError as error:
+                ExecutionStateMachine.step(running.status, StepStatus.failed)
+                failed = self.executions.set_step(
+                    step_record_id=running.id,
+                    status=StepStatus.failed,
+                    error=str(error)[:10_000],
+                    finished=True,
+                )
+                self._compensate(execution, failed, str(error))
+                self.uow.commit()
+                return True
+
         try:
             result = self.runner.run(command, running)
         except Exception as error:
@@ -281,10 +304,10 @@ class GraphExecutionService:
             ))
             return
         ExecutionStateMachine.step(step.status, StepStatus.failed)
-        self.executions.set_step(
+        failed = self.executions.set_step(
             step_record_id=step.id, status=StepStatus.failed, error=message, finished=True
         )
-        self._compensate(execution, step, message)
+        self._compensate(execution, failed, message)
 
     def _compensate(self, execution: ExecutionRecord, failed: StepExecutionRecord,
                     reason: str) -> None:
