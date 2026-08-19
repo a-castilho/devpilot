@@ -11,6 +11,10 @@ from app.services.audit import record
 from app.services.executor import execute_task
 
 
+def _safe_log(value: str, limit: int = 240) -> str:
+    return " ".join(value.replace("\n", " ").split())[:limit]
+
+
 def process_task_one() -> bool:
     with SessionLocal() as db:
         task = db.scalar(
@@ -26,6 +30,11 @@ def process_task_one() -> bool:
         run = Run(task_id=task.id)
         db.add(run)
         db.commit()
+        print(
+            f"[worker] task={task.id[:8]} project={project.slug if project else '?'} status=running "
+            f"title={_safe_log(task.title)}",
+            flush=True,
+        )
         try:
             result = execute_task(project, task)
             run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
@@ -50,6 +59,10 @@ def process_task_one() -> bool:
             details={"run_id": run.id},
         )
         db.commit()
+        print(
+            f"[worker] task={task.id[:8]} status={run.status} summary={_safe_log(run.summary)}",
+            flush=True,
+        )
         return True
 
 
@@ -67,6 +80,7 @@ def process_one() -> bool:
 
 
 def main() -> None:
+    print("[worker] DevPilot worker started", flush=True)
     while True:
         if not process_one():
             time.sleep(2)
