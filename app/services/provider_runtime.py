@@ -132,7 +132,7 @@ def _google_reply(api_key: str, model: str, timeout_seconds: float) -> ProviderR
     return ProviderRuntimeResult("google", model, reply[:500], latency_ms)
 
 
-def test_provider_connection(
+def run_provider_connection_test(
     provider: str,
     api_key: str,
     model: str,
