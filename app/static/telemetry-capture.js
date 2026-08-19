@@ -1,0 +1,15 @@
+(()=>{
+  let activeSession=null,recording=false,queue=[],pollTimer=null,flushTimer=null;
+  const token=()=>localStorage.getItem('devpilot-token')||'';
+  const request=async(path,options={})=>{const current=token();if(!current)return null;const response=await fetch(`/api/telemetry${path}`,{...options,headers:{'Authorization':`Bearer ${current}`,'Content-Type':'application/json',...(options.headers||{})}});if(!response.ok)return null;return response.json().catch(()=>null)};
+  const keyPayload=(event)=>{const key=String(event.key||'');let group='other';if(event.ctrlKey||event.altKey||event.metaKey)group='shortcut';else if(key.length===1)group='text';else if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown','Tab','Enter'].includes(key))group='navigation';else if(['Backspace','Delete','Insert','Escape'].includes(key))group='editing';else if(['Shift','Control','Alt','Meta','CapsLock'].includes(key))group='modifier';else if(/^F\d{1,2}$/.test(key))group='function';let shortcut='';if(group==='shortcut'){const parts=[];if(event.ctrlKey)parts.push('ctrl');if(event.altKey)parts.push('alt');if(event.shiftKey)parts.push('shift');if(event.metaKey)parts.push('meta');if(key.length<=12&&!['Control','Alt','Shift','Meta'].includes(key))parts.push(key.toLowerCase());shortcut=parts.join('+').replace(/[^a-z0-9+_.:-]/g,'').slice(0,32)}return{group,ctrl:event.ctrlKey,alt:event.altKey,shift:event.shiftKey,meta:event.metaKey,repeat:event.repeat,shortcut}};
+  const enqueue=(event_type,payload)=>{if(!recording||!activeSession)return;queue.push({event_type,occurred_at:new Date().toISOString(),payload});if(queue.length>=40)flush()};
+  const onClick=(event)=>{if(!recording||event.target.closest('[data-telemetry-control]'))return;const width=Math.max(innerWidth,1),height=Math.max(innerHeight,1),target=event.target;enqueue('click',{grid_x:Math.min(19,Math.floor(event.clientX/width*20)),grid_y:Math.min(19,Math.floor(event.clientY/height*20)),tag:String(target.tagName||'').toLowerCase(),role:target.getAttribute?.('role')||'',button:['left','middle','right'][event.button]||'other'})};
+  const onKey=(event)=>{if(recording)enqueue('key',keyPayload(event))};
+  const attach=()=>{document.addEventListener('click',onClick,true);document.addEventListener('keydown',onKey,true)};
+  const detach=()=>{document.removeEventListener('click',onClick,true);document.removeEventListener('keydown',onKey,true)};
+  const flush=async()=>{if(!activeSession||!queue.length)return;const batch=queue.splice(0,250);const result=await request(`/sessions/${activeSession.id}/events`,{method:'POST',body:JSON.stringify({events:batch})});if(!result&&recording)queue.unshift(...batch)};
+  const sync=async()=>{const data=await request('/sessions/active');const next=data?.active||null;if(next&&!recording){activeSession=next;recording=true;attach()}else if(!next&&recording){recording=false;await flush();detach();activeSession=null}else if(next){activeSession=next}};
+  pollTimer=setInterval(sync,2500);flushTimer=setInterval(flush,1800);sync();
+  window.addEventListener('beforeunload',()=>{clearInterval(pollTimer);clearInterval(flushTimer);detach()});
+})();
