@@ -26,6 +26,8 @@ def project_slug(name: str) -> str:
 
 def normalize_github_repository(payload: dict) -> dict:
     clone_url = normalize_repository_url(str(payload.get("clone_url") or ""))
+    if clone_url.endswith(".git"):
+        clone_url = clone_url[:-4]
     return {
         "external_id": str(payload["id"]),
         "name": str(payload["name"]),
