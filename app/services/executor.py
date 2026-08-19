@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import base64
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
 
+from sqlalchemy import select
+
 from app.config import get_settings
-from app.models import Project, Task
+from app.db import SessionLocal
+from app.models import Organization, Project, ProviderCredential, Task
+from app.services.vault import Vault
 
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
@@ -16,17 +22,77 @@ def repository_path(project: Project) -> Path:
     return get_settings().repositories_dir / SAFE_NAME.sub("-", project.slug)
 
 
-def run(args: list[str], cwd: Path | None = None, timeout: int = 900) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(args, cwd=cwd, text=True, capture_output=True, timeout=timeout, check=False)
+def run(
+    args: list[str],
+    cwd: Path | None = None,
+    timeout: int = 900,
+    env_overrides: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    if env_overrides:
+        environment.update(env_overrides)
+    return subprocess.run(
+        args,
+        cwd=cwd,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+        env=environment,
+    )
+
+
+def github_basic_authorization(access_token: str) -> str:
+    encoded = base64.b64encode(f"x-access-token:{access_token}".encode()).decode()
+    return f"Authorization: Basic {encoded}"
+
+
+def git_environment(project: Project) -> dict[str, str]:
+    environment = {"GIT_TERMINAL_PROMPT": "0"}
+    if not project.organization_id:
+        return environment
+
+    with SessionLocal() as db:
+        organization = db.scalar(
+            select(Organization).where(Organization.id == project.organization_id)
+        )
+        if not organization or not organization.credential_id:
+            return environment
+        credential = db.scalar(
+            select(ProviderCredential).where(
+                ProviderCredential.id == organization.credential_id,
+                ProviderCredential.provider == "github",
+                ProviderCredential.enabled.is_(True),
+            )
+        )
+        if not credential:
+            return environment
+        try:
+            access_token = Vault().decrypt(credential.encrypted_secret)
+        except ValueError as error:
+            raise RuntimeError("GitHub organization credential cannot be decrypted") from error
+
+    environment.update(
+        {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": github_basic_authorization(access_token),
+        }
+    )
+    return environment
 
 
 def ensure_repository(project: Project) -> Path:
     path = repository_path(project)
+    git_env = git_environment(project)
     if not path.exists():
-        result = run(["git", "clone", "--filter=blob:none", project.repository_url, str(path)])
+        result = run(
+            ["git", "clone", "--filter=blob:none", project.repository_url, str(path)],
+            env_overrides=git_env,
+        )
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or "Unable to clone repository")
-    result = run(["git", "fetch", "--prune", "origin"], cwd=path)
+    result = run(["git", "fetch", "--prune", "origin"], cwd=path, env_overrides=git_env)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "Unable to fetch repository")
     return path
