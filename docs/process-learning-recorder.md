@@ -20,7 +20,7 @@ Abra:
 http://127.0.0.1:8081/telemetry
 ```
 
-A tela oferece botões de 1, 2 e 5 minutos. A API aceita sessões entre 10 segundos e 60 minutos.
+A tela oferece exatamente os botões de 1 minuto e 2 minutos. A API continua preparada para sessões entre 10 segundos e 60 minutos caso outras durações sejam adicionadas no futuro.
 
 Durante a gravação, a sessão continua ativa no backend mesmo ao voltar para o dashboard principal. O dashboard recebe um capturador leve que consulta a sessão ativa e envia somente os eventos permitidos.
 
