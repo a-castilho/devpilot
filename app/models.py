@@ -43,11 +43,30 @@ class Workspace(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class Organization(Base):
+    __tablename__ = "organizations"
+    __table_args__ = (UniqueConstraint("workspace_id", "provider", "slug"),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    provider: Mapped[str] = mapped_column(String(30), default="github")
+    name: Mapped[str] = mapped_column(String(150))
+    slug: Mapped[str] = mapped_column(String(100), index=True)
+    external_login: Mapped[str] = mapped_column(String(150))
+    credential_id: Mapped[str | None] = mapped_column(ForeignKey("provider_credentials.id"), index=True)
+    sync_status: Mapped[str] = mapped_column(String(30), default="never")
+    last_sync_error: Mapped[str] = mapped_column(Text, default="")
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    repositories: Mapped[list["Repository"]] = relationship(cascade="all, delete-orphan")
+    projects: Mapped[list["Project"]] = relationship(back_populates="organization")
+
+
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (UniqueConstraint("workspace_id", "slug"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    organization_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"), index=True)
     name: Mapped[str] = mapped_column(String(150))
     slug: Mapped[str] = mapped_column(String(100))
     description: Mapped[str] = mapped_column(Text, default="")
@@ -57,7 +76,29 @@ class Project(Base):
     codex_config: Mapped[str] = mapped_column(Text, default="{}")
     status: Mapped[ProjectStatus] = mapped_column(Enum(ProjectStatus), default=ProjectStatus.active)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    organization: Mapped[Organization | None] = relationship(back_populates="projects")
     tasks: Mapped[list["Task"]] = relationship(cascade="all, delete-orphan")
+
+
+class Repository(Base):
+    __tablename__ = "repositories"
+    __table_args__ = (
+        UniqueConstraint("organization_id", "external_id"),
+        UniqueConstraint("organization_id", "full_name"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    organization_id: Mapped[str] = mapped_column(ForeignKey("organizations.id"), index=True)
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True)
+    external_id: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(150))
+    full_name: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text, default="")
+    clone_url: Mapped[str] = mapped_column(String(500))
+    default_branch: Mapped[str] = mapped_column(String(100), default="main")
+    visibility: Mapped[str] = mapped_column(String(30), default="private")
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class Task(Base):
