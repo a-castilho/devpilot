@@ -15,6 +15,12 @@ class ResourceBudget:
     max_council_members: int = 5
     max_rag_matches: int = 8
     max_context_chars: int = 40_000
+    max_repository_files: int = 400
+    max_repository_file_chars: int = 100_000
+    max_repository_total_chars: int = 2_000_000
+    max_dependency_nodes: int = 1_500
+    max_impact_depth: int = 4
+    max_execution_seconds: int = 1_800
     parallel_execution: bool = False
 
 
@@ -48,35 +54,47 @@ TOOL_REGISTRY: dict[str, ToolSpec] = {
         "agent.plan", "Create or inspect AgentOS plans.", "read", ("supervisor",),
     ),
     "audit.read": ToolSpec(
-        "audit.read", "Read audit metadata.", "read", ("supervisor",),
+        "audit.read", "Read audit metadata.", "read", ("supervisor", "security"),
     ),
     "rag.search": ToolSpec(
-        "rag.search", "Search scoped knowledge.", "read", ("planner", "researcher", "architect"),
+        "rag.search", "Search scoped knowledge.", "read",
+        ("planner", "researcher", "architect", "database", "security", "performance", "ux", "docs"),
     ),
     "project.read": ToolSpec(
         "project.read", "Read project metadata and instructions.", "read",
-        ("planner", "researcher", "architect"),
+        ("planner", "researcher", "architect", "database", "security", "performance", "ux", "docs"),
     ),
     "repo.read": ToolSpec(
         "repo.read", "Read repository content in the isolated project workspace.", "read",
-        ("backend", "frontend", "reviewer", "qa"),
+        ("backend", "frontend", "reviewer", "qa", "database", "security", "performance", "ux", "docs"),
+    ),
+    "repo.index": ToolSpec(
+        "repo.index", "Index bounded repository code and documentation into project-scoped knowledge.",
+        "read", ("researcher", "architect", "reviewer", "security", "performance", "docs"),
+    ),
+    "code.impact": ToolSpec(
+        "code.impact", "Inspect local dependency and reverse-impact relationships before edits.",
+        "read", ("architect", "backend", "frontend", "reviewer", "qa", "database", "security", "performance"),
     ),
     "repo.write": ToolSpec(
         "repo.write", "Write only to an isolated task branch; never push/merge/deploy.",
-        "isolated-write", ("backend", "frontend"),
+        "isolated-write", ("backend", "frontend", "database", "docs"),
     ),
     "tests.run": ToolSpec(
         "tests.run", "Run bounded project tests without shell strings.", "isolated-write",
-        ("backend", "frontend", "qa"),
+        ("backend", "frontend", "qa", "database", "security", "performance"),
     ),
     "diff.read": ToolSpec(
-        "diff.read", "Inspect generated diffs.", "read", ("reviewer",),
+        "diff.read", "Inspect generated diffs.", "read",
+        ("reviewer", "security", "performance", "docs"),
     ),
     "tests.read": ToolSpec(
-        "tests.read", "Inspect test evidence and logs.", "read", ("reviewer",),
+        "tests.read", "Inspect test evidence and logs.", "read",
+        ("reviewer", "qa", "security", "performance"),
     ),
     "ci.read": ToolSpec(
-        "ci.read", "Inspect CI/build state without mutating delivery targets.", "read", ("devops",),
+        "ci.read", "Inspect CI/build state without mutating delivery targets.", "read",
+        ("devops", "reviewer", "qa"),
     ),
     "deploy.plan": ToolSpec(
         "deploy.plan", "Prepare a deployment/rollback plan without executing deployment.",
