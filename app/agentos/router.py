@@ -111,7 +111,13 @@ def ingest_knowledge(payload: KnowledgeIngest, db: Session = Depends(get_db)):
         project_id=payload.project_id,
         actor="owner",
         action="agentos.knowledge_ingested",
-        details={"namespace": payload.namespace, "source": payload.source, "chunks": len(chunks)},
+        details={
+            "namespace": payload.namespace,
+            "source": payload.source,
+            "chunks": len(chunks),
+            "providers": sorted({item.embedding_provider for item in chunks}),
+            "models": sorted({item.embedding_model for item in chunks}),
+        },
     )
     db.commit()
     return {
@@ -169,5 +175,30 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)):
     try:
         result = LLMClient().chat(messages)
     except ModelUnavailable as error:
+        record(
+            db,
+            workspace_id=ws.id,
+            project_id=payload.project_id,
+            actor="owner",
+            action="agentos.model_used",
+            outcome="failed",
+            details={"operation": "chat", "error": str(error)},
+        )
+        db.commit()
         raise HTTPException(503, str(error)) from error
+
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=payload.project_id,
+        actor="owner",
+        action="agentos.model_used",
+        details={
+            "operation": "chat",
+            "provider": result["provider"],
+            "model": result["model"],
+            "rag_matches": len(matches),
+        },
+    )
+    db.commit()
     return {**result, "matches": matches}
