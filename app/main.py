@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 import app.models  # noqa: F401
 from app.api import router
 from app.db import Base, engine
+from app.services.schema import ensure_runtime_schema
 
 
 STATIC = Path(__file__).parent / "static"
@@ -16,6 +17,7 @@ STATIC = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
+    ensure_runtime_schema(engine)
     yield
 
 
