@@ -85,6 +85,11 @@ class MemoryRecall(BaseModel):
     top_k: int = Field(default=5, ge=1, le=8)
 
 
+class KnownAppsConnect(BaseModel):
+    keys: list[str] = Field(default_factory=list, max_length=10)
+    seed_memory: bool = True
+
+
 class CouncilRequest(BaseModel):
     project_id: str | None = None
     namespace: str = Field(default="default", pattern=r"^[A-Za-z0-9._/-]{1,100}$")
