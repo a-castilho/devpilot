@@ -9,7 +9,7 @@ from app.security import require_access
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
-REPORT_FILE = Path(__file__).parent / "static" / "project-report.json"
+REPORT_FILE = Path(__file__).parent / "report_data" / "project-report.json"
 
 
 @router.get("/project-report")
