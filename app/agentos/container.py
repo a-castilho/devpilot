@@ -19,8 +19,8 @@ from app.agentos.application.platform import (
 from app.agentos.application.services import ChatService, GoalService, KnowledgeService
 from app.agentos.infrastructure.adapters import (
     AuditEventHandler,
+    ConfiguredLanguageModelAdapter,
     LocalEventBus,
-    OllamaLanguageModelAdapter,
     PlannerAdapter,
     SQLAlchemyGoalRepository,
     SQLAlchemyKnowledgeAdapter,
@@ -66,7 +66,7 @@ def build_agentos_services(db: Session) -> AgentOSServices:
     executions = SQLAlchemyExecutionRepository(db)
     knowledge = SQLAlchemyKnowledgeAdapter(db)
     planner = PlannerAdapter()
-    model = OllamaLanguageModelAdapter()
+    model = ConfiguredLanguageModelAdapter(db)
     runner = CompositeCommandRunner(db, model)
     kernel = KernelService()
     extension_activations = SQLAlchemyExtensionActivations(db)
