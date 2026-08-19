@@ -100,13 +100,15 @@ def grep(
         raise RuntimeError(message[-4_000:])
 
     matches: list[dict] = []
+    ref_prefix = f"{selected_ref}:"
     for line in result.stdout.splitlines():
         if len(matches) >= limit:
             break
-        prefix, separator, text = line.partition(":")
+        entry = line[len(ref_prefix) :] if line.startswith(ref_prefix) else line
+        file_path, separator, remainder = entry.partition(":")
         if not separator:
             continue
-        file_path, separator, line_number = prefix.rpartition(":")
+        line_number, separator, text = remainder.partition(":")
         if not separator:
             continue
         try:
@@ -115,7 +117,7 @@ def grep(
             continue
         matches.append(
             {
-                "path": file_path.removeprefix(f"{selected_ref}:"),
+                "path": file_path,
                 "line": number,
                 "text": text[:MAX_GREP_LINE],
             }
