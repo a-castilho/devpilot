@@ -240,6 +240,8 @@ class GraphExecutionService:
                     agent=running.agent,
                     tools=running.tools,
                     approval_granted=running.approved_at is not None,
+                    workspace_id=execution.workspace_id,
+                    project_id=execution.project_id,
                 )
             except CommandExecutionError as error:
                 ExecutionStateMachine.step(running.status, StepStatus.failed)
