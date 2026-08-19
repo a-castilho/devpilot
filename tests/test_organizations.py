@@ -55,7 +55,7 @@ def test_normalize_github_repository_removes_sensitive_noise():
         "name": "regulaai",
         "full_name": "a-castilho/regulaai",
         "description": "",
-        "clone_url": "https://github.com/a-castilho/regulaai",
+        "clone_url": "https://github.com/a-castilho/regulaai.git",
         "default_branch": "main",
         "visibility": "private",
         "archived": False,
