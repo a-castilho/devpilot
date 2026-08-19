@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     # keeps repository-writing implementation work on the controlled Codex executor.
     task_executor: str = "auto"
     local_readonly_enabled: bool = True
-    local_readonly_max_files: int = 80
-    local_readonly_max_file_chars: int = 16_000
-    local_readonly_max_context_chars: int = 160_000
+    local_readonly_max_files: int = 40
+    local_readonly_max_file_chars: int = 8_000
+    local_readonly_max_context_chars: int = 40_000
 
     # AgentOS model gateway. The API process stays light and talks to Ollama over HTTP.
     ollama_base_url: str = "http://127.0.0.1:11434"
