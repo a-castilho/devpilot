@@ -4,11 +4,8 @@ from typing import Any
 
 import httpx
 
+from app.agentos.application.errors import ModelUnavailable
 from app.config import get_settings
-
-
-class ModelUnavailable(RuntimeError):
-    pass
 
 
 class LLMClient:
@@ -17,6 +14,9 @@ class LLMClient:
     DevPilot keeps the orchestration and persistence local. The actual transformer model is
     accessed through Ollama's HTTP API, so a 4 GB machine does not need to import heavyweight
     ML frameworks into the API process.
+
+    This class is provider-specific infrastructure. Application use cases access it through
+    ``LanguageModelPort`` and the ``OllamaLanguageModelAdapter``.
     """
 
     def __init__(self) -> None:
