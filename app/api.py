@@ -22,9 +22,11 @@ from app.services.audit import record
 from app.services.intent import interpret_voice
 from app.services.policy import evaluate_task, validate_repository_url
 from app.services.provider_models import (
+    REFERENCE_CATALOG_DATE,
     SUPPORTED_MODEL_PROVIDERS,
     ProviderModelDiscoveryError,
     discover_provider_models,
+    reference_provider_models,
 )
 from app.services.vault import Vault
 
@@ -246,11 +248,11 @@ def list_providers(db: Session = Depends(get_db)):
 
 @router.get("/providers/model-catalog")
 def provider_model_catalog(refresh: bool = True, db: Session = Depends(get_db)):
-    """Return the current provider catalog, refreshing saved connections when requested.
+    """Return a useful model list immediately and refresh account-specific catalogs when possible.
 
-    The modal calls this endpoint every time the user clicks "Conectar IA". Live refresh uses only
-    encrypted credentials already stored in the workspace. A first-time connection can use the
-    discovery endpoint below after the user types its API key.
+    Without a saved credential, DevPilot serves a conservative public reference catalog so provider
+    selection is never an empty UI. A saved or newly entered API key remains the source of truth for
+    account-specific availability; live discovery replaces the reference list when it succeeds.
     """
 
     ws = workspace(db)
@@ -268,11 +270,17 @@ def provider_model_catalog(refresh: bool = True, db: Session = Depends(get_db)):
     for provider in sorted(SUPPORTED_MODEL_PROVIDERS):
         credential = latest_by_provider.get(provider)
         stored = _stored_models(credential) if credential else []
+        reference = reference_provider_models(provider)
         entry = {
             "provider": provider,
-            "source": "stored" if stored else "credentials_required",
-            "models": [{"id": model_id, "label": model_id} for model_id in stored],
+            "source": "stored" if stored else "reference",
+            "models": (
+                [{"id": model_id, "label": model_id} for model_id in stored]
+                if stored
+                else _model_payload(reference)
+            ),
             "connection_id": credential.id if credential else None,
+            "reference_catalog_date": REFERENCE_CATALOG_DATE,
             "warning": "",
         }
         if refresh and credential:
@@ -299,11 +307,16 @@ def provider_model_catalog(refresh: bool = True, db: Session = Depends(get_db)):
         "source": "manual",
         "models": [],
         "connection_id": None,
+        "reference_catalog_date": REFERENCE_CATALOG_DATE,
         "warning": "Provedores customizados usam catálogo manual.",
     }
     if changed:
         db.commit()
-    return {"refreshed_at": datetime.now(timezone.utc), "providers": catalog}
+    return {
+        "refreshed_at": datetime.now(timezone.utc),
+        "reference_catalog_date": REFERENCE_CATALOG_DATE,
+        "providers": catalog,
+    }
 
 
 @router.post("/providers/discover-models")
