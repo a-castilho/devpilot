@@ -105,6 +105,29 @@ def _anthropic_reply(api_key: str, model: str, timeout_seconds: float) -> Provid
     return ProviderRuntimeResult("anthropic", model, reply[:500], latency_ms)
 
 
+def _google_generation_config(model: str) -> dict:
+    """Use a small but realistic text budget for provider health checks.
+
+    Gemini reasoning tokens share the generation budget. A 16-token ceiling can therefore yield a
+    successful HTTP response with no final text on thinking-capable models. Keep the handshake
+    inexpensive while explicitly constraining reasoning according to the model family.
+    """
+
+    config: dict = {"maxOutputTokens": 256, "temperature": 0}
+    normalized = model.lower()
+    if normalized.startswith("gemini-3"):
+        # Gemini 3 family uses thinking levels. `low` is broadly supported by the text models and
+        # is sufficient for this fixed health-check prompt.
+        config["thinkingConfig"] = {"thinkingLevel": "low"}
+    elif normalized.startswith("gemini-2.5-flash"):
+        # Gemini 2.5 Flash supports disabling thinking entirely, which is ideal for a handshake.
+        config["thinkingConfig"] = {"thinkingBudget": 0}
+    elif normalized.startswith("gemini-2.5-pro"):
+        # 2.5 Pro cannot disable thinking; 128 is the documented minimum budget.
+        config["thinkingConfig"] = {"thinkingBudget": 128}
+    return config
+
+
 def _google_reply(api_key: str, model: str, timeout_seconds: float) -> ProviderRuntimeResult:
     safe_model = quote(model, safe="")
     data, latency_ms = _post_json(
@@ -112,7 +135,7 @@ def _google_reply(api_key: str, model: str, timeout_seconds: float) -> ProviderR
         headers={"x-goog-api-key": api_key},
         payload={
             "contents": [{"role": "user", "parts": [{"text": "Reply only with DEVPILOT_OK."}]}],
-            "generationConfig": {"maxOutputTokens": 16, "temperature": 0},
+            "generationConfig": _google_generation_config(model),
         },
         timeout_seconds=timeout_seconds,
     )
