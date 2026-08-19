@@ -4,11 +4,11 @@
 
 ## Metadados
 
-- **Estado:** Aberta
+- **Estado:** Merged
 - **Autor:** @acastilho
 - **Base:** `main`
 - **Head:** `feature/telemetry-learning-recorder`
-- **Atualizada em:** 2026-08-19T23:07:33Z
+- **Atualizada em:** 2026-08-19T23:08:38Z
 - **Fonte:** https://github.com/a-castilho/devpilot/pull/8
 
 ## Sinais automáticos de revisão
