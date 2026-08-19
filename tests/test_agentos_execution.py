@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.agentos.application.execution import GraphExecutionService
 from app.agentos.application.planning import DeterministicPlanningStrategy
 from app.agentos.application.ports import CommandResult, GoalRecord
+from app.agentos.catalog import AGENT_CATALOG
 from app.agentos.domain.execution import ExecutionStateMachine, ExecutionStatus, StateTransitionError
 from app.agentos.infrastructure.execution import SQLAlchemyExecutionRepository
 from app.db import Base
@@ -59,7 +60,7 @@ def service_for(objective: str):
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
     db = Session(engine)
-    plan = DeterministicPlanningStrategy().plan(objective)
+    plan = DeterministicPlanningStrategy(AGENT_CATALOG).plan(objective)
     goal = GoalRecord(
         id="goal-1",
         workspace_id="workspace-1",
@@ -127,8 +128,11 @@ def test_delivery_waits_for_explicit_approval_then_resumes():
         waiting = service.get(workspace_id="workspace-1", execution_id=execution.id)
         assert waiting is not None
         assert waiting.status == ExecutionStatus.awaiting_approval
-        delivery = next(step for step in service.steps(execution_id=execution.id)
-                        if step.step_id == "delivery")
+        delivery = next(
+            step
+            for step in service.steps(execution_id=execution.id)
+            if step.step_id == "delivery"
+        )
         assert delivery.status == "awaiting_approval"
 
         service.approve_step(
