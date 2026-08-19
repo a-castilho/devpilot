@@ -1,21 +1,16 @@
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agentos.application.errors import ModelUnavailable
 from app.agentos.catalog import AGENT_CATALOG
+from app.agentos.container import build_agentos_services
 from app.agentos.contracts import ChatRequest, GoalCreate, KnowledgeIngest, RAGQuery
-from app.agentos.llm import LLMClient, ModelUnavailable
-from app.agentos.models import AgentGoal
-from app.agentos.orchestrator import plan_goal
-from app.agentos.rag import ingest, search
 from app.db import get_db
 from app.models import Project, Workspace
 from app.security import require_access
-from app.services.audit import record
 
 
 router = APIRouter(prefix="/api/agentos", dependencies=[Depends(require_access)])
@@ -50,35 +45,20 @@ def list_agents():
 def create_goal(payload: GoalCreate, db: Session = Depends(get_db)):
     ws = _workspace(db)
     _project_or_404(db, ws.id, payload.project_id)
-    plan = plan_goal(payload.objective)
-    item = AgentGoal(
+    services = build_agentos_services(db)
+    item = services.goals.plan_goal(
         workspace_id=ws.id,
         project_id=payload.project_id,
         title=payload.title,
         objective=payload.objective,
-        status="planned",
-        plan_json=plan.model_dump_json(),
     )
-    db.add(item)
-    db.flush()
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=payload.project_id,
-        actor="owner",
-        action="agentos.goal_planned",
-        details={"goal_id": item.id, "steps": len(plan.steps), "mode": plan.mode},
-    )
-    db.commit()
-    return {"id": item.id, "status": item.status, "plan": plan.model_dump()}
+    return {"id": item.id, "status": item.status, "plan": item.plan.model_dump()}
 
 
 @router.get("/goals/{goal_id}")
 def get_goal(goal_id: str, db: Session = Depends(get_db)):
     ws = _workspace(db)
-    item = db.scalar(
-        select(AgentGoal).where(AgentGoal.id == goal_id, AgentGoal.workspace_id == ws.id)
-    )
+    item = build_agentos_services(db).goals.get_goal(workspace_id=ws.id, goal_id=goal_id)
     if not item:
         raise HTTPException(404, "Goal not found")
     return {
@@ -87,7 +67,7 @@ def get_goal(goal_id: str, db: Session = Depends(get_db)):
         "title": item.title,
         "objective": item.objective,
         "status": item.status,
-        "plan": json.loads(item.plan_json),
+        "plan": item.plan.model_dump(),
         "created_at": item.created_at,
     }
 
@@ -96,8 +76,7 @@ def get_goal(goal_id: str, db: Session = Depends(get_db)):
 def ingest_knowledge(payload: KnowledgeIngest, db: Session = Depends(get_db)):
     ws = _workspace(db)
     _project_or_404(db, ws.id, payload.project_id)
-    chunks = ingest(
-        db,
+    result = build_agentos_services(db).knowledge.ingest(
         workspace_id=ws.id,
         project_id=payload.project_id,
         namespace=payload.namespace,
@@ -105,26 +84,11 @@ def ingest_knowledge(payload: KnowledgeIngest, db: Session = Depends(get_db)):
         content=payload.content,
         metadata=payload.metadata,
     )
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=payload.project_id,
-        actor="owner",
-        action="agentos.knowledge_ingested",
-        details={
-            "namespace": payload.namespace,
-            "source": payload.source,
-            "chunks": len(chunks),
-            "providers": sorted({item.embedding_provider for item in chunks}),
-            "models": sorted({item.embedding_model for item in chunks}),
-        },
-    )
-    db.commit()
     return {
-        "chunks": len(chunks),
-        "ids": [item.id for item in chunks],
-        "embedding_models": sorted({item.embedding_model for item in chunks}),
-        "embedding_providers": sorted({item.embedding_provider for item in chunks}),
+        "chunks": result.chunks,
+        "ids": result.ids,
+        "embedding_models": result.models,
+        "embedding_providers": result.providers,
     }
 
 
@@ -132,73 +96,28 @@ def ingest_knowledge(payload: KnowledgeIngest, db: Session = Depends(get_db)):
 def rag_query(payload: RAGQuery, db: Session = Depends(get_db)):
     ws = _workspace(db)
     _project_or_404(db, ws.id, payload.project_id)
-    return {
-        "query": payload.query,
-        "matches": search(
-            db,
-            workspace_id=ws.id,
-            project_id=payload.project_id,
-            namespace=payload.namespace,
-            query=payload.query,
-            top_k=payload.top_k,
-        ),
-    }
-
-
-@router.post("/chat")
-def chat(payload: ChatRequest, db: Session = Depends(get_db)):
-    ws = _workspace(db)
-    _project_or_404(db, ws.id, payload.project_id)
-    matches = search(
-        db,
+    matches = build_agentos_services(db).knowledge.search(
         workspace_id=ws.id,
         project_id=payload.project_id,
         namespace=payload.namespace,
         query=payload.query,
         top_k=payload.top_k,
     )
-    context = "\n\n".join(
-        f"[{index + 1}] {item['source']}: {item['content']}"
-        for index, item in enumerate(matches)
-    )
-    messages = [
-        {
-            "role": "system",
-            "content": payload.system
-            + "\nIf context is provided, ground factual claims in it and say when it is insufficient.",
-        },
-        {
-            "role": "user",
-            "content": f"Context:\n{context or '(no relevant context)'}\n\nQuestion:\n{payload.query}",
-        },
-    ]
+    return {"query": payload.query, "matches": matches}
+
+
+@router.post("/chat")
+def chat(payload: ChatRequest, db: Session = Depends(get_db)):
+    ws = _workspace(db)
+    _project_or_404(db, ws.id, payload.project_id)
     try:
-        result = LLMClient().chat(messages)
-    except ModelUnavailable as error:
-        record(
-            db,
+        return build_agentos_services(db).chat.answer(
             workspace_id=ws.id,
             project_id=payload.project_id,
-            actor="owner",
-            action="agentos.model_used",
-            outcome="failed",
-            details={"operation": "chat", "error": str(error)},
+            namespace=payload.namespace,
+            query=payload.query,
+            top_k=payload.top_k,
+            system=payload.system,
         )
-        db.commit()
+    except ModelUnavailable as error:
         raise HTTPException(503, str(error)) from error
-
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=payload.project_id,
-        actor="owner",
-        action="agentos.model_used",
-        details={
-            "operation": "chat",
-            "provider": result["provider"],
-            "model": result["model"],
-            "rag_matches": len(matches),
-        },
-    )
-    db.commit()
-    return {**result, "matches": matches}
