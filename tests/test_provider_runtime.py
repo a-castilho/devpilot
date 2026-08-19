@@ -34,7 +34,44 @@ def test_google_provider_executes_real_generate_content_shape(monkeypatch):
     assert captured["url"].endswith("/models/gemini-2.5-flash:generateContent")
     assert captured["headers"]["x-goog-api-key"] == "google-secret"
     assert "google-secret" not in captured["url"]
-    assert captured["json"]["generationConfig"]["maxOutputTokens"] == 16
+    config = captured["json"]["generationConfig"]
+    assert config["maxOutputTokens"] == 256
+    assert config["thinkingConfig"] == {"thinkingBudget": 0}
+
+
+def test_google_gemini3_constrains_thinking_for_handshake(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return response(
+            200,
+            {"candidates": [{"content": {"parts": [{"text": "DEVPILOT_OK"}]}}]},
+        )
+
+    monkeypatch.setattr(provider_runtime.httpx, "post", fake_post)
+    result = run_provider_connection_test("google", "google-secret", "gemini-3.6-flash")
+
+    assert result.reply == "DEVPILOT_OK"
+    config = captured["json"]["generationConfig"]
+    assert config["maxOutputTokens"] == 256
+    assert config["thinkingConfig"] == {"thinkingLevel": "low"}
+
+
+def test_google_25_pro_uses_minimum_thinking_budget(monkeypatch):
+    captured = {}
+
+    def fake_post(url, **kwargs):
+        captured.update(url=url, **kwargs)
+        return response(
+            200,
+            {"candidates": [{"content": {"parts": [{"text": "DEVPILOT_OK"}]}}]},
+        )
+
+    monkeypatch.setattr(provider_runtime.httpx, "post", fake_post)
+    run_provider_connection_test("google", "google-secret", "gemini-2.5-pro")
+
+    assert captured["json"]["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 128}
 
 
 def test_openai_provider_uses_responses_api(monkeypatch):
