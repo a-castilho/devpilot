@@ -65,3 +65,34 @@ class ChatRequest(RAGQuery):
         default="You are a precise software engineering agent. Use retrieved context when relevant.",
         max_length=20_000,
     )
+
+
+class MemoryIngest(BaseModel):
+    project_id: str | None = None
+    scope: Literal["global", "project", "goal", "task"] = "project"
+    goal_id: str | None = None
+    task_id: str | None = None
+    source: str = Field(default="memory", max_length=500)
+    content: str = Field(min_length=1, max_length=500_000)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class MemoryRecall(BaseModel):
+    project_id: str | None = None
+    goal_id: str | None = None
+    task_id: str | None = None
+    query: str = Field(min_length=2, max_length=20_000)
+    top_k: int = Field(default=5, ge=1, le=8)
+
+
+class CouncilRequest(BaseModel):
+    project_id: str | None = None
+    namespace: str = Field(default="default", pattern=r"^[A-Za-z0-9._/-]{1,100}$")
+    question: str = Field(min_length=5, max_length=30_000)
+    members: list[str] = Field(
+        default_factory=lambda: ["planner", "architect", "reviewer"],
+        min_length=1,
+        max_length=5,
+    )
+    top_k: int = Field(default=5, ge=1, le=8)
+    consensus_threshold: float = Field(default=0.67, ge=0.5, le=1.0)
