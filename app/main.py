@@ -11,6 +11,7 @@ from app.agentos.intelligence_router import router as agentos_intelligence_route
 from app.agentos.router import router as agentos_router
 from app.api import router
 from app.db import Base, engine
+from app.provider_runtime_router import router as provider_runtime_router
 
 
 STATIC = Path(__file__).parent / "static"
@@ -24,6 +25,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="DevPilot API", version="1.1.0", lifespan=lifespan)
 app.include_router(router)
+app.include_router(provider_runtime_router)
 app.include_router(agentos_router)
 app.include_router(agentos_apps_router)
 app.include_router(agentos_intelligence_router)
