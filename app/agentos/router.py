@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -9,14 +9,17 @@ from app.agentos.catalog import AGENT_CATALOG
 from app.agentos.container import build_agentos_services
 from app.agentos.contracts import (
     ChatRequest,
+    CouncilRequest,
     ExecutionResume,
     ExecutionStart,
     GoalCreate,
     KnowledgeIngest,
+    MemoryIngest,
+    MemoryRecall,
     RAGQuery,
 )
 from app.db import get_db
-from app.models import Project, Workspace
+from app.models import Project, Task, Workspace
 from app.security import require_access
 
 
@@ -40,6 +43,13 @@ def _project_or_404(db: Session, workspace_id: str, project_id: str | None) -> P
     )
     if not item:
         raise HTTPException(404, "Project not found")
+    return item
+
+
+def _task_or_404(db: Session, workspace_id: str, task_id: str) -> Task:
+    item = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
+    if not item:
+        raise HTTPException(404, "Task not found")
     return item
 
 
@@ -79,9 +89,29 @@ def _execution_payload(execution, steps) -> dict:
     }
 
 
+@router.get("/platform")
+def platform_status(db: Session = Depends(get_db)):
+    _workspace(db)
+    return build_agentos_services(db).kernel.describe()
+
+
 @router.get("/agents")
 def list_agents():
     return [definition.model_dump() for definition in AGENT_CATALOG.values()]
+
+
+@router.get("/tools")
+def list_tools(agent: str | None = Query(default=None), db: Session = Depends(get_db)):
+    _workspace(db)
+    if agent is not None and agent not in AGENT_CATALOG:
+        raise HTTPException(404, "Agent not found")
+    return build_agentos_services(db).tools.list_tools(agent=agent)
+
+
+@router.get("/apps")
+def list_apps(db: Session = Depends(get_db)):
+    ws = _workspace(db)
+    return build_agentos_services(db).apps.list_apps(workspace_id=ws.id)
 
 
 @router.post("/goals", status_code=201)
@@ -215,6 +245,108 @@ def rag_query(payload: RAGQuery, db: Session = Depends(get_db)):
         top_k=payload.top_k,
     )
     return {"query": payload.query, "matches": matches}
+
+
+@router.post("/memory", status_code=201)
+def ingest_memory(payload: MemoryIngest, db: Session = Depends(get_db)):
+    ws = _workspace(db)
+    services = build_agentos_services(db)
+    project_id = payload.project_id
+
+    if payload.scope == "global":
+        if project_id is not None:
+            raise HTTPException(422, "Global memory must not be tied to a project")
+    elif payload.scope == "project":
+        if project_id is None:
+            raise HTTPException(422, "project_id is required for project memory")
+        _project_or_404(db, ws.id, project_id)
+    elif payload.scope == "goal":
+        if payload.goal_id is None:
+            raise HTTPException(422, "goal_id is required for goal memory")
+        goal = services.goals.get_goal(workspace_id=ws.id, goal_id=payload.goal_id)
+        if not goal:
+            raise HTTPException(404, "Goal not found")
+        if project_id is not None and project_id != goal.project_id:
+            raise HTTPException(409, "Goal does not belong to project")
+        project_id = goal.project_id
+    elif payload.scope == "task":
+        if payload.task_id is None:
+            raise HTTPException(422, "task_id is required for task memory")
+        task = _task_or_404(db, ws.id, payload.task_id)
+        if project_id is not None and project_id != task.project_id:
+            raise HTTPException(409, "Task does not belong to project")
+        project_id = task.project_id
+
+    try:
+        result = services.memory.ingest(
+            workspace_id=ws.id,
+            project_id=project_id,
+            scope=payload.scope,
+            goal_id=payload.goal_id,
+            task_id=payload.task_id,
+            source=payload.source,
+            content=payload.content,
+            metadata=payload.metadata,
+        )
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    return {
+        "scope": payload.scope,
+        "chunks": result.chunks,
+        "ids": result.ids,
+        "embedding_models": result.models,
+        "embedding_providers": result.providers,
+    }
+
+
+@router.post("/memory/recall")
+def recall_memory(payload: MemoryRecall, db: Session = Depends(get_db)):
+    ws = _workspace(db)
+    services = build_agentos_services(db)
+    project_id = payload.project_id
+
+    if payload.goal_id:
+        goal = services.goals.get_goal(workspace_id=ws.id, goal_id=payload.goal_id)
+        if not goal:
+            raise HTTPException(404, "Goal not found")
+        if project_id is not None and project_id != goal.project_id:
+            raise HTTPException(409, "Goal does not belong to project")
+        project_id = project_id or goal.project_id
+    if payload.task_id:
+        task = _task_or_404(db, ws.id, payload.task_id)
+        if project_id is not None and project_id != task.project_id:
+            raise HTTPException(409, "Task does not belong to project")
+        project_id = project_id or task.project_id
+    if project_id:
+        _project_or_404(db, ws.id, project_id)
+
+    matches = services.memory.recall(
+        workspace_id=ws.id,
+        project_id=project_id,
+        goal_id=payload.goal_id,
+        task_id=payload.task_id,
+        query=payload.query,
+        top_k=payload.top_k,
+    )
+    return {"query": payload.query, "matches": matches}
+
+
+@router.post("/council")
+def council(payload: CouncilRequest, db: Session = Depends(get_db)):
+    ws = _workspace(db)
+    _project_or_404(db, ws.id, payload.project_id)
+    try:
+        return build_agentos_services(db).council.deliberate(
+            workspace_id=ws.id,
+            project_id=payload.project_id,
+            namespace=payload.namespace,
+            question=payload.question,
+            members=payload.members,
+            top_k=payload.top_k,
+            consensus_threshold=payload.consensus_threshold,
+        )
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
 
 
 @router.post("/chat")
