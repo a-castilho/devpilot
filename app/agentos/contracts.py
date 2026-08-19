@@ -36,6 +36,15 @@ class GoalCreate(BaseModel):
     objective: str = Field(min_length=5, max_length=100_000)
 
 
+class ExecutionStart(BaseModel):
+    idempotency_key: str | None = Field(default=None, min_length=8, max_length=160)
+    max_attempts: int = Field(default=3, ge=1, le=8)
+
+
+class ExecutionResume(BaseModel):
+    reset_attempts: bool = False
+
+
 class KnowledgeIngest(BaseModel):
     project_id: str | None = None
     namespace: str = Field(default="default", pattern=r"^[A-Za-z0-9._/-]{1,100}$")
