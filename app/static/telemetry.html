@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>DevPilot — Gravador de Processos</title>
+  <link rel="stylesheet" href="/assets/telemetry.css">
+</head>
+<body>
+  <main class="page">
+    <header class="topbar">
+      <a class="brand" href="/"><span>D</span><strong>DevPilot</strong></a>
+      <a class="back" href="/">← Voltar ao painel</a>
+    </header>
+
+    <section class="hero">
+      <div>
+        <p class="eyebrow">APRENDIZADO DE PROCESSOS</p>
+        <h1>Grave um fluxo. Descubra o que pode ser automático.</h1>
+        <p class="lead">Durante a janela escolhida, o DevPilot cruza cliques, padrões de teclas e comandos do terminal para encontrar sequências repetitivas.</p>
+      </div>
+      <div class="privacy"><b>Privacidade por padrão</b><span>Texto digitado não é salvo. Coordenadas são aproximadas e segredos de terminal são sanitizados antes do armazenamento.</span></div>
+    </section>
+
+    <section class="auth-card hidden" id="auth-card" data-telemetry-control>
+      <div><strong>Token necessário</strong><p>Use o mesmo token do painel DevPilot.</p></div>
+      <div class="auth-actions"><input id="token-input" type="password" placeholder="DEVPILOT_BOOTSTRAP_TOKEN"><button id="save-token">Salvar token</button></div>
+    </section>
+
+    <section class="grid">
+      <article class="panel recorder" data-telemetry-control>
+        <p class="eyebrow">GRAVAÇÃO</p>
+        <h2>Escolha a duração</h2>
+        <div class="duration-buttons">
+          <button class="duration primary" data-seconds="60">Gravar 1 minuto</button>
+          <button class="duration" data-seconds="120">Gravar 2 minutos</button>
+          <button class="duration" data-seconds="300">Gravar 5 minutos</button>
+        </div>
+        <div class="recording-status" id="recording-status">
+          <div class="pulse" id="pulse"></div>
+          <div><span id="status-label">Pronto para gravar</span><strong id="countdown">00:00</strong></div>
+        </div>
+        <div class="counters">
+          <div><span>Eventos web</span><strong id="browser-count">0</strong></div>
+          <div><span>Comandos terminal</span><strong id="terminal-count">0</strong></div>
+          <div><span>Fila local</span><strong id="queue-count">0</strong></div>
+        </div>
+        <div class="actions">
+          <button id="stop" disabled>Parar e analisar</button>
+          <button id="analyze" disabled>Analisar novamente</button>
+        </div>
+      </article>
+
+      <article class="panel terminal-help" data-telemetry-control>
+        <p class="eyebrow">TERMINAL</p>
+        <h2>Ative o hook Bash</h2>
+        <p>O hook envia somente comandos executados enquanto existir uma sessão ativa. Sem sessão, nada é gravado.</p>
+        <pre><code>export DEVPILOT_URL=http://127.0.0.1:8081
+export DEVPILOT_BOOTSTRAP_TOKEN='seu-token'
+source tools/devpilot_terminal_capture.sh</code></pre>
+        <button id="copy-hook">Copiar configuração</button>
+        <small>O valor real do token não é colocado automaticamente neste bloco.</small>
+      </article>
+    </section>
+
+    <section class="panel analysis-panel">
+      <div class="section-title"><div><p class="eyebrow">ANÁLISE</p><h2>Padrões e candidatos à automação</h2></div><div class="score"><span>Score</span><strong id="score">—</strong></div></div>
+      <div id="summary" class="summary"><div class="empty">Inicie uma gravação para gerar a primeira análise.</div></div>
+      <div id="candidates" class="candidates"></div>
+    </section>
+
+    <section class="panel">
+      <div class="section-title"><div><p class="eyebrow">HISTÓRICO</p><h2>Sessões recentes</h2></div><button id="refresh-history" data-telemetry-control>Atualizar</button></div>
+      <div id="history" class="history"><div class="empty">Carregando...</div></div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="/assets/telemetry.js" defer></script>
+</body>
+</html>
