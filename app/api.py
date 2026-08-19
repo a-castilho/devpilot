@@ -12,8 +12,12 @@ from app.models import AuditEvent, Project, ProviderCredential, Run, Task, TaskS
 from app.schemas import ProjectCreate, ProjectUpdate, ProviderCreate, TaskCreate, VoiceCommand
 from app.security import require_access
 from app.services.audit import record
+from app.services.git_reader import grep as git_grep
+from app.services.git_reader import log as git_log
+from app.services.git_reader import read_file as git_read_file
+from app.services.git_reader import status as git_status
 from app.services.intent import interpret_voice
-from app.services.policy import evaluate_task, validate_repository_url
+from app.services.policy import evaluate_task, normalize_repository_url
 from app.services.vault import Vault
 
 
@@ -36,6 +40,12 @@ def project_or_404(db: Session, workspace_id: str, project_id: str) -> Project:
     if not item:
         raise HTTPException(404, "Project not found")
     return item
+
+
+def git_error(error: Exception) -> HTTPException:
+    if isinstance(error, ValueError):
+        return HTTPException(422, str(error))
+    return HTTPException(502, str(error) or "Unable to read repository")
 
 
 @router.get("/overview")
@@ -64,8 +74,13 @@ def list_projects(db: Session = Depends(get_db)):
 @router.post("/projects", status_code=201)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     ws = workspace(db)
+    existing = db.scalar(
+        select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
+    )
+    if existing:
+        raise HTTPException(409, f"Project slug already exists: {payload.slug}")
     try:
-        validate_repository_url(str(payload.repository_url))
+        repository_url = normalize_repository_url(payload.repository_url)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
     item = Project(
@@ -73,7 +88,7 @@ def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
         name=payload.name,
         slug=payload.slug,
         description=payload.description,
-        repository_url=str(payload.repository_url),
+        repository_url=repository_url,
         default_branch=payload.default_branch,
         agents_md=payload.agents_md,
         codex_config=json.dumps(payload.codex_config),
@@ -91,9 +106,8 @@ def update_project(project_id: str, payload: ProjectUpdate, db: Session = Depend
     item = project_or_404(db, ws.id, project_id)
     values = payload.model_dump(exclude_unset=True)
     if "repository_url" in values:
-        values["repository_url"] = str(values["repository_url"])
         try:
-            validate_repository_url(values["repository_url"])
+            values["repository_url"] = normalize_repository_url(values["repository_url"])
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
     if "codex_config" in values:
@@ -103,6 +117,71 @@ def update_project(project_id: str, payload: ProjectUpdate, db: Session = Depend
     record(db, workspace_id=ws.id, project_id=item.id, actor="owner", action="project.configured", details={"fields": sorted(values)})
     db.commit()
     return item
+
+
+@router.get("/projects/{project_id}/git/status")
+def project_git_status(project_id: str, db: Session = Depends(get_db)):
+    ws = workspace(db)
+    project = project_or_404(db, ws.id, project_id)
+    try:
+        return git_status(project)
+    except (ValueError, RuntimeError) as error:
+        raise git_error(error) from error
+
+
+@router.get("/projects/{project_id}/git/log")
+def project_git_log(
+    project_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    ref: str | None = Query(default=None, max_length=180),
+    db: Session = Depends(get_db),
+):
+    ws = workspace(db)
+    project = project_or_404(db, ws.id, project_id)
+    try:
+        return {
+            "project_id": project.id,
+            "ref": ref or f"origin/{project.default_branch}",
+            "commits": git_log(project, limit=limit, ref=ref),
+        }
+    except (ValueError, RuntimeError) as error:
+        raise git_error(error) from error
+
+
+@router.get("/projects/{project_id}/git/search")
+def project_git_search(
+    project_id: str,
+    q: str = Query(min_length=1, max_length=200),
+    limit: int = Query(100, ge=1, le=500),
+    ref: str | None = Query(default=None, max_length=180),
+    db: Session = Depends(get_db),
+):
+    ws = workspace(db)
+    project = project_or_404(db, ws.id, project_id)
+    try:
+        return {
+            "project_id": project.id,
+            "query": q,
+            "ref": ref or f"origin/{project.default_branch}",
+            "matches": git_grep(project, query=q, limit=limit, ref=ref),
+        }
+    except (ValueError, RuntimeError) as error:
+        raise git_error(error) from error
+
+
+@router.get("/projects/{project_id}/git/file")
+def project_git_file(
+    project_id: str,
+    path: str = Query(min_length=1, max_length=500),
+    ref: str | None = Query(default=None, max_length=180),
+    db: Session = Depends(get_db),
+):
+    ws = workspace(db)
+    project = project_or_404(db, ws.id, project_id)
+    try:
+        return git_read_file(project, path=path, ref=ref)
+    except (ValueError, RuntimeError) as error:
+        raise git_error(error) from error
 
 
 @router.post("/projects/{project_id}/analyze", status_code=201)
