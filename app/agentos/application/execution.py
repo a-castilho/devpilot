@@ -127,18 +127,16 @@ class GraphExecutionService:
         execution = self.get(workspace_id=workspace_id, execution_id=execution_id)
         if not execution:
             raise ExecutionNotFound("Execution not found")
-        allowed = {ExecutionStatus.failed, ExecutionStatus.compensated,
-                   ExecutionStatus.cancelled, ExecutionStatus.awaiting_approval}
+        allowed = {ExecutionStatus.failed, ExecutionStatus.compensated, ExecutionStatus.cancelled}
         if execution.status not in allowed:
-            raise CommandExecutionError("Execution is not resumable")
+            raise CommandExecutionError("Execution is not resumable; approval gates must be approved explicitly")
         for step in self.steps(execution_id=execution.id):
             if step.status in {StepStatus.failed, StepStatus.compensated, StepStatus.skipped}:
-                if step.attempt >= step.max_attempts and not reset_attempts:
-                    continue
                 ExecutionStateMachine.step(step.status, StepStatus.pending)
+                attempt = 0 if reset_attempts else min(step.attempt, max(step.max_attempts - 1, 0))
                 self.executions.set_step(
                     step_record_id=step.id, status=StepStatus.pending,
-                    attempt=0 if reset_attempts else step.attempt, error="", clear_next_attempt=True,
+                    attempt=attempt, error="", clear_next_attempt=True,
                 )
         ExecutionStateMachine.execution(execution.status, ExecutionStatus.running)
         updated = self.executions.set_execution(
@@ -167,7 +165,12 @@ class GraphExecutionService:
 
         waiting = next((s for s in steps if s.status == StepStatus.waiting_external), None)
         if waiting:
-            result = self.runner.poll(restore_command(waiting), waiting)
+            try:
+                result = self.runner.poll(restore_command(waiting), waiting)
+            except Exception as error:
+                self._fail_or_retry(execution, waiting, error)
+                self.uow.commit()
+                return True
             if result.status == "waiting":
                 return False
             self._complete(execution, waiting, result)
