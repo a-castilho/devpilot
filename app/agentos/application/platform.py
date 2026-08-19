@@ -5,6 +5,7 @@ from dataclasses import asdict
 from typing import Any
 
 from app.agentos.application.errors import CommandExecutionError, ModelUnavailable
+from app.agentos.application.extensions import ExtensionActivationPort
 from app.agentos.application.ports import (
     AppCatalogPort,
     EventBusPort,
@@ -16,6 +17,7 @@ from app.agentos.application.ports import (
 )
 from app.agentos.catalog import AGENT_CATALOG
 from app.agentos.domain.events import DomainEvent
+from app.agentos.domain.extensions import EXTENSION_CATALOG
 from app.agentos.domain.platform import (
     PLATFORM_LAYERS,
     TOOL_REGISTRY,
@@ -38,6 +40,7 @@ class KernelService:
                 "human_approval_for_delivery": True,
                 "automatic_push_merge_deploy": False,
                 "council_is_advisory": True,
+                "external_extension_code_download": False,
             },
         }
 
@@ -56,6 +59,9 @@ class KernelService:
 
 
 class ToolHubService:
+    def __init__(self, activations: ExtensionActivationPort | None = None) -> None:
+        self.activations = activations
+
     def list_tools(self, *, agent: str | None = None) -> list[dict[str, Any]]:
         items = []
         for spec in TOOL_REGISTRY.values():
@@ -64,13 +70,56 @@ class ToolHubService:
             items.append(asdict(spec))
         return items
 
+    def _project_capabilities(
+        self,
+        *,
+        workspace_id: str | None,
+        project_id: str | None,
+    ) -> tuple[set[str], set[str]] | None:
+        if self.activations is None or not workspace_id or not project_id:
+            return None
+        records = [
+            record
+            for record in self.activations.list(workspace_id=workspace_id, project_id=project_id)
+            if record.enabled
+        ]
+        if not records:
+            return None
+        agents = {"supervisor"}
+        tools = {"agent.plan", "audit.read"}
+        for record in records:
+            spec = EXTENSION_CATALOG.get(record.extension_key)
+            if spec is None:
+                continue
+            agents.update(spec.agents)
+            tools.update(spec.tools)
+        return agents, tools
+
     def assert_allowed(
         self,
         *,
         agent: str,
         tools: list[str],
         approval_granted: bool,
+        workspace_id: str | None = None,
+        project_id: str | None = None,
     ) -> None:
+        capabilities = self._project_capabilities(
+            workspace_id=workspace_id,
+            project_id=project_id,
+        )
+        if capabilities is not None:
+            enabled_agents, enabled_tools = capabilities
+            if agent not in enabled_agents:
+                raise CommandExecutionError(
+                    f"Agent {agent} is not enabled for project {project_id}; activate an extension pack"
+                )
+            disabled = [tool for tool in tools if tool not in enabled_tools]
+            if disabled:
+                raise CommandExecutionError(
+                    f"Tools are not enabled for project {project_id}: {', '.join(disabled)}"
+                )
+
         for tool in tools:
             spec = TOOL_REGISTRY.get(tool)
             if not spec:
