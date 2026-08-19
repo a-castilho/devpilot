@@ -10,7 +10,7 @@ from app.db import get_db
 from app.models import ProviderCredential, Workspace
 from app.security import require_access
 from app.services.audit import record
-from app.services.provider_runtime import ProviderRuntimeError, test_provider_connection
+from app.services.provider_runtime import ProviderRuntimeError, run_provider_connection_test
 from app.services.vault import Vault
 
 
@@ -68,7 +68,7 @@ def test_saved_provider(
         raise HTTPException(422, "O modelo solicitado não pertence a esta conexão.")
 
     try:
-        result = test_provider_connection(
+        result = run_provider_connection_test(
             item.provider,
             Vault().decrypt(item.encrypted_secret),
             selected_model,
