@@ -9,6 +9,10 @@ if [[ -n "${_DEVPILOT_CAPTURE_HOOK_INSTALLED:-}" ]]; then
 fi
 export _DEVPILOT_CAPTURE_HOOK_INSTALLED=1
 
+: "${DEVPILOT_HOME:=$HOME/Documents/devpilot}"
+: "${DEVPILOT_URL:=http://127.0.0.1:8080}"
+export DEVPILOT_HOME DEVPILOT_URL
+
 _DEVPILOT_CAPTURE_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 _DEVPILOT_CAPTURE_HELPER="${_DEVPILOT_CAPTURE_DIR}/devpilot_terminal_capture.py"
 _DEVPILOT_CAPTURE_LAST_COMMAND=""
