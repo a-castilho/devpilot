@@ -24,7 +24,7 @@
   };
   window.renderTaskAnalytics = () => {
     const target = root();
-    if (!target || !window.state) return;
+    if (!target) return;
     const tasks = Array.isArray(state.tasks) ? state.tasks : [];
     const statusValues = countBy(tasks, task => ptStatus(task.status));
     const typeValues = countBy(tasks, taskType);
