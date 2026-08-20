@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>TWS — exemplo de telas</title>
+  <style>
+    :root{--bg:#07111f;--panel:#0d1a2a;--panel2:#101f31;--line:#213247;--text:#ecf5ff;--muted:#8fa4ba;--accent:#4dd7bf;--blue:#6da7ff;--warn:#ffc765;--danger:#ff6f7d;--ok:#5ce39a}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:linear-gradient(145deg,#06101d,#0a1524 60%,#07111f);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+    button{font:inherit}.app{min-height:100vh;display:grid;grid-template-columns:230px 1fr}.sidebar{position:sticky;top:0;height:100vh;padding:20px 15px;border-right:1px solid var(--line);background:rgba(5,14,25,.9);backdrop-filter:blur(12px)}
+    .brand{display:flex;align-items:center;gap:11px;padding:5px 7px 20px}.brand-mark{width:40px;height:40px;border-radius:13px;display:grid;place-items:center;background:linear-gradient(135deg,var(--accent),var(--blue));color:#05111d;font-weight:950;font-size:18px}.brand strong{display:block;font-size:16px}.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.12em}
+    .nav{display:grid;gap:7px}.nav button{width:100%;border:0;border-radius:11px;padding:12px 13px;text-align:left;background:transparent;color:var(--muted);cursor:pointer;font-weight:750}.nav button:hover,.nav button.active{background:#112236;color:var(--text)}.nav button.active{box-shadow:inset 3px 0 0 var(--accent)}
+    .side-status{position:absolute;left:15px;right:15px;bottom:18px;padding:13px;border:1px solid var(--line);border-radius:13px;background:#0c1928}.side-status span{display:flex;align-items:center;gap:8px;font-weight:800}.dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 4px rgba(92,227,154,.1)}.side-status small{display:block;color:var(--muted);margin-top:4px}
+    main{min-width:0;padding:24px}.top{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:22px}.eyebrow{margin:0 0 4px;color:var(--accent);font-size:10px;font-weight:900;letter-spacing:.14em}.top h1{margin:0;font-size:clamp(23px,3vw,34px);letter-spacing:-.03em}.actions{display:flex;gap:9px;flex-wrap:wrap}.btn{border:1px solid var(--line);border-radius:10px;padding:10px 13px;background:#0d1c2d;color:var(--text);font-weight:800;cursor:pointer}.btn.primary{border-color:transparent;background:linear-gradient(135deg,var(--accent),#59c4ee);color:#06131e}
+    .screen{display:none}.screen.active{display:block}.hero{display:grid;grid-template-columns:1.5fr .8fr;gap:16px;margin-bottom:16px}.card{border:1px solid var(--line);border-radius:16px;background:linear-gradient(160deg,rgba(16,31,49,.95),rgba(9,21,35,.95));box-shadow:0 16px 40px rgba(0,0,0,.18)}.hero-main{padding:26px;min-height:210px;display:grid;align-content:center;background:radial-gradient(circle at 80% 20%,rgba(77,215,191,.15),transparent 32%),linear-gradient(160deg,#102238,#0a1726)}.hero-main h2{margin:0 0 9px;font-size:clamp(26px,4vw,43px);line-height:1.02;letter-spacing:-.04em}.hero-main p{margin:0;max-width:650px;color:var(--muted);font-size:14px}.hero-side{padding:20px;display:grid;align-content:center;gap:12px}.health{display:flex;justify-content:space-between;align-items:center}.health strong{font-size:30px}.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border-radius:999px;background:rgba(92,227,154,.1);color:var(--ok);font-size:10px;font-weight:900}.bar{height:8px;border-radius:999px;background:#07111d;overflow:hidden}.bar i{display:block;height:100%;width:94%;background:linear-gradient(90deg,var(--accent),var(--blue));border-radius:inherit}
+    .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.metric{padding:17px}.metric small{display:block;color:var(--muted);font-weight:700}.metric strong{display:block;margin-top:6px;font-size:27px;letter-spacing:-.03em}.metric span{display:block;margin-top:4px;color:var(--ok);font-size:11px}.metric.warn span{color:var(--warn)}
+    .grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}.panel{padding:18px}.panel-title{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:14px}.panel-title h3{margin:0;font-size:16px}.panel-title small{color:var(--muted)}
+    .list{display:grid;gap:9px}.row{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;padding:12px;border:1px solid var(--line);border-radius:12px;background:#0a1726}.row strong{display:block}.row small{display:block;color:var(--muted);margin-top:3px}.status{padding:5px 8px;border-radius:999px;font-size:9px;font-weight:900;letter-spacing:.06em}.status.ok{background:rgba(92,227,154,.1);color:var(--ok)}.status.run{background:rgba(109,167,255,.12);color:var(--blue)}.status.wait{background:rgba(255,199,101,.1);color:var(--warn)}.status.fail{background:rgba(255,111,125,.11);color:var(--danger)}
+    .timeline{display:grid;gap:0}.event{display:grid;grid-template-columns:18px 1fr;gap:10px}.event:before{content:"";width:8px;height:8px;margin:5px auto 0;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px rgba(77,215,191,.08)}.event div{padding:0 0 18px;border-left:1px solid var(--line);margin-left:-19px;padding-left:27px}.event:last-child div{border-left-color:transparent}.event strong{display:block}.event small{color:var(--muted)}
+    .workspace-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.workspace{padding:18px;position:relative;overflow:hidden}.workspace:after{content:"";position:absolute;width:90px;height:90px;border-radius:50%;right:-35px;top:-35px;background:rgba(77,215,191,.06)}.workspace-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.workspace h3{margin:12px 0 5px}.workspace p{margin:0;color:var(--muted);min-height:42px}.workspace-foot{display:flex;justify-content:space-between;gap:10px;margin-top:18px;padding-top:13px;border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+    .table-card{overflow:hidden}.table-head,.task{display:grid;grid-template-columns:2fr 1fr 1fr 1fr .7fr;gap:12px;align-items:center}.table-head{padding:11px 14px;color:var(--muted);font-size:10px;font-weight:900;letter-spacing:.07em;background:#0a1726;border-bottom:1px solid var(--line)}.task{padding:14px;border-bottom:1px solid var(--line)}.task:last-child{border-bottom:0}.task strong{display:block}.task small{color:var(--muted)}.priority{font-weight:900}.priority.high{color:var(--danger)}.priority.medium{color:var(--warn)}.priority.low{color:var(--ok)}
+    .monitor-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:16px}.monitor-card{padding:17px}.monitor-card .value{font-size:28px;font-weight:900;margin-top:6px}.logs{font:12px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;background:#050d17;padding:16px;border-radius:12px;overflow:auto;max-height:390px}.logs div{white-space:nowrap}.time{color:#667d94}.log-ok{color:var(--ok)}.log-info{color:var(--blue)}.log-warn{color:var(--warn)}
+    .mobile-tabs{display:none}
+    @media(max-width:900px){.app{grid-template-columns:1fr}.sidebar{display:none}main{padding:14px 12px 82px}.mobile-tabs{position:fixed;z-index:20;left:8px;right:8px;bottom:8px;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:5px;border:1px solid var(--line);border-radius:15px;background:rgba(6,16,29,.95);backdrop-filter:blur(12px)}.mobile-tabs button{border:0;border-radius:10px;padding:10px 4px;background:transparent;color:var(--muted);font-size:10px;font-weight:850}.mobile-tabs button.active{background:#112236;color:var(--text)}.top{align-items:flex-start}.actions .btn:first-child{display:none}.hero,.grid2{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.workspace-grid{grid-template-columns:1fr 1fr}.table-card{overflow:auto}.table-head,.task{min-width:720px}.monitor-grid{grid-template-columns:1fr 1fr 1fr}}
+    @media(max-width:560px){main{padding-inline:10px}.top{margin-bottom:14px}.top h1{font-size:24px}.hero-main{padding:20px;min-height:180px}.hero-side{padding:16px}.metrics{gap:8px}.metric{padding:14px}.metric strong{font-size:23px}.workspace-grid,.monitor-grid{grid-template-columns:1fr}.card{border-radius:13px}.panel{padding:14px}.actions .btn{padding:9px 10px}.row{grid-template-columns:1fr}.row .status{justify-self:start}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">T</span><div><strong>TWS</strong><small>EXEMPLO DE INTERFACE</small></div></div>
+      <nav class="nav" data-tabs>
+        <button class="active" data-target="dashboard">Visão geral</button>
+        <button data-target="operation">Operação</button>
+        <button data-target="tasks">Tarefas</button>
+        <button data-target="monitor">Monitoramento</button>
+      </nav>
+      <div class="side-status"><span><i class="dot"></i> Ambiente disponível</span><small>Todos os serviços operacionais</small></div>
+    </aside>
+
+    <main>
+      <header class="top">
+        <div><p class="eyebrow" id="screen-kicker">TWS · PAINEL</p><h1 id="screen-title">Visão geral</h1></div>
+        <div class="actions"><button class="btn">Exportar</button><button class="btn primary">+ Nova operação</button></div>
+      </header>
+
+      <section class="screen active" id="dashboard">
+        <div class="hero">
+          <article class="card hero-main"><p class="eyebrow">CENTRAL OPERACIONAL</p><h2>Tudo que importa,<br>em uma única tela.</h2><p>Exemplo de dashboard TWS com indicadores, atividade recente e saúde do ambiente em um layout responsivo.</p></article>
+          <article class="card hero-side"><div class="health"><div><small>Saúde geral</small><strong>94%</strong></div><span class="badge">● ESTÁVEL</span></div><div class="bar"><i></i></div><small style="color:var(--muted)">12 serviços ativos · 1 atenção · 0 críticos</small></article>
+        </div>
+        <div class="metrics">
+          <article class="card metric"><small>Operações hoje</small><strong>128</strong><span>↗ 18% vs. ontem</span></article>
+          <article class="card metric"><small>Em execução</small><strong>17</strong><span>11 dentro do SLA</span></article>
+          <article class="card metric warn"><small>Pendências</small><strong>6</strong><span>2 precisam de atenção</span></article>
+          <article class="card metric"><small>Disponibilidade</small><strong>99,8%</strong><span>últimas 24 horas</span></article>
+        </div>
+        <div class="grid2">
+          <article class="card panel"><div class="panel-title"><div><p class="eyebrow">FLUXO ATUAL</p><h3>Operações recentes</h3></div><small>ao vivo</small></div><div class="list"><div class="row"><div><strong>Sincronização de dados</strong><small>workspace principal · há 2 min</small></div><span class="status run">EXECUTANDO</span></div><div class="row"><div><strong>Validação de documentos</strong><small>fila compliance · há 8 min</small></div><span class="status ok">CONCLUÍDO</span></div><div class="row"><div><strong>Processamento lote #1842</strong><small>automação financeira · há 12 min</small></div><span class="status wait">AGUARDANDO</span></div></div></article>
+          <article class="card panel"><div class="panel-title"><div><p class="eyebrow">ATIVIDADE</p><h3>Últimos eventos</h3></div></div><div class="timeline"><div class="event"><div><strong>Deploy validado</strong><small>16:38 · ambiente principal</small></div></div><div class="event"><div><strong>Nova tarefa criada</strong><small>16:32 · prioridade alta</small></div></div><div class="event"><div><strong>Worker reconectado</strong><small>16:28 · latência 42 ms</small></div></div></div></article>
+        </div>
+      </section>
+
+      <section class="screen" id="operation">
+        <div class="workspace-grid">
+          <article class="card workspace"><div class="workspace-head"><span class="badge">● ONLINE</span><small>12 workers</small></div><h3>Operação principal</h3><p>Processamento de rotinas críticas e integrações do ambiente produtivo.</p><div class="workspace-foot"><span>24 fluxos</span><span>98% sucesso</span></div></article>
+          <article class="card workspace"><div class="workspace-head"><span class="status run">ATIVO</span><small>6 workers</small></div><h3>Homologação</h3><p>Validação de novas rotinas antes da promoção para produção.</p><div class="workspace-foot"><span>9 fluxos</span><span>3 em revisão</span></div></article>
+          <article class="card workspace"><div class="workspace-head"><span class="status wait">ATENÇÃO</span><small>3 workers</small></div><h3>Integrações</h3><p>Conectores externos, webhooks e sincronizações entre plataformas.</p><div class="workspace-foot"><span>14 conectores</span><span>1 degradado</span></div></article>
+          <article class="card workspace"><div class="workspace-head"><span class="status ok">ESTÁVEL</span><small>4 workers</small></div><h3>Documentos</h3><p>Pipeline de classificação, extração e conferência de arquivos.</p><div class="workspace-foot"><span>3.204 hoje</span><span>99,4% válidos</span></div></article>
+          <article class="card workspace"><div class="workspace-head"><span class="status ok">ESTÁVEL</span><small>2 workers</small></div><h3>Notificações</h3><p>Fila de comunicação e eventos transacionais para os usuários.</p><div class="workspace-foot"><span>842 envios</span><span>0 bloqueios</span></div></article>
+          <article class="card workspace"><div class="workspace-head"><span class="status run">ATIVO</span><small>5 workers</small></div><h3>Inteligência</h3><p>Automações assistidas por IA para classificação e recomendação.</p><div class="workspace-foot"><span>17 modelos</span><span>61 execuções</span></div></article>
+        </div>
+      </section>
+
+      <section class="screen" id="tasks">
+        <article class="card table-card">
+          <div class="table-head"><span>Tarefa</span><span>Origem</span><span>Status</span><span>Prioridade</span><span>Ação</span></div>
+          <div class="task"><div><strong>Reprocessar lote financeiro</strong><small>#TWS-1842 · criado há 4 min</small></div><span>Automação</span><span class="status run">EXECUTANDO</span><span class="priority high">Alta</span><button class="btn">Abrir</button></div>
+          <div class="task"><div><strong>Validar integração ERP</strong><small>#TWS-1841 · criado há 18 min</small></div><span>Operador</span><span class="status wait">REVISÃO</span><span class="priority high">Alta</span><button class="btn">Abrir</button></div>
+          <div class="task"><div><strong>Sincronizar cadastros</strong><small>#TWS-1839 · criado há 33 min</small></div><span>Scheduler</span><span class="status ok">CONCLUÍDO</span><span class="priority medium">Média</span><button class="btn">Abrir</button></div>
+          <div class="task"><div><strong>Atualizar índices de busca</strong><small>#TWS-1837 · criado há 51 min</small></div><span>Sistema</span><span class="status ok">CONCLUÍDO</span><span class="priority low">Baixa</span><button class="btn">Abrir</button></div>
+          <div class="task"><div><strong>Investigar webhook externo</strong><small>#TWS-1835 · criado há 1 h</small></div><span>Monitor</span><span class="status fail">FALHA</span><span class="priority high">Alta</span><button class="btn">Abrir</button></div>
+        </article>
+      </section>
+
+      <section class="screen" id="monitor">
+        <div class="monitor-grid"><article class="card monitor-card"><small style="color:var(--muted)">CPU média</small><div class="value">42%</div><span class="status ok">NORMAL</span></article><article class="card monitor-card"><small style="color:var(--muted)">Memória</small><div class="value">61%</div><span class="status ok">NORMAL</span></article><article class="card monitor-card"><small style="color:var(--muted)">Fila</small><div class="value">18</div><span class="status wait">OSCILANDO</span></article></div>
+        <article class="card panel"><div class="panel-title"><div><p class="eyebrow">LOGS AO VIVO</p><h3>Monitoramento do ambiente</h3></div><span class="badge">● STREAM ATIVO</span></div><div class="logs"><div><span class="time">16:43:18</span> <span class="log-ok">INFO</span> worker-04 heartbeat received latency=38ms</div><div><span class="time">16:43:14</span> <span class="log-info">INFO</span> task=TWS-1842 stage=processing progress=72%</div><div><span class="time">16:43:09</span> <span class="log-ok">INFO</span> database pool healthy connections=7/20</div><div><span class="time">16:42:57</span> <span class="log-warn">WARN</span> queue integration delay=1.8s threshold=1.5s</div><div><span class="time">16:42:46</span> <span class="log-info">INFO</span> webhook retry scheduled attempt=2</div><div><span class="time">16:42:32</span> <span class="log-ok">INFO</span> deploy healthcheck passed version=1.8.4</div><div><span class="time">16:42:19</span> <span class="log-ok">INFO</span> worker-02 completed task=TWS-1839</div></div></article>
+      </section>
+    </main>
+  </div>
+
+  <nav class="mobile-tabs" data-tabs><button class="active" data-target="dashboard">Painel</button><button data-target="operation">Operação</button><button data-target="tasks">Tarefas</button><button data-target="monitor">Monitor</button></nav>
+
+  <script>
+    (()=>{
+      const meta={dashboard:['TWS · PAINEL','Visão geral'],operation:['TWS · OPERAÇÃO','Operação'],tasks:['TWS · FILA DE TRABALHO','Tarefas'],monitor:['TWS · OBSERVABILIDADE','Monitoramento']};
+      const buttons=[...document.querySelectorAll('[data-target]')];
+      function show(id){
+        document.querySelectorAll('.screen').forEach(screen=>screen.classList.toggle('active',screen.id===id));
+        buttons.forEach(button=>button.classList.toggle('active',button.dataset.target===id));
+        document.getElementById('screen-kicker').textContent=meta[id][0];
+        document.getElementById('screen-title').textContent=meta[id][1];
+        window.scrollTo({top:0,behavior:'smooth'});
+      }
+      buttons.forEach(button=>button.addEventListener('click',()=>show(button.dataset.target)));
+    })();
+  </script>
+</body>
+</html>
