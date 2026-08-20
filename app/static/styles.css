@@ -89,3 +89,16 @@
   .voice-dock button{width:46px;height:46px}
   .toast{left:12px;right:12px}
 }
+
+
+/* DevPilot global scrollbar theme */
+:root{--scroll-track:#081321;--scroll-thumb:#2f6e80;--scroll-thumb-hover:#35e5d1}
+html,body{scrollbar-color:var(--scroll-thumb) var(--scroll-track);scrollbar-width:thin}
+*{scrollbar-color:var(--scroll-thumb) var(--scroll-track);scrollbar-width:thin}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:var(--scroll-track);border-radius:999px}
+*::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--cyan),var(--blue));border:2px solid var(--scroll-track);border-radius:999px;min-height:34px}
+*::-webkit-scrollbar-thumb:hover{background:linear-gradient(180deg,var(--scroll-thumb-hover),var(--blue))}
+*::-webkit-scrollbar-thumb:active{background:var(--cyan)}
+*::-webkit-scrollbar-corner{background:var(--scroll-track)}
+*::-webkit-scrollbar-button{display:none;width:0;height:0}

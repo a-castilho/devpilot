@@ -25,11 +25,11 @@
   overflow-y:auto;
   overflow-x:hidden;
   scrollbar-width:thin;
-  scrollbar-color:#3a6f88 transparent;
+  scrollbar-color:var(--cyan,#35e5d1) var(--surface,#0d1928);
 }
 
-#task-modal .task-modal-form::-webkit-scrollbar{width:7px}
-#task-modal .task-modal-form::-webkit-scrollbar-thumb{background:#3a6f88;border-radius:999px}
+#task-modal .task-modal-form::-webkit-scrollbar{width:8px}
+#task-modal .task-modal-form::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--cyan,#35e5d1),var(--blue,#5a86ff));border:2px solid var(--surface,#0d1928);border-radius:999px}
 
 #task-modal .task-modal-heading{padding-right:34px}
 #task-modal .task-modal-heading h2{
