@@ -1,5 +1,5 @@
 const $=(selector)=>document.querySelector(selector);
-const state={token:localStorage.getItem('devpilot-token')||'',session:null,recording:false,queue:[],timer:null,flushTimer:null,pollTimer:null,finishing:false};
+const state={token:localStorage.getItem('devpilot-token')||'',session:null,analysisSession:null,recording:false,queue:[],timer:null,flushTimer:null,pollTimer:null,finishing:false};
 
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3000)}
 function headers(){return {'Authorization':`Bearer ${state.token}`,'Content-Type':'application/json'}}
@@ -47,14 +47,14 @@ function setRecordingUI(){
   const active=state.recording;
   $('#pulse').classList.toggle('active',active);
   $('#status-label').textContent=active?'Gravando atividade':'Pronto para gravar';
-  $('#stop').disabled=!active;$('#analyze').disabled=!state.session;
+  $('#stop').disabled=!active;$('#analyze').disabled=!(state.analysisSession||state.session);
   document.querySelectorAll('.duration').forEach(button=>button.disabled=active);
-  if(state.session){$('#browser-count').textContent=state.session.event_counts?.browser||0;$('#terminal-count').textContent=state.session.event_counts?.terminal||0;$('#countdown').textContent=formatTime(state.session.remaining_seconds||0)}else{$('#countdown').textContent='00:00'}
+  if(state.session){$('#browser-count').textContent=state.session.event_counts?.browser||0;$('#terminal-count').textContent=state.session.event_counts?.terminal||0;$('#countdown').textContent=formatTime(state.session.remaining_seconds||0)}else{$('#browser-count').textContent='0';$('#terminal-count').textContent='0';$('#countdown').textContent='00:00'}
 }
 
 async function refreshSession(){
   if(!state.session)return;
-  try{const item=await api(`/sessions/${state.session.id}`);state.session=item;$('#browser-count').textContent=item.event_counts?.browser||0;$('#terminal-count').textContent=item.event_counts?.terminal||0;if(item.status!=='recording'&&state.recording)await finishSession(false)}catch(error){toast(error.message)}
+  try{const item=await api(`/sessions/${state.session.id}`);state.session=item;if(state.analysisSession?.id===item.id)state.analysisSession=item;$('#browser-count').textContent=item.event_counts?.browser||0;$('#terminal-count').textContent=item.event_counts?.terminal||0;if(item.status!=='recording'&&state.recording)await finishSession(false)}catch(error){toast(error.message)}
 }
 
 function startTimers(){
@@ -69,7 +69,7 @@ async function startSession(seconds){
   if(!state.token)return authState();
   try{
     const item=await api('/sessions',{method:'POST',body:JSON.stringify({duration_seconds:Number(seconds)})});
-    state.session=item;state.recording=true;state.queue=[];attachCapture();startTimers();setRecordingUI();renderAnalysis(item.analysis||{});toast(`Gravação iniciada por ${Math.round(seconds/60)} minuto(s)`);
+    state.session=item;state.analysisSession=item;state.recording=true;state.queue=[];attachCapture();startTimers();setRecordingUI();renderAnalysis(item.analysis||{},item);toast(`Gravação iniciada por ${Math.round(seconds/60)} minuto(s)`);
   }catch(error){toast(error.message);await loadActive()}
 }
 
@@ -79,18 +79,43 @@ async function finishSession(stopOnServer=true){
   try{
     await flushQueue();
     if(stopOnServer)state.session=await api(`/sessions/${state.session.id}/stop`,{method:'POST',body:'{}'});
-    await analyzeCurrent();
+    state.analysisSession=state.session;
+    await analyzeSession(state.session,{announce:true});
     await loadHistory();
   }catch(error){toast(error.message)}finally{state.finishing=false;setRecordingUI()}
 }
 
-async function analyzeCurrent(){
-  if(!state.session)return;
-  const analysis=await api(`/sessions/${state.session.id}/analyze`,{method:'POST',body:'{}'});state.session.analysis=analysis;renderAnalysis(analysis);toast('Análise concluída');
+async function analyzeSession(item,{announce=false}={}){
+  if(!item?.id)return null;
+  const analysis=await api(`/sessions/${item.id}/analyze`,{method:'POST',body:'{}'});
+  const updated={...item,analysis};
+  state.analysisSession=updated;
+  if(state.session?.id===item.id)state.session=updated;
+  renderAnalysis(analysis,updated);
+  setRecordingUI();
+  if(announce)toast('Análise concluída');
+  return updated;
 }
 
-function renderAnalysis(analysis){
-  const summary=analysis?.summary;if(!summary){$('#score').textContent='—';$('#summary').innerHTML='<div class="empty">A análise aparecerá aqui quando a sessão terminar.</div>';$('#candidates').innerHTML='';return}
+async function analyzeCurrent(){
+  const target=state.analysisSession||state.session;
+  if(!target)return;
+  try{await analyzeSession(target,{announce:true});await loadHistory()}catch(error){toast(error.message)}
+}
+
+function setAnalysisContext(item){
+  const title=$('.analysis-panel .section-title > div');
+  if(!title)return;
+  let context=$('#analysis-session-context');
+  if(!context){context=document.createElement('p');context.id='analysis-session-context';context.className='analysis-session-context';title.appendChild(context)}
+  if(!item){context.textContent='';return}
+  const when=item.started_at?new Date(item.started_at).toLocaleString('pt-BR'):'Sessão';
+  context.textContent=`Sessão ${when} · ${item.duration_seconds||0}s · ${item.status||'—'}`;
+}
+
+function renderAnalysis(analysis,item=state.analysisSession||state.session){
+  setAnalysisContext(item);
+  const summary=analysis?.summary;if(!summary){$('#score').textContent='—';$('#summary').innerHTML='<div class="empty">Esta sessão ainda não possui análise. Use “Analisar novamente” para gerar.</div>';$('#candidates').innerHTML='';return}
   $('#score').textContent=analysis.automation_score;
   const items=[['Eventos',summary.events],['Terminal',summary.terminal_commands],['Cliques',summary.browser_clicks],['Teclas',summary.key_events],['Padrões',summary.repeated_patterns]];
   $('#summary').innerHTML=items.map(([label,value])=>`<div class="summary-card"><span>${label}</span><strong>${value}</strong></div>`).join('');
@@ -103,17 +128,45 @@ async function loadActive(){
   if(!state.token)return authState();
   try{
     const data=await api('/sessions/active');
-    if(data.active){state.session=data.active;state.recording=true;attachCapture();startTimers();setRecordingUI();renderAnalysis(data.active.analysis||{})}
-    else{state.recording=false;detachCapture();clearTimers();setRecordingUI()}
+    if(data.active){state.session=data.active;state.recording=true;if(!state.analysisSession)state.analysisSession=data.active;attachCapture();startTimers();setRecordingUI();if(state.analysisSession?.id===data.active.id)renderAnalysis(data.active.analysis||{},data.active)}
+    else{state.session=null;state.recording=false;detachCapture();clearTimers();setRecordingUI()}
   }catch(error){toast(error.message)}
+}
+
+function markSelectedHistory(sessionId){
+  document.querySelectorAll('.history-row').forEach(row=>row.classList.toggle('selected',row.dataset.sessionRow===sessionId));
+  document.querySelectorAll('[data-session]').forEach(button=>{
+    const selected=button.dataset.session===sessionId;
+    button.textContent=selected?'Exibindo':'Ver análise';
+    button.setAttribute('aria-pressed',String(selected));
+  });
+}
+
+async function openHistoryAnalysis(sessionId,button){
+  const original=button.textContent;
+  button.disabled=true;button.textContent='Abrindo…';
+  try{
+    let item=await api(`/sessions/${sessionId}`);
+    state.analysisSession=item;
+    if(!item.analysis?.summary)item=await analyzeSession(item);
+    else renderAnalysis(item.analysis,item);
+    state.analysisSession=item;
+    markSelectedHistory(item.id);
+    setRecordingUI();
+    const panel=$('.analysis-panel');
+    panel.classList.add('analysis-highlight');
+    panel.scrollIntoView({behavior:'smooth',block:'start'});
+    setTimeout(()=>panel.classList.remove('analysis-highlight'),900);
+    toast('Análise da sessão carregada');
+  }catch(error){button.textContent=original;toast(error.message)}finally{button.disabled=false}
 }
 
 async function loadHistory(){
   if(!state.token)return;
   try{
     const items=await api('/sessions?limit=12');
-    $('#history').innerHTML=items.map(item=>`<div class="history-row"><div><strong>${new Date(item.started_at).toLocaleString('pt-BR')}</strong><br><small>${item.duration_seconds}s · ${item.status}</small></div><span>${item.event_counts.browser} web</span><span>${item.event_counts.terminal} terminal</span><button data-session="${item.id}" data-telemetry-control>Ver análise</button></div>`).join('')||'<div class="empty">Nenhuma sessão registrada.</div>';
-    document.querySelectorAll('[data-session]').forEach(button=>button.onclick=async()=>{try{const item=await api(`/sessions/${button.dataset.session}`);state.session=item;renderAnalysis(item.analysis||{});$('#analyze').disabled=false;window.scrollTo({top:document.querySelector('.analysis-panel').offsetTop-20,behavior:'smooth'})}catch(error){toast(error.message)}})
+    $('#history').innerHTML=items.map(item=>`<div class="history-row${state.analysisSession?.id===item.id?' selected':''}" data-session-row="${item.id}"><div><strong>${new Date(item.started_at).toLocaleString('pt-BR')}</strong><br><small>${item.duration_seconds}s · ${item.status}</small></div><span>${item.event_counts.browser} web</span><span>${item.event_counts.terminal} terminal</span><button data-session="${item.id}" data-telemetry-control aria-pressed="${state.analysisSession?.id===item.id?'true':'false'}">${state.analysisSession?.id===item.id?'Exibindo':'Ver análise'}</button></div>`).join('')||'<div class="empty">Nenhuma sessão registrada.</div>';
+    document.querySelectorAll('[data-session]').forEach(button=>button.onclick=()=>openHistoryAnalysis(button.dataset.session,button));
   }catch(error){toast(error.message)}
 }
 
