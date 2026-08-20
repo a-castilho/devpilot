@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     local_readonly_max_file_chars: int = 8_000
     local_readonly_max_context_chars: int = 40_000
 
+    # Writing-task continuity. When the local ChatGPT/Codex session reaches a usage/rate limit,
+    # DevPilot may make one isolated Codex retry using an encrypted OpenAI API connection.
+    # This path can consume API credits; disable it globally or select a dedicated connection label.
+    codex_api_fallback_enabled: bool = True
+    codex_api_fallback_connection_label: str = ""
+
     # AgentOS text-generation gateway. Defaults preserve the local Ollama-only behavior.
     # External providers use credentials already encrypted in provider_credentials.
     agentos_model_provider: str = "ollama"
