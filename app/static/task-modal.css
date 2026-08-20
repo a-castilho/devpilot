@@ -1,3 +1,5 @@
+@import url("/assets/mobile-typography.css");
+
 #task-modal{
   width:min(760px,calc(100vw - 32px));
   max-width:760px;
