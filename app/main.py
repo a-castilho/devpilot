@@ -66,6 +66,7 @@ def spa(path: str):
         '<script src="/assets/provider-models.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
         '<script src="/assets/voice-project-start.js" defer></script>',
+        '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/example-project.js" defer></script>',
     ]
