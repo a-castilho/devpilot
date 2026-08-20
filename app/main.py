@@ -15,6 +15,7 @@ from app.task_run_routes import router as task_run_router
 from app.user_routes import router as users_router
 from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
+from app.voice_transcription_routes import router as voice_transcription_router
 from app.db import Base, engine
 from app.services.schema import ensure_runtime_schema
 
@@ -39,6 +40,7 @@ app.include_router(project_provisioning_router)
 app.include_router(provider_models_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
+app.include_router(voice_transcription_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
