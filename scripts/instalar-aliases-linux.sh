@@ -18,12 +18,27 @@ fi
 
 cat >> "$TMP" <<'EOF'
 # >>> DEVPILOT ALIASES >>>
-# Use shell functions instead of aliases so the commands also work immediately
-# after `source ~/.bashrc` inside the same compound shell command.
-atualizar-local() { bash "$HOME/Documents/devpilot/scripts/atualizar-local.sh" "$@"; }
+export DEVPILOT_HOME="$HOME/Documents/devpilot"
+export DEVPILOT_URL="http://127.0.0.1:8080"
+
+# Funções em vez de aliases: funcionam também depois de `source ~/.bashrc`.
+atualizar-local() {
+  bash "$DEVPILOT_HOME/scripts/atualizar-local.sh" "$@"
+  local rc=$?
+  if [ "$rc" -eq 0 ] && [ -f "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh" ]; then
+    source "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh"
+  fi
+  return "$rc"
+}
 atualizar() { atualizar-local "$@"; }
-reconstruir-sistema() { bash "$HOME/Documents/devpilot/scripts/reconstruir-sistema.sh" "$@"; }
+reconstruir-sistema() { bash "$DEVPILOT_HOME/scripts/reconstruir-sistema.sh" "$@"; }
 reconstruir() { reconstruir-sistema "$@"; }
+
+# O hook só envia comandos quando há uma sessão de telemetria ativa.
+# O helper lê o token localmente do ambiente/.env sem imprimi-lo no terminal.
+if [[ $- == *i* ]] && [ -f "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh" ]; then
+  source "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh"
+fi
 # <<< DEVPILOT ALIASES <<<
 EOF
 
@@ -32,7 +47,9 @@ rm -f "$TMP"
 
 chmod +x \
   "$HOME/Documents/devpilot/scripts/atualizar-local.sh" \
-  "$HOME/Documents/devpilot/scripts/reconstruir-sistema.sh" 2>/dev/null || true
+  "$HOME/Documents/devpilot/scripts/reconstruir-sistema.sh" \
+  "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.sh" \
+  "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.py" 2>/dev/null || true
 
 echo "Comandos instalados:"
 echo "  atualizar-local"
@@ -40,4 +57,5 @@ echo "  atualizar"
 echo "  reconstruir-sistema"
 echo "  reconstruir"
 echo
-echo "Execute: source ~/.bashrc"
+echo "Telemetria de terminal: auto-carregamento Bash configurado em 127.0.0.1:8080"
+echo "Execute agora: source ~/.bashrc"
