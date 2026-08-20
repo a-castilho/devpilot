@@ -106,9 +106,10 @@
   <script>
     (() => {
       const $ = id => document.getElementById(id);
+      const MAX_EVENTS = 1200;
       const state = {
-        recording:false,sessionId:null,startAt:0,stopAt:0,events:[],stream:[],clicks:0,keys:0,scrolls:0,
-        movePx:0,analysis:null,lastMouse:null,lastMouseSample:0,lastActionAt:0,lastKeyCategory:'—',
+        recording:false,sessionId:null,startAt:0,stopAt:0,events:[],eventTotal:0,stream:[],clicks:0,keys:0,scrolls:0,
+        movePx:0,analysis:null,lastMouse:null,lastMouseSample:0,lastMouseUi:0,lastActionAt:0,lastKeyCategory:'—',
         perSecond:Array(30).fill(0),secondCount:0,timer:null,autoStop:null
       };
 
@@ -160,6 +161,10 @@
         const now=Date.now();
         const item={event_type,at:now,ts:now-state.startAt,...payload};
         state.events.push(item);
+        state.eventTotal++;
+        if(state.events.length>MAX_EVENTS){
+          state.events.splice(0,state.events.length-MAX_EVENTS);
+        }
         state.secondCount++;
         state.lastActionAt=now;
         if(showInStream){
@@ -178,8 +183,11 @@
           state.movePx+=Math.hypot(point.x-state.lastMouse.x,point.y-state.lastMouse.y);
         }
         state.lastMouse=point;
-        $('tMouse').textContent=`${Math.round(point.x)} / ${Math.round(point.y)}`;
-        if(now-state.lastMouseSample<100)return;
+        if(now-state.lastMouseUi>=120){
+          state.lastMouseUi=now;
+          $('tMouse').textContent=`${Math.round(point.x)} / ${Math.round(point.y)}`;
+        }
+        if(now-state.lastMouseSample<250)return;
         state.lastMouseSample=now;
         recordEvent('mousemove',{
           x:normalized(event.clientX,innerWidth),
@@ -355,7 +363,7 @@
         const recent=state.events.slice(-20);
         const intervals=recent.map((e,i,a)=>i?a[i].at-a[i-1].at:0).filter(Boolean);
         const avg=intervals.length?Math.round(intervals.reduce((a,b)=>a+b,0)/intervals.length):0;
-        $('mEvents').textContent=state.events.length;
+        $('mEvents').textContent=state.eventTotal;
         $('mClicks').textContent=state.clicks;
         $('mKeys').textContent=state.keys;
         $('mMove').textContent=(state.movePx/3779.5).toFixed(2)+' m';
@@ -363,7 +371,7 @@
         $('mTime').textContent=fmtTime(elapsed);
         $('tViewport').textContent=`${innerWidth} × ${innerHeight}`;
         $('tInterval').textContent=avg?avg+' ms':'—';
-        $('tRate').textContent=elapsed?Math.round(state.events.length/(elapsed/60000)):0;
+        $('tRate').textContent=elapsed?Math.round(state.eventTotal/(elapsed/60000)):0;
         $('tScroll').textContent=state.scrolls;
         renderChart();
         renderPatterns();
@@ -435,8 +443,8 @@
       function reset(update=true){
         stop();
         Object.assign(state,{
-          sessionId:null,startAt:0,stopAt:0,events:[],stream:[],clicks:0,keys:0,scrolls:0,movePx:0,
-          analysis:null,lastMouse:null,lastMouseSample:0,lastActionAt:0,lastKeyCategory:'—',
+          sessionId:null,startAt:0,stopAt:0,events:[],eventTotal:0,stream:[],clicks:0,keys:0,scrolls:0,movePx:0,
+          analysis:null,lastMouse:null,lastMouseSample:0,lastMouseUi:0,lastActionAt:0,lastKeyCategory:'—',
           secondCount:0,perSecond:Array(30).fill(0)
         });
         $('status').classList.remove('live');
