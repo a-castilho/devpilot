@@ -10,6 +10,7 @@ from app.api import router
 from app.auth_routes import router as auth_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
+from app.task_run_routes import router as task_run_router
 from app.user_routes import router as users_router
 from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
@@ -31,6 +32,7 @@ app = FastAPI(title="DevPilot API", version="1.0.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
+app.include_router(task_run_router)
 app.include_router(project_provisioning_router)
 app.include_router(provider_models_router)
 app.include_router(reports_router)
@@ -62,6 +64,7 @@ def spa(path: str):
         '<script src="/assets/provider-models.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
         '<script src="/assets/voice-project-start.js" defer></script>',
+        '<script src="/assets/task-failures.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
