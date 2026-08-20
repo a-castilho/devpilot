@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-08-20T13:19:19.672095+00:00",
+  "generated_at": "2026-08-20T16:34:58.393579+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -90,6 +90,13 @@
       "title": "Revisão PR #2 — Add autonomous AI development operations",
       "source": "docs/reviews/pr-2.md",
       "content": "# Revisão PR #2 — Add autonomous AI development operations\n\n> Baseline criado na adoção da nova regra de revisão.\n\n- **Estado:** aberta\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/2\n- **Issue relacionada detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada na descrição:** NÃO\n\n## Entrega declarada\nCadastro iniciando tarefa real, Estúdio IA, fila/prioridade/ETA, dashboard de métricas, comandos por voz, integração Git privada, agente local e imagem Docker com Git/Codex.\n\n## Evidências declaradas\n- 21 testes aprovados;\n- compileall e node --check;\n- cobertura de 64%;\n- Docker delegado ao CI.\n\n## Lacuna crítica de revisão\nA PR declara mudanças importantes no dashboard, Estúdio IA e experiência de voz, mas não apresenta evidência visual. Antes do merge, comparar os fluxos reais de cadastro, fila, resultados, voz e estados de execução com o comportamento descrito.\n\n<!-- COMPROMISSO-GERAL-A-CASTILHO -->\n\n---\n\n## Compromisso Geral\n\n**Sempre na melhor prática. No caminho do bem maior.**\n\n**Ir até o fim sem sair do caminho, seja ele qual for.**"
+    },
+    {
+      "id": "docs-reviews-pr-17",
+      "category": "Revisões",
+      "title": "Revisão PR #17 — fix: tornar reconhecimento de voz compatível no mobile",
+      "source": "docs/reviews/pr-17.md",
+      "content": "# Revisão PR #17 — fix: tornar reconhecimento de voz compatível no mobile\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Aberta\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `fix/voice-recognition-mobile`\n- **Atualizada em:** 2026-08-20T16:34:39Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/17\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 3\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/main.py` (+2/-0)\n- `app/static/voice-local-update.js` (+228/-20)\n- `app/voice_transcription_routes.py` (+157/-0)\n\n## Descrição e evidências da PR\n\nCorrige a falha genérica de reconhecimento de voz no mobile.\n\n- mantém Web Speech como primeira tentativa;\n- mostra o erro real (`network`, permissão, ausência de fala etc.);\n- adiciona fallback com `MediaRecorder` + transcrição no backend;\n[conteúdo sensível omitido]\n- limita áudio a 15 MB e não grava a transcrição na auditoria;\n- preserva o comando automático `atualizar local`;\n- informa explicitamente quando HTTP em IP da LAN bloqueia acesso ao microfone.\n\nValidação local de sintaxe feita para Python e JavaScript antes do commit.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
     },
     {
       "id": "docs-reviews-pr-14",
