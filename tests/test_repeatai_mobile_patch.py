@@ -54,7 +54,8 @@ document.addEventListener("click", () => {});
     assert "pointerdown" in content
     assert "sourceCapabilities.firesTouchEvents" in content
     assert "stopImmediatePropagation" in content
-    assert "MutationObserver" in content
+    assert "autoAnalyzeRetries" in content
+    assert "button.click()" in content
     assert "table-layout: fixed" in content
 
     backups = list(static.glob("index.html.backup-*"))
