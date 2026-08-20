@@ -39,6 +39,18 @@ def _version_frontend_scripts(html: str) -> str:
     return _SCRIPT_SRC_RE.sub(replace, html)
 
 
+def _inject_mobile_scroll_unlock(html: str) -> str:
+    asset = STATIC / "mobile-scroll-unlock.css"
+    try:
+        revision = str(asset.stat().st_mtime_ns)
+    except OSError:
+        revision = "1"
+    link = f'<link rel="stylesheet" href="/assets/mobile-scroll-unlock.css?v={revision}">'
+    if "mobile-scroll-unlock.css" not in html:
+        html = html.replace("</head>", f"  {link}\n</head>")
+    return html
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -94,13 +106,13 @@ def spa(path: str):
         '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/example-project.js" defer></script>',
-        '<script src="/assets/repeatai-mobile-viewport-fix.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
             html = html.replace("</body>", f"  {script}\n</body>")
 
+    html = _inject_mobile_scroll_unlock(html)
     html = _version_frontend_scripts(html)
     return HTMLResponse(
         html,
