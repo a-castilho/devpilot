@@ -61,9 +61,22 @@
     if (live) live.textContent = text;
   }
 
+  function autoAdvanceStart(view) {
+    if (!view || view.dataset.repeataiStartAuto === '1') return;
+    const button = view.querySelector('#repeatai-wizard-actions button');
+    if (!button || button.textContent.trim() !== 'COMEÇAR') return;
+
+    view.dataset.repeataiStartAuto = '1';
+    button.style.display = 'none';
+    button.setAttribute('aria-hidden', 'true');
+    button.tabIndex = -1;
+    button.click();
+  }
+
   function syncWizard(view) {
     if (!view) return;
     view.querySelector('#repeatai-train-horn')?.remove();
+    autoAdvanceStart(view);
 
     const title = view.querySelector('#repeatai-wizard-title');
     const copy = view.querySelector('#repeatai-wizard-copy');
@@ -71,11 +84,13 @@
     const step = kicker?.textContent.trim() || '';
 
     if (title?.textContent.trim() === 'MOVA O MOUSE LOUCAMENTE') {
-      title.textContent = 'MOVA O DEDO E TOQUE NA TELA';
+      title.textContent = MOBILE ? 'MOVA O DEDO E TOQUE NA TELA' : 'MOVA O MOUSE E CLIQUE NA TELA';
     }
 
-    if (step === 'MOUSE' && copy && MOBILE) {
-      copy.textContent = 'Arraste o dedo e toque na tela. A amostragem é limitada para manter o navegador fluido.';
+    if (step === 'MOUSE' && copy) {
+      copy.textContent = MOBILE
+        ? 'Arraste o dedo e toque na tela. A amostragem é limitada para manter o navegador fluido.'
+        : 'Faça movimentos variados e clique na tela para treinar a interação.';
     }
 
     if (step === 'SCROLL' && copy && MOBILE) {
@@ -119,7 +134,9 @@
   }
 
   function startCapture(view) {
-    const frame = view?.querySelector('#repeatai-frame');
+    if (!view?.classList.contains('active') || captureActive) return captureActive;
+
+    const frame = view.querySelector('#repeatai-frame');
     const doc = getFrameDoc(frame);
     if (!frame || !doc) {
       if (frame) frame.dataset.startCaptureWhenReady = '1';
@@ -216,9 +233,6 @@
       }));
     }, {passive:true});
 
-    /* Android touch scrolling does not emit WheelEvent. We only synthesize a
-       low-frequency wheel for the wizard progress. It is never forwarded to
-       the iframe, so the browser keeps complete ownership of the real scroll. */
     window.addEventListener('scroll', () => {
       const current = window.scrollY;
       const delta = current - lastScrollY;
@@ -251,6 +265,7 @@
       frame.addEventListener('load', () => {
         if (MOBILE && forceFallback(frame)) return;
         tuneFrame(view);
+        startCapture(view);
       });
     }
 
@@ -262,30 +277,17 @@
         if (currentStep(view) === 'REPETAI PRONTO' && captureActive) stopCapture(view);
       }).observe(kicker, {childList:true, characterData:true, subtree:true});
     }
+
+    startCapture(view);
   }
 
   injectStyles();
   prepare(getView());
 
   document.addEventListener('click', event => {
-    const view = getView();
-    if (!view) return;
-
-    if (event.target.closest?.('[data-example-project="repeatai"]')) {
-      setTimeout(() => prepare(getView()), 0);
-      return;
-    }
-
-    const actionButton = event.target.closest?.('#repeatai-wizard-actions button');
-    if (!actionButton || !view.contains(actionButton)) return;
-
-    if (actionButton.textContent.trim() === 'COMEÇAR') {
-      setTimeout(() => {
-        prepare(view);
-        startCapture(view);
-      }, 0);
-    }
-  });
+    if (!event.target.closest?.('[data-example-project="repeatai"]')) return;
+    setTimeout(() => prepare(getView()), 0);
+  }, {passive:true});
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && captureActive) stopCapture(getView());
