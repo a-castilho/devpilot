@@ -1,4 +1,17 @@
 services:
+  host-actions-init:
+    image: alpine:3.20
+    command:
+      - sh
+      - -c
+      - >-
+        mkdir -p /host-actions/pending /host-actions/processed /host-actions/failed &&
+        chown -R 10001:10001 /host-actions &&
+        chmod -R u+rwX /host-actions
+    volumes:
+      - ./runtime/host-actions:/host-actions
+    restart: "no"
+
   app:
     build: .
     env_file: .env
@@ -15,6 +28,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      host-actions-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   worker:
@@ -32,6 +47,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      host-actions-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   postgres:
