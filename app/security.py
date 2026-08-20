@@ -12,14 +12,50 @@ from enum import Enum
 
 from cryptography.exceptions import InvalidKey
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.config import get_settings
+from app.db import get_db
+from app.models import User
 
 
 class Role(str, Enum):
-    USER = "user"
-    ADMIN = "admin"
+    SUPER_ADMIN = "SUPER_ADMIN"
+    OWNER = "OWNER"
+    ADMIN = "ADMIN"
+    ANALYST = "ANALYST"
+    VIEWER = "VIEWER"
+
+
+MANAGEMENT_ROLES = {Role.SUPER_ADMIN, Role.OWNER, Role.ADMIN}
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def canonical_role(value: str | Role) -> Role:
+    if isinstance(value, Role):
+        return value
+    raw = str(value).strip()
+    legacy = {"admin": Role.SUPER_ADMIN, "user": Role.VIEWER}
+    if raw in legacy:
+        return legacy[raw]
+    try:
+        return Role(raw.upper())
+    except ValueError as error:
+        raise HTTPException(status_code=403, detail="Perfil de acesso inválido") from error
+
+
+def _analyst_can_write(request: Request) -> bool:
+    method = request.method.upper()
+    path = request.url.path.rstrip("/")
+    if method == "POST" and path in {"/api/tasks", "/api/voice/commands"}:
+        return True
+    if method == "POST" and path.startswith("/api/projects/") and path.endswith("/analyze"):
+        return True
+    if method == "POST" and path.startswith("/api/tasks/") and path.endswith("/retry"):
+        return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -88,7 +124,7 @@ def create_access_token(user) -> tuple[str, int]:
         "sub": str(user.id),
         "workspace_id": str(user.workspace_id),
         "email": user.email,
-        "role": str(user.role),
+        "role": canonical_role(user.role).value,
         "iat": now,
         "exp": now + ttl,
     }
@@ -112,7 +148,7 @@ def decode_access_token(token: str) -> Principal:
             raise ValueError("header")
         if int(payload["exp"]) <= int(datetime.now(timezone.utc).timestamp()):
             raise ValueError("expired")
-        role = Role(payload["role"])
+        role = canonical_role(payload["role"])
         user_id = str(payload["sub"])
         workspace_id = str(payload["workspace_id"])
         email = str(payload["email"])
@@ -120,12 +156,7 @@ def decode_access_token(token: str) -> Principal:
         raise
     except (binascii.Error, KeyError, TypeError, ValueError, json.JSONDecodeError, UnicodeDecodeError) as error:
         raise HTTPException(status_code=401, detail="Invalid or expired access token") from error
-    return Principal(
-        user_id=user_id,
-        workspace_id=workspace_id,
-        email=email,
-        role=role,
-    )
+    return Principal(user_id=user_id, workspace_id=workspace_id, email=email, role=role)
 
 
 def _bearer_token(authorization: str | None) -> str:
@@ -145,20 +176,88 @@ def current_principal(authorization: str | None = Header(default=None)) -> Princ
             user_id=None,
             workspace_id=None,
             email=None,
-            role=Role.ADMIN,
+            role=Role.SUPER_ADMIN,
             bootstrap=True,
         )
     return decode_access_token(token)
 
 
-def require_access(principal: Principal = Depends(current_principal)) -> str:
+def session_principal(
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+) -> Principal:
+    if principal.bootstrap:
+        return principal
+    user = db.scalar(select(User).where(User.id == principal.user_id))
+    if not user or not user.active or user.workspace_id != principal.workspace_id:
+        raise HTTPException(status_code=401, detail="Invalid or expired access token")
+    return Principal(
+        user_id=user.id,
+        workspace_id=user.workspace_id,
+        email=user.email,
+        role=canonical_role(user.role),
+    )
+
+
+def require_access(
+    request: Request,
+    principal: Principal = Depends(session_principal),
+) -> str:
+    if request.method.upper() in _SAFE_METHODS:
+        return principal.actor
+    if principal.role is Role.VIEWER:
+        raise HTTPException(status_code=403, detail="Perfil de leitura não pode executar esta ação")
+    if principal.role is Role.ANALYST and not _analyst_can_write(request):
+        raise HTTPException(
+            status_code=403,
+            detail="Perfil de analista não pode administrar configurações ou aprovações",
+        )
     return principal.actor
 
 
-def require_super_admin(principal: Principal = Depends(current_principal)) -> str:
-    if principal.role is not Role.ADMIN:
-        raise HTTPException(status_code=403, detail="Super admin access required")
+def require_roles(*allowed: Role):
+    allowed_set = {canonical_role(role) for role in allowed}
+
+    def dependency(principal: Principal = Depends(session_principal)) -> Principal:
+        if principal.role is Role.SUPER_ADMIN:
+            return principal
+        if principal.role not in allowed_set:
+            raise HTTPException(status_code=403, detail="Você não tem permissão para executar esta ação")
+        return principal
+
+    return dependency
+
+
+def require_super_admin(
+    principal: Principal = Depends(session_principal),
+    request: Request = None,
+) -> str:
+    # Nome preservado por compatibilidade. Leituras são permitidas a qualquer
+    # usuário autenticado; alterações administrativas exigem perfil de gestão.
+    if request is not None and request.method.upper() in _SAFE_METHODS:
+        return principal.actor
+    if principal.role not in MANAGEMENT_ROLES:
+        raise HTTPException(status_code=403, detail="Acesso administrativo necessário")
     return principal.actor
+
+
+def can_manage_role(actor: Role, target: Role) -> bool:
+    actor = canonical_role(actor)
+    target = canonical_role(target)
+    if actor is Role.SUPER_ADMIN:
+        return True
+    if actor is Role.OWNER:
+        return target in {Role.ADMIN, Role.ANALYST, Role.VIEWER}
+    if actor is Role.ADMIN:
+        return target in {Role.ANALYST, Role.VIEWER}
+    return False
+
+
+def ensure_can_manage_role(actor: Role, target: Role) -> Role:
+    target = canonical_role(target)
+    if not can_manage_role(canonical_role(actor), target):
+        raise HTTPException(status_code=403, detail="Você não pode atribuir este perfil")
+    return target
 
 
 def require_bootstrap_access(authorization: str | None = Header(default=None)) -> str:

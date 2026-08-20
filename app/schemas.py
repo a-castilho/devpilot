@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -49,6 +50,29 @@ class ProfileUpdate(BaseModel):
     avatar_url: str | None = Field(default=None, max_length=500)
     locale: str = Field(default="pt-BR", min_length=2, max_length=20)
     timezone: str = Field(default="America/Sao_Paulo", min_length=3, max_length=80)
+
+
+class UserCreate(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=12, max_length=4096)
+    role: str = Field(default="VIEWER", min_length=4, max_length=30)
+    full_name: str | None = Field(default=None, max_length=160)
+
+
+class UserUpdate(BaseModel):
+    role: str | None = Field(default=None, min_length=4, max_length=30)
+    active: bool | None = None
+    full_name: str | None = Field(default=None, max_length=160)
+
+
+class UserResponse(BaseModel):
+    id: str
+    workspace_id: str
+    email: str
+    full_name: str | None
+    role: str
+    active: bool
+    created_at: datetime
 
 
 class OrganizationCreate(BaseModel):

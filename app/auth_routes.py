@@ -16,10 +16,11 @@ from app.security import (
     _DUMMY_PASSWORD_HASH,
     Principal,
     Role,
+    canonical_role,
     create_access_token,
-    current_principal,
     hash_password,
     require_bootstrap_access,
+    session_principal,
     verify_password,
 )
 
@@ -54,7 +55,7 @@ def _public_user(user: User, profile: UserProfile) -> CurrentUserResponse:
         id=user.id,
         workspace_id=user.workspace_id,
         email=user.email,
-        role=user.role,
+        role=canonical_role(user.role).value,
         active=user.active,
         full_name=profile.full_name,
         phone=profile.phone,
@@ -87,7 +88,7 @@ def bootstrap_user(
         workspace_id=ws.id,
         email=normalized_email(payload.email),
         password_hash=hash_password(payload.password),
-        role=Role.ADMIN.value,
+        role=Role.SUPER_ADMIN.value,
         active=True,
     )
     db.add(user)
@@ -113,12 +114,12 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/me", response_model=CurrentUserResponse)
 def me(
-    principal: Principal = Depends(current_principal),
+    principal: Principal = Depends(session_principal),
     db: Session = Depends(get_db),
 ):
     if principal.bootstrap:
         return CurrentUserResponse(
-            role=Role.ADMIN.value,
+            role=Role.SUPER_ADMIN.value,
             bootstrap=True,
             full_name="Administrador bootstrap",
         )
@@ -133,7 +134,7 @@ def me(
 @router.patch("/me", response_model=CurrentUserResponse)
 def update_me(
     payload: ProfileUpdate,
-    principal: Principal = Depends(current_principal),
+    principal: Principal = Depends(session_principal),
     db: Session = Depends(get_db),
 ):
     if principal.bootstrap:
