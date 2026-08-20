@@ -17,6 +17,25 @@
     }
   }
 
+  function inferFailureCode(details, run) {
+    if (details.failure_code) return details.failure_code;
+    const text = [run?.summary, details.summary, details.stdout, details.stderr, run?.logs]
+      .filter(Boolean).join('\n').toLowerCase();
+    if (text.includes('usage limit') || text.includes('purchase more credits') || text.includes('try again at')) {
+      return 'usage_limit';
+    }
+    if (text.includes('rate limit') || text.includes('too many requests') || text.includes('status 429')) {
+      return 'rate_limit';
+    }
+    if (text.includes('invalid api key') || text.includes('authentication failed') || text.includes('unauthorized')) {
+      return 'auth';
+    }
+    if (text.includes('temporarily unavailable') || text.includes('connection reset') || text.includes('timed out')) {
+      return 'transient';
+    }
+    return '';
+  }
+
   function ensureActions() {
     const modal = document.querySelector('#result-modal .result-modal') || document.querySelector('#result-modal .modal');
     if (!modal) return null;
@@ -92,14 +111,17 @@
       }
 
       const details = parseDetails(run);
-      const failureLabel = FAILURE_LABELS[details.failure_code] || '';
-      const provider = details.provider || '—';
+      const failureCode = inferFailureCode(details, run);
+      const failureLabel = FAILURE_LABELS[failureCode] || '';
       const executor = details.executor || '—';
+      const provider = details.provider || (executor === 'codex' ? 'chatgpt-codex' : '—');
       const authMode = details.auth_mode === 'api_key'
         ? 'API key isolada'
         : details.auth_mode === 'chatgpt_session'
           ? 'Sessão ChatGPT'
-          : details.auth_mode || '—';
+          : executor === 'codex' && failureCode === 'usage_limit'
+            ? 'Sessão ChatGPT'
+            : details.auth_mode || '—';
       const attempts = Array.isArray(details.attempts) ? details.attempts : [];
       const attemptsText = attempts.length
         ? ` · Tentativas ${attempts.map(item => `${item.provider || 'executor'}:${item.exit_code === 0 ? 'ok' : item.failure_code || 'erro'}`).join(' → ')}`
@@ -119,7 +141,11 @@
       ].filter(Boolean).join(' · ') + attemptsText;
 
       const diagnostic = [];
-      if (details.suggested_action) diagnostic.push(`Próxima ação: ${details.suggested_action}`);
+      if (details.suggested_action) {
+        diagnostic.push(`Próxima ação: ${details.suggested_action}`);
+      } else if (failureCode === 'usage_limit') {
+        diagnostic.push('Próxima ação: use Reexecutar. Se houver uma conexão OpenAI ativa, o DevPilot poderá tentar o fallback isolado por API; caso contrário, aguarde a renovação/adquira capacidade do Codex.');
+      }
       if (details.stdout) diagnostic.push(details.stdout);
       else if (details.output) diagnostic.push(details.output);
       else if (run.logs && !details.summary) diagnostic.push(run.logs);
@@ -133,7 +159,7 @@
         retry.onclick = () => retryTask(id, retry);
         actions.appendChild(retry);
 
-        if (details.failure_code === 'usage_limit' && !details.fallback_used) {
+        if (failureCode === 'usage_limit' && !details.fallback_used) {
           const providers = document.createElement('button');
           providers.className = 'ghost';
           providers.type = 'button';
