@@ -230,14 +230,10 @@ def require_roles(*allowed: Role):
 
 def require_super_admin(
     principal: Principal = Depends(session_principal),
-    request: Request = None,
 ) -> str:
-    # Nome preservado por compatibilidade. Leituras são permitidas a qualquer
-    # usuário autenticado; alterações administrativas exigem perfil de gestão.
-    if request is not None and request.method.upper() in _SAFE_METHODS:
-        return principal.actor
-    if principal.role not in MANAGEMENT_ROLES:
-        raise HTTPException(status_code=403, detail="Acesso administrativo necessário")
+    """Restrict sensitive platform administration to SUPER_ADMIN only."""
+    if principal.role is not Role.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acesso exclusivo do Super Admin")
     return principal.actor
 
 
@@ -258,15 +254,3 @@ def ensure_can_manage_role(actor: Role, target: Role) -> Role:
     if not can_manage_role(canonical_role(actor), target):
         raise HTTPException(status_code=403, detail="Você não pode atribuir este perfil")
     return target
-
-
-def require_bootstrap_access(authorization: str | None = Header(default=None)) -> str:
-    token = _bearer_token(authorization)
-    expected = get_settings().bootstrap_token
-    if not expected or not hmac.compare_digest(token, expected):
-        raise HTTPException(status_code=401, detail="Invalid or missing bootstrap token")
-    return "owner"
-
-
-def privacy_id(value: str) -> str:
-    return hashlib.sha256(value.encode()).hexdigest()[:32]
