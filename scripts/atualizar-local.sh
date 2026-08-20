@@ -18,7 +18,7 @@ git merge --ff-only origin/main
 
 echo
 echo "=== PREPARANDO HOST ACTIONS ==="
-mkdir -p runtime/host-actions/{pending,processed,failed}
+# O init cria as filas e corrige permissões do bind mount sem trocar o dono do host.
 docker compose run --rm host-actions-init
 
 echo
