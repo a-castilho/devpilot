@@ -64,4 +64,115 @@
   form.addEventListener('reset', () => {
     window.setTimeout(refreshMode, 0);
   });
+
+  // Desenvolvimento: deixa explícito se cada item é análise ou execução.
+  // O modo já é gravado no prompt por este módulo; tarefas antigas recebem
+  // uma classificação compatível pelas instruções somente-leitura existentes.
+  const taskTableBody = document.querySelector('#tasks-table');
+
+  function taskKind(task) {
+    const prompt = String(task?.prompt || '');
+    const marker = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
+
+    if (marker === 'analysis-read-only' || marker === 'review') return 'analysis';
+    if (marker === 'develop' || marker === 'fix') return 'execution';
+
+    const legacyText = `${task?.title || ''}\n${prompt}`.toLowerCase();
+    const readOnlySignals = [
+      'somente leitura',
+      'não modifique arquivos',
+      'nao modifique arquivos',
+      'não implemente',
+      'nao implemente',
+      'análise técnica',
+      'analise tecnica',
+      'auditoria somente leitura'
+    ];
+
+    return readOnlySignals.some(signal => legacyText.includes(signal))
+      ? 'analysis'
+      : 'execution';
+  }
+
+  function ensureTaskKindStyles() {
+    if (document.querySelector('#devpilot-task-kind-style')) return;
+    const style = document.createElement('style');
+    style.id = 'devpilot-task-kind-style';
+    style.textContent = `
+      .task-kind-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+      .task-kind-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
+      .task-kind-badge.analysis{color:#63e6be}
+      .task-kind-badge.execution{color:#74c0fc}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureTaskKindHeader() {
+    const table = taskTableBody?.closest('table');
+    const headerRow = table?.querySelector('thead tr');
+    if (!headerRow || headerRow.querySelector('[data-task-kind-header]')) return;
+
+    const originHeader = [...headerRow.children].find(
+      cell => cell.textContent.trim().toLowerCase() === 'origem'
+    );
+    if (!originHeader) return;
+
+    const header = document.createElement('th');
+    header.dataset.taskKindHeader = 'true';
+    header.textContent = 'Tipo';
+    originHeader.insertAdjacentElement('afterend', header);
+  }
+
+  function enhanceTaskKindColumn() {
+    if (!taskTableBody) return;
+
+    ensureTaskKindStyles();
+    ensureTaskKindHeader();
+
+    const tasks = typeof state !== 'undefined' && Array.isArray(state.tasks)
+      ? state.tasks
+      : [];
+    const rows = [...taskTableBody.querySelectorAll('tr')];
+
+    rows.forEach((row, index) => {
+      const emptyCell = row.querySelector('td.empty');
+      if (emptyCell) {
+        emptyCell.colSpan = Math.max(Number(emptyCell.colSpan || 5), 6);
+        return;
+      }
+
+      const task = tasks[index];
+      if (!task || row.children.length < 2) return;
+
+      const kind = taskKind(task);
+      const label = kind === 'analysis' ? 'Análise' : 'Execução';
+      let cell = row.querySelector('.task-kind-cell');
+
+      if (!cell) {
+        cell = document.createElement('td');
+        cell.className = 'task-kind-cell';
+        row.children[1].insertAdjacentElement('afterend', cell);
+      }
+
+      cell.innerHTML = `<span class="task-kind-badge ${kind}">${label}</span>`;
+    });
+  }
+
+  if (taskTableBody) {
+    let scheduled = false;
+    const scheduleEnhancement = () => {
+      if (scheduled) return;
+      scheduled = true;
+      window.requestAnimationFrame(() => {
+        scheduled = false;
+        enhanceTaskKindColumn();
+      });
+    };
+
+    new MutationObserver(scheduleEnhancement).observe(taskTableBody, {
+      childList: true,
+      subtree: false
+    });
+    scheduleEnhancement();
+  }
 })();
