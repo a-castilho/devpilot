@@ -29,3 +29,79 @@ function openVoice(){$('#voice-modal').showModal()}$('#voice-hero').onclick=open
 let recognition;$('#voice-start').onclick=()=>{const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SpeechRecognition){toast('Reconhecimento de voz indisponível neste navegador');return}recognition=new SpeechRecognition();recognition.lang='pt-BR';recognition.interimResults=true;recognition.continuous=false;$('#voice-status').textContent='Ouvindo…';recognition.onresult=e=>{$('#voice-transcript').value=[...e.results].map(r=>r[0].transcript).join(' ')};recognition.onend=()=>{$('#voice-status').textContent='Transcrição pronta. Revise antes de enviar.'};recognition.onerror=()=>toast('Não foi possível capturar o áudio');recognition.start()};
 $('#voice-send').onclick=async()=>{const transcript=$('#voice-transcript').value.trim(),project_id=$('#voice-project').value;if(!transcript)return toast('Fale ou digite um comando');try{const data=await api('/voice/commands',{method:'POST',body:JSON.stringify({transcript,project_id})});$('#voice-modal').close();toast(data.message);speechSynthesis.speak(new SpeechSynthesisUtterance('Comando registrado. Revise e aprove antes da execução.'));load()}catch(e){toast(e.message)}};
 if(!state.token)$('#auth-modal').showModal();else load();
+
+/* Mobile horizontal navigation: previous/next arrows switch between visible sections. */
+(() => {
+  const sidebar = document.querySelector('.sidebar');
+  const nav = sidebar?.querySelector('nav');
+  if (!sidebar || !nav || sidebar.querySelector('.mobile-nav-arrow')) return;
+
+  const makeArrow = (direction, label, symbol) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `mobile-nav-arrow mobile-nav-arrow-${direction}`;
+    button.setAttribute('aria-label', label);
+    button.setAttribute('title', label);
+    button.textContent = symbol;
+    return button;
+  };
+
+  const previous = makeArrow('prev', 'Navegar para a esquerda', '‹');
+  const next = makeArrow('next', 'Navegar para a direita', '›');
+  sidebar.insertBefore(previous, nav);
+  sidebar.insertBefore(next, nav.nextSibling);
+
+  const visibleItems = () => [...nav.querySelectorAll('.nav')].filter(item => {
+    if (item.hidden) return false;
+    const style = window.getComputedStyle(item);
+    return style.display !== 'none' && style.visibility !== 'hidden';
+  });
+
+  const centerItem = item => {
+    if (!item) return;
+    const left = item.offsetLeft - Math.max(0, (nav.clientWidth - item.offsetWidth) / 2);
+    nav.scrollTo({left: Math.max(0, left), behavior: 'smooth'});
+  };
+
+  const sync = () => {
+    const items = visibleItems();
+    if (!items.length) {
+      previous.disabled = true;
+      next.disabled = true;
+      return;
+    }
+    let index = items.findIndex(item => item.classList.contains('active'));
+    if (index < 0) index = 0;
+    previous.disabled = index <= 0;
+    next.disabled = index >= items.length - 1;
+    centerItem(items[index]);
+  };
+
+  const move = direction => {
+    const items = visibleItems();
+    if (!items.length) return;
+    let index = items.findIndex(item => item.classList.contains('active'));
+    if (index < 0) index = 0;
+    const targetIndex = Math.max(0, Math.min(items.length - 1, index + direction));
+    const target = items[targetIndex];
+    if (!target || targetIndex === index) return;
+    target.click();
+    window.requestAnimationFrame(() => {
+      centerItem(target);
+      sync();
+    });
+  };
+
+  previous.addEventListener('click', () => move(-1));
+  next.addEventListener('click', () => move(1));
+  nav.addEventListener('click', () => window.requestAnimationFrame(sync));
+  window.addEventListener('resize', sync, {passive: true});
+
+  new MutationObserver(sync).observe(nav, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class', 'hidden', 'style'],
+  });
+
+  sync();
+})();
