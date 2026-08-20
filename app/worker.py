@@ -35,13 +35,24 @@ def process_task_one() -> bool:
             f"title={_safe_log(task.title)}",
             flush=True,
         )
+        audit_details = {"run_id": run.id}
         try:
             result = execute_task(project, task)
-            run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
+            if result.get("blocked"):
+                run.status = "blocked"
+                task.status = TaskStatus.blocked
+            else:
+                run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
+                task.status = TaskStatus.review if run.status == "success" else TaskStatus.failed
             run.summary = result.get("summary", "Execution completed")
             run.logs = json.dumps(result, ensure_ascii=False)
-            task.status = TaskStatus.review if run.status == "success" else TaskStatus.failed
             outcome = run.status
+            audit_details.update(
+                failure_code=result.get("failure_code"),
+                provider=result.get("provider"),
+                auth_mode=result.get("auth_mode"),
+                fallback_used=bool(result.get("fallback_used")),
+            )
         except Exception as error:
             run.status = "failed"
             run.summary = str(error)
@@ -56,7 +67,7 @@ def process_task_one() -> bool:
             actor="worker",
             action="task.executed",
             outcome=outcome,
-            details={"run_id": run.id},
+            details=audit_details,
         )
         db.commit()
         print(
