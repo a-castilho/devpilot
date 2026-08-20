@@ -1,0 +1,133 @@
+#task-modal{
+  width:min(760px,calc(100vw - 32px));
+  max-width:760px;
+  max-height:min(760px,calc(100dvh - 40px));
+  padding:0;
+  overflow:hidden;
+  border:1px solid #24415f;
+  border-radius:18px;
+  background:#0a1728;
+  box-shadow:0 28px 90px rgba(0,0,0,.62);
+}
+
+#task-modal::backdrop{
+  background:rgba(2,8,17,.78);
+  backdrop-filter:blur(6px);
+}
+
+#task-modal .task-modal-form{
+  display:grid;
+  gap:14px;
+  max-height:min(760px,calc(100dvh - 40px));
+  padding:28px;
+  overflow-y:auto;
+  overflow-x:hidden;
+  scrollbar-width:thin;
+  scrollbar-color:#3a6f88 transparent;
+}
+
+#task-modal .task-modal-form::-webkit-scrollbar{width:7px}
+#task-modal .task-modal-form::-webkit-scrollbar-thumb{background:#3a6f88;border-radius:999px}
+
+#task-modal .task-modal-heading{padding-right:34px}
+#task-modal .task-modal-heading h2{
+  margin:5px 0 5px;
+  font-size:24px;
+  line-height:1.2;
+  letter-spacing:-.02em;
+}
+#task-modal .task-modal-heading p{
+  max-width:650px;
+  margin:0;
+  color:#8ea6c3;
+  font-size:12px;
+  line-height:1.55;
+}
+
+#task-modal .task-top-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(0,.8fr);
+  gap:12px;
+}
+
+#task-modal label{min-width:0}
+#task-modal input,
+#task-modal select,
+#task-modal textarea{
+  min-width:0;
+  border-color:#25425e;
+  background:#071423;
+}
+#task-modal input:focus,
+#task-modal select:focus,
+#task-modal textarea:focus{
+  border-color:#35e5d1;
+  box-shadow:0 0 0 3px rgba(53,229,209,.08);
+}
+
+#task-modal .task-context textarea{
+  min-height:180px;
+  resize:vertical;
+  line-height:1.55;
+  border-bottom-color:#35e5d1;
+}
+#task-modal .task-context small{
+  color:#7790ad;
+  font-size:10px;
+  font-weight:500;
+}
+
+#task-modal .task-assist-card{
+  display:grid;
+  grid-template-columns:34px minmax(0,1fr);
+  gap:12px;
+  align-items:start;
+  padding:14px;
+  border:1px solid #20546b;
+  border-radius:12px;
+  background:linear-gradient(135deg,rgba(33,98,117,.28),rgba(16,44,63,.58));
+}
+#task-modal .task-assist-icon{
+  width:30px;
+  height:30px;
+  display:grid;
+  place-items:center;
+  border-radius:8px;
+  background:#0f5e66;
+  color:#83fff0;
+  font-size:14px;
+}
+#task-modal .task-assist-card strong{display:block;font-size:12px;margin-bottom:2px}
+#task-modal .task-assist-card p{margin:0;color:#83a7c4;font-size:11px;line-height:1.45}
+
+#task-modal .task-bottom-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(180px,.72fr);
+  gap:12px;
+  align-items:end;
+}
+#task-modal .task-approval{
+  min-height:42px;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:0 2px 5px;
+}
+#task-modal .task-approval input{width:auto;margin:0;accent-color:#5a86ff}
+
+#task-modal .task-submit{
+  min-height:44px;
+  margin-top:2px;
+}
+
+@media(max-width:640px){
+  #task-modal{width:min(94vw,760px);max-height:calc(100dvh - 24px)}
+  #task-modal .task-modal-form{max-height:calc(100dvh - 24px);padding:22px 18px}
+  #task-modal .task-top-grid,
+  #task-modal .task-bottom-grid{grid-template-columns:1fr}
+  #task-modal .task-context textarea{min-height:150px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  #task-modal *{scroll-behavior:auto!important;transition:none!important}
+}
