@@ -13,7 +13,8 @@ git merge --ff-only origin/main
 
 echo
 echo "=== PREPARANDO HOST ACTIONS ==="
-mkdir -p runtime/host-actions/{pending,processed,failed}
+# O bind mount pode ter sido criado por um container com outro UID.
+# O init roda como root dentro do container, cria as filas e devolve acesso ao host.
 docker compose run --rm host-actions-init
 
 echo
