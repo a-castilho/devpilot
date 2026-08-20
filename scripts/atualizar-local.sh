@@ -17,6 +17,10 @@ git fetch origin
 git merge --ff-only origin/main
 
 echo
+echo "=== INSTALANDO COMANDOS E TELEMETRIA BASH ==="
+bash scripts/instalar-aliases-linux.sh
+
+echo
 echo "=== CORRIGINDO REPETAI LOCAL ==="
 if ! python3 scripts/corrigir-repeatai-mobile.py; then
   echo "AVISO: não foi possível aplicar automaticamente a correção mobile do RepetAI."
@@ -41,6 +45,7 @@ for i in $(seq 1 30); do
     echo "=========================================="
     echo " DEVPILOT = OK"
     echo " URL: http://127.0.0.1:8080"
+    echo " TELEMETRIA: hook Bash instalado"
     echo " COMMIT: $(git rev-parse --short HEAD)"
     echo "=========================================="
     docker compose ps
