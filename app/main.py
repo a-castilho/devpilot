@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
 from app.api import router
+from app.auth_routes import router as auth_router
 from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
 from app.db import Base, engine
@@ -24,6 +25,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="DevPilot API", version="1.0.0", lifespan=lifespan)
+app.include_router(auth_router)
 app.include_router(router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)

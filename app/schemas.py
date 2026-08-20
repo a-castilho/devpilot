@@ -3,6 +3,34 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+class LoginRequest(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    password: str = Field(min_length=8, max_length=4096)
+
+
+class BootstrapUserRequest(LoginRequest):
+    pass
+
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class AuthStatusResponse(BaseModel):
+    bootstrap_required: bool
+    password_login: bool = True
+
+
+class CurrentUserResponse(BaseModel):
+    id: str | None = None
+    workspace_id: str | None = None
+    email: str | None = None
+    role: str
+    bootstrap: bool = False
+
+
 class OrganizationCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,99}$")

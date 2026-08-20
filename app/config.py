@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("./data")
     repositories_dir: Path = Path("./data/repositories")
     bootstrap_token: str = "development-only-token-change-me"
+    auth_secret: str = ""
+    auth_token_ttl_seconds: int = 3600
     encryption_key: str = ""
     execution_enabled: bool = False
     allowed_git_hosts: str = "github.com"
