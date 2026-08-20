@@ -1,7 +1,5 @@
 (() => {
   const VIEW_ID = 'project-example-view';
-  const BUTTON_LABEL = 'VER GRÁFICOS';
-  const REFRESH_PARAM = 'devpilot_graphs_refresh';
 
   function view() {
     return document.getElementById(VIEW_ID);
@@ -17,11 +15,10 @@
 
   function graphTarget(doc) {
     if (!doc) return null;
-
     const selectors = [
+      '#chart',
       '#graphs',
       '#graficos',
-      '#chart',
       '[data-section="graphs"]',
       '[data-section="charts"]',
       '.graphs',
@@ -33,10 +30,8 @@
 
     for (const selector of selectors) {
       const node = doc.querySelector(selector);
-      if (!node) continue;
-      return node.closest('article,section,.panel,.card') || node;
+      if (node) return node.closest('article,section,.panel,.card') || node;
     }
-
     return null;
   }
 
@@ -45,66 +40,15 @@
     const target = graphTarget(doc);
     if (!target) return false;
 
-    const win = doc.defaultView;
-    const top = target.getBoundingClientRect().top + (win?.scrollY || 0) - 12;
-
     try {
-      win?.scrollTo({top: Math.max(0, top), behavior: 'smooth'});
+      target.scrollIntoView({behavior: 'auto', block: 'start'});
     } catch (_) {
-      target.scrollIntoView({behavior: 'smooth', block: 'start'});
+      return false;
     }
 
     target.classList.add('devpilot-graphs-focus');
-    window.setTimeout(() => target.classList.remove('devpilot-graphs-focus'), 1400);
+    window.setTimeout(() => target.classList.remove('devpilot-graphs-focus'), 700);
     return true;
-  }
-
-  function requestGraphNavigation(frame) {
-    try {
-      frame?.contentWindow?.postMessage({
-        type: 'devpilot:show-graphs',
-        source: 'devpilot',
-      }, '*');
-    } catch (_) {
-      // A navegação por postMessage é apenas um fallback para apps cross-origin.
-    }
-  }
-
-  function refreshFrame(frame) {
-    return new Promise(resolve => {
-      if (!frame) {
-        resolve(false);
-        return;
-      }
-
-      const raw = frame.getAttribute('src');
-      if (!raw) {
-        resolve(false);
-        return;
-      }
-
-      let settled = false;
-      const finish = ok => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timeout);
-        resolve(ok);
-      };
-
-      const onLoad = () => finish(true);
-      frame.addEventListener('load', onLoad, {once: true});
-
-      const timeout = window.setTimeout(() => finish(false), 4500);
-
-      try {
-        const url = new URL(raw, window.location.href);
-        url.searchParams.set(REFRESH_PARAM, String(Date.now()));
-        frame.dataset.ready = '0';
-        frame.src = url.toString();
-      } catch (_) {
-        frame.src = raw;
-      }
-    });
   }
 
   function setCaptionStatus(currentView, text) {
@@ -112,82 +56,47 @@
     if (status) status.textContent = text;
   }
 
-  async function openGraphs(button) {
+  function openGraphs(button) {
     const currentView = view();
     const stage = currentView?.querySelector('#repeatai-stage');
     const frame = currentView?.querySelector('#repeatai-frame');
     if (!currentView || !stage || !frame) return;
-
     if (button.dataset.graphsBusy === '1') return;
-    button.dataset.graphsBusy = '1';
 
+    button.dataset.graphsBusy = '1';
     const oldLabel = button.textContent;
     button.disabled = true;
-    button.textContent = 'ATUALIZANDO...';
-    setCaptionStatus(currentView, 'atualizando gráficos...');
+    setCaptionStatus(currentView, 'abrindo gráficos...');
 
-    stage.scrollIntoView({behavior: 'smooth', block: 'start'});
-
-    const refreshed = await refreshFrame(frame);
-    requestGraphNavigation(frame);
+    stage.scrollIntoView({behavior: 'auto', block: 'start'});
 
     window.setTimeout(() => {
       const moved = showGraphInsideFrame(frame);
-      const now = new Date().toLocaleTimeString('pt-BR');
-
-      if (moved) {
-        setCaptionStatus(currentView, `gráficos atualizados · ${now}`);
-      } else if (refreshed) {
-        setCaptionStatus(currentView, `painel atualizado · ${now}`);
-      } else {
-        setCaptionStatus(currentView, 'atualização em tempo real');
-      }
-
+      setCaptionStatus(currentView, moved ? 'gráficos prontos' : 'painel pronto');
       button.disabled = false;
-      button.textContent = oldLabel || BUTTON_LABEL;
+      button.textContent = oldLabel || 'VER GRÁFICOS';
       button.dataset.graphsBusy = '0';
-    }, 120);
-  }
-
-  function bindButton(currentView) {
-    if (!currentView) return;
-
-    const buttons = currentView.querySelectorAll('#repeatai-wizard-actions button');
-    buttons.forEach(button => {
-      if (button.textContent.trim() !== BUTTON_LABEL) return;
-      if (button.dataset.graphsFix === '1') return;
-
-      button.dataset.graphsFix = '1';
-      button.addEventListener('click', () => openGraphs(button));
-    });
+    }, 60);
   }
 
   function injectFocusStyle() {
     if (document.getElementById('devpilot-graphs-fix-style')) return;
-
     const style = document.createElement('style');
     style.id = 'devpilot-graphs-fix-style';
     style.textContent = `
       .devpilot-graphs-focus{
-        outline:2px solid rgba(59,228,208,.8) !important;
-        outline-offset:3px;
-        box-shadow:0 0 0 5px rgba(59,228,208,.1) !important
+        outline:2px solid rgba(59,228,208,.7)!important;
+        outline-offset:2px
       }
     `;
     document.head.appendChild(style);
   }
 
-  function scan() {
-    bindButton(view());
-  }
-
   injectFocusStyle();
-  scan();
 
-  const observer = new MutationObserver(scan);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    characterData: true,
+  document.addEventListener('click', event => {
+    const button = event.target.closest?.('#repeatai-wizard-actions button');
+    if (!button || button.textContent.trim() !== 'VER GRÁFICOS') return;
+    openGraphs(button);
   });
 })();
