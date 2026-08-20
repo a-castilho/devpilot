@@ -59,6 +59,7 @@ INJECTION = r"""
   let lastTouchLikeAt = -Infinity;
   let autoAnalyzeTimer = 0;
   let autoAnalyzeClick = false;
+  let autoAnalyzeRetries = 0;
 
   const markTouchLike = event => {
     if (event.pointerType === 'touch' || event.pointerType === 'pen') {
@@ -110,9 +111,19 @@ INJECTION = r"""
     autoAnalyzeTimer = 0;
     const button = findAnalyzeButton();
 
-    if (!button || button.disabled || autoAnalyzeClick) return;
-    if (/analisando/i.test(button.textContent || '')) return;
+    if (!button || button.disabled) {
+      if (autoAnalyzeRetries < 4) {
+        autoAnalyzeRetries += 1;
+        autoAnalyzeTimer = window.setTimeout(runAutoAnalyze, 600);
+      }
+      return;
+    }
 
+    if (autoAnalyzeClick || /analisando/i.test(button.textContent || '')) {
+      return;
+    }
+
+    autoAnalyzeRetries = 0;
     autoAnalyzeClick = true;
     try {
       button.click();
@@ -133,16 +144,19 @@ INJECTION = r"""
       event.target &&
       /analis/i.test((event.target.textContent || '').trim())
     ) {
+      autoAnalyzeRetries = 0;
+      clearTimeout(autoAnalyzeTimer);
       return;
     }
 
+    autoAnalyzeRetries = 0;
     clearTimeout(autoAnalyzeTimer);
     autoAnalyzeTimer = window.setTimeout(runAutoAnalyze, 1200);
   };
 
-  // Ao parar uma captura o botão normalmente se torna habilitado. O clique em
-  // Parar agenda a análise; se ele ainda estiver desabilitado, o observer
-  // abaixo tenta novamente quando o estado da UI mudar.
+  // Cada nova interação apenas rearma o debounce. Ao encerrar a captura, o
+  // botão Analisar fica disponível e é acionado uma única vez. Se o stop for
+  // assíncrono, fazemos até quatro tentativas curtas sem observar/mutar a UI.
   ['click', 'pointerup', 'scroll', 'keydown'].forEach(type => {
     window.addEventListener(
       type,
@@ -152,31 +166,6 @@ INJECTION = r"""
         : true
     );
   });
-
-  const observer = new MutationObserver(() => {
-    const button = findAnalyzeButton();
-    if (button && !button.disabled) {
-      clearTimeout(autoAnalyzeTimer);
-      autoAnalyzeTimer = window.setTimeout(runAutoAnalyze, 500);
-    }
-  });
-
-  const startObserver = () => {
-    if (document.documentElement) {
-      observer.observe(document.documentElement, {
-        subtree: true,
-        childList: true,
-        attributes: true,
-        attributeFilter: ['disabled', 'class', 'aria-disabled']
-      });
-    }
-  };
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', startObserver, {once: true});
-  } else {
-    startObserver();
-  }
 })();
 </script>
 """.strip()
