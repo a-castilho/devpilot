@@ -20,6 +20,18 @@
       .task-client-report p{margin:0 0 9px;color:#d7e2ef}
       .task-client-report ul{margin:4px 0 10px;padding-left:20px;color:#d7e2ef}
       .task-client-report li{margin:4px 0}
+      .task-command-card{margin:0 0 16px;padding:16px;border:1px solid #29445f;border-radius:14px;background:#081522}
+      .task-command-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
+      .task-command-header .eyebrow{margin:0;color:#79aee8}
+      .task-command-copy{padding:7px 11px;border:1px solid #345b82;border-radius:9px;background:#10283f;color:#dcecff;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+      .task-command-copy:hover{background:#173754}
+      .task-command-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(120px,.35fr);gap:10px}
+      .task-command-field{min-width:0;padding:10px 12px;border-radius:10px;background:#050d17}
+      .task-command-field-wide{grid-column:1/-1}
+      .task-command-label{display:block;margin-bottom:5px;color:#7f93aa;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+      .task-command-value{display:block;color:#e8f2ff;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}
+      .task-command-exit-ok{color:#61e7ac}
+      .task-command-exit-failed{color:#ff9eb0}
       .task-technical-details{margin-top:12px;border:1px solid var(--line,#26364f);border-radius:12px;background:#07111d}
       .task-technical-details>summary{padding:13px 15px;cursor:pointer;color:#9eb1c8;font-weight:800;font-size:12px;user-select:none}
       .task-log-output{margin:0;max-height:48vh;overflow:auto;padding:16px;border-top:1px solid var(--line,#26364f);background:#050c17;color:#c7d5e8;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -30,6 +42,9 @@
         .task-log-modal-panel{width:calc(100vw - 20px);max-height:88vh;padding:22px 18px}
         .task-client-card{padding:15px}
         .task-client-report{font-size:14px;line-height:1.6}
+        .task-command-card{padding:14px}
+        .task-command-grid{grid-template-columns:1fr}
+        .task-command-field-wide{grid-column:auto}
       }
     `;
     document.head.appendChild(style);
@@ -49,6 +64,13 @@
         <section class="task-client-card" id="task-client-card">
           <span class="eyebrow">PARA O CLIENTE</span>
           <div class="task-client-report" id="task-client-report"></div>
+        </section>
+        <section class="task-command-card" id="task-command-card" hidden>
+          <div class="task-command-header">
+            <span class="eyebrow">COMANDO EXECUTADO</span>
+            <button class="task-command-copy" type="button">Copiar comando</button>
+          </div>
+          <div class="task-command-grid" id="task-command-grid"></div>
         </section>
         <details class="task-technical-details">
           <summary>Ver detalhes técnicos</summary>
@@ -189,6 +211,62 @@
     if (!target.childNodes.length) appendParagraph('Nenhum resumo para o cliente foi registrado.');
   }
 
+  function firstCommandValue(sources, keys) {
+    for (const source of sources) {
+      if (!source || typeof source !== 'object') continue;
+      for (const key of keys) {
+        const value = source[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+      }
+    }
+    return '';
+  }
+
+  function commandData(data) {
+    const logs = data?.logs && typeof data.logs === 'object' ? data.logs : {};
+    const nested = logs.command && typeof logs.command === 'object' ? logs.command : {};
+    const sources = [nested, logs, data];
+    return {
+      command: firstCommandValue(sources, ['command', 'command_text', 'executed_command', 'cmd']),
+      cwd: firstCommandValue(sources, ['cwd', 'working_directory', 'workdir']),
+      shell: firstCommandValue(sources, ['shell']),
+      exitCode: firstCommandValue(sources, ['exit_code', 'return_code', 'returncode']),
+      capturedAt: firstCommandValue(sources, ['captured_at', 'executed_at', 'finished_at']),
+    };
+  }
+
+  function renderCommandData(card, grid, data) {
+    const command = commandData(data);
+    const entries = [
+      ['Comando', command.command, true],
+      ['Diretório', command.cwd, true],
+      ['Shell', command.shell, false],
+      ['Código de saída', command.exitCode, false],
+      ['Registrado em', command.capturedAt, true],
+    ].filter(([, value]) => value !== '');
+
+    grid.innerHTML = '';
+    card.hidden = !entries.length;
+    card.dataset.command = command.command ? String(command.command) : '';
+    if (!entries.length) return;
+
+    entries.forEach(([label, value, wide]) => {
+      const field = document.createElement('div');
+      field.className = `task-command-field${wide ? ' task-command-field-wide' : ''}`;
+      const fieldLabel = document.createElement('span');
+      fieldLabel.className = 'task-command-label';
+      fieldLabel.textContent = label;
+      const fieldValue = document.createElement('code');
+      fieldValue.className = 'task-command-value';
+      if (label === 'Código de saída') {
+        fieldValue.classList.add(String(value) === '0' ? 'task-command-exit-ok' : 'task-command-exit-failed');
+      }
+      fieldValue.textContent = String(value);
+      field.append(fieldLabel, fieldValue);
+      grid.appendChild(field);
+    });
+  }
+
   function formatTechnicalLog(data) {
     const parts = [];
     if (data.summary) parts.push(`RESUMO TÉCNICO\n${data.summary}`);
@@ -220,12 +298,17 @@
     const meta = dialog.querySelector('#task-log-meta');
     const report = dialog.querySelector('#task-client-report');
     const output = dialog.querySelector('#task-log-output');
+    const commandCard = dialog.querySelector('#task-command-card');
+    const commandGrid = dialog.querySelector('#task-command-grid');
+    const copyCommand = dialog.querySelector('.task-command-copy');
     const details = dialog.querySelector('.task-technical-details');
 
     title.textContent = task?.title || 'Resultado da análise';
     meta.textContent = 'Preparando resultado…';
     report.textContent = 'Carregando análise…';
     output.textContent = '';
+    commandCard.hidden = true;
+    commandGrid.innerHTML = '';
     details.open = false;
     if (!dialog.open) dialog.showModal();
 
@@ -235,6 +318,18 @@
       const failed = String(data.status || '').toLowerCase() === 'failed';
       meta.innerHTML = `<span class="${failed ? 'task-result-failed' : 'task-result-ok'}">${esc(statusLabel(data.status))}</span> · tentativa ${esc(data.attempt || 1)} · início ${esc(started)}`;
       renderClientReport(report, clientReport(data));
+      renderCommandData(commandCard, commandGrid, data);
+      copyCommand.onclick = async () => {
+        const command = commandCard.dataset.command || '';
+        if (!command) return;
+        try {
+          await navigator.clipboard.writeText(command);
+          copyCommand.textContent = 'Copiado';
+          window.setTimeout(() => { copyCommand.textContent = 'Copiar comando'; }, 1400);
+        } catch (_) {
+          toast('Não foi possível copiar o comando');
+        }
+      };
       output.textContent = formatTechnicalLog(data);
     } catch (error) {
       meta.textContent = 'Falha ao carregar o resultado';
