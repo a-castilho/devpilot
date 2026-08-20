@@ -1,0 +1,96 @@
+/* DevPilot mobile scroll unlock
+ * Native vertical scrolling has priority over one-frame snapping.
+ * This file is intentionally loaded last so it can neutralize older mobile rules.
+ */
+@media (max-width: 900px) {
+  html,
+  body {
+    height: auto !important;
+    min-height: 100% !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: auto !important;
+    scroll-snap-type: none !important;
+    scroll-behavior: auto !important;
+    touch-action: pan-x pan-y !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .shell,
+  main,
+  .view,
+  .view.active,
+  #project-example-view,
+  #project-example-view.active {
+    height: auto !important;
+    max-height: none !important;
+    overflow-y: visible !important;
+    overscroll-behavior-y: auto !important;
+    scroll-snap-type: none !important;
+  }
+
+  main {
+    min-height: calc(100dvh - 72px) !important;
+    padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* RepetAI: the document scrolls; the stage must not lock the viewport. */
+  #project-example-view.active {
+    display: block !important;
+    touch-action: pan-y !important;
+  }
+
+  #project-example-view.active .repeatai-wizard,
+  #project-example-view.active .repeatai-wizard-body,
+  #project-example-view.active .example-project-caption,
+  #project-example-view.active .example-project-stage {
+    scroll-snap-align: none !important;
+    scroll-snap-stop: normal !important;
+    touch-action: pan-y !important;
+  }
+
+  #project-example-view.active .example-project-stage {
+    contain: none !important;
+    height: 620px !important;
+    min-height: 620px !important;
+    max-height: none !important;
+    margin-bottom: 24px !important;
+    overflow: hidden !important;
+    box-shadow: none !important;
+  }
+
+  #project-example-view.active .example-project-frame {
+    width: 100% !important;
+    height: 620px !important;
+    min-height: 620px !important;
+    max-height: none !important;
+    border: 0 !important;
+  }
+
+  /* Older one-frame rules must never trap the user between snap points. */
+  #overview-view > .hero,
+  #overview-view > .metrics,
+  #overview-view > .grid-two > .panel,
+  #organizations-view .project-card,
+  #projects-view .project-card,
+  #providers-view .project-card,
+  #tasks-view > .panel,
+  #audit-view > .panel,
+  #reports-view > .reports-shell {
+    scroll-snap-align: none !important;
+    scroll-snap-stop: normal !important;
+  }
+}
+
+@media (max-width: 520px) {
+  #project-example-view.active .example-project-stage,
+  #project-example-view.active .example-project-frame {
+    height: 560px !important;
+    min-height: 560px !important;
+  }
+
+  main {
+    padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important;
+  }
+}
