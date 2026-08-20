@@ -133,7 +133,7 @@ def test_usage_limit_retries_once_with_isolated_openai_api_auth(monkeypatch, tmp
     assert codex_calls == 2
     assert observed_auth["home_exists"] is True
     assert observed_auth["auth_exists"] is True
-    assert observed_auth["auth"]["auth_mode"] == "api_key"
+    assert observed_auth["auth"]["auth_mode"] == "apikey"
     assert observed_auth["auth"]["OPENAI_API_KEY"] == "sk-test-secret-never-log"
     assert observed_auth["mode"] == 0o600
     assert observed_auth["env_key"] == "sk-test-secret-never-log"
