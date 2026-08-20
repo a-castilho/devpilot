@@ -8,6 +8,24 @@ PROJECT_START_PATTERNS = (
     r"^(?:iniciar|inicie|criar|crie|come[cç]ar|comece)\s+(?:um\s+)?(?:novo\s+)?projeto(?:\s+(?:chamado|nomeado)\s+)?(?P<name>.*)$",
     r"^novo\s+projeto(?:\s+(?P<name>.*))?$",
 )
+LOCAL_UPDATE_PATTERNS = (
+    r"^(?:atualizar|atualize|atualiza|sincronizar|sincronize)\s+(?:o\s+)?(?:devpilot\s+)?local(?:\s+(?:no\s+)?linux)?$",
+    r"^(?:atualizar|atualize|atualiza)\s+(?:o\s+)?linux(?:\s+local)?$",
+)
+
+
+def local_update_intent(transcript: str) -> dict | None:
+    cleaned = " ".join(transcript.strip().split())
+    if not any(re.match(pattern, cleaned, flags=re.IGNORECASE) for pattern in LOCAL_UPDATE_PATTERNS):
+        return None
+    return {
+        "title": "Atualizar DevPilot local no Linux",
+        "prompt": cleaned,
+        "project_hint": None,
+        "action": "update_local",
+        "requires_authorization": False,
+        "system_action": True,
+    }
 
 
 def project_start_intent(transcript: str) -> dict | None:
@@ -31,6 +49,8 @@ def project_start_intent(transcript: str) -> dict | None:
 
 def interpret_voice(transcript: str) -> dict:
     cleaned = " ".join(transcript.strip().split())
+    if update := local_update_intent(cleaned):
+        return update
     if start := project_start_intent(cleaned):
         return start
 
