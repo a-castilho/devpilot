@@ -102,6 +102,107 @@
     max-width: 100%;
     min-width: 0;
   }
+
+  /* Assistente de voz: transforma o gesto em um botao circular visual elegante. */
+  #voice-modal .voice-visual .pulse-orb {
+    position: relative;
+    width: clamp(176px, 48vw, 224px);
+    height: clamp(176px, 48vw, 224px);
+    margin: 18px auto 24px;
+    cursor: pointer;
+    overflow: visible;
+    isolation: isolate;
+    border: 1px solid rgba(53, 229, 209, .72);
+    background:
+      radial-gradient(circle at 50% 38%, rgba(53, 229, 209, .24), transparent 34%),
+      radial-gradient(circle, #102c3e 0 48%, #0b1b2c 68%, #081522 100%);
+    box-shadow:
+      0 0 0 8px rgba(53, 229, 209, .08),
+      0 0 0 18px rgba(53, 229, 209, .045),
+      0 18px 46px rgba(0, 0, 0, .34),
+      0 0 54px rgba(53, 229, 209, .32),
+      inset 0 0 34px rgba(53, 229, 209, .12);
+    animation: dpVoiceTouchGlow 1.9s ease-in-out infinite;
+    transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  #voice-modal .voice-visual .pulse-orb::before {
+    content: '◉';
+    position: absolute;
+    top: 23px;
+    left: 50%;
+    z-index: 2;
+    transform: translateX(-50%);
+    color: var(--cyan);
+    font-size: 24px;
+    line-height: 1;
+    text-shadow: 0 0 16px rgba(53, 229, 209, .78);
+  }
+
+  #voice-modal .voice-visual .pulse-orb::after {
+    content: 'MOVA O DEDO\A E TOQUE NA TELA';
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    padding: 54px 30px 30px;
+    white-space: pre-line;
+    text-align: center;
+    color: #e9ffff;
+    font-size: clamp(15px, 4.3vw, 19px);
+    font-weight: 850;
+    line-height: 1.28;
+    letter-spacing: .055em;
+    text-shadow:
+      0 0 8px rgba(53, 229, 209, .88),
+      0 0 20px rgba(53, 229, 209, .36);
+  }
+
+  #voice-modal .voice-visual .pulse-orb > span {
+    position: absolute;
+    inset: 11px;
+    width: auto;
+    height: auto;
+    z-index: 1;
+    border: 2px solid rgba(74, 240, 222, .76);
+    border-radius: 50%;
+    background: transparent;
+    opacity: 1;
+    box-shadow:
+      inset 0 0 22px rgba(53, 229, 209, .12),
+      0 0 18px rgba(53, 229, 209, .22);
+  }
+
+  #voice-modal .voice-visual .pulse-orb:active {
+    transform: scale(.965);
+    border-color: rgba(110, 255, 238, .95);
+    box-shadow:
+      0 0 0 5px rgba(53, 229, 209, .1),
+      0 10px 28px rgba(0, 0, 0, .38),
+      0 0 38px rgba(53, 229, 209, .48),
+      inset 0 0 42px rgba(53, 229, 209, .18);
+  }
+
+  @keyframes dpVoiceTouchGlow {
+    0%, 100% {
+      box-shadow:
+        0 0 0 8px rgba(53, 229, 209, .07),
+        0 0 0 18px rgba(53, 229, 209, .035),
+        0 18px 46px rgba(0, 0, 0, .34),
+        0 0 48px rgba(53, 229, 209, .28),
+        inset 0 0 30px rgba(53, 229, 209, .1);
+    }
+    50% {
+      box-shadow:
+        0 0 0 10px rgba(53, 229, 209, .095),
+        0 0 0 22px rgba(53, 229, 209, .05),
+        0 18px 46px rgba(0, 0, 0, .34),
+        0 0 66px rgba(53, 229, 209, .42),
+        inset 0 0 38px rgba(53, 229, 209, .16);
+    }
+  }
 }
 
 @media (max-width: 520px) {
@@ -113,5 +214,12 @@
 
   #overview-view > .hero {
     min-height: calc(100dvh - var(--dp-mobile-nav-height) - 136px) !important;
+  }
+
+  #voice-modal .voice-visual .pulse-orb {
+    width: min(52vw, 206px);
+    height: min(52vw, 206px);
+    min-width: 176px;
+    min-height: 176px;
   }
 }
