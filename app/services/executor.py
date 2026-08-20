@@ -46,10 +46,10 @@ AGENTS_FILE_NAME = "AGENTS.md"
 GENERATED_AGENTS_START = "<!-- DEVPILOT-GENERATED-ANALYSIS:START -->"
 GENERATED_AGENTS_END = "<!-- DEVPILOT-GENERATED-ANALYSIS:END -->"
 _SECRET_PATTERNS = (
-    re.compile(r"(?i)(authorization\\s*:\\s*bearer\\s+)[^\\s\\\"']+"),
-    re.compile(r"\\bgithub_pat_[A-Za-z0-9_]+\\b"),
-    re.compile(r"\\bgh[pousr]_[A-Za-z0-9]{20,}\\b"),
-    re.compile(r"\\bsk-[A-Za-z0-9_-]{20,}\\b"),
+    re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]+\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
 
 
