@@ -18,6 +18,17 @@ from app.services.vault import Vault
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
 READ_ONLY_MODE_MARKER = "[DEVPILOT_MODE=analysis-read-only]"
+CLIENT_REPORT_INSTRUCTIONS = (
+    "IMPORTANT FINAL RESPONSE FORMAT. Your final answer is shown directly to a non-technical client. "
+    "Write the final answer in Brazilian Portuguese, using clear business language and no raw JSON, "
+    "terminal dumps, stack traces, or large source-code excerpts. Technical names may be mentioned only "
+    "when needed to explain the finding. Use exactly these sections: 'Resumo para o cliente', "
+    "'O que encontramos', 'Impacto', 'Recomendações' and 'Próximo passo'. In 'Resumo para o cliente', "
+    "explain in 2 to 4 sentences whether the project is healthy, needs attention, or has a blocking issue. "
+    "In 'O que encontramos', list the most important concrete findings. In 'Impacto', explain what they "
+    "mean for the product or operation. In 'Recomendações', prioritize the actions. In 'Próximo passo', "
+    "give one clear action the client can authorize next. Keep the report concise and understandable."
+)
 DEVELOPMENT_DUPLICATE_GUARD = (
     "MANDATORY FIRST PHASE — DUPLICATION PREFLIGHT. Before editing any file, inspect the repository "
     "for an existing implementation equivalent to the requested behavior. Check routes, screens, "
@@ -130,13 +141,65 @@ def task_timeout(project: Project) -> int:
     return int(config.get("timeout_seconds", 1800))
 
 
+def _extract_text(value) -> list[str]:
+    texts: list[str] = []
+    if isinstance(value, str):
+        clean = value.strip()
+        if clean:
+            texts.append(clean)
+        return texts
+    if isinstance(value, list):
+        for item in value:
+            texts.extend(_extract_text(item))
+        return texts
+    if not isinstance(value, dict):
+        return texts
+
+    item_type = str(value.get("type") or "").lower()
+    if item_type in {"agent_message", "assistant_message", "output_text"}:
+        for key in ("text", "content", "message", "output_text"):
+            if key in value:
+                texts.extend(_extract_text(value[key]))
+        return texts
+
+    for key in ("item", "message", "response", "output"):
+        nested = value.get(key)
+        if isinstance(nested, (dict, list)):
+            texts.extend(_extract_text(nested))
+    return texts
+
+
+def extract_client_report(stdout: str) -> str:
+    """Extract the final human-facing Codex message from JSONL output."""
+    candidates: list[str] = []
+    for raw_line in str(stdout or "").splitlines():
+        line = raw_line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            payload = json.loads(line)
+        except (TypeError, ValueError):
+            continue
+        candidates.extend(_extract_text(payload))
+
+    for text in reversed(candidates):
+        normalized = text.strip()
+        if len(normalized) < 40:
+            continue
+        if "Resumo para o cliente" in normalized or "O que encontramos" in normalized:
+            return normalized[-30_000:]
+
+    return candidates[-1][-30_000:] if candidates else ""
+
+
 def development_prompt(task: Task) -> str:
     return (
         f"Task: {task.title}\n\n{task.prompt}\n\n"
         f"{DEVELOPMENT_DUPLICATE_GUARD}\n\n"
         "Only after completing that preflight, implement the smallest complete change that is still "
         "necessary, run relevant checks, and summarize the preflight evidence, changes and remaining "
-        "risks. Do not push or merge."
+        "risks. Do not push or merge.\n\n"
+        f"{CLIENT_REPORT_INSTRUCTIONS}"
     )
 
 
@@ -169,7 +232,8 @@ def execute_read_only_analysis(project: Project, task: Task, repository: Path) -
                 "This is a READ-ONLY ANALYSIS. Inspect the repository and produce a technical report "
                 "with concrete evidence, risks, impact, recommendations, and estimated effort. "
                 "Do not implement, edit, create, delete, rename, commit, push, or merge project files. "
-                "If a change would be useful, describe it instead of applying it."
+                "If a change would be useful, describe it instead of applying it.\n\n"
+                f"{CLIENT_REPORT_INSTRUCTIONS}"
             )
             result = run(
                 codex_command(project, prompt),
@@ -178,10 +242,16 @@ def execute_read_only_analysis(project: Project, task: Task, repository: Path) -
             )
             status = run(["git", "status", "--porcelain"], cwd=analysis_path)
             attempted_changes = bool(status.stdout.strip()) if status.returncode == 0 else None
+            client_report = extract_client_report(result.stdout)
             return {
                 "mode": "analysis-read-only",
                 "exit_code": result.returncode,
-                "summary": "Read-only analysis completed in an isolated disposable worktree.",
+                "summary": (
+                    "Análise concluída. O relatório para o cliente está disponível abaixo."
+                    if result.returncode == 0
+                    else "A análise terminou com falha; consulte o diagnóstico e os detalhes técnicos."
+                ),
+                "client_report": client_report,
                 "stdout": result.stdout[-100_000:],
                 "stderr": result.stderr[-20_000:],
                 "attempted_changes": attempted_changes,
@@ -199,7 +269,14 @@ def execute_task(project: Project, task: Task) -> dict:
     if not settings.execution_enabled:
         return {
             "mode": "analysis-read-only-dry-run" if read_only else "dry-run",
-            "summary": "Execution is disabled; task and audit trail were created successfully.",
+            "summary": "A execução está desativada. A tarefa foi registrada e aguarda execução habilitada.",
+            "client_report": (
+                "Resumo para o cliente\nA solicitação foi registrada, mas a execução automática está desativada.\n\n"
+                "O que encontramos\nAinda não houve análise do repositório.\n\n"
+                "Impacto\nNenhuma alteração foi aplicada ao projeto.\n\n"
+                "Recomendações\nHabilitar a execução para permitir a análise completa.\n\n"
+                "Próximo passo\nAutorize ou habilite a execução da tarefa."
+            ),
             "planned_command": ["codex", "exec", "--json", "<task prompt>"],
         }
 
@@ -218,10 +295,16 @@ def execute_task(project: Project, task: Task) -> dict:
         cwd=path,
         timeout=task_timeout(project),
     )
+    client_report = extract_client_report(result.stdout)
     return {
         "mode": "execute",
         "exit_code": result.returncode,
-        "summary": "Execution completed on an isolated task branch after duplicate preflight.",
+        "summary": (
+            "Execução concluída. Veja abaixo o resultado em linguagem de cliente."
+            if result.returncode == 0
+            else "A execução terminou com falha; consulte o diagnóstico e os detalhes técnicos."
+        ),
+        "client_report": client_report,
         "stdout": result.stdout[-100_000:],
         "stderr": result.stderr[-20_000:],
         "branch": branch,
