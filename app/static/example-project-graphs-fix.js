@@ -128,25 +128,21 @@
 
     stage.scrollIntoView({behavior: 'smooth', block: 'start'});
 
-    const refreshed = await refreshFrame(frame);
-    requestGraphNavigation(frame);
+    // Navegar ao gráfico não deve recriar o iframe: a recarga interrompia a
+    // captura e multiplicava o custo de renderização no navegador.
+    const moved = showGraphInsideFrame(frame);
+    if (!moved) requestGraphNavigation(frame);
 
     window.setTimeout(() => {
-      const moved = showGraphInsideFrame(frame);
       const now = new Date().toLocaleTimeString('pt-BR');
-
-      if (moved) {
-        setCaptionStatus(currentView, `gráficos atualizados · ${now}`);
-      } else if (refreshed) {
-        setCaptionStatus(currentView, `painel atualizado · ${now}`);
-      } else {
-        setCaptionStatus(currentView, 'atualização em tempo real');
-      }
-
+      setCaptionStatus(
+        currentView,
+        moved ? `gráficos atualizados · ${now}` : 'atualização em tempo real'
+      );
       button.disabled = false;
       button.textContent = oldLabel || BUTTON_LABEL;
       button.dataset.graphsBusy = '0';
-    }, 120);
+    }, 80);
   }
 
   function bindButton(currentView) {
@@ -184,10 +180,18 @@
   injectFocusStyle();
   scan();
 
-  const observer = new MutationObserver(scan);
-  observer.observe(document.documentElement, {
+  let scanFrame = 0;
+  const scheduleScan = () => {
+    if (scanFrame) return;
+    scanFrame = window.requestAnimationFrame(() => {
+      scanFrame = 0;
+      scan();
+    });
+  };
+
+  const observer = new MutationObserver(scheduleScan);
+  observer.observe(document.querySelector('main') || document.body, {
     childList: true,
     subtree: true,
-    characterData: true,
   });
 })();
