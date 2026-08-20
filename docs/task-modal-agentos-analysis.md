@@ -63,3 +63,14 @@ Versão anterior preservada em:
 ## Compromisso geral
 
 Sempre na melhor prática. No caminho do bem maior. Ir até o fim sem sair do caminho, seja ele qual for.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
