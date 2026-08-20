@@ -1,0 +1,56 @@
+(() => {
+  const root = () => document.querySelector('#task-analytics');
+  const clean = value => String(value || '').replaceAll('_', ' ').trim();
+  const ptStatus = value => ({
+    awaiting_approval:'Aguardando aprovação',queued:'Na fila',running:'Executando',
+    review:'Em revisão',completed:'Concluída',failed:'Falhou',cancelled:'Cancelada'
+  })[value] || clean(value) || 'Sem status';
+  const countBy = (items, selector) => items.reduce((acc,item) => {
+    const key = selector(item); acc[key] = (acc[key] || 0) + 1; return acc;
+  }, {});
+  const taskType = task => {
+    const text = (String(task.title || '') + ' ' + String(task.prompt || '')).toLocaleLowerCase('pt-BR');
+    return /an[aá]lis|audit|diagn[oó]st|revis/.test(text) ? 'Análise' : 'Execução';
+  };
+  const bars = values => {
+    const entries = Object.entries(values).sort((a,b) => b[1] - a[1]);
+    const max = Math.max(1, ...entries.map(([,value]) => value));
+    if (!entries.length) return '<div class="task-empty-chart">Sem dados para exibir.</div>';
+    return '<div class="task-bars">' + entries.map(([label,value]) =>
+      '<div class="task-bar-row"><span class="task-bar-label">'+esc(label)+'</span>'+
+      '<div class="task-bar-track"><div class="task-bar-fill" style="width:'+((value/max)*100).toFixed(1)+'%"></div></div>'+
+      '<strong class="task-bar-value">'+value+'</strong></div>'
+    ).join('') + '</div>';
+  };
+  window.renderTaskAnalytics = () => {
+    const target = root();
+    if (!target || !window.state) return;
+    const tasks = Array.isArray(state.tasks) ? state.tasks : [];
+    const statusValues = countBy(tasks, task => ptStatus(task.status));
+    const typeValues = countBy(tasks, taskType);
+    const sourceValues = countBy(tasks, task => ({voice:'Voz',dashboard:'Painel',api:'API'}[task.source] || clean(task.source) || 'Outra'));
+    const completed = tasks.filter(task => task.status === 'completed').length;
+    const active = tasks.filter(task => ['queued','running','review'].includes(task.status)).length;
+    const avgPriority = tasks.length ? Math.round(tasks.reduce((sum,task) => sum + Number(task.priority || 0), 0) / tasks.length) : 0;
+    const priority = [
+      ['Baixa · 0–39',tasks.filter(t => Number(t.priority || 0) < 40).length],
+      ['Média · 40–69',tasks.filter(t => Number(t.priority || 0) >= 40 && Number(t.priority || 0) < 70).length],
+      ['Alta · 70–100',tasks.filter(t => Number(t.priority || 0) >= 70).length]
+    ];
+    target.innerHTML =
+      '<div class="task-analytics-head"><div><span class="eyebrow">VISÃO ANALÍTICA</span><h2>Gráficos das tarefas</h2></div><p>Atualizados automaticamente com os dados exibidos abaixo.</p></div>'+
+      '<div class="task-kpis">'+
+        '<div class="task-kpi"><span>Total</span><strong>'+tasks.length+'</strong><small>tarefas registradas</small></div>'+
+        '<div class="task-kpi"><span>Em andamento</span><strong>'+active+'</strong><small>fila, execução e revisão</small></div>'+
+        '<div class="task-kpi"><span>Concluídas</span><strong>'+completed+'</strong><small>'+ (tasks.length ? Math.round(completed/tasks.length*100) : 0) +'% do total</small></div>'+
+        '<div class="task-kpi"><span>Prioridade média</span><strong>'+avgPriority+'</strong><small>escala de 0 a 100</small></div>'+
+      '</div>'+
+      '<div class="task-charts-grid">'+
+        '<article class="task-chart"><h3>Tarefas por status</h3>'+bars(statusValues)+'</article>'+
+        '<article class="task-chart"><h3>Análise × execução</h3>'+bars(typeValues)+'</article>'+
+        '<article class="task-chart"><h3>Origem das tarefas</h3>'+bars(sourceValues)+'</article>'+
+        '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">'+priority.map(([label,value]) => '<div class="task-priority-item"><i></i><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></article>'+
+      '</div>';
+  };
+  document.addEventListener('DOMContentLoaded', () => window.renderTaskAnalytics());
+})();
