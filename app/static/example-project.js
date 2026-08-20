@@ -18,11 +18,11 @@
       .example-project-note b{color:var(--cyan)}
       @media(max-width:900px){
         .example-project-head{display:grid}
-        .example-project-frame{height:72vh;min-height:560px}
+        .example-project-frame{height:76vh;min-height:620px}
       }
       @media(max-width:560px){
         .example-project-head{padding:16px}
-        .example-project-frame{height:68vh;min-height:520px}
+        .example-project-frame{height:74vh;min-height:580px}
         .example-project-actions{width:100%}
         .example-project-actions .primary,.example-project-actions .ghost{flex:1}
       }
@@ -30,9 +30,53 @@
     document.head.appendChild(style);
   }
 
+  function keepRepetAIMenuVisible(frame) {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc?.head || !doc.body) return;
+      let style = doc.getElementById('devpilot-repeatai-menu-fix');
+      if (!style) {
+        style = doc.createElement('style');
+        style.id = 'devpilot-repeatai-menu-fix';
+        style.textContent = `
+          @media(max-width:920px){
+            .app{grid-template-columns:1fr!important}
+            .side{display:flex!important;position:sticky!important;top:0!important;z-index:50!important;flex-direction:row!important;align-items:center!important;gap:12px!important;padding:10px 14px!important;border-right:0!important;border-bottom:1px solid var(--line)!important;background:#081321f7!important;backdrop-filter:blur(10px)!important;overflow-x:auto!important;overflow-y:hidden!important;scrollbar-width:thin!important}
+            .side .brand{flex:0 0 auto!important}
+            .side .nav{display:flex!important;grid-template-columns:none!important;gap:6px!important;flex:1 0 auto!important;min-width:max-content!important}
+            .side .nav button{display:inline-flex!important;align-items:center!important;justify-content:center!important;white-space:nowrap!important;padding:9px 12px!important}
+            .side .privacy{display:none!important}
+            main{min-width:0!important}
+          }
+          @media(max-width:560px){
+            .side{position:sticky!important;display:grid!important;grid-template-columns:1fr!important;align-items:stretch!important;gap:8px!important;padding:10px!important}
+            .side .brand{padding:0 4px!important}
+            .side .nav{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;min-width:0!important;width:100%!important}
+            .side .nav button{width:100%!important;text-align:center!important;white-space:normal!important;min-height:38px!important}
+          }
+        `;
+        doc.head.appendChild(style);
+      }
+      const nav = doc.querySelector('.side .nav');
+      if (nav) nav.setAttribute('aria-label', 'Menu completo do RepetAI');
+    } catch (error) {
+      console.warn('Não foi possível ajustar o menu do RepetAI', error);
+    }
+  }
+
+  function wireFrame(frame) {
+    if (!frame || frame.dataset.menuFixBound === '1') return;
+    frame.dataset.menuFixBound = '1';
+    frame.addEventListener('load', () => keepRepetAIMenuVisible(frame));
+    if (frame.contentDocument?.readyState === 'complete') keepRepetAIMenuVisible(frame);
+  }
+
   function buildView() {
     let view = document.getElementById('project-example-view');
-    if (view) return view;
+    if (view) {
+      wireFrame(view.querySelector('#repeatai-frame'));
+      return view;
+    }
     view = document.createElement('section');
     view.className = 'view';
     view.id = 'project-example-view';
@@ -55,9 +99,11 @@
         </div>
       </div>`;
     document.querySelector('main')?.appendChild(view);
+    const frame = view.querySelector('#repeatai-frame');
+    wireFrame(frame);
     view.querySelector('#repeatai-reload')?.addEventListener('click', () => {
-      const frame = view.querySelector('#repeatai-frame');
-      if (frame) frame.src = `${EXAMPLE_URL}?t=${Date.now()}`;
+      const currentFrame = view.querySelector('#repeatai-frame');
+      if (currentFrame) currentFrame.src = `${EXAMPLE_URL}?t=${Date.now()}`;
     });
     return view;
   }
@@ -79,15 +125,16 @@
   }
 
   function showExample(navButton) {
-    buildView();
-    document.querySelectorAll('.view').forEach(view => {
-      view.classList.toggle('active', view.id === 'project-example-view');
+    const view = buildView();
+    document.querySelectorAll('.view').forEach(item => {
+      item.classList.toggle('active', item.id === 'project-example-view');
     });
     document.querySelectorAll('.nav').forEach(button => {
       button.classList.toggle('active', button === navButton);
     });
     const title = document.getElementById('page-title');
     if (title) title.textContent = NAV_LABEL;
+    keepRepetAIMenuVisible(view.querySelector('#repeatai-frame'));
   }
 
   injectStyles();
@@ -98,6 +145,8 @@
   window.addEventListener('resize', () => {
     if (!view.classList.contains('active')) return;
     const frame = view.querySelector('#repeatai-frame');
-    if (frame) frame.style.minHeight = window.innerWidth < 560 ? '520px' : '620px';
+    if (!frame) return;
+    frame.style.minHeight = window.innerWidth < 560 ? '580px' : '620px';
+    keepRepetAIMenuVisible(frame);
   });
 })();
