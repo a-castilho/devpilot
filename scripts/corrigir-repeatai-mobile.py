@@ -19,11 +19,11 @@ import sys
 import time
 from pathlib import Path
 
-MARKER = "REPETAI_MOBILE_INPUT_FIX_V2"
+MARKER = "REPETAI_PERFORMANCE_GUARD_V3"
 
 INJECTION = r"""
-<!-- REPETAI_MOBILE_INPUT_FIX_V2 -->
-<style id="repeatai-mobile-input-fix-v2">
+<!-- REPETAI_PERFORMANCE_GUARD_V3 -->
+<style id="repeatai-performance-guard-v3">
 @media (max-width: 640px) {
   html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body { overflow-x: hidden; }
@@ -51,124 +51,60 @@ INJECTION = r"""
   }
 }
 </style>
-<script id="repeatai-mobile-input-fix-v2-script">
+<script id="repeatai-performance-guard-v3-script">
 (() => {
-  if (window.__REPETAI_MOBILE_INPUT_FIX_V2__) return;
-  window.__REPETAI_MOBILE_INPUT_FIX_V2__ = true;
+  if (window.__REPETAI_PERFORMANCE_GUARD_V3__) return;
+  window.__REPETAI_PERFORMANCE_GUARD_V3__ = true;
 
+  const EVENT_INTERVAL_MS = 100;
   let lastTouchLikeAt = -Infinity;
-  let autoAnalyzeTimer = 0;
-  let autoAnalyzeClick = false;
-  let autoAnalyzeRetries = 0;
+  let lastMouseAt = -Infinity;
+  let lastWheelAt = -Infinity;
 
-  const markTouchLike = event => {
+  const touchLike = event => {
     if (event.pointerType === 'touch' || event.pointerType === 'pen') {
       lastTouchLikeAt = performance.now();
     }
   };
 
-  // Pointer Events são a fonte canônica para saber se a interação veio de
-  // dedo/caneta. Não gravamos texto nem conteúdo do usuário aqui.
-  window.addEventListener('pointerdown', markTouchLike, true);
-  window.addEventListener('pointermove', markTouchLike, true);
-  window.addEventListener('pointerup', markTouchLike, true);
-  window.addEventListener('pointercancel', markTouchLike, true);
-
-  // Fallback para navegadores antigos/embeds que não exponham pointerType.
+  window.addEventListener('pointerdown', touchLike, true);
+  window.addEventListener('pointermove', touchLike, true);
+  window.addEventListener('pointerup', touchLike, true);
   window.addEventListener('touchstart', () => {
     lastTouchLikeAt = performance.now();
   }, {capture: true, passive: true});
-  window.addEventListener('touchmove', () => {
-    lastTouchLikeAt = performance.now();
-  }, {capture: true, passive: true});
-  window.addEventListener('touchend', () => {
-    lastTouchLikeAt = performance.now();
-  }, {capture: true, passive: true});
 
-  // Chromium/Android pode emitir mousemove sintético imediatamente antes do
-  // click de um toque. Bloqueamos apenas esse mousemove; o click continua
-  // chegando ao RepetAI como uma única ação lógica.
+  const suppress = event => {
+    event.stopImmediatePropagation();
+    event.stopPropagation();
+  };
+
+  // A UI precisa de amostras, não de centenas de redesenhos por segundo.
+  // Cliques e teclas não são filtrados; nenhuma análise é disparada aqui.
   window.addEventListener('mousemove', event => {
-    const fromTouchCapabilities =
-      event.sourceCapabilities &&
-      event.sourceCapabilities.firesTouchEvents === true;
-    const nearTouch = performance.now() - lastTouchLikeAt < 900;
+    const now = performance.now();
+    const fromTouch = event.sourceCapabilities?.firesTouchEvents === true ||
+      now - lastTouchLikeAt < 800;
 
-    if (fromTouchCapabilities || nearTouch) {
-      event.stopImmediatePropagation();
-      event.stopPropagation();
+    if (fromTouch || now - lastMouseAt < EVENT_INTERVAL_MS) {
+      suppress(event);
+      return;
     }
+    lastMouseAt = now;
   }, true);
 
-  const findAnalyzeButton = () =>
-    [...document.querySelectorAll('button')].find(button =>
-      /(^|\s)analis(ar|e|ar agora)(\s|$)/i.test(
-        (button.textContent || '').trim()
-      )
-    );
-
-  const runAutoAnalyze = () => {
-    autoAnalyzeTimer = 0;
-    const button = findAnalyzeButton();
-
-    if (!button || button.disabled) {
-      if (autoAnalyzeRetries < 4) {
-        autoAnalyzeRetries += 1;
-        autoAnalyzeTimer = window.setTimeout(runAutoAnalyze, 600);
-      }
+  window.addEventListener('wheel', event => {
+    const now = performance.now();
+    if (now - lastWheelAt < EVENT_INTERVAL_MS) {
+      suppress(event);
       return;
     }
-
-    if (autoAnalyzeClick || /analisando/i.test(button.textContent || '')) {
-      return;
-    }
-
-    autoAnalyzeRetries = 0;
-    autoAnalyzeClick = true;
-    try {
-      button.click();
-    } finally {
-      queueMicrotask(() => {
-        autoAnalyzeClick = false;
-      });
-    }
-  };
-
-  const scheduleAutoAnalyze = event => {
-    if (autoAnalyzeClick) return;
-
-    // Ignora o próprio botão de análise para não criar um loop.
-    if (
-      event &&
-      event.type === 'click' &&
-      event.target &&
-      /analis/i.test((event.target.textContent || '').trim())
-    ) {
-      autoAnalyzeRetries = 0;
-      clearTimeout(autoAnalyzeTimer);
-      return;
-    }
-
-    autoAnalyzeRetries = 0;
-    clearTimeout(autoAnalyzeTimer);
-    autoAnalyzeTimer = window.setTimeout(runAutoAnalyze, 1200);
-  };
-
-  // Cada nova interação apenas rearma o debounce. Ao encerrar a captura, o
-  // botão Analisar fica disponível e é acionado uma única vez. Se o stop for
-  // assíncrono, fazemos até quatro tentativas curtas sem observar/mutar a UI.
-  ['click', 'pointerup', 'scroll', 'keydown'].forEach(type => {
-    window.addEventListener(
-      type,
-      scheduleAutoAnalyze,
-      type === 'scroll'
-        ? {capture: true, passive: true}
-        : true
-    );
-  });
+    lastWheelAt = now;
+  }, {capture: true, passive: true});
 })();
 </script>
 """.strip()
+
 
 
 def candidate_score(path: Path, text: str) -> int:
@@ -214,7 +150,21 @@ def find_target(root: Path) -> tuple[Path | None, str | None]:
     return path, text
 
 
+def remove_legacy_injection(text: str) -> str:
+    legacy_marker = "<!-- REPETAI_MOBILE_INPUT_FIX_V2 -->"
+    start = text.find(legacy_marker)
+    if start < 0:
+        return text
+
+    end = text.find("</script>", start)
+    if end < 0:
+        return text
+
+    return text[:start] + text[end + len("</script>") :]
+
+
 def inject(text: str) -> str:
+    text = remove_legacy_injection(text)
     if MARKER in text:
         return text
 
@@ -250,7 +200,8 @@ def main() -> int:
         )
         return 0
 
-    if MARKER in text:
+    updated = inject(text)
+    if updated == text:
         print(f"REPETAI_MOBILE_FIX=OK já aplicado: {target}")
         return 0
 
@@ -258,7 +209,6 @@ def main() -> int:
     backup = target.with_name(f"{target.name}.backup-{stamp}")
     shutil.copy2(target, backup)
 
-    updated = inject(text)
     target.write_text(updated, encoding="utf-8")
 
     if MARKER not in target.read_text(encoding="utf-8"):
@@ -270,7 +220,7 @@ def main() -> int:
     print(f"REPETAI_MOBILE_FIX=BACKUP {backup}")
     print(
         "REPETAI_MOBILE_FIX=CHANGES "
-        "touch-dedupe,pointer-origin,auto-analysis,responsive-table"
+        "touch-dedupe,event-sampling,no-auto-analysis,responsive-table"
     )
     return 0
 
