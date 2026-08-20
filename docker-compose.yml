@@ -6,10 +6,12 @@ services:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
+      DEVPILOT_HOST_ACTIONS_DIR: /host-actions
     ports:
       - "8080:8080"
     volumes:
       - devpilot_data:/data
+      - ./runtime/host-actions:/host-actions
     depends_on:
       postgres:
         condition: service_healthy
@@ -23,8 +25,10 @@ services:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
+      DEVPILOT_HOST_ACTIONS_DIR: /host-actions
     volumes:
       - devpilot_data:/data
+      - ./runtime/host-actions:/host-actions
     depends_on:
       postgres:
         condition: service_healthy
