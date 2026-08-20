@@ -489,17 +489,26 @@
         replaceMouseInstruction(view);
         syncMobileKeyboard(view);
       });
-      observer.observe(view, {childList: true, subtree: true, characterData: true});
+      observer.observe(view, {childList: true, subtree: true});
     }
   }
 
   function scan() {
-    enhanceView(document.getElementById('project-example-view'));
+    const view = document.getElementById('project-example-view');
+    if (!view) return false;
+    enhanceView(view);
+    return true;
   }
 
   injectStyles();
-  scan();
 
-  const rootObserver = new MutationObserver(scan);
-  rootObserver.observe(document.documentElement, {childList: true, subtree: true});
+  // O projeto exemplo só é criado após o clique do usuário. O observador
+  // existe apenas até encontrá-lo; mantê-lo no documento todo amplificava
+  // qualquer atualização de interface.
+  if (!scan()) {
+    const rootObserver = new MutationObserver(() => {
+      if (scan()) rootObserver.disconnect();
+    });
+    rootObserver.observe(document.body, {childList: true, subtree: true});
+  }
 })();
