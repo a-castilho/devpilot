@@ -17,6 +17,13 @@ git fetch origin
 git merge --ff-only origin/main
 
 echo
+echo "=== CORRIGINDO REPETAI LOCAL ==="
+if ! python3 scripts/corrigir-repeatai-mobile.py; then
+  echo "AVISO: não foi possível aplicar automaticamente a correção mobile do RepetAI."
+  echo "O update do DevPilot continuará; revise a mensagem acima."
+fi
+
+echo
 echo "=== PREPARANDO HOST ACTIONS ==="
 # O init cria as filas e corrige permissões do bind mount sem trocar o dono do host.
 docker compose run --rm host-actions-init
