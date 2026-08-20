@@ -50,12 +50,12 @@ document.addEventListener("click", () => {});
     assert first.returncode == 0, first.stderr
     content = index.read_text(encoding="utf-8")
 
-    assert "REPETAI_MOBILE_INPUT_FIX_V2" in content
-    assert "pointerdown" in content
-    assert "sourceCapabilities.firesTouchEvents" in content
+    assert "REPETAI_PERFORMANCE_GUARD_V3" in content
+    assert "EVENT_INTERVAL_MS = 100" in content
+    assert "lastMouseAt" in content
     assert "stopImmediatePropagation" in content
-    assert "autoAnalyzeRetries" in content
-    assert "button.click()" in content
+    assert "button.click()" not in content
+    assert "autoAnalyzeRetries" not in content
     assert "table-layout: fixed" in content
 
     backups = list(static.glob("index.html.backup-*"))
@@ -65,7 +65,7 @@ document.addEventListener("click", () => {});
     assert second.returncode == 0, second.stderr
     assert "já aplicado" in second.stdout
     assert index.read_text(encoding="utf-8").count(
-        "REPETAI_MOBILE_INPUT_FIX_V2"
+        "REPETAI_PERFORMANCE_GUARD_V3"
     ) == 3
     assert len(list(static.glob("index.html.backup-*"))) == 1
 
