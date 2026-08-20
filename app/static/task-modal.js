@@ -19,10 +19,10 @@
     },
     develop: {
       title: 'Desenvolvimento assistido pelo AgentOS',
-      text: 'O DevPilot combina seu contexto com as regras do projeto, implementa a menor mudança completa e mantém a execução auditável.',
-      hint: 'A IA usará este contexto como instrução principal de desenvolvimento.',
+      text: 'Antes de alterar código, o DevPilot verifica se a funcionalidade já existe para evitar telas, endpoints, serviços ou fluxos duplicados.',
+      hint: 'A primeira etapa é uma verificação obrigatória de duplicidade. Só depois a IA implementa o que realmente estiver faltando.',
       submit: 'Registrar desenvolvimento',
-      instruction: 'Implemente o resultado solicitado com a menor mudança completa, respeitando as regras do projeto. Execute verificações relevantes e resuma alterações, evidências e riscos remanescentes.'
+      instruction: 'Comece obrigatoriamente verificando no repositório se o comportamento solicitado já existe, inclusive em telas, rotas, componentes, serviços, modelos, testes e documentação relacionados. Não crie uma segunda implementação do que já existe. Se estiver completo, apenas valide e apresente evidências sem alterar código. Se estiver parcial, reutilize a implementação existente e desenvolva somente as lacunas comprovadas. Depois execute as verificações relevantes e resuma o preflight, as alterações e os riscos remanescentes.'
     },
     fix: {
       title: 'Correção assistida pelo AgentOS',
