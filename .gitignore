@@ -9,3 +9,7 @@ data/
 runtime/
 *.db
 *.log
+
+# Backups locais
+.env.backup-*
+docker-compose.override.yml.bak.*
