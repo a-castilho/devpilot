@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import re
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
@@ -21,6 +22,21 @@ from app.services.schema import ensure_runtime_schema
 
 
 STATIC = Path(__file__).parent / "static"
+_SCRIPT_SRC_RE = re.compile(
+    r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
+)
+
+
+def _version_frontend_scripts(html: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        asset = STATIC / match.group("name")
+        try:
+            revision = str(asset.stat().st_mtime_ns)
+        except OSError:
+            revision = "1"
+        return f'{match.group("prefix")}?v={revision}{match.group("suffix")}'
+
+    return _SCRIPT_SRC_RE.sub(replace, html)
 
 
 @asynccontextmanager
@@ -51,14 +67,21 @@ def health():
 
 @app.get("/telemetry", include_in_schema=False)
 def telemetry_page():
-    return FileResponse(STATIC / "telemetry.html")
+    return FileResponse(
+        STATIC / "telemetry.html",
+        headers={"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"},
+    )
 
 
 @app.get("/{path:path}", include_in_schema=False)
 def spa(path: str):
     candidate = STATIC / path
     if path and candidate.is_file():
-        return FileResponse(candidate)
+        headers = None
+        if candidate.suffix.lower() in {".html", ".htm"}:
+            headers = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
+        return FileResponse(candidate, headers=headers)
+
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     scripts = [
         '<script src="/assets/telemetry-capture.js" defer></script>',
@@ -76,4 +99,13 @@ def spa(path: str):
     for script in scripts:
         if script not in html:
             html = html.replace("</body>", f"  {script}\n</body>")
-    return HTMLResponse(html)
+
+    html = _version_frontend_scripts(html)
+    return HTMLResponse(
+        html,
+        headers={
+            "Cache-Control": "no-store, max-age=0, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
