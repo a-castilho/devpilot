@@ -62,8 +62,11 @@ def _last_nonempty_line(value: str, limit: int = 700) -> str:
 
 
 def failure_reason(run: Run | None) -> str:
-    if not run or str(run.status).lower() != "failed":
+    if not run or str(run.status).lower() not in {"failed", "blocked"}:
         return ""
+
+    if str(run.status).lower() == "blocked":
+        return _last_nonempty_line(run.summary) or "Execução bloqueada; revise a conexão e reexecute."
 
     payload = _logs_payload(run)
     if isinstance(payload, dict):
@@ -79,7 +82,7 @@ def failure_reason(run: Run | None) -> str:
 
 
 def _run_summary(task: Task, run: Run | None) -> dict:
-    failed = task.status == TaskStatus.failed
+    failed = task.status in {TaskStatus.failed, TaskStatus.blocked}
     return {
         "task_id": task.id,
         "task_status": task.status.value if isinstance(task.status, TaskStatus) else str(task.status),

@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.orm import object_session
 
 from app.config import get_settings
 from app.db import SessionLocal
@@ -27,6 +28,16 @@ DEVELOPMENT_DUPLICATE_GUARD = (
     "the relevant checks and report the evidence. If it exists partially, reuse and extend the "
     "existing implementation and change only the verified gaps. Prefer adapting existing files and "
     "flows over adding duplicate endpoints, screens, components, services or models."
+)
+
+
+CODEX_AUTH_FAILURE_MARKERS = (
+    "unauthorized",
+    "authentication failed",
+    "invalid api key",
+    "incorrect api key",
+    "http 401",
+    "status 401",
 )
 
 
@@ -130,6 +141,59 @@ def task_timeout(project: Project) -> int:
     return int(config.get("timeout_seconds", 1800))
 
 
+
+def codex_authentication_rejected(stdout: str, stderr: str) -> bool:
+    diagnostic = f"{stdout[-8_000:]}\n{stderr[-4_000:]}".lower()
+    return any(marker in diagnostic for marker in CODEX_AUTH_FAILURE_MARKERS)
+
+
+def _saved_openai_api_key(task: Task, connection_label: str = "") -> str:
+    db = object_session(task)
+    if db is None:
+        return ""
+    query = select(ProviderCredential).where(
+        ProviderCredential.workspace_id == task.workspace_id,
+        ProviderCredential.provider == "openai",
+        ProviderCredential.enabled.is_(True),
+    )
+    if connection_label.strip():
+        query = query.where(ProviderCredential.label == connection_label.strip())
+    credential = db.scalar(query.order_by(ProviderCredential.created_at.desc()).limit(1))
+    if not credential:
+        return ""
+    try:
+        return Vault().decrypt(credential.encrypted_secret).strip()
+    except (RuntimeError, ValueError):
+        return ""
+
+
+def _repository_status(path: Path) -> str:
+    result = run(["git", "status", "--porcelain=v1", "--untracked-files=all"], cwd=path)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or "Unable to inspect repository status")
+    return result.stdout
+
+
+def _run_codex_with_openai_api_key(project: Project, prompt: str, api_key: str):
+    """Run the fallback in an isolated Codex home; credentials never touch logs or Git."""
+    with tempfile.TemporaryDirectory(prefix="devpilot-codex-api-") as temporary_directory:
+        codex_home = Path(temporary_directory)
+        auth_file = codex_home / "auth.json"
+        auth_file.write_text(
+            json.dumps({"auth_mode": "apikey", "OPENAI_API_KEY": api_key}),
+            encoding="utf-8",
+        )
+        auth_file.chmod(0o600)
+        return run(
+            codex_command(project, prompt),
+            cwd=repository_path(project),
+            timeout=task_timeout(project),
+            env_overrides={
+                "CODEX_HOME": str(codex_home),
+                "OPENAI_API_KEY": api_key,
+            },
+        )
+
 def development_prompt(task: Task) -> str:
     return (
         f"Task: {task.title}\n\n{task.prompt}\n\n"
@@ -213,16 +277,116 @@ def execute_task(project: Project, task: Task) -> dict:
     checkout = run(["git", "switch", "-C", branch, f"origin/{project.default_branch}"], cwd=path)
     if checkout.returncode:
         raise RuntimeError(checkout.stderr.strip() or "Unable to create task branch")
-    result = run(
-        codex_command(project, development_prompt(task)),
+
+    prompt = development_prompt(task)
+    primary = run(
+        codex_command(project, prompt),
         cwd=path,
         timeout=task_timeout(project),
     )
+    if primary.returncode == 0:
+        return {
+            "mode": "execute",
+            "executor": "codex",
+            "provider": "chatgpt-codex",
+            "auth_mode": "chatgpt_session",
+            "exit_code": 0,
+            "summary": "Codex repository execution completed successfully.",
+            "stdout": primary.stdout[-100_000:],
+            "stderr": primary.stderr[-20_000:],
+            "branch": branch,
+            "fallback_used": False,
+        }
+
+    if codex_authentication_rejected(primary.stdout, primary.stderr):
+        config = json.loads(project.codex_config or "{}")
+        fallback_enabled = bool(
+            config.get("api_fallback", settings.codex_api_fallback_enabled)
+        )
+        connection_label = str(
+            config.get("api_fallback_connection_label")
+            or settings.codex_api_fallback_connection_label
+            or ""
+        )
+        api_key = (
+            _saved_openai_api_key(task, connection_label)
+            if fallback_enabled
+            else ""
+        )
+        if api_key:
+            before_fallback = _repository_status(path)
+            fallback = _run_codex_with_openai_api_key(project, prompt, api_key)
+            after_fallback = _repository_status(path)
+            if fallback.returncode == 0:
+                return {
+                    "mode": "execute",
+                    "executor": "codex",
+                    "provider": "openai-api",
+                    "auth_mode": "api_key",
+                    "exit_code": 0,
+                    "summary": "Codex concluiu a tarefa com a conexão OpenAI segura após a sessão local ser rejeitada.",
+                    "stdout": fallback.stdout[-100_000:],
+                    "stderr": fallback.stderr[-20_000:],
+                    "branch": branch,
+                    "fallback_used": True,
+                    "paid_api_fallback": True,
+                    "failure_code": "auth",
+                }
+            if after_fallback != before_fallback:
+                return {
+                    "mode": "execute",
+                    "executor": "codex",
+                    "provider": "openai-api",
+                    "auth_mode": "api_key",
+                    "exit_code": fallback.returncode,
+                    "summary": "A conexão OpenAI falhou após iniciar alterações. A branch foi preservada para revisão.",
+                    "stdout": fallback.stdout[-100_000:],
+                    "stderr": fallback.stderr[-20_000:],
+                    "branch": branch,
+                    "failure_code": "partial_changes_detected",
+                    "blocked": True,
+                    "fallback_used": True,
+                    "paid_api_fallback": True,
+                }
+            return {
+                "mode": "execute",
+                "executor": "codex",
+                "provider": "openai-api",
+                "auth_mode": "api_key",
+                "exit_code": fallback.returncode,
+                "summary": "A conexão OpenAI cadastrada foi rejeitada. Atualize-a em Modelos de IA antes de reexecutar.",
+                "stdout": fallback.stdout[-100_000:],
+                "stderr": fallback.stderr[-20_000:],
+                "branch": branch,
+                "failure_code": "auth",
+                "blocked": True,
+                "fallback_used": True,
+                "paid_api_fallback": True,
+            }
+        return {
+            "mode": "execute",
+            "executor": "codex",
+            "provider": "chatgpt-codex",
+            "auth_mode": "chatgpt_session",
+            "exit_code": primary.returncode,
+            "summary": "A sessão do Codex foi rejeitada. Cadastre ou atualize uma conexão OpenAI em Modelos de IA e use Reexecutar.",
+            "stdout": primary.stdout[-100_000:],
+            "stderr": primary.stderr[-20_000:],
+            "branch": branch,
+            "failure_code": "auth",
+            "blocked": True,
+            "fallback_used": False,
+        }
+
     return {
         "mode": "execute",
-        "exit_code": result.returncode,
-        "summary": "Execution completed on an isolated task branch after duplicate preflight.",
-        "stdout": result.stdout[-100_000:],
-        "stderr": result.stderr[-20_000:],
+        "executor": "codex",
+        "provider": "chatgpt-codex",
+        "auth_mode": "chatgpt_session",
+        "exit_code": primary.returncode,
+        "summary": primary.stderr.strip() or "Codex execution failed.",
+        "stdout": primary.stdout[-100_000:],
+        "stderr": primary.stderr[-20_000:],
         "branch": branch,
+        "fallback_used": False,
     }

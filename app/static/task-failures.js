@@ -101,7 +101,7 @@
               openTaskLog(detail.run_id, task);
             };
             logTarget.appendChild(link);
-          } else if (task.status === 'failed') {
+          } else if (task.status === 'failed' || task.status === 'blocked') {
             const unavailable = document.createElement('small');
             unavailable.textContent = 'Sem log';
             logTarget.appendChild(unavailable);
@@ -121,7 +121,8 @@
   renderTasks = function renderTasksWithFailureDetails() {
     const table = $('#tasks-table');
     table.innerHTML = state.tasks.map(task => {
-      const failure = task.status === 'failed'
+      const attention = task.status === 'failed' || task.status === 'blocked';
+      const failure = attention
         ? '<small class="task-failure-reason">Carregando motivo…</small>'
         : '';
       const approval = task.status === 'awaiting_approval'

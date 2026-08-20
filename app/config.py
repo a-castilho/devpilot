@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-5.4"
     realtime_model: str = "gpt-realtime-2.1"
 
+    # A fallback is attempted only after an approved task receives a Codex 401.
+    # It uses an encrypted OpenAI connection and may consume API credits.
+    codex_api_fallback_enabled: bool = True
+    codex_api_fallback_connection_label: str = ""
+
     @property
     def git_hosts(self) -> set[str]:
         return {item.strip().lower() for item in self.allowed_git_hosts.split(",") if item.strip()}

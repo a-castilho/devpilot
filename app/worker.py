@@ -28,10 +28,11 @@ def process_one() -> bool:
         db.commit()
         try:
             result = execute_task(project, task)
-            run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
+            blocked = bool(result.get("blocked"))
+            run.status = "success" if result.get("exit_code", 0) == 0 else ("blocked" if blocked else "failed")
             run.summary = result.get("summary", "Execution completed")
             run.logs = json.dumps(result, ensure_ascii=False)
-            task.status = TaskStatus.review if run.status == "success" else TaskStatus.failed
+            task.status = TaskStatus.review if run.status == "success" else (TaskStatus.blocked if blocked else TaskStatus.failed)
             outcome = run.status
         except Exception as error:
             run.status = "failed"
@@ -47,7 +48,12 @@ def process_one() -> bool:
             actor="worker",
             action="task.executed",
             outcome=outcome,
-            details={"run_id": run.id},
+            details={
+                "run_id": run.id,
+                "executor": result.get("executor", "codex"),
+                "provider": result.get("provider", ""),
+                "fallback_used": bool(result.get("fallback_used")),
+            },
         )
         db.commit()
         return True
