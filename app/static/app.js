@@ -105,3 +105,58 @@ if(!state.token)$('#auth-modal').showModal();else load();
 
   sync();
 })();
+
+/* Workspace tone selector: global, keyboard accessible and remembered locally. */
+(() => {
+  const storageKey = 'devpilot-workspace-tone';
+  const tones = [
+    {id:'black', label:'Preto absoluto'},
+    {id:'graphite', label:'Grafite'},
+    {id:'night', label:'Azul noturno'},
+    {id:'deep-blue', label:'Azul profundo'},
+  ];
+  const saved = localStorage.getItem(storageKey);
+  const initial = tones.some(tone => tone.id === saved) ? saved : 'black';
+  const applyTone = tone => {
+    document.documentElement.dataset.workspaceTone = tone;
+    localStorage.setItem(storageKey, tone);
+    document.querySelectorAll('.workspace-tone-option').forEach(option => {
+      option.setAttribute('aria-pressed', String(option.dataset.tone === tone));
+    });
+  };
+  applyTone(initial);
+
+  const picker = document.createElement('div');
+  picker.className = 'workspace-tone-picker';
+  picker.innerHTML = `
+    <div class="workspace-tone-menu" id="workspace-tone-menu" role="group" aria-label="Tons do fundo">
+      ${tones.map(tone => `<button type="button" class="workspace-tone-option" data-tone="${tone.id}" aria-label="${tone.label}" title="${tone.label}" aria-pressed="false"></button>`).join('')}
+    </div>
+    <button type="button" class="workspace-tone-toggle" aria-label="Escolher tom do fundo" title="Tons do fundo" aria-controls="workspace-tone-menu" aria-expanded="false">◐</button>
+  `;
+  document.body.appendChild(picker);
+
+  const toggle = picker.querySelector('.workspace-tone-toggle');
+  const setOpen = open => {
+    picker.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+  };
+  toggle.addEventListener('click', event => {
+    event.stopPropagation();
+    setOpen(!picker.classList.contains('open'));
+  });
+  picker.querySelectorAll('.workspace-tone-option').forEach(option => {
+    option.addEventListener('click', () => {
+      applyTone(option.dataset.tone);
+      setOpen(false);
+      toast(`Fundo alterado para ${option.getAttribute('aria-label')}`);
+    });
+  });
+  document.addEventListener('click', event => {
+    if (!picker.contains(event.target)) setOpen(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') setOpen(false);
+  });
+  applyTone(initial);
+})();
