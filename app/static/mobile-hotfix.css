@@ -1,0 +1,206 @@
+/* DevPilot mobile shell hotfix v4
+ * Keeps the full mobile navigation in one row, removes duplicate icons,
+ * prevents the global voice dock from covering the RepetAI example and
+ * reserves a safe viewport above Android/iOS navigation areas.
+ */
+@media (max-width: 900px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  .shell {
+    width: 100%;
+    min-width: 0;
+    min-height: 100dvh;
+    overflow-x: clip;
+  }
+
+  main {
+    width: 100%;
+    min-width: 0;
+    padding-bottom: calc(94px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* Bottom navigation: all eight entries stay on one row. */
+  .sidebar {
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: calc(72px + env(safe-area-inset-bottom)) !important;
+    padding: 8px max(6px, env(safe-area-inset-right)) calc(8px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)) !important;
+    overflow: hidden !important;
+    z-index: 30 !important;
+    background: #081321f5 !important;
+    backdrop-filter: blur(16px);
+  }
+
+  .sidebar nav {
+    display: grid !important;
+    grid-template-columns: repeat(8, minmax(0, 1fr)) !important;
+    align-items: center !important;
+    justify-content: stretch !important;
+    gap: 2px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .sidebar .nav {
+    display: grid !important;
+    place-items: center !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 52px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 12px !important;
+    font-size: 0 !important;
+    line-height: 1 !important;
+    flex: none !important;
+    overflow: hidden !important;
+  }
+
+  /* The Organizations item has an inline icon in the desktop markup.
+     Hide it on mobile so it cannot render together with pseudo-icons. */
+  .sidebar .nav > span {
+    display: none !important;
+  }
+
+  /* Neutralize the legacy nth-child icon rules. */
+  .sidebar .nav::after {
+    content: none !important;
+    display: none !important;
+  }
+
+  .sidebar .nav::before {
+    display: block !important;
+    font-size: 18px !important;
+    line-height: 1 !important;
+    color: currentColor !important;
+  }
+
+  .sidebar .nav[data-view="overview"]::before { content: "⌂" !important; }
+  .sidebar .nav[data-view="organizations"]::before { content: "◎" !important; }
+  .sidebar .nav[data-view="projects"]::before { content: "▦" !important; }
+  .sidebar .nav[data-example-project]::before { content: "◫" !important; }
+  .sidebar .nav[data-view="tasks"]::before { content: "✓" !important; }
+  .sidebar .nav[data-view="providers"]::before { content: "✦" !important; }
+  .sidebar .nav[data-view="reports"]::before { content: "≣" !important; }
+  .sidebar .nav[data-view="audit"]::before { content: "⌁" !important; }
+
+  /* Global voice action must never cover tables/cards on mobile. */
+  .voice-dock {
+    right: 12px !important;
+    bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+    gap: 0 !important;
+    z-index: 31 !important;
+  }
+
+  .voice-dock > span {
+    display: none !important;
+  }
+
+  .voice-dock button {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    padding: 0 !important;
+  }
+
+  /* RepetAI is interactive inside an iframe. Hide the DevPilot voice orb
+     while this view is active and keep the iframe viewport above the fixed nav. */
+  body:has(#project-example-view.active) .voice-dock {
+    display: none !important;
+  }
+
+  #project-example-view.active {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  #project-example-view.active .example-project-caption {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    gap: 8px !important;
+    flex-wrap: wrap !important;
+  }
+
+  #project-example-view.active .example-project-stage {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: clamp(430px, calc(100dvh - 190px - env(safe-area-inset-bottom)), 680px) !important;
+    min-height: 0 !important;
+    margin-bottom: calc(84px + env(safe-area-inset-bottom)) !important;
+    overflow: hidden !important;
+  }
+
+  #project-example-view.active .example-project-frame {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: 100% !important;
+    border: 0 !important;
+  }
+
+  .table-wrap,
+  .panel,
+  .project-card,
+  .cards,
+  .grid-two,
+  .section-head,
+  .panel-title {
+    min-width: 0;
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 520px) {
+  main {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important;
+  }
+
+  .sidebar {
+    height: calc(68px + env(safe-area-inset-bottom)) !important;
+    padding-left: 4px !important;
+    padding-right: 4px !important;
+  }
+
+  .sidebar nav {
+    gap: 0 !important;
+  }
+
+  .sidebar .nav {
+    height: 48px !important;
+    border-radius: 10px !important;
+  }
+
+  .sidebar .nav::before {
+    font-size: 17px !important;
+  }
+
+  #project-example-view.active .example-project-stage {
+    height: clamp(410px, calc(100dvh - 184px - env(safe-area-inset-bottom)), 620px) !important;
+    margin-bottom: calc(78px + env(safe-area-inset-bottom)) !important;
+    border-radius: 10px !important;
+  }
+}
