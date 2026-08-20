@@ -18,6 +18,16 @@ from app.services.vault import Vault
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
 READ_ONLY_MODE_MARKER = "[DEVPILOT_MODE=analysis-read-only]"
+DEVELOPMENT_DUPLICATE_GUARD = (
+    "MANDATORY FIRST PHASE — DUPLICATION PREFLIGHT. Before editing any file, inspect the repository "
+    "for an existing implementation equivalent to the requested behavior. Check routes, screens, "
+    "components, services, models, tests, configuration and documentation as relevant. Do not create "
+    "a parallel or second implementation of behavior that already exists. If the feature already "
+    "exists completely, make no implementation change merely to satisfy the task: validate it with "
+    "the relevant checks and report the evidence. If it exists partially, reuse and extend the "
+    "existing implementation and change only the verified gaps. Prefer adapting existing files and "
+    "flows over adding duplicate endpoints, screens, components, services or models."
+)
 
 
 def repository_path(project: Project) -> Path:
@@ -120,6 +130,16 @@ def task_timeout(project: Project) -> int:
     return int(config.get("timeout_seconds", 1800))
 
 
+def development_prompt(task: Task) -> str:
+    return (
+        f"Task: {task.title}\n\n{task.prompt}\n\n"
+        f"{DEVELOPMENT_DUPLICATE_GUARD}\n\n"
+        "Only after completing that preflight, implement the smallest complete change that is still "
+        "necessary, run relevant checks, and summarize the preflight evidence, changes and remaining "
+        "risks. Do not push or merge."
+    )
+
+
 def execute_read_only_analysis(project: Project, task: Task, repository: Path) -> dict:
     """Run analysis in a disposable worktree so tracked project files are never persisted."""
     with tempfile.TemporaryDirectory(prefix=f"devpilot-analysis-{task.id[:8]}-") as temp_dir:
@@ -193,16 +213,15 @@ def execute_task(project: Project, task: Task) -> dict:
     checkout = run(["git", "switch", "-C", branch, f"origin/{project.default_branch}"], cwd=path)
     if checkout.returncode:
         raise RuntimeError(checkout.stderr.strip() or "Unable to create task branch")
-    prompt = (
-        f"Task: {task.title}\n\n{task.prompt}\n\n"
-        "Inspect the repository, implement the smallest complete change, run relevant checks, "
-        "and summarize changes and remaining risks. Do not push or merge."
+    result = run(
+        codex_command(project, development_prompt(task)),
+        cwd=path,
+        timeout=task_timeout(project),
     )
-    result = run(codex_command(project, prompt), cwd=path, timeout=task_timeout(project))
     return {
         "mode": "execute",
         "exit_code": result.returncode,
-        "summary": "Execution completed on an isolated task branch.",
+        "summary": "Execution completed on an isolated task branch after duplicate preflight.",
         "stdout": result.stdout[-100_000:],
         "stderr": result.stderr[-20_000:],
         "branch": branch,
