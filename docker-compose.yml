@@ -6,8 +6,7 @@ services:
       - -c
       - >-
         mkdir -p /host-actions/pending /host-actions/processed /host-actions/failed &&
-        chown -R 10001:10001 /host-actions &&
-        chmod -R u+rwX /host-actions
+        chmod -R a+rwX /host-actions
     volumes:
       - ./runtime/host-actions:/host-actions
     restart: "no"
