@@ -108,7 +108,9 @@
       const $ = id => document.getElementById(id);
       const state = {
         recording:false,sessionId:null,startAt:0,stopAt:0,events:[],stream:[],clicks:0,keys:0,scrolls:0,
-        movePx:0,analysis:null,lastMouse:null,lastMouseSample:0,lastActionAt:0,lastKeyCategory:'—',
+        movePx:0,analysis:null,lastMouse:null,lastMouseSample:0,lastWheelSample:0,lastActionAt:0,lastKeyCategory:'—',
+        lastMouseRenderAt:0,mouseRenderTimer:null,pendingMouse:null,
+        lastStreamRenderAt:0,streamRenderTimer:null,
         perSecond:Array(30).fill(0),secondCount:0,timer:null,autoStop:null
       };
 
@@ -116,6 +118,9 @@
         character:'texto',number:'número',navigation:'navegação',modifier:'modificador',function:'função',
         editing:'edição',enter:'enter',escape:'escape',space:'espaço',tab:'tab',other:'outra'
       };
+      const MAX_EVENTS=5000;
+      const INPUT_RENDER_INTERVAL=100;
+      const STREAM_RENDER_INTERVAL=250;
 
       function randomId(){
         if(globalThis.crypto?.randomUUID)return crypto.randomUUID();
@@ -155,8 +160,30 @@
         return item.event_type;
       }
 
+      function scheduleMouseRender(point){
+        state.pendingMouse=point;
+        if(state.mouseRenderTimer)return;
+        const wait=Math.max(0,INPUT_RENDER_INTERVAL-(performance.now()-state.lastMouseRenderAt));
+        state.mouseRenderTimer=setTimeout(()=>{
+          state.mouseRenderTimer=null;
+          state.lastMouseRenderAt=performance.now();
+          const pending=state.pendingMouse;
+          if(pending)$('tMouse').textContent=`${Math.round(pending.x)} / ${Math.round(pending.y)}`;
+        },wait);
+      }
+
+      function scheduleStreamRender(){
+        if(state.streamRenderTimer)return;
+        const wait=Math.max(0,STREAM_RENDER_INTERVAL-(performance.now()-state.lastStreamRenderAt));
+        state.streamRenderTimer=setTimeout(()=>{
+          state.streamRenderTimer=null;
+          state.lastStreamRenderAt=performance.now();
+          renderStream();
+        },wait);
+      }
+
       function recordEvent(event_type,payload={},showInStream=false){
-        if(!state.recording)return;
+        if(!state.recording||state.events.length>=MAX_EVENTS)return;
         const now=Date.now();
         const item={event_type,at:now,ts:now-state.startAt,...payload};
         state.events.push(item);
@@ -165,8 +192,7 @@
         if(showInStream){
           state.stream.unshift(item);
           state.stream=state.stream.slice(0,40);
-          $('tAction').textContent=eventDetail(item);
-          renderStream();
+          scheduleStreamRender();
         }
       }
 
@@ -178,13 +204,18 @@
           state.movePx+=Math.hypot(point.x-state.lastMouse.x,point.y-state.lastMouse.y);
         }
         state.lastMouse=point;
-        $('tMouse').textContent=`${Math.round(point.x)} / ${Math.round(point.y)}`;
+        scheduleMouseRender(point);
         if(now-state.lastMouseSample<100)return;
         state.lastMouseSample=now;
         recordEvent('mousemove',{
           x:normalized(event.clientX,innerWidth),
           y:normalized(event.clientY,innerHeight)
         });
+      }
+
+      function onPointerMove(event){
+        if(event.pointerType==='mouse')return;
+        onMove(event);
       }
 
       function onClick(event){
@@ -198,6 +229,9 @@
 
       function onWheel(event){
         if(!state.recording)return;
+        const now=performance.now();
+        if(now-state.lastWheelSample<INPUT_RENDER_INTERVAL)return;
+        state.lastWheelSample=now;
         state.scrolls++;
         recordEvent('scroll',{delta_y:Number(event.deltaY)||0},true);
       }
@@ -345,6 +379,7 @@
       }
 
       function tick(){
+        if(document.hidden)return;
         if(state.recording){
           state.perSecond.push(state.secondCount);
           state.perSecond.shift();
@@ -365,12 +400,22 @@
         $('tInterval').textContent=avg?avg+' ms':'—';
         $('tRate').textContent=elapsed?Math.round(state.events.length/(elapsed/60000)):0;
         $('tScroll').textContent=state.scrolls;
+        $('tAction').textContent=state.stream[0]?eventDetail(state.stream[0]):'—';
         renderChart();
         renderPatterns();
       }
 
+      function scheduleTick(){
+        if(scheduleTick.frame)return;
+        scheduleTick.frame=requestAnimationFrame(()=>{
+          scheduleTick.frame=0;
+          tick();
+        });
+      }
+
       function attach(){
         document.addEventListener('mousemove',onMove,{passive:true});
+        document.addEventListener('pointermove',onPointerMove,{passive:true});
         document.addEventListener('click',onClick,true);
         document.addEventListener('wheel',onWheel,{passive:true});
         document.addEventListener('keydown',onKey,true);
@@ -378,6 +423,7 @@
 
       function detach(){
         document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('pointermove',onPointerMove);
         document.removeEventListener('click',onClick,true);
         document.removeEventListener('wheel',onWheel);
         document.removeEventListener('keydown',onKey,true);
@@ -419,6 +465,11 @@
         detach();
         clearInterval(state.timer);
         clearTimeout(state.autoStop);
+        clearTimeout(state.mouseRenderTimer);
+        clearTimeout(state.streamRenderTimer);
+        state.mouseRenderTimer=null;
+        state.streamRenderTimer=null;
+        renderStream();
         tick();
       }
 
@@ -434,9 +485,13 @@
 
       function reset(update=true){
         stop();
+        clearTimeout(state.mouseRenderTimer);
+        clearTimeout(state.streamRenderTimer);
         Object.assign(state,{
           sessionId:null,startAt:0,stopAt:0,events:[],stream:[],clicks:0,keys:0,scrolls:0,movePx:0,
-          analysis:null,lastMouse:null,lastMouseSample:0,lastActionAt:0,lastKeyCategory:'—',
+          analysis:null,lastMouse:null,lastMouseSample:0,lastWheelSample:0,lastActionAt:0,lastKeyCategory:'—',
+          lastMouseRenderAt:0,mouseRenderTimer:null,pendingMouse:null,
+          lastStreamRenderAt:0,streamRenderTimer:null,
           secondCount:0,perSecond:Array(30).fill(0)
         });
         $('status').classList.remove('live');
@@ -458,7 +513,10 @@
       $('stop').addEventListener('click',stop);
       $('analyze').addEventListener('click',analyze);
       $('reset').addEventListener('click',()=>reset(true));
-      addEventListener('resize',tick);
+      addEventListener('resize',scheduleTick,{passive:true});
+      document.addEventListener('visibilitychange',()=>{
+        if(!document.hidden)tick();
+      });
       tick();
     })();
   </script>
