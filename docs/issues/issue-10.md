@@ -4,13 +4,13 @@
 
 ## Metadados
 
-- **Status:** Aberta
+- **Status:** Fechada
 - **Autor:** @acastilho
 - **Responsáveis:** —
 - **Labels:** —
 - **Milestone:** —
 - **Criada em:** 2026-08-20T02:12:04Z
-- **Atualizada em:** 2026-08-20T02:12:04Z
+- **Atualizada em:** 2026-08-20T02:22:09Z
 - **Fonte:** https://github.com/a-castilho/devpilot/issues/10
 
 ## Planejado / descrição da issue
@@ -39,14 +39,3 @@ Sempre na melhor prática. No caminho do bem maior. Ir até o fim sem sair do ca
 ## Regra de revisão
 
 A PR deve referenciar esta issue e comparar **planejado x implementado x resultado observável/tela**. Mudanças visuais exigem evidência antes/depois; mudanças não visuais exigem evidência equivalente.
-
-<!-- COMPROMISSO-GERAL-A-CASTILHO -->
-
----
-
-## Compromisso Geral
-
-**Sempre na melhor prática. No caminho do bem maior.**
-
-**Ir até o fim sem sair do caminho, seja ele qual for.**
-
