@@ -31,6 +31,11 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q app
 
+      - name: Check dashboard JavaScript syntax
+        run: |
+          node --check app/static/app.js
+          node --check app/static/execution-recovery.js
+
       - name: Run tests
         run: pytest
 

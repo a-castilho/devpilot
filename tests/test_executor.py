@@ -40,6 +40,8 @@ def settings(**overrides):
         "execution_enabled": True,
         "task_executor": "auto",
         "local_readonly_enabled": True,
+        "codex_api_fallback_enabled": True,
+        "codex_api_fallback_connection_label": "",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -132,9 +134,11 @@ def test_codex_receives_project_instructions_without_creating_agents_file(monkey
     monkeypatch.setattr(executor, "ensure_repository", lambda _: tmp_path)
     calls: list[list[str]] = []
 
-    def fake_run(args, cwd=None, timeout=900):
+    def fake_run(args, cwd=None, timeout=900, env_overrides=None):
         calls.append(args)
         if args[:2] == ["git", "switch"]:
+            return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
+        if args[:2] == ["git", "status"]:
             return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
         return subprocess.CompletedProcess(
             args,
