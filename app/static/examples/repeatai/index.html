@@ -19,6 +19,20 @@
     .patterns{margin-top:12px}.pattern-row{display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}.pattern-row:first-child{border-top:0}.pattern-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#15283b;color:var(--cyan);font-weight:900}.pattern-row strong{display:block;font-size:12px}.pattern-row small{display:block;color:var(--muted);margin-top:2px}.badge{padding:4px 7px;border-radius:999px;font-size:9px;background:#183246;color:var(--cyan)}.badge.warn{background:#3b2b17;color:var(--amber)}.badge.hot{background:#3e1c29;color:#ff9eb0}
     .analysis-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px}.analysis-summary div{padding:9px;border:1px solid #1a2c42;border-radius:9px;background:#081524}.analysis-summary span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase}.analysis-summary strong{font-size:16px}
     .event-stream{max-height:206px;overflow:auto}.event{display:grid;grid-template-columns:58px 78px 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:10px}.event:first-child{border-top:0}.event time,.event .kind{color:var(--muted)}.empty{padding:24px;text-align:center;color:var(--muted);font-size:11px}
+    .analysis-tab{margin-top:12px;padding:0;overflow:hidden}
+    .analysis-tab-summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:16px;cursor:pointer;list-style:none}
+    .analysis-tab-summary::-webkit-details-marker{display:none}
+    .analysis-tab-summary h2{margin:0;font-size:15px}
+    .analysis-tab-summary small{display:block;margin-top:3px;color:var(--muted);font-size:10px}
+    .analysis-tab-summary > span:first-child{min-width:0}
+    .analysis-tab-toggle{display:inline-flex;align-items:center;gap:8px;flex:0 0 auto;color:var(--cyan);font-size:11px;font-weight:800}
+    .analysis-tab-chevron{display:grid;place-items:center;width:26px;height:26px;border:1px solid #2c7d78;border-radius:8px;background:#102438;font-size:16px;line-height:1;transition:transform .2s ease}
+    .analysis-tab[open] .analysis-tab-chevron{transform:rotate(180deg)}
+    .analysis-tab[open] .analysis-tab-summary{border-bottom:1px solid var(--line);background:#0f2031}
+    .analysis-tab.has-analysis .analysis-tab-summary{background:linear-gradient(90deg,#102b3e,#102438)}
+    .analysis-tab-content{padding:0 16px 16px}
+    .analysis-tab-content > .layout{margin-top:0}
+    @media(max-width:560px){.analysis-tab-summary{padding:14px}.analysis-tab-content{padding:0 12px 12px}.analysis-tab-toggle{font-size:10px}.analysis-tab-toggle > span:first-child{display:none}}
     .footer-note{margin-top:12px;color:var(--muted);font-size:9px;text-align:right}
     @media(max-width:920px){.app{grid-template-columns:1fr}.side{display:none}.metrics{grid-template-columns:repeat(3,1fr)}.layout{grid-template-columns:1fr}}
     @media(max-width:560px){main{padding:16px}.top{display:grid}.controls{width:100%}.controls button,.controls select{flex:1}.metrics{grid-template-columns:1fr 1fr}.tech{grid-template-columns:1fr}.chart{height:200px}.analysis-summary{grid-template-columns:1fr}}
@@ -59,6 +73,12 @@
         <div class="metric"><span>Tempo</span><strong id="mTime">00:00</strong></div>
       </section>
 
+      <details class="panel analysis-tab" id="analysisTab">
+        <summary class="analysis-tab-summary">
+          <span><p class="eyebrow">RESULTADO DA ANÁLISE</p><h2>Análise e gráficos</h2><small id="analysisTabHint">recolhido · clique em Analisar para abrir</small></span>
+          <span class="analysis-tab-toggle"><span>abrir resultado</span><span class="analysis-tab-chevron" aria-hidden="true">⌄</span></span>
+        </summary>
+        <div class="analysis-tab-content">
       <div class="layout">
         <div>
           <article class="panel">
@@ -99,6 +119,8 @@
           </article>
         </div>
       </div>
+        </div>
+      </details>
       <div class="footer-note">Exemplo compilado dentro do DevPilot · lógica de análise compatível com o RepetAI · sem dependências externas</div>
     </main>
   </div>
@@ -391,6 +413,13 @@
         state.startAt=Date.now();
         state.stopAt=state.startAt;
         state.analysis=null;
+        const analysisTab=$('analysisTab');
+        if(analysisTab){
+          analysisTab.open=false;
+          analysisTab.classList.remove('has-analysis');
+        }
+        const analysisTabHint=$('analysisTabHint');
+        if(analysisTabHint)analysisTabHint.textContent='recolhido · clique em Analisar para abrir';
         $('tSession').textContent=state.sessionId.slice(0,12);
         $('status').classList.add('live');
         $('statusText').textContent='Capturando';
@@ -427,9 +456,17 @@
         $('statusText').textContent='Analisando…';
         $('analyze').disabled=true;
         state.analysis=analyzeSession();
+        const analysisTab=$('analysisTab');
+        const analysisTabHint=$('analysisTabHint');
+        if(analysisTab){
+          analysisTab.open=true;
+          analysisTab.classList.add('has-analysis');
+        }
+        if(analysisTabHint)analysisTabHint.textContent='análise concluída · gráfico e padrões abertos';
         $('statusText').textContent='Análise concluída';
         $('analyze').disabled=false;
         tick();
+        window.setTimeout(()=>analysisTab?.scrollIntoView({behavior:'smooth',block:'start'}),40);
       }
 
       function reset(update=true){
@@ -439,6 +476,13 @@
           analysis:null,lastMouse:null,lastMouseSample:0,lastActionAt:0,lastKeyCategory:'—',
           secondCount:0,perSecond:Array(30).fill(0)
         });
+        const analysisTab=$('analysisTab');
+        if(analysisTab){
+          analysisTab.open=false;
+          analysisTab.classList.remove('has-analysis');
+        }
+        const analysisTabHint=$('analysisTabHint');
+        if(analysisTabHint)analysisTabHint.textContent='recolhido · clique em Analisar para abrir';
         $('status').classList.remove('live');
         $('statusText').textContent='Pronto';
         $('start').disabled=false;
