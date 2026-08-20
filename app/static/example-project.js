@@ -7,11 +7,6 @@
     scroll: 3200,
   };
 
-  function liveUrl() {
-    if (window.location.protocol === 'https:') return null;
-    const host = window.location.hostname || '127.0.0.1';
-    return `http://${host}:8091/`;
-  }
 
   function injectStyles() {
     if (document.getElementById('example-project-styles')) return;
@@ -181,6 +176,10 @@
       keys: 0,
       scrollDistance: 0,
       complete: false,
+      progressTimer: null,
+      lastProgressPaintAt: 0,
+      pendingProgress: null,
+      pendingMeter: '',
     };
 
     const title = view.querySelector('#repeatai-wizard-title');
@@ -201,6 +200,21 @@
       progress.style.width = `${percent}%`;
     }
 
+    function scheduleProgress(value, label) {
+      state.pendingProgress = value;
+      state.pendingMeter = label;
+      if (state.progressTimer) return;
+
+      const elapsed = performance.now() - state.lastProgressPaintAt;
+      const delay = Math.max(0, 80 - elapsed);
+      state.progressTimer = window.setTimeout(() => {
+        state.progressTimer = null;
+        state.lastProgressPaintAt = performance.now();
+        setProgress(state.pendingProgress ?? 0);
+        meter.textContent = state.pendingMeter;
+      }, delay);
+    }
+
     function paintChips() {
       chips.forEach((chip, index) => {
         chip.classList.toggle('done', index < state.step || state.complete);
@@ -213,6 +227,10 @@
     }
 
     function renderStep() {
+      if (state.progressTimer) {
+        window.clearTimeout(state.progressTimer);
+        state.progressTimer = null;
+      }
       paintChips();
       actions.innerHTML = '';
       state.lastMouse = null;
@@ -296,12 +314,16 @@
       }
       state.lastMouse = point;
       const percent = Math.min(100, (state.mouseDistance / WIZARD_TARGETS.mouse) * 100);
-      setProgress(percent);
-      meter.textContent = `${Math.round(percent)}% de movimento capturado`;
+      scheduleProgress(percent, `${Math.round(percent)}% de movimento capturado`);
       if (state.mouseDistance >= WIZARD_TARGETS.mouse) {
         state.step = 2;
         renderStep();
       }
+    }
+
+    function onPointerMove(event) {
+      if (event.pointerType === 'mouse') return;
+      onMouseMove(event);
     }
 
     function onKeyDown() {
@@ -320,35 +342,16 @@
       if (!isActive() || state.step !== 3) return;
       state.scrollDistance += Math.abs(Number(event.deltaY) || 0);
       const percent = Math.min(100, (state.scrollDistance / WIZARD_TARGETS.scroll) * 100);
-      setProgress(percent);
-      meter.textContent = `${Math.round(percent)}% de scroll capturado`;
+      scheduleProgress(percent, `${Math.round(percent)}% de scroll capturado`);
       if (state.scrollDistance >= WIZARD_TARGETS.scroll) completeWizard();
     }
 
     window.addEventListener('mousemove', onMouseMove, {passive: true});
+    window.addEventListener('pointermove', onPointerMove, {passive: true});
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('wheel', onWheel, {passive: true});
 
     renderStep();
-  }
-
-  async function probe(url) {
-    if (!url) return false;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 1600);
-    try {
-      await fetch(url, {
-        method: 'GET',
-        mode: 'no-cors',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      return true;
-    } catch (_) {
-      return false;
-    } finally {
-      window.clearTimeout(timer);
-    }
   }
 
   async function loadRepetAI(view, force = false) {
@@ -363,15 +366,15 @@
     loading.hidden = false;
     loading.textContent = 'Abrindo RepetAI…';
 
-    const local = liveUrl();
-    const useLive = await probe(local);
-    const target = useLive ? local : FALLBACK_URL;
+    // O exemplo integrado usa a versão compilada e amostrada. A versão local
+    // completa pode ter gráficos próprios e não é carregada dentro deste frame.
+    const target = FALLBACK_URL;
 
     const onLoad = () => {
       frame.hidden = false;
       frame.dataset.loading = '0';
       frame.dataset.ready = '1';
-      frame.dataset.source = useLive ? 'local' : 'compilado';
+      frame.dataset.source = 'compilado';
       loading.hidden = true;
       frame.removeEventListener('load', onLoad);
     };
