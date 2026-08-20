@@ -204,3 +204,97 @@
     border-radius: 10px !important;
   }
 }
+
+/* Horizontal mobile navigation v5: visible previous/next arrows + scrollable strip. */
+.mobile-nav-arrow {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    display: grid !important;
+    grid-template-columns: 42px minmax(0, 1fr) 42px !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  .sidebar nav {
+    display: flex !important;
+    grid-template-columns: none !important;
+    justify-content: flex-start !important;
+    gap: 4px !important;
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    overscroll-behavior-x: contain !important;
+    scroll-snap-type: x mandatory !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .sidebar nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .sidebar .nav {
+    flex: 0 0 58px !important;
+    width: 58px !important;
+    min-width: 58px !important;
+    scroll-snap-align: center;
+  }
+
+  .mobile-nav-arrow {
+    display: grid !important;
+    place-items: center;
+    width: 42px;
+    height: 48px;
+    padding: 0;
+    border: 1px solid rgba(81, 122, 160, .34);
+    border-radius: 13px;
+    background: linear-gradient(180deg, #14283c, #0b1928);
+    color: #dff8ff;
+    font-size: 26px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, .22);
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  .mobile-nav-arrow:active:not(:disabled) {
+    transform: scale(.94);
+    color: var(--cyan);
+    border-color: rgba(53, 229, 209, .7);
+  }
+
+  .mobile-nav-arrow:disabled {
+    opacity: .28;
+    cursor: default;
+    box-shadow: none;
+  }
+
+  .mobile-nav-arrow-prev { grid-column: 1; }
+  .sidebar nav { grid-column: 2; }
+  .mobile-nav-arrow-next { grid-column: 3; }
+}
+
+@media (max-width: 520px) {
+  .sidebar {
+    grid-template-columns: 38px minmax(0, 1fr) 38px !important;
+    gap: 4px !important;
+  }
+
+  .mobile-nav-arrow {
+    width: 38px;
+    height: 46px;
+    border-radius: 11px;
+    font-size: 24px;
+  }
+
+  .sidebar .nav {
+    flex-basis: 56px !important;
+    width: 56px !important;
+    min-width: 56px !important;
+  }
+}
