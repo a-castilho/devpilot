@@ -7,12 +7,6 @@
     scroll: 3200,
   };
 
-  function liveUrl() {
-    if (window.location.protocol === 'https:') return null;
-    const host = window.location.hostname || '127.0.0.1';
-    return `http://${host}:8091/`;
-  }
-
   function injectStyles() {
     if (document.getElementById('example-project-styles')) return;
     const style = document.createElement('style');
@@ -332,26 +326,7 @@
     renderStep();
   }
 
-  async function probe(url) {
-    if (!url) return false;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 1600);
-    try {
-      await fetch(url, {
-        method: 'GET',
-        mode: 'no-cors',
-        cache: 'no-store',
-        signal: controller.signal,
-      });
-      return true;
-    } catch (_) {
-      return false;
-    } finally {
-      window.clearTimeout(timer);
-    }
-  }
-
-  async function loadRepetAI(view, force = false) {
+  function loadRepetAI(view, force = false) {
     const frame = view.querySelector('#repeatai-frame');
     const loading = view.querySelector('#repeatai-loading');
     if (!frame || frame.dataset.loading === '1') return;
@@ -363,21 +338,36 @@
     loading.hidden = false;
     loading.textContent = 'Abrindo RepetAI…';
 
-    const local = liveUrl();
-    const useLive = await probe(local);
-    const target = useLive ? local : FALLBACK_URL;
+    // O exemplo precisa ser previsível e leve: nunca mantém o app local em
+    // segundo plano dentro do painel.
+    const target = FALLBACK_URL;
 
     const onLoad = () => {
       frame.hidden = false;
       frame.dataset.loading = '0';
       frame.dataset.ready = '1';
-      frame.dataset.source = useLive ? 'local' : 'compilado';
+      frame.dataset.source = 'compilado';
       loading.hidden = true;
       frame.removeEventListener('load', onLoad);
     };
 
     frame.addEventListener('load', onLoad);
     frame.src = force ? `${target}${target.includes('?') ? '&' : '?'}t=${Date.now()}` : target;
+  }
+
+  function releaseRepetAI() {
+    const view = document.getElementById('project-example-view');
+    const frame = view?.querySelector('#repeatai-frame');
+    const loading = view?.querySelector('#repeatai-loading');
+    if (!frame || frame.dataset.ready !== '1') return;
+
+    // Um iframe oculto continua executando timers. Descarregá-lo ao trocar
+    // de tela libera CPU e memória sem afetar os demais módulos do DevPilot.
+    frame.src = 'about:blank';
+    frame.hidden = true;
+    frame.dataset.ready = '0';
+    frame.dataset.loading = '0';
+    if (loading) loading.hidden = true;
   }
 
   function showExample(navButton) {
@@ -400,4 +390,10 @@
   injectStyles();
   const navButton = buildNav();
   navButton?.addEventListener('click', () => showExample(navButton));
+
+  document.addEventListener('click', event => {
+    const nav = event.target.closest?.('.nav');
+    if (!nav || nav.dataset.exampleProject === 'repeatai') return;
+    releaseRepetAI();
+  }, true);
 })();
