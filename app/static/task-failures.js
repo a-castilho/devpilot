@@ -1,5 +1,8 @@
 (() => {
   let taskRunGeneration = 0;
+  let correctionPollTimer = null;
+  let correctionPollInFlight = false;
+  let trackedCorrection = null;
 
   function ensureTaskFailureStyles() {
     if (document.getElementById('task-failure-styles')) return;
@@ -25,11 +28,29 @@
       .task-log-output{margin:0;max-height:48vh;overflow:auto;padding:16px;border-top:1px solid var(--line,#26364f);background:#050c17;color:#c7d5e8;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
       .task-result-ok{color:#61e7ac;font-weight:800}
       .task-result-failed{color:#ff9eb0;font-weight:800}
+      .task-correction-panel{margin:0 0 16px;padding:16px;border:1px solid #24649a;border-radius:14px;background:linear-gradient(145deg,#0b1d31,#0b1723)}
+      .task-correction-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+      .task-correction-head strong{display:block;color:#eff7ff;font-size:15px}
+      .task-correction-head p{margin:5px 0 0;color:#b5c8dc;font-size:13px;line-height:1.45}
+      .task-correction-start{flex:0 0 auto;white-space:nowrap}
+      .task-correction-tracking{margin-top:14px}
+      .task-correction-tracking[hidden]{display:none}
+      .task-correction-state{margin:0;color:#d7e5f4;font-size:13px;line-height:1.45}
+      .task-correction-steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin-top:13px}
+      .task-correction-step{padding:9px 8px;border:1px solid #284056;border-radius:9px;color:#7f98b0;font-size:11px;font-weight:800;line-height:1.25;text-align:center}
+      .task-correction-step.current{border-color:#37c4e6;color:#9beaff;background:#0b2a3b}
+      .task-correction-step.done{border-color:#2c8f77;color:#7ce9c6;background:#0b2925}
+      .task-correction-step.error{border-color:#be5368;color:#ffb3c0;background:#321722}
+      .task-correction-result{margin-top:11px;color:#b8cbe0;font-size:12px;line-height:1.45}
+      .task-correction-result button{padding:0;border:0;background:transparent;color:#65d9f7;font:inherit;font-weight:800;cursor:pointer;text-decoration:underline}
       @media (max-width:720px){
         .task-failure-reason{max-width:190px}
         .task-log-modal-panel{width:calc(100vw - 20px);max-height:88vh;padding:22px 18px}
         .task-client-card{padding:15px}
         .task-client-report{font-size:14px;line-height:1.6}
+        .task-correction-head{display:block}
+        .task-correction-start{width:100%;margin-top:12px}
+        .task-correction-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
       }
     `;
     document.head.appendChild(style);
@@ -50,6 +71,17 @@
           <span class="eyebrow">PARA O CLIENTE</span>
           <div class="task-client-report" id="task-client-report"></div>
         </section>
+        <section class="task-correction-panel" id="task-correction-panel" hidden>
+          <div class="task-correction-head">
+            <div>
+              <span class="eyebrow">PRÓXIMA AÇÃO</span>
+              <strong>Aplicar correção baseada nesta análise</strong>
+              <p>O DevPilot cria e inicia uma tarefa de correção com o diagnóstico acima, sem duplicar correções ativas.</p>
+            </div>
+            <button class="primary task-correction-start" id="task-correction-start" type="button">Corrigir automaticamente</button>
+          </div>
+          <div class="task-correction-tracking" id="task-correction-tracking" hidden aria-live="polite"></div>
+        </section>
         <details class="task-technical-details">
           <summary>Ver detalhes técnicos</summary>
           <pre class="task-log-output" id="task-log-output"></pre>
@@ -57,6 +89,7 @@
       </div>`;
     document.body.appendChild(dialog);
     dialog.querySelector('.task-log-close').onclick = () => dialog.close();
+    dialog.addEventListener('close', stopCorrectionTracking);
     dialog.addEventListener('click', event => {
       if (event.target === dialog) dialog.close();
     });
@@ -214,6 +247,172 @@
     return value || '—';
   }
 
+
+  function isAnalysisTask(task) {
+    const text = `${task?.title || ''}\n${task?.prompt || ''}`.toLowerCase();
+    return /an[aá]lise|auditoria|diagn[oó]stico|analysis-read-only/.test(text);
+  }
+
+  function taskStatusLabel(value) {
+    const normalized = String(value || '').toLowerCase();
+    const labels = {
+      awaiting_approval: 'Aguardando aprovação de segurança',
+      queued: 'Na fila de execução',
+      planning: 'Planejando a correção',
+      running: 'Correção em andamento',
+      review: 'Pronta para revisão',
+      completed: 'Concluída',
+      failed: 'Falhou',
+      blocked: 'Bloqueada',
+    };
+    return labels[normalized] || value || 'Aguardando atualização';
+  }
+
+  function stopCorrectionTracking() {
+    if (correctionPollTimer) window.clearInterval(correctionPollTimer);
+    correctionPollTimer = null;
+    correctionPollInFlight = false;
+    trackedCorrection = null;
+  }
+
+  function correctionStepState(taskStatus, position) {
+    const status = String(taskStatus || '').toLowerCase();
+    if (status === 'failed' || status === 'blocked') {
+      return position === 3 ? 'error' : 'done';
+    }
+    if (status === 'awaiting_approval') return position === 0 ? 'current' : '';
+    if (status === 'queued') return position === 0 ? 'done' : position === 1 ? 'current' : '';
+    if (status === 'planning' || status === 'running') {
+      return position < 2 ? 'done' : position === 2 ? 'current' : '';
+    }
+    if (status === 'review' || status === 'completed') return 'done';
+    return '';
+  }
+
+  function renderCorrectionTracking(task, detail) {
+    const dialog = ensureTaskLogDialog();
+    const target = dialog.querySelector('#task-correction-tracking');
+    if (!target || !task) return;
+    target.hidden = false;
+    target.replaceChildren();
+
+    const stateLine = document.createElement('p');
+    stateLine.className = 'task-correction-state';
+    stateLine.textContent = `Tarefa gerada: ${taskStatusLabel(task.status)}.`;
+    target.appendChild(stateLine);
+
+    const steps = document.createElement('div');
+    steps.className = 'task-correction-steps';
+    ['Tarefa criada', 'Na fila', 'Correção', 'Resultado'].forEach((label, index) => {
+      const step = document.createElement('div');
+      step.className = `task-correction-step ${correctionStepState(task.status, index)}`.trim();
+      step.textContent = label;
+      steps.appendChild(step);
+    });
+    target.appendChild(steps);
+
+    const result = document.createElement('div');
+    result.className = 'task-correction-result';
+    if (detail?.failure_reason) {
+      result.textContent = `Motivo registrado: ${detail.failure_reason}`;
+    } else if (detail?.run_id && ['review', 'completed', 'failed', 'blocked'].includes(String(task.status).toLowerCase())) {
+      result.append('A execução registrou um resultado. ');
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.textContent = 'Abrir resultado';
+      open.onclick = () => openTaskLog(detail.run_id, task);
+      result.appendChild(open);
+    } else if (task.requires_approval) {
+      result.textContent = 'A política identificou uma ação sensível. A tarefa foi criada, mas precisa de aprovação antes de iniciar.';
+    } else {
+      result.textContent = 'Acompanhe aqui: a atualização é feita apenas enquanto esta janela estiver aberta.';
+    }
+    target.appendChild(result);
+  }
+
+  async function refreshCorrectionTracking() {
+    if (!trackedCorrection || correctionPollInFlight) return;
+    const dialog = document.getElementById('task-log-modal');
+    if (!dialog?.open) {
+      stopCorrectionTracking();
+      return;
+    }
+
+    correctionPollInFlight = true;
+    try {
+      const [tasks, details] = await Promise.all([
+        api('/tasks?limit=100'),
+        api('/task-runs/latest?limit=100'),
+      ]);
+      const task = tasks.find(item => item.id === trackedCorrection.taskId);
+      if (!task) return;
+      const detail = details.find(item => item.task_id === task.id);
+      trackedCorrection.task = task;
+      renderCorrectionTracking(task, detail);
+
+      if (!['queued', 'planning', 'running'].includes(String(task.status).toLowerCase())) {
+        if (correctionPollTimer) window.clearInterval(correctionPollTimer);
+        correctionPollTimer = null;
+      }
+    } catch (error) {
+      const target = dialog.querySelector('#task-correction-tracking');
+      if (target) {
+        target.hidden = false;
+        target.textContent = `Não foi possível atualizar o acompanhamento: ${error.message || 'erro desconhecido'}`;
+      }
+      if (correctionPollTimer) window.clearInterval(correctionPollTimer);
+      correctionPollTimer = null;
+    } finally {
+      correctionPollInFlight = false;
+    }
+  }
+
+  function startCorrectionTracking(task) {
+    stopCorrectionTracking();
+    trackedCorrection = {taskId: task.id, task};
+    renderCorrectionTracking(task, null);
+    refreshCorrectionTracking();
+    if (['queued', 'planning', 'running'].includes(String(task.status).toLowerCase())) {
+      correctionPollTimer = window.setInterval(refreshCorrectionTracking, 4000);
+    }
+  }
+
+  async function createAutomaticCorrection(runId, sourceTask) {
+    const dialog = ensureTaskLogDialog();
+    const button = dialog.querySelector('#task-correction-start');
+    if (!button || button.disabled) return;
+
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Gerando correção…';
+    try {
+      const correction = await api(`/task-runs/${runId}/correction`, {method: 'POST'});
+      button.textContent = correction.reused ? 'Correção já em andamento' : 'Correção iniciada';
+      startCorrectionTracking(correction);
+      toast(correction.reused ? 'A correção já estava em acompanhamento.' : 'Correção criada e encaminhada automaticamente.');
+      load();
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = original;
+      toast(error.message || 'Não foi possível gerar a correção.');
+    }
+  }
+
+  function configureCorrectionPanel(runId, task) {
+    const dialog = ensureTaskLogDialog();
+    const panel = dialog.querySelector('#task-correction-panel');
+    const button = dialog.querySelector('#task-correction-start');
+    const tracking = dialog.querySelector('#task-correction-tracking');
+    if (!panel || !button || !tracking) return;
+
+    panel.hidden = !isAnalysisTask(task);
+    tracking.hidden = true;
+    tracking.replaceChildren();
+    button.disabled = false;
+    button.textContent = 'Corrigir automaticamente';
+    button.onclick = () => createAutomaticCorrection(runId, task);
+  }
+
   async function openTaskLog(runId, task) {
     const dialog = ensureTaskLogDialog();
     const title = dialog.querySelector('#task-log-title');
@@ -222,6 +421,8 @@
     const output = dialog.querySelector('#task-log-output');
     const details = dialog.querySelector('.task-technical-details');
 
+    stopCorrectionTracking();
+    configureCorrectionPanel(runId, task);
     title.textContent = task?.title || 'Resultado da análise';
     meta.textContent = 'Preparando resultado…';
     report.textContent = 'Carregando análise…';
@@ -318,3 +519,4 @@
     hydrateTaskRunDetails(generation);
   };
 })();
+
