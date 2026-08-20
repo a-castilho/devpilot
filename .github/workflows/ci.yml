@@ -42,3 +42,8 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t devpilot:ci .
+
+      - name: Verify worker runtime tools
+        run: |
+          docker run --rm --entrypoint git devpilot:ci --version
+          docker run --rm --entrypoint codex devpilot:ci --version
