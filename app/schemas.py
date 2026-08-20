@@ -1,7 +1,18 @@
 from datetime import datetime
+import re
 from typing import Any
+import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def normalize_organization_identifier(value: str, *, max_length: int) -> str:
+    """Convert a display name into a GitHub-safe identifier."""
+    normalized = unicodedata.normalize("NFKD", value)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    normalized = normalized.lower().strip()
+    normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
+    return normalized.strip("-")[:max_length]
 
 
 class LoginRequest(BaseModel):
@@ -81,6 +92,19 @@ class OrganizationCreate(BaseModel):
     github_login: str = Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
     access_token: str | None = Field(default=None, min_length=8, max_length=10_000)
 
+    @field_validator("slug", mode="before")
+    @classmethod
+    def normalize_slug(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        return normalize_organization_identifier(value, max_length=100)
+
+    @field_validator("github_login", mode="before")
+    @classmethod
+    def normalize_github_login(cls, value: str) -> str:
+        if not isinstance(value, str):
+            return value
+        return normalize_organization_identifier(value, max_length=39)
 
 class OrganizationUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
