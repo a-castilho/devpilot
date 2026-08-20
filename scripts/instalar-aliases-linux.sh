@@ -18,17 +18,23 @@ fi
 
 cat >> "$TMP" <<'EOF'
 # >>> DEVPILOT ALIASES >>>
-alias atualizar-local='bash ~/Documents/devpilot/scripts/atualizar-local.sh'
-alias atualizar='bash ~/Documents/devpilot/scripts/atualizar-local.sh'
-alias reconstruir-sistema='bash ~/Documents/devpilot/scripts/reconstruir-sistema.sh'
-alias reconstruir='bash ~/Documents/devpilot/scripts/reconstruir-sistema.sh'
+# Use shell functions instead of aliases so the commands also work immediately
+# after `source ~/.bashrc` inside the same compound shell command.
+atualizar-local() { bash "$HOME/Documents/devpilot/scripts/atualizar-local.sh" "$@"; }
+atualizar() { atualizar-local "$@"; }
+reconstruir-sistema() { bash "$HOME/Documents/devpilot/scripts/reconstruir-sistema.sh" "$@"; }
+reconstruir() { reconstruir-sistema "$@"; }
 # <<< DEVPILOT ALIASES <<<
 EOF
 
 cat "$TMP" > "$RC_FILE"
 rm -f "$TMP"
 
-echo "Aliases instalados:"
+chmod +x \
+  "$HOME/Documents/devpilot/scripts/atualizar-local.sh" \
+  "$HOME/Documents/devpilot/scripts/reconstruir-sistema.sh" 2>/dev/null || true
+
+echo "Comandos instalados:"
 echo "  atualizar-local"
 echo "  atualizar"
 echo "  reconstruir-sistema"
