@@ -61,6 +61,7 @@ def spa(path: str):
         '<script src="/assets/users.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
+        '<script src="/assets/voice-project-start.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
