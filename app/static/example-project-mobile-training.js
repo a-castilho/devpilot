@@ -1,54 +1,98 @@
 (() => {
   const MOBILE = matchMedia('(max-width:760px)').matches || matchMedia('(pointer:coarse)').matches;
   const FALLBACK = '/examples/repeatai/index.html';
-  let active = false, timer = 0, lastScroll = scrollY, rafMove = 0, rafScroll = 0, pendingMove = null, pendingDelta = 0;
+  const MOVE_INTERVAL = 125;
+  const SCROLL_INTERVAL = 180;
+  const FRAME_SCROLL_INTERVAL = 300;
 
-  const view = () => document.getElementById('project-example-view');
+  let captureActive = false;
+  let captureTimer = 0;
+  let lastMoveAt = 0;
+  let lastScrollAt = 0;
+  let lastFrameScrollAt = 0;
+  let lastScrollY = window.scrollY;
+  let pendingScrollDelta = 0;
 
-  function frameDoc(frame) {
-    try { return frame?.contentDocument || frame?.contentWindow?.document || null; }
-    catch (_) { return null; }
+  const getView = () => document.getElementById('project-example-view');
+
+  function getFrameDoc(frame) {
+    try {
+      return frame?.contentDocument || frame?.contentWindow?.document || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function currentStep(view) {
+    return view?.querySelector('#repeatai-wizard-kicker')?.textContent.trim() || '';
   }
 
   function injectStyles() {
     if (document.getElementById('repeatai-mobile-training-styles')) return;
+
     const style = document.createElement('style');
     style.id = 'repeatai-mobile-training-styles';
     style.textContent = `
-      #repeatai-wizard-start,#repeatai-train-horn{display:none!important}
+      #repeatai-train-horn{display:none!important}
       .repeatai-mobile-keyboard{width:min(560px,100%);margin-top:14px;border:1px solid #36506d;border-radius:12px;padding:13px 14px;background:#071320;color:#eef7ff;font:600 16px/1.3 system-ui,sans-serif;outline:none}
       .repeatai-mobile-keyboard:focus{border-color:#3be4d0}
       .example-project-caption .repeatai-mobile-live{display:inline-flex;align-items:center;gap:6px;color:#3be4d0;font-weight:800}
       .example-project-caption .repeatai-mobile-live:before{content:'';width:7px;height:7px;border-radius:50%;background:#3be4d0}
-      @media(max-width:760px){.repeatai-wizard-title{font-size:clamp(25px,8vw,38px)!important}.repeatai-wizard-copy{font-size:14px!important;line-height:1.45}.example-project-stage{contain:layout paint style}.example-project-frame{min-height:620px!important}}
+      @media(max-width:760px){
+        .repeatai-wizard-title{font-size:clamp(25px,8vw,38px)!important}
+        .repeatai-wizard-copy{font-size:14px!important;line-height:1.45}
+        .example-project-stage{contain:layout paint style;box-shadow:none!important}
+        .example-project-frame{min-height:620px!important}
+      }
     `;
     document.head.appendChild(style);
   }
 
-  function syncWizard(v) {
-    if (!v) return;
-    const title = v.querySelector('#repeatai-wizard-title');
-    const copy = v.querySelector('#repeatai-wizard-copy');
-    const kicker = v.querySelector('#repeatai-wizard-kicker');
+  function ensureStatus(view) {
+    view?.querySelector('#repeatai-train-horn')?.remove();
+    const caption = view?.querySelector('.example-project-caption');
+    if (!caption || view.querySelector('#repeatai-mobile-live')) return;
 
-    v.querySelector('#repeatai-train-horn')?.remove();
+    const live = document.createElement('span');
+    live.id = 'repeatai-mobile-live';
+    live.className = 'repeatai-mobile-live';
+    live.textContent = MOBILE ? 'mobile econômico' : 'tempo real';
+    caption.querySelector('span')?.replaceWith(live);
+  }
+
+  function setStatus(view, text) {
+    const live = view?.querySelector('#repeatai-mobile-live');
+    if (live) live.textContent = text;
+  }
+
+  function syncWizard(view) {
+    if (!view) return;
+    view.querySelector('#repeatai-train-horn')?.remove();
+
+    const title = view.querySelector('#repeatai-wizard-title');
+    const copy = view.querySelector('#repeatai-wizard-copy');
+    const kicker = view.querySelector('#repeatai-wizard-kicker');
+    const step = kicker?.textContent.trim() || '';
 
     if (title?.textContent.trim() === 'MOVA O MOUSE LOUCAMENTE') {
       title.textContent = 'MOVA O MOUSE E CLIQUE NA TELA LOUCAMENTE';
     }
-    if (kicker?.textContent.trim() === 'MOUSE' && copy) {
-      copy.textContent = MOBILE
-        ? 'Arraste o dedo rapidamente e toque várias vezes. A captura é limitada para manter o celular fluido.'
-        : 'Faça trajetórias rápidas e variadas e clique várias vezes nesta área.';
+
+    if (step === 'MOUSE' && copy && MOBILE) {
+      copy.textContent = 'Arraste o dedo e toque na tela. A amostragem é limitada para manter o navegador fluido.';
     }
 
     if (!MOBILE) return;
-    const body = v.querySelector('.repeatai-wizard-body');
-    const actions = v.querySelector('#repeatai-wizard-actions');
-    let input = v.querySelector('#repeatai-mobile-keyboard');
-    const keyboard = kicker?.textContent.trim() === 'TECLADO';
 
-    if (!keyboard) { input?.remove(); return; }
+    const body = view.querySelector('.repeatai-wizard-body');
+    const actions = view.querySelector('#repeatai-wizard-actions');
+    let input = view.querySelector('#repeatai-mobile-keyboard');
+
+    if (step !== 'TECLADO') {
+      input?.remove();
+      return;
+    }
+
     if (input || !body) return;
 
     input = document.createElement('input');
@@ -56,172 +100,214 @@
     input.className = 'repeatai-mobile-keyboard';
     input.type = 'text';
     input.autocomplete = 'off';
+    input.autocapitalize = 'off';
     input.spellcheck = false;
     input.placeholder = 'Toque aqui e digite para treinar';
-    if (actions) body.insertBefore(input, actions); else body.appendChild(input);
+    input.setAttribute('aria-label', 'Área de digitação para treinamento');
+
+    if (actions) body.insertBefore(input, actions);
+    else body.appendChild(input);
+
     setTimeout(() => input.focus({preventScroll:true}), 60);
   }
 
-  function mark(v, on) {
-    active = on;
-    const live = v?.querySelector('#repeatai-mobile-live');
-    if (live) live.textContent = on ? 'treinando · modo leve' : 'mobile pronto';
+  function markCapture(view, active) {
+    captureActive = active;
+    clearTimeout(captureTimer);
+    setStatus(view, active ? 'treinando · modo econômico' : 'mobile econômico');
 
-    clearTimeout(timer);
-    if (on) timer = setTimeout(() => stopCapture(v), 60000);
+    if (active) {
+      captureTimer = setTimeout(() => stopCapture(view), 45000);
+    }
   }
 
-  function enhanceFrame(v) {
-    const frame = v?.querySelector('#repeatai-frame');
-    const doc = frameDoc(frame);
-    if (!frame || !doc?.body) return false;
+  function startCapture(view) {
+    const frame = view?.querySelector('#repeatai-frame');
+    const doc = getFrameDoc(frame);
 
-    if (doc.documentElement.dataset.devpilotMobileTraining !== 'lite') {
-      doc.documentElement.dataset.devpilotMobileTraining = 'lite';
-      const style = doc.createElement('style');
-      style.textContent = '@media(max-width:760px){.chart-line{filter:none!important}.chart-point{animation:none!important}.status.live .dot{box-shadow:none!important}.event-stream{max-height:180px}}';
-      doc.head.appendChild(style);
-
-      let last = 0;
-      doc.addEventListener('pointermove', e => {
-        if (e.pointerType === 'mouse') return;
-        const now = performance.now();
-        if (now - last < 80) return;
-        last = now;
-        doc.dispatchEvent(new MouseEvent('mousemove',{clientX:e.clientX,clientY:e.clientY,bubbles:true}));
-      }, {passive:true});
+    if (!frame || !doc) {
+      if (frame) frame.dataset.startCaptureWhenReady = '1';
+      return false;
     }
-
-    if (frame.dataset.autoTrain === '1') {
-      frame.dataset.autoTrain = '0';
-      startCapture(v);
-    }
-    return true;
-  }
-
-  function startCapture(v) {
-    const frame = v?.querySelector('#repeatai-frame');
-    const doc = frameDoc(frame);
-    if (!frame || !doc) { if (frame) frame.dataset.autoTrain = '1'; return false; }
 
     const duration = doc.getElementById('duration');
     const start = doc.getElementById('start');
     const stop = doc.getElementById('stop');
+
     if (duration && !duration.disabled) duration.value = '60';
     if (start && !start.disabled) start.click();
-    mark(v, Boolean(stop && !stop.disabled));
+
+    const active = Boolean(stop && !stop.disabled);
+    markCapture(view, active);
     return active;
   }
 
-  function stopCapture(v) {
-    const doc = frameDoc(v?.querySelector('#repeatai-frame'));
+  function stopCapture(view) {
+    const doc = getFrameDoc(view?.querySelector('#repeatai-frame'));
     const stop = doc?.getElementById('stop');
     if (stop && !stop.disabled) stop.click();
-    mark(v, false);
+    markCapture(view, false);
   }
 
   function forceFallback(frame) {
     if (!MOBILE || !frame) return false;
+
     const src = frame.getAttribute('src') || '';
     if (src.includes(FALLBACK) || frame.dataset.mobileFallbackForced === '1') return false;
+
     frame.dataset.mobileFallbackForced = '1';
-    frame.src = `${FALLBACK}?mobile=1&t=${Date.now()}`;
+    frame.src = `${FALLBACK}?mobile=eco&t=${Date.now()}`;
     return true;
   }
 
-  function ensureLiveStatus(v) {
-    v?.querySelector('#repeatai-train-horn')?.remove();
-    const caption = v?.querySelector('.example-project-caption');
-    if (caption && !v.querySelector('#repeatai-mobile-live')) {
-      const live = document.createElement('span');
-      live.id = 'repeatai-mobile-live';
-      live.className = 'repeatai-mobile-live';
-      live.textContent = MOBILE ? 'mobile pronto' : 'tempo real';
-      caption.querySelector('span')?.replaceWith(live);
+  function tuneFrame(view) {
+    const frame = view?.querySelector('#repeatai-frame');
+    const doc = getFrameDoc(frame);
+    if (!frame || !doc?.body) return false;
+
+    if (doc.documentElement.dataset.devpilotMobileTraining !== 'eco') {
+      doc.documentElement.dataset.devpilotMobileTraining = 'eco';
+
+      const style = doc.createElement('style');
+      style.textContent = `
+        @media(max-width:760px){
+          .chart-line{filter:none!important}
+          .chart-point{animation:none!important}
+          .status.live .dot{box-shadow:none!important}
+          .metric,.panel{box-shadow:none!important}
+          .event-stream{max-height:160px}
+        }
+      `;
+      doc.head.appendChild(style);
+
+      let frameLastMove = 0;
+      doc.addEventListener('pointermove', event => {
+        if (event.pointerType === 'mouse') return;
+        const stop = doc.getElementById('stop');
+        if (!stop || stop.disabled) return;
+
+        const now = performance.now();
+        if (now - frameLastMove < MOVE_INTERVAL) return;
+        frameLastMove = now;
+
+        doc.dispatchEvent(new MouseEvent('mousemove', {
+          clientX: event.clientX,
+          clientY: event.clientY,
+          bubbles: true,
+        }));
+      }, {passive:true});
     }
+
+    if (frame.dataset.startCaptureWhenReady === '1') {
+      frame.dataset.startCaptureWhenReady = '0';
+      startCapture(view);
+    }
+
+    return true;
   }
 
-  function autoStartTraining(v) {
-    if (!v || !v.classList.contains('active') || v.dataset.autoTrainingStarted === '1') return;
-    v.dataset.autoTrainingStarted = '1';
+  function bridgeMobile(view) {
+    if (!MOBILE || !view || view.dataset.mobileBridge === 'eco') return;
+    view.dataset.mobileBridge = 'eco';
 
-    const title = v.querySelector('#repeatai-wizard-title');
-    if (title?.textContent.trim() === 'VAMOS CARREGAR A IA') {
-      v.querySelector('#repeatai-wizard-actions button')?.click();
-    }
-    syncWizard(v);
+    window.addEventListener('pointermove', event => {
+      if (!view.classList.contains('active')) return;
+      if (event.pointerType === 'mouse') return;
+      if (currentStep(view) !== 'MOUSE') return;
 
-    const frame = v.querySelector('#repeatai-frame');
-    if (!frame) return;
-    frame.dataset.autoTrain = '1';
-    if (!forceFallback(frame) && enhanceFrame(v)) startCapture(v);
-  }
+      const now = performance.now();
+      if (now - lastMoveAt < MOVE_INTERVAL) return;
+      lastMoveAt = now;
 
-  function bridge(v) {
-    if (!MOBILE || v.dataset.mobileBridge === 'lite') return;
-    v.dataset.mobileBridge = 'lite';
-
-    addEventListener('pointermove', e => {
-      if (!v.classList.contains('active') || e.pointerType === 'mouse') return;
-      pendingMove = {x:e.clientX,y:e.clientY};
-      if (rafMove) return;
-      rafMove = requestAnimationFrame(() => {
-        rafMove = 0;
-        const p = pendingMove; pendingMove = null;
-        if (p) dispatchEvent(new MouseEvent('mousemove',{clientX:p.x,clientY:p.y,bubbles:false}));
-      });
+      window.dispatchEvent(new MouseEvent('mousemove', {
+        clientX: event.clientX,
+        clientY: event.clientY,
+        bubbles: false,
+      }));
     }, {passive:true});
 
-    addEventListener('scroll', () => {
-      const current = scrollY;
-      if (!v.classList.contains('active')) { lastScroll = current; return; }
-      pendingDelta += current - lastScroll;
-      lastScroll = current;
-      if (rafScroll) return;
+    window.addEventListener('scroll', () => {
+      const current = window.scrollY;
+      const delta = current - lastScrollY;
+      lastScrollY = current;
 
-      rafScroll = requestAnimationFrame(() => {
-        rafScroll = 0;
-        const delta = pendingDelta; pendingDelta = 0;
-        if (!delta) return;
-        dispatchEvent(new WheelEvent('wheel',{deltaY:delta,bubbles:false}));
-        if (active) frameDoc(v.querySelector('#repeatai-frame'))?.dispatchEvent(new WheelEvent('wheel',{deltaY:delta,bubbles:true}));
-      });
+      if (!view.classList.contains('active') || !delta) return;
+      pendingScrollDelta += delta;
+
+      const now = performance.now();
+      if (now - lastScrollAt < SCROLL_INTERVAL) return;
+      lastScrollAt = now;
+
+      const batchedDelta = pendingScrollDelta;
+      pendingScrollDelta = 0;
+
+      if (currentStep(view) === 'SCROLL') {
+        window.dispatchEvent(new WheelEvent('wheel', {
+          deltaY: batchedDelta,
+          bubbles: false,
+        }));
+      }
+
+      if (captureActive && now - lastFrameScrollAt >= FRAME_SCROLL_INTERVAL) {
+        lastFrameScrollAt = now;
+        getFrameDoc(view.querySelector('#repeatai-frame'))?.dispatchEvent(new WheelEvent('wheel', {
+          deltaY: batchedDelta,
+          bubbles: true,
+        }));
+      }
     }, {passive:true});
   }
 
-  function prepare(v) {
-    if (!v) return;
-    ensureLiveStatus(v);
-    syncWizard(v);
-    bridge(v);
+  function prepare(view) {
+    if (!view) return;
 
-    const frame = v.querySelector('#repeatai-frame');
-    if (frame && frame.dataset.mobileTrainingPrepared !== 'lite') {
-      frame.dataset.mobileTrainingPrepared = 'lite';
+    ensureStatus(view);
+    syncWizard(view);
+    bridgeMobile(view);
+
+    const frame = view.querySelector('#repeatai-frame');
+    if (frame && frame.dataset.mobileTrainingPrepared !== 'eco') {
+      frame.dataset.mobileTrainingPrepared = 'eco';
       frame.addEventListener('load', () => {
         if (MOBILE && forceFallback(frame)) return;
-        enhanceFrame(v);
+        tuneFrame(view);
       });
     }
 
-    const kicker = v.querySelector('#repeatai-wizard-kicker');
-    if (kicker && kicker.dataset.mobileStepObserved !== 'lite') {
-      kicker.dataset.mobileStepObserved = 'lite';
-      new MutationObserver(() => syncWizard(v)).observe(kicker,{childList:true,characterData:true,subtree:true});
+    const kicker = view.querySelector('#repeatai-wizard-kicker');
+    if (kicker && kicker.dataset.mobileStepObserved !== 'eco') {
+      kicker.dataset.mobileStepObserved = 'eco';
+      new MutationObserver(() => {
+        syncWizard(view);
+        if (currentStep(view) === 'REPETAI PRONTO' && captureActive) stopCapture(view);
+      }).observe(kicker, {childList:true, characterData:true, subtree:true});
     }
-
-    autoStartTraining(v);
   }
 
   injectStyles();
-  prepare(view());
+  prepare(getView());
 
-  document.addEventListener('click', e => {
-    if (!e.target.closest?.('[data-example-project="repeatai"]')) return;
-    setTimeout(() => prepare(view()), 0);
-  }, {passive:true});
+  document.addEventListener('click', event => {
+    const view = getView();
+    if (!view) return;
+
+    if (event.target.closest?.('[data-example-project="repeatai"]')) {
+      setTimeout(() => prepare(getView()), 0);
+      return;
+    }
+
+    const actionButton = event.target.closest?.('#repeatai-wizard-actions button');
+    if (!actionButton || !view.contains(actionButton)) return;
+
+    if (actionButton.textContent.trim() === 'COMEÇAR') {
+      setTimeout(() => {
+        prepare(view);
+        startCapture(view);
+      }, 0);
+    }
+  });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden && active) stopCapture(view());
+    if (document.hidden && captureActive) stopCapture(getView());
   });
 })();
