@@ -9,6 +9,7 @@ from app.db import Base
 from app.services.executor import github_basic_authorization
 from app.services.organizations import normalize_github_repository, project_slug
 from app.services.schema import ensure_runtime_schema
+from app.schemas import OrganizationCreate
 
 
 def test_organization_schema_creates_relationship_tables():
@@ -66,3 +67,13 @@ def test_private_git_authorization_does_not_embed_raw_token():
     header = github_basic_authorization("secret-token")
     assert header.startswith("Authorization: Basic ")
     assert "secret-token" not in header
+
+
+def test_organization_identifiers_normalize_accents_before_validation():
+    organization = OrganizationCreate(
+        name="A Organização",
+        slug="A Organização",
+        github_login="A-Organização",
+    )
+    assert organization.slug == "a-organizacao"
+    assert organization.github_login == "a-organizacao"
