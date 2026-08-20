@@ -57,12 +57,12 @@ def _openai_api_key(db: Session, workspace_id: str) -> str:
     if not credential:
         raise HTTPException(
             503,
-            "Transcrição compatível indisponível: conecte uma chave OpenAI em Modelos de IA.",
+            "Transcrição por voz indisponível. Configure uma credencial compatível em Modelos de IA.",
         )
     try:
         return Vault().decrypt(credential.encrypted_secret)
     except Exception as error:
-        raise HTTPException(503, "Não foi possível abrir a credencial OpenAI configurada.") from error
+        raise HTTPException(503, "A credencial de transcrição configurada não pôde ser utilizada.") from error
 
 
 def _filename(filename: str | None, content_type: str) -> str:
@@ -80,6 +80,32 @@ def _filename(filename: str | None, content_type: str) -> str:
         "audio/3gpp2": "3g2",
     }
     return f"voice.{extensions.get(content_type, 'webm')}"
+
+
+def _provider_error(response: httpx.Response) -> HTTPException:
+    status = response.status_code
+    code = ""
+    try:
+        error = response.json().get("error", {})
+        code = str(error.get("code") or error.get("type") or "").lower()
+    except (ValueError, AttributeError):
+        pass
+
+    if status == 429 or "quota" in code or "billing" in code:
+        return HTTPException(
+            429,
+            "Limite de transcrição atingido. Digite o comando abaixo ou atualize os créditos do provedor.",
+        )
+    if status in {401, 403}:
+        return HTTPException(
+            503,
+            "A credencial usada para transcrição não está válida. Revise Modelos de IA.",
+        )
+    if status == 400:
+        return HTTPException(422, "O áudio não pôde ser processado. Grave um comando curto e tente novamente.")
+    if status >= 500:
+        return HTTPException(502, "O serviço de transcrição está temporariamente indisponível.")
+    return HTTPException(502, "Não foi possível transcrever o áudio neste momento.")
 
 
 @router.post("/voice/transcriptions")
@@ -121,22 +147,15 @@ async def transcribe_voice(
                 files=files,
             )
     except httpx.HTTPError as error:
-        raise HTTPException(502, "Falha de rede ao transcrever o áudio.") from error
+        raise HTTPException(502, "Falha de rede ao transcrever o áudio. Digite o comando e continue.") from error
 
     if response.status_code >= 400:
-        message = "O provedor de transcrição recusou o áudio."
-        try:
-            provider_message = str(response.json().get("error", {}).get("message", "")).strip()
-            if provider_message:
-                message = provider_message[:300]
-        except (ValueError, AttributeError):
-            pass
-        raise HTTPException(502, message)
+        raise _provider_error(response)
 
     try:
         text = str(response.json().get("text", "")).strip()
     except (ValueError, AttributeError) as error:
-        raise HTTPException(502, "Resposta inválida do provedor de transcrição.") from error
+        raise HTTPException(502, "Resposta inválida do serviço de transcrição.") from error
 
     if not text:
         raise HTTPException(422, "Nenhuma fala foi reconhecida.")
