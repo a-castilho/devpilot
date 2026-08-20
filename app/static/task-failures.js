@@ -25,6 +25,35 @@
       .task-log-output{margin:0;max-height:48vh;overflow:auto;padding:16px;border-top:1px solid var(--line,#26364f);background:#050c17;color:#c7d5e8;font-size:11px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
       .task-result-ok{color:#61e7ac;font-weight:800}
       .task-result-failed{color:#ff9eb0;font-weight:800}
+      .task-log-modal-panel{width:min(1180px,calc(100vw - 32px))}
+      .task-result-layout{display:grid;grid-template-columns:minmax(0,1.08fr) minmax(340px,.92fr);gap:16px;align-items:start}
+      .task-client-card{margin:0;min-width:0;max-height:68vh;overflow:auto}
+      .task-proposal-card{min-width:0;padding:18px;border:1px solid #345b78;border-radius:14px;background:linear-gradient(145deg,#0d1d2e,#091522);position:sticky;top:0}
+      .task-proposal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+      .task-proposal-head h3{margin:3px 0 0;font-size:18px}
+      .task-review-badge{padding:5px 8px;border:1px solid #2b7b70;border-radius:999px;color:#65ead4;background:#12342f;font-size:9px;font-weight:850;white-space:nowrap}
+      .task-price-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px}
+      .task-price-item{padding:11px;border:1px solid #253e57;border-radius:10px;background:#081421}
+      .task-price-item span{display:block;color:#8da3bc;font-size:9px;text-transform:uppercase;letter-spacing:.08em}
+      .task-price-item strong{display:block;margin-top:5px;color:#edf8ff;font-size:15px;overflow-wrap:anywhere}
+      .task-price-item.featured{border-color:#2e8f80;background:linear-gradient(145deg,#10332e,#0a2024)}
+      .task-price-item.featured strong{color:#63edd7}
+      .task-proposal-meta{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+      .task-proposal-meta span{padding:6px 8px;border-radius:8px;background:#102337;color:#a9bfd5;font-size:10px}
+      .task-proposal-phases{display:grid;gap:8px}
+      .task-proposal-phase{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:9px;align-items:start;padding:10px;border-top:1px solid #22384e}
+      .task-proposal-phase b{display:grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#164b4b;color:#62ead7;font-size:11px}
+      .task-proposal-phase strong,.task-proposal-phase small{display:block}
+      .task-proposal-phase small{margin-top:3px;color:#849bb4;line-height:1.35}
+      .task-proposal-phase>strong{color:#dceafa;font-size:11px;white-space:nowrap}
+      .task-proposal-note{margin:13px 0 0;color:#7890aa;font-size:10px;line-height:1.45}
+      .task-proposal-actions{display:flex;justify-content:flex-end;margin-top:12px}
+      .task-proposal-print{padding:8px 11px;font-size:11px}
+      @media (max-width:900px){
+        .task-result-layout{grid-template-columns:1fr}
+        .task-client-card{max-height:none;overflow:visible}
+        .task-proposal-card{position:static}
+      }
       @media (max-width:720px){
         .task-failure-reason{max-width:190px}
         .task-log-modal-panel{width:calc(100vw - 20px);max-height:88vh;padding:22px 18px}
@@ -46,10 +75,19 @@
         <span class="eyebrow">RESULTADO DA ANÁLISE</span>
         <h2 id="task-log-title">Detalhes da execução</h2>
         <p class="task-log-meta" id="task-log-meta"></p>
-        <section class="task-client-card" id="task-client-card">
-          <span class="eyebrow">PARA O CLIENTE</span>
-          <div class="task-client-report" id="task-client-report"></div>
-        </section>
+        <div class="task-result-layout">
+          <section class="task-client-card" id="task-client-card">
+            <span class="eyebrow">ANÁLISE DE IA · GERADA E REVISADA</span>
+            <div class="task-client-report" id="task-client-report"></div>
+          </section>
+          <aside class="task-proposal-card" id="task-proposal-card" aria-label="Proposta comercial">
+            <div class="task-proposal-head">
+              <div><span class="eyebrow">PROPOSTA COMERCIAL</span><h3>Investimento recomendado</h3></div>
+              <span class="task-review-badge">REVISÃO AUTOMÁTICA</span>
+            </div>
+            <div id="task-proposal-content">Aguardando dados da análise…</div>
+          </aside>
+        </div>
         <details class="task-technical-details">
           <summary>Ver detalhes técnicos</summary>
           <pre class="task-log-output" id="task-log-output"></pre>
@@ -189,6 +227,108 @@
     if (!target.childNodes.length) appendParagraph('Nenhum resumo para o cliente foi registrado.');
   }
 
+  function formatMoney(value) {
+    return new Intl.NumberFormat('pt-BR', {
+      style: 'currency',
+      currency: 'BRL',
+      maximumFractionDigits: 0,
+    }).format(Math.max(0, Math.round(value)));
+  }
+
+  function commercialEstimate(reportText) {
+    const text = String(reportText || '');
+    const lines = text.replace(/\r/g, '').split('\n');
+    const rangePattern = /(\d{1,4})\s*(?:–|—|-)\s*(\d{1,4})\s*h\b/i;
+    const totalLine = lines.find(line => /\btotal\b/i.test(line) && rangePattern.test(line));
+    const ranges = [];
+
+    if (totalLine) {
+      const match = totalLine.match(rangePattern);
+      ranges.push([Number(match[1]), Number(match[2])]);
+    } else {
+      const seen = new Set();
+      lines.forEach(line => {
+        const match = line.match(rangePattern);
+        if (!match) return;
+        const key = match[0].replace(/\s/g, '').toLowerCase();
+        if (seen.has(key) || ranges.length >= 8) return;
+        seen.add(key);
+        ranges.push([Number(match[1]), Number(match[2])]);
+      });
+    }
+
+    let minHours;
+    let maxHours;
+    if (ranges.length) {
+      minHours = ranges.reduce((sum, range) => sum + Math.min(...range), 0);
+      maxHours = ranges.reduce((sum, range) => sum + Math.max(...range), 0);
+    } else {
+      const count = expression => (text.match(expression) || []).length;
+      const critical = count(/\bcr[ií]tic[oa]s?\b/gi);
+      const high = count(/\balto?s?\b|\balta?s?\b/gi);
+      const medium = count(/\bm[eé]di[oa]s?\b/gi);
+      const low = count(/\bbaixo?s?\b|\bbaixa?s?\b/gi);
+      minHours = 24 + critical * 28 + high * 18 + medium * 10 + low * 5;
+      maxHours = 44 + critical * 52 + high * 34 + medium * 20 + low * 10;
+    }
+
+    minHours = Math.max(32, Math.min(600, minHours));
+    maxHours = Math.max(minHours, Math.min(900, maxHours));
+    const hourlyMin = 180;
+    const hourlyMax = 280;
+    const minimum = minHours * hourlyMin;
+    const maximum = maxHours * hourlyMax;
+    const average = Math.round(((minimum + maximum) / 2) / 100) * 100;
+
+    const scope = lines
+      .filter(line => /^\s*[-*•]\s+/.test(line))
+      .map(line => line.replace(/^\s*[-*•]\s+/, '').replace(/\*\*/g, '').trim())
+      .filter(Boolean)
+      .slice(0, 3);
+
+    return {minHours, maxHours, hourlyMin, hourlyMax, minimum, maximum, average, scope};
+  }
+
+  function renderCommercialProposal(target, reportText) {
+    const estimate = commercialEstimate(reportText);
+    const defaultScopes = [
+      'Correção dos riscos críticos e estabilização da operação',
+      'Implementação das melhorias priorizadas na análise',
+      'Testes, validação técnica e entrega assistida',
+    ];
+    const scopes = defaultScopes.map((fallback, index) => estimate.scope[index] || fallback);
+    const phases = [
+      ['01', 'Estabilização', scopes[0], .45],
+      ['02', 'Evolução', scopes[1], .35],
+      ['03', 'Validação', scopes[2], .20],
+    ];
+
+    target.innerHTML = `
+      <div class="task-price-summary">
+        <div class="task-price-item"><span>Faixa mínima</span><strong>${formatMoney(estimate.minimum)}</strong></div>
+        <div class="task-price-item featured"><span>Valor médio</span><strong>${formatMoney(estimate.average)}</strong></div>
+        <div class="task-price-item"><span>Faixa máxima</span><strong>${formatMoney(estimate.maximum)}</strong></div>
+      </div>
+      <div class="task-proposal-meta">
+        <span>${estimate.minHours}–${estimate.maxHours} horas</span>
+        <span>${formatMoney(estimate.hourlyMin)}–${formatMoney(estimate.hourlyMax)}/h</span>
+        <span>3 fases de entrega</span>
+      </div>
+      <div class="task-proposal-phases">
+        ${phases.map(([number, title, scope, share]) => `
+          <div class="task-proposal-phase">
+            <b>${number}</b>
+            <div><strong>${esc(title)}</strong><small>${esc(scope.slice(0, 120))}</small></div>
+            <strong>${formatMoney(estimate.average * share)}</strong>
+          </div>
+        `).join('')}
+      </div>
+      <p class="task-proposal-note">Estimativa produzida a partir das horas, criticidade e escopo encontrados na análise. Revise premissas e detalhes contratuais antes de enviar ao cliente.</p>
+      <div class="task-proposal-actions"><button type="button" class="ghost task-proposal-print">Imprimir proposta</button></div>
+    `;
+    target.querySelector('.task-proposal-print').onclick = () => window.print();
+  }
+
   function formatTechnicalLog(data) {
     const parts = [];
     if (data.summary) parts.push(`RESUMO TÉCNICO\n${data.summary}`);
@@ -219,12 +359,14 @@
     const title = dialog.querySelector('#task-log-title');
     const meta = dialog.querySelector('#task-log-meta');
     const report = dialog.querySelector('#task-client-report');
+    const proposal = dialog.querySelector('#task-proposal-content');
     const output = dialog.querySelector('#task-log-output');
     const details = dialog.querySelector('.task-technical-details');
 
     title.textContent = task?.title || 'Resultado da análise';
     meta.textContent = 'Preparando resultado…';
     report.textContent = 'Carregando análise…';
+    proposal.textContent = 'Calculando proposta a partir da análise…';
     output.textContent = '';
     details.open = false;
     if (!dialog.open) dialog.showModal();
@@ -234,12 +376,16 @@
       const started = data.started_at ? new Date(data.started_at).toLocaleString('pt-BR') : '—';
       const failed = String(data.status || '').toLowerCase() === 'failed';
       meta.innerHTML = `<span class="${failed ? 'task-result-failed' : 'task-result-ok'}">${esc(statusLabel(data.status))}</span> · tentativa ${esc(data.attempt || 1)} · início ${esc(started)}`;
-      renderClientReport(report, clientReport(data));
+      const reportText = clientReport(data);
+      renderClientReport(report, reportText);
+      renderCommercialProposal(proposal, reportText);
       output.textContent = formatTechnicalLog(data);
     } catch (error) {
       meta.textContent = 'Falha ao carregar o resultado';
-      renderClientReport(report, error.message || 'Não foi possível consultar esta execução.');
-      output.textContent = error.message || 'Não foi possível consultar esta execução.';
+      const message = error.message || 'Não foi possível consultar esta execução.';
+      renderClientReport(report, message);
+      proposal.textContent = 'Proposta indisponível até que a análise seja carregada.';
+      output.textContent = message;
     }
   }
 
