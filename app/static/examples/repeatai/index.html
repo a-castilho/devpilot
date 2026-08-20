@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>RepetAI — análise de padrões</title>
+  <style>
+    :root{--bg:#07111d;--panel:#0d1928;--panel2:#101f31;--line:#21344d;--text:#edf5ff;--muted:#8ea3bc;--cyan:#3be4d0;--blue:#67a3ff;--amber:#ffbf69;--danger:#ff6f85}
+    *{box-sizing:border-box}html{background:var(--bg);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at 78% -10%,#174c6850,transparent 30%),var(--bg)}
+    button,select{font:inherit}.app{display:grid;grid-template-columns:205px minmax(0,1fr);min-height:100vh}.side{padding:22px 16px;border-right:1px solid var(--line);background:#081321;display:flex;flex-direction:column;gap:22px}
+    .brand{display:flex;gap:10px;align-items:center}.brand-mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,var(--cyan),var(--blue));color:#06101a;font-weight:900}.brand strong{display:block;font-size:16px}.brand small{display:block;color:var(--muted);font-size:9px;letter-spacing:.09em}
+    .nav{display:grid;gap:6px}.nav button{border:0;border-radius:9px;padding:10px 12px;text-align:left;background:transparent;color:var(--muted);cursor:pointer}.nav button.active{background:#16283c;color:var(--text)}.privacy{margin-top:auto;border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--muted);font-size:10px;background:#0d1b2b}.privacy b{display:block;color:var(--cyan);margin-bottom:4px}
+    main{padding:24px min(3.5vw,42px) 42px;min-width:0}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}.eyebrow{margin:0 0 3px;color:var(--cyan);font-size:9px;font-weight:900;letter-spacing:.16em}.top h1{margin:0;font-size:25px}.top p{margin:4px 0 0;color:var(--muted)}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    button,.select{border-radius:9px;border:1px solid var(--line);padding:9px 12px;background:var(--panel2);color:var(--text)}button{cursor:pointer;font-weight:750}.primary{border:0;background:linear-gradient(135deg,var(--cyan),#52b9ff);color:#06111c}.danger{color:#ffc0ca;border-color:#6c3040}.status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;background:#102438;color:var(--muted);font-size:10px}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.status.live{color:var(--cyan)}.status.live .dot{background:var(--cyan);box-shadow:0 0 14px var(--cyan)}
+    .metrics{display:grid;grid-template-columns:repeat(6,minmax(100px,1fr));gap:10px;margin-bottom:12px}.metric,.panel{border:1px solid var(--line);background:linear-gradient(145deg,var(--panel),#0a1624);border-radius:13px}.metric{padding:14px}.metric span{color:var(--muted);font-size:10px}.metric strong{display:block;margin-top:4px;font-size:22px}
+    .layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,.8fr);gap:12px}.panel{padding:16px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.panel-head h2{font-size:14px;margin:0}.panel-head small{color:var(--muted)}.chart{width:100%;height:230px;display:block;border-radius:10px;background:#07111d;border:1px solid #17283b}.axis-label{fill:#71869e;font:9px system-ui}.grid-line{stroke:#15273a;stroke-width:1}.chart-line{fill:none;stroke:var(--cyan);stroke-width:2.5}.chart-area{fill:url(#area)}.chart-point{fill:#b7fff6}
+    .tech{display:grid;grid-template-columns:1fr 1fr;gap:9px}.tech-card{padding:11px;border-radius:10px;background:#091524;border:1px solid #172a40}.tech-card span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em}.tech-card strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.privacy-note{margin-top:12px;padding:11px;border-radius:10px;background:#0a201f;border:1px solid #1f5c55;color:#a8d9d4;font-size:10px}
+    .patterns{margin-top:12px}.pattern-row{display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line)}.pattern-row:first-child{border-top:0}.pattern-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#15283b;color:var(--cyan);font-weight:900}.pattern-row strong{display:block;font-size:12px}.pattern-row small{color:var(--muted)}.badge{padding:4px 7px;border-radius:999px;font-size:9px;background:#183246;color:var(--cyan)}.badge.warn{background:#3b2b17;color:var(--amber)}
+    .event-stream{max-height:206px;overflow:auto}.event{display:grid;grid-template-columns:58px 70px 1fr;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:10px}.event:first-child{border-top:0}.event time,.event .kind{color:var(--muted)}.empty{padding:24px;text-align:center;color:var(--muted);font-size:11px}
+    .footer-note{margin-top:12px;color:var(--muted);font-size:9px;text-align:right}
+    @media(max-width:920px){.app{grid-template-columns:1fr}.side{display:none}.metrics{grid-template-columns:repeat(3,1fr)}.layout{grid-template-columns:1fr}}
+    @media(max-width:560px){main{padding:16px}.top{display:grid}.controls{width:100%}.controls button,.controls select{flex:1}.metrics{grid-template-columns:1fr 1fr}.tech{grid-template-columns:1fr}.chart{height:200px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><span class="brand-mark">R</span><div><strong>RepetAI</strong><small>INTERAÇÃO INTELIGENTE</small></div></div>
+      <div class="nav">
+        <button class="active">Visão ao vivo</button>
+        <button>Sessões</button>
+        <button>Padrões</button>
+        <button>Automações</button>
+      </div>
+      <div class="privacy"><b>Privacidade por padrão</b>Teclas são classificadas por tipo. O conteúdo digitado não é armazenado.</div>
+    </aside>
+
+    <main>
+      <div class="top">
+        <div><p class="eyebrow">REPETAI · DEMONSTRAÇÃO LOCAL</p><h1>Analise padrões, não conteúdo.</h1><p>Movimentos, cliques e ritmo de uso viram sinais técnicos para descobrir repetições.</p></div>
+        <div class="controls">
+          <span class="status" id="status"><span class="dot"></span><span id="statusText">Parado</span></span>
+          <select id="duration" aria-label="Duração da captura"><option value="60">1 minuto</option><option value="120" selected>2 minutos</option><option value="300">5 minutos</option></select>
+          <button class="primary" id="toggle">Iniciar captura</button>
+          <button id="reset">Limpar</button>
+        </div>
+      </div>
+
+      <section class="metrics">
+        <div class="metric"><span>Eventos</span><strong id="mEvents">0</strong></div>
+        <div class="metric"><span>Cliques</span><strong id="mClicks">0</strong></div>
+        <div class="metric"><span>Teclas</span><strong id="mKeys">0</strong></div>
+        <div class="metric"><span>Movimento</span><strong id="mMove">0 m</strong></div>
+        <div class="metric"><span>Repetições</span><strong id="mRepeats">0</strong></div>
+        <div class="metric"><span>Tempo</span><strong id="mTime">00:00</strong></div>
+      </section>
+
+      <div class="layout">
+        <div>
+          <article class="panel">
+            <div class="panel-head"><div><p class="eyebrow">ATUALIZAÇÃO A CADA 1 SEGUNDO</p><h2>Atividade por segundo</h2></div><small id="chartHint">últimos 30 s</small></div>
+            <svg class="chart" id="chart" viewBox="0 0 700 230" preserveAspectRatio="none" role="img" aria-label="Gráfico de atividade"></svg>
+          </article>
+
+          <article class="panel patterns">
+            <div class="panel-head"><div><p class="eyebrow">DETECÇÃO</p><h2>Padrões observados</h2></div><small>heurística local</small></div>
+            <div id="patterns">
+              <div class="pattern-row"><div class="pattern-icon">↻</div><div><strong>Movimentos repetidos</strong><small>Faça trajetórias parecidas com o mouse para testar.</small></div><span class="badge">aguardando</span></div>
+              <div class="pattern-row"><div class="pattern-icon">⌁</div><div><strong>Cliques recorrentes</strong><small>Clique várias vezes em uma mesma região.</small></div><span class="badge">aguardando</span></div>
+              <div class="pattern-row"><div class="pattern-icon">⌨</div><div><strong>Ritmo de teclado</strong><small>Apenas frequência e categoria das teclas.</small></div><span class="badge">privado</span></div>
+            </div>
+          </article>
+        </div>
+
+        <div>
+          <article class="panel">
+            <div class="panel-head"><div><p class="eyebrow">DADOS TÉCNICOS</p><h2>Estado atual</h2></div><small id="sampleRate">1 Hz</small></div>
+            <div class="tech">
+              <div class="tech-card"><span>Mouse X / Y</span><strong id="tMouse">— / —</strong></div>
+              <div class="tech-card"><span>Viewport</span><strong id="tViewport">—</strong></div>
+              <div class="tech-card"><span>Última ação</span><strong id="tAction">—</strong></div>
+              <div class="tech-card"><span>Tecla / categoria</span><strong id="tKey">nenhum conteúdo</strong></div>
+              <div class="tech-card"><span>Intervalo médio</span><strong id="tInterval">—</strong></div>
+              <div class="tech-card"><span>Eventos / min</span><strong id="tRate">0</strong></div>
+            </div>
+            <div class="privacy-note">Nenhum texto digitado é salvo. O evento de teclado registra apenas categorias como texto, navegação, edição, modificador ou atalho.</div>
+          </article>
+
+          <article class="panel patterns">
+            <div class="panel-head"><div><p class="eyebrow">FLUXO LOCAL</p><h2>Últimos eventos</h2></div><small>máx. 12</small></div>
+            <div class="event-stream" id="stream"><div class="empty">Inicie uma captura e interaja com a página.</div></div>
+          </article>
+        </div>
+      </div>
+      <div class="footer-note">Exemplo compilado dentro do DevPilot · sem dependências externas</div>
+    </main>
+  </div>
+
+  <script>
+    (() => {
+      const $ = id => document.getElementById(id);
+      const state = {
+        recording:false,startAt:0,stopAt:0,events:[],clicks:0,keys:0,movePx:0,repeats:0,
+        lastMouse:null,lastActionAt:0,lastKeyGroup:'—',lastPoint:null,clickBuckets:new Map(),
+        perSecond:Array(30).fill(0),secondCount:0,timer:null,autoStop:null
+      };
+
+      function keyGroup(event){
+        const key=String(event.key||'');
+        if(event.ctrlKey||event.altKey||event.metaKey)return 'atalho';
+        if(key.length===1)return 'texto';
+        if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Home','End','PageUp','PageDown','Tab','Enter'].includes(key))return 'navegação';
+        if(['Backspace','Delete','Insert','Escape'].includes(key))return 'edição';
+        if(['Shift','Control','Alt','Meta','CapsLock'].includes(key))return 'modificador';
+        if(/^F\d{1,2}$/.test(key))return 'função';
+        return 'outra';
+      }
+
+      function fmtTime(ms){
+        const s=Math.max(0,Math.floor(ms/1000));
+        return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+      }
+
+      function addEvent(kind,detail){
+        if(!state.recording)return;
+        const now=Date.now();
+        state.events.unshift({at:now,kind,detail});
+        state.events=state.events.slice(0,80);
+        state.secondCount++;
+        if(state.lastActionAt && now-state.lastActionAt<500)state.repeats++;
+        state.lastActionAt=now;
+        $('tAction').textContent=detail;
+        renderStream();
+      }
+
+      function onMove(event){
+        if(!state.recording)return;
+        const point={x:event.clientX,y:event.clientY};
+        if(state.lastMouse){
+          const dx=point.x-state.lastMouse.x,dy=point.y-state.lastMouse.y;
+          state.movePx+=Math.hypot(dx,dy);
+        }
+        state.lastMouse=point;
+        $('tMouse').textContent=`${Math.round(point.x)} / ${Math.round(point.y)}`;
+      }
+
+      function onClick(event){
+        if(!state.recording)return;
+        state.clicks++;
+        const gx=Math.max(0,Math.min(9,Math.floor(event.clientX/Math.max(innerWidth,1)*10)));
+        const gy=Math.max(0,Math.min(9,Math.floor(event.clientY/Math.max(innerHeight,1)*10)));
+        const key=`${gx}:${gy}`;
+        const count=(state.clickBuckets.get(key)||0)+1;
+        state.clickBuckets.set(key,count);
+        if(count>=3)state.repeats++;
+        addEvent('clique',`região ${gx+1}×${gy+1}`);
+      }
+
+      function onKey(event){
+        if(!state.recording)return;
+        state.keys++;
+        const group=keyGroup(event);
+        state.lastKeyGroup=group;
+        $('tKey').textContent=group;
+        addEvent('teclado',group);
+      }
+
+      function renderStream(){
+        const rows=state.events.slice(0,12);
+        $('stream').innerHTML=rows.length?rows.map(item=>{
+          const time=new Date(item.at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+          return `<div class="event"><time>${time}</time><span class="kind">${item.kind}</span><span>${item.detail}</span></div>`;
+        }).join(''):'<div class="empty">Inicie uma captura e interaja com a página.</div>';
+      }
+
+      function renderChart(){
+        const svg=$('chart');
+        const values=state.perSecond;
+        const max=Math.max(5,...values);
+        const w=700,h=230,pad=28;
+        const x=i=>pad+i*(w-pad*2)/(values.length-1);
+        const y=v=>h-pad-(v/max)*(h-pad*2);
+        const points=values.map((v,i)=>`${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+        const area=`${pad},${h-pad} ${points} ${w-pad},${h-pad}`;
+        let grid='';
+        for(let i=0;i<5;i++){const yy=pad+i*(h-pad*2)/4;grid+=`<line class="grid-line" x1="${pad}" y1="${yy}" x2="${w-pad}" y2="${yy}"/>`;}
+        svg.innerHTML=`<defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#3be4d0" stop-opacity=".28"/><stop offset="100%" stop-color="#3be4d0" stop-opacity="0"/></linearGradient></defs>${grid}<polygon class="chart-area" points="${area}"/><polyline class="chart-line" points="${points}"/><circle class="chart-point" cx="${x(values.length-1)}" cy="${y(values[values.length-1])}" r="3.5"/><text class="axis-label" x="${pad}" y="${h-8}">30 s atrás</text><text class="axis-label" x="${w-pad-28}" y="${h-8}">agora</text>`;
+      }
+
+      function renderPatterns(){
+        const clickMax=Math.max(0,...state.clickBuckets.values());
+        const fastActions=state.repeats;
+        const clickState=clickMax>=5?['recorrente','warn']:clickMax>=3?['possível','']:['aguardando',''];
+        const moveState=state.movePx>3500&&fastActions>8?['detectado','warn']:state.movePx>1400?['analisando','']:['aguardando',''];
+        const keyState=state.keys>=12?['ritmo ativo','']:state.keys?['analisando','']:['privado',''];
+        $('patterns').innerHTML=`
+          <div class="pattern-row"><div class="pattern-icon">↻</div><div><strong>Movimentos repetidos</strong><small>${Math.round(state.movePx)} px de trajetória acumulada.</small></div><span class="badge ${moveState[1]}">${moveState[0]}</span></div>
+          <div class="pattern-row"><div class="pattern-icon">⌁</div><div><strong>Cliques recorrentes</strong><small>Maior concentração: ${clickMax} clique(s) na mesma região.</small></div><span class="badge ${clickState[1]}">${clickState[0]}</span></div>
+          <div class="pattern-row"><div class="pattern-icon">⌨</div><div><strong>Ritmo de teclado</strong><small>${state.keys} evento(s); última categoria: ${state.lastKeyGroup}.</small></div><span class="badge">${keyState[0]}</span></div>`;
+      }
+
+      function tick(){
+        state.perSecond.push(state.secondCount);
+        state.perSecond.shift();
+        state.secondCount=0;
+        const now=Date.now(),elapsed=state.recording?now-state.startAt:Math.max(0,state.stopAt-state.startAt);
+        const intervals=state.events.slice(0,20).map((e,i,a)=>i<a.length-1?e.at-a[i+1].at:0).filter(Boolean);
+        const avg=intervals.length?Math.round(intervals.reduce((a,b)=>a+b,0)/intervals.length):0;
+        $('mEvents').textContent=state.clicks+state.keys;
+        $('mClicks').textContent=state.clicks;
+        $('mKeys').textContent=state.keys;
+        $('mMove').textContent=(state.movePx/3779.5).toFixed(2)+' m';
+        $('mRepeats').textContent=state.repeats;
+        $('mTime').textContent=fmtTime(elapsed);
+        $('tViewport').textContent=`${innerWidth} × ${innerHeight}`;
+        $('tInterval').textContent=avg?avg+' ms':'—';
+        $('tRate').textContent=elapsed?Math.round((state.clicks+state.keys)/(elapsed/60000)):0;
+        renderChart();renderPatterns();
+      }
+
+      function start(){
+        if(state.recording)return;
+        state.recording=true;state.startAt=Date.now();state.stopAt=state.startAt;
+        const duration=Number($('duration').value||120)*1000;
+        $('status').classList.add('live');$('statusText').textContent='Capturando';$('toggle').textContent='Parar captura';$('duration').disabled=true;
+        document.addEventListener('mousemove',onMove,{passive:true});
+        document.addEventListener('click',onClick,true);
+        document.addEventListener('keydown',onKey,true);
+        clearInterval(state.timer);state.timer=setInterval(tick,1000);
+        clearTimeout(state.autoStop);state.autoStop=setTimeout(stop,duration);
+        tick();
+      }
+
+      function stop(){
+        if(!state.recording)return;
+        state.recording=false;state.stopAt=Date.now();
+        $('status').classList.remove('live');$('statusText').textContent='Parado';$('toggle').textContent='Iniciar captura';$('duration').disabled=false;
+        document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('click',onClick,true);
+        document.removeEventListener('keydown',onKey,true);
+        clearInterval(state.timer);clearTimeout(state.autoStop);tick();
+      }
+
+      function reset(){
+        stop();
+        Object.assign(state,{startAt:0,stopAt:0,events:[],clicks:0,keys:0,movePx:0,repeats:0,lastMouse:null,lastActionAt:0,lastKeyGroup:'—',secondCount:0,perSecond:Array(30).fill(0)});
+        state.clickBuckets.clear();
+        $('tMouse').textContent='— / —';$('tAction').textContent='—';$('tKey').textContent='nenhum conteúdo';
+        renderStream();tick();
+      }
+
+      $('toggle').addEventListener('click',()=>state.recording?stop():start());
+      $('reset').addEventListener('click',reset);
+      addEventListener('resize',tick);
+      tick();
+    })();
+  </script>
+</body>
+</html>
