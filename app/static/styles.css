@@ -89,3 +89,14 @@
   .voice-dock button{width:46px;height:46px}
   .toast{left:12px;right:12px}
 }
+
+
+/* Authentication feedback: invalid credentials must be impossible to miss. */
+.auth-feedback[hidden]{display:none}
+.auth-feedback{display:grid;grid-template-columns:22px 1fr;gap:10px;align-items:start;padding:12px 14px;border:1px solid transparent;border-radius:10px;font-size:13px;font-weight:700;line-height:1.35}
+.auth-feedback::before{content:'!';display:grid;place-items:center;width:22px;height:22px;border-radius:50%;font-weight:900}
+.auth-feedback[data-state="error"]{color:#ffe8ec;background:#5f1d2b;border-color:#ff6577;box-shadow:0 0 0 3px #ff657722}
+.auth-feedback[data-state="error"]::before{color:#4b1019;background:#ff9aa8}
+.modal input[aria-invalid="true"]{border-color:#ff6577;background:#2a1019;box-shadow:0 0 0 3px #ff657722}
+.modal input[aria-invalid="true"]:focus{border-color:#ff9aa8;box-shadow:0 0 0 4px #ff657733}
+@media(prefers-reduced-motion:no-preference){.auth-feedback[data-state="error"]{animation:auth-feedback-enter .18s ease-out}@keyframes auth-feedback-enter{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}}
