@@ -36,3 +36,14 @@ Liste diferenças conhecidas. Se não houver, escreva `Nenhuma`.
 
 - [ ] README/docs atualizados quando necessário
 - [ ] A PR contém evidência suficiente para revisão sem contexto oral
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

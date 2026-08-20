@@ -19,3 +19,14 @@ Cadastro iniciando tarefa real, Estúdio IA, fila/prioridade/ETA, dashboard de m
 
 ## Lacuna crítica de revisão
 A PR declara mudanças importantes no dashboard, Estúdio IA e experiência de voz, mas não apresenta evidência visual. Antes do merge, comparar os fluxos reais de cadastro, fila, resultados, voz e estados de execução com o comportamento descrito.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

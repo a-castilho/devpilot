@@ -36,3 +36,14 @@ Para mudanças não visuais, use resposta de API, log, teste, consulta de banco,
 ## Definition of Done
 
 Uma mudança só está pronta quando existe rastreabilidade para issue, critérios foram verificados, testes relevantes foram executados, comportamento observável foi comparado com o esperado, divergências foram registradas e a documentação afetada foi atualizada.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

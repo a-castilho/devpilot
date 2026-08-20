@@ -98,3 +98,14 @@ O resultado inclui `automation_score`, resumo, padrões e até oito candidatos d
 ## Próxima evolução prevista
 
 O passo seguinte pode converter um candidato escolhido em uma tarefa DevPilot parametrizada, mantendo aprovação, auditoria e rollback antes de qualquer execução real.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

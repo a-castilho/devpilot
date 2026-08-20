@@ -14,3 +14,14 @@
 - [ ] comparação final entre comportamento esperado e tela implantada
 
 A entrega não deve ser considerada visualmente homologada até os dois últimos itens serem registrados com evidência.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

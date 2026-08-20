@@ -3,3 +3,14 @@
 Criar uma área **Relatórios** no produto para leitura de documentação, issues, revisões e ideias, com busca, cópia de contexto para conversas e atalho para novas ideias.
 
 A tela deve consumir somente uma projeção sanitizada e versionada. Tokens, senhas, secrets, API keys, connection strings, `.env`, credenciais e logs brutos são proibidos na projeção exibida ao usuário.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

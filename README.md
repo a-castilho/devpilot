@@ -96,3 +96,14 @@ configurados, credenciais de escopo mínimo e diretório isolado.
 Nunca envie chaves ao frontend após o cadastro. Em produção, use um KMS/secret manager,
 tokens curtos para GitHub Apps, runners sem privilégios e aprovação explícita para push,
 merge, deploy, dependências e operações destrutivas.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

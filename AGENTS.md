@@ -23,3 +23,14 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Run `python -m compileall app` after Python changes.
 - Verify the responsive dashboard manually after visible UI changes.
 - Review the final diff for secrets, unsafe subprocess use, missing authorization, and unrelated edits.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
