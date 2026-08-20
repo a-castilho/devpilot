@@ -2,10 +2,21 @@
   const esc = value => String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
   const token = () => localStorage.getItem('devpilot-token') || '';
   const headers = () => ({'Authorization': `Bearer ${token()}`, 'Content-Type': 'application/json'});
+  const roleLabels = {
+    SUPER_ADMIN: 'Super administrador',
+    OWNER: 'Proprietário',
+    ADMIN: 'Administrador',
+    ANALYST: 'Analista',
+    VIEWER: 'Visualizador',
+  };
+  const roleLabel = role => roleLabels[String(role || '').toUpperCase()] || String(role || 'Perfil');
+  const initials = value => String(value || 'DP').trim().split(/\s+/).filter(Boolean).map(part => part[0]).join('').slice(0, 2).toUpperCase() || 'DP';
 
   const style = document.createElement('style');
   style.textContent = `
-    .profile-shell{display:grid;grid-template-columns:minmax(220px,320px) minmax(0,1fr);gap:20px}.profile-card,.profile-form{background:var(--panel,#0f1b2d);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px}.profile-avatar{width:88px;height:88px;border-radius:50%;display:grid;place-items:center;font-size:28px;font-weight:700;background:rgba(255,255,255,.08);overflow:hidden}.profile-avatar img{width:100%;height:100%;object-fit:cover}.profile-meta{display:grid;gap:8px;margin-top:18px}.profile-badge{display:inline-flex;width:max-content;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px;text-transform:uppercase}.profile-form textarea{resize:vertical}@media(max-width:760px){.profile-shell{grid-template-columns:1fr}}
+    .profile-shell{display:grid;grid-template-columns:minmax(220px,320px) minmax(0,1fr);gap:20px}.profile-card,.profile-form{background:var(--panel,#0f1b2d);border:1px solid rgba(255,255,255,.08);border-radius:18px;padding:22px}.profile-avatar{width:88px;height:88px;border-radius:50%;display:grid;place-items:center;font-size:28px;font-weight:700;background:rgba(255,255,255,.08);overflow:hidden}.profile-avatar img{width:100%;height:100%;object-fit:cover}.profile-meta{display:grid;gap:8px;margin-top:18px}.profile-badge{display:inline-flex;width:max-content;padding:5px 9px;border-radius:999px;background:rgba(255,255,255,.08);font-size:12px;text-transform:uppercase}.profile-form textarea{resize:vertical}
+    .header-user{order:-2;display:flex;align-items:center;gap:9px;min-width:0;padding:6px 10px;border:1px solid var(--line);border-radius:10px;background:rgba(13,25,40,.72);color:var(--text);cursor:pointer;text-align:left}.header-user:hover{background:var(--surface2);border-color:#31506f}.header-user-avatar{flex:0 0 32px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;overflow:hidden;background:linear-gradient(135deg,var(--cyan),var(--blue));color:#06101b;font-size:11px;font-weight:850}.header-user-avatar img{width:100%;height:100%;object-fit:cover}.header-user-copy{display:grid;min-width:0;line-height:1.15}.header-user-copy strong{max-width:155px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.header-user-copy small{margin-top:3px;color:var(--muted);font-size:10px}.header-actions #logout{order:-1}
+    @media(max-width:760px){.profile-shell{grid-template-columns:1fr}.header-user{padding:6px}.header-user-copy{display:none}}
   `;
   document.head.appendChild(style);
 
@@ -33,6 +44,38 @@
     </div>`;
   document.querySelector('main')?.appendChild(section);
 
+  let headerUser = null;
+
+  function ensureHeaderUser() {
+    if (!token()) return null;
+    const header = document.querySelector('.header-actions');
+    if (!header) return null;
+    headerUser = document.querySelector('#header-user');
+    if (headerUser) return headerUser;
+    headerUser = document.createElement('button');
+    headerUser.id = 'header-user';
+    headerUser.type = 'button';
+    headerUser.className = 'header-user';
+    headerUser.title = 'Abrir perfil';
+    headerUser.innerHTML = '<span class="header-user-avatar" id="header-user-avatar">DP</span><span class="header-user-copy"><strong id="header-user-name">Usuário</strong><small id="header-user-role">Perfil</small></span>';
+    headerUser.addEventListener('click', showProfile);
+    header.prepend(headerUser);
+    return headerUser;
+  }
+
+  function renderHeaderUser(user) {
+    const chip = ensureHeaderUser();
+    if (!chip) return;
+    chip.hidden = false;
+    const displayName = user.full_name || user.email || 'Administrador';
+    document.querySelector('#header-user-name').textContent = displayName;
+    document.querySelector('#header-user-role').textContent = roleLabel(user.role);
+    const avatar = document.querySelector('#header-user-avatar');
+    if (user.avatar_url) avatar.innerHTML = `<img src="${esc(user.avatar_url)}" alt="Avatar de ${esc(displayName)}">`;
+    else avatar.textContent = initials(displayName);
+    chip.setAttribute('aria-label', `${displayName}, perfil ${roleLabel(user.role)}. Abrir perfil.`);
+  }
+
   async function request(path, options={}) {
     const response = await fetch(path, {...options, headers: {...headers(), ...(options.headers||{})}});
     const data = await response.json().catch(() => ({}));
@@ -47,20 +90,24 @@
     loadProfile();
   }
 
-  async function loadProfile() {
+  async function loadProfile({silent=false}={}) {
     try {
       const user = await request('/api/auth/me');
+      renderHeaderUser(user);
       const form = document.querySelector('#profile-form');
       ['full_name','phone','job_title','bio','avatar_url','locale','timezone'].forEach(k => { if (form.elements[k]) form.elements[k].value = user[k] || ''; });
       document.querySelector('#profile-name').textContent = user.full_name || user.email || 'Administrador';
-      document.querySelector('#profile-role').textContent = user.role || '—';
+      document.querySelector('#profile-role').textContent = roleLabel(user.role);
       document.querySelector('#profile-email').textContent = user.email || 'Acesso bootstrap';
       document.querySelector('#profile-active').textContent = user.active ? 'Conta ativa' : 'Conta inativa';
       const avatar = document.querySelector('#profile-avatar');
       if (user.avatar_url) avatar.innerHTML = `<img src="${esc(user.avatar_url)}" alt="Avatar">`;
-      else avatar.textContent = (user.full_name || user.email || 'DP').split(/\s+/).map(x=>x[0]).join('').slice(0,2).toUpperCase();
+      else avatar.textContent = initials(user.full_name || user.email || 'DP');
       form.querySelector('button[type="submit"]').disabled = Boolean(user.bootstrap);
-    } catch (error) { window.toast ? window.toast(error.message) : console.error(error); }
+    } catch (error) {
+      if (silent && headerUser) headerUser.hidden = true;
+      if (!silent) window.toast ? window.toast(error.message) : console.error(error);
+    }
   }
 
   nav.addEventListener('click', showProfile);
@@ -74,4 +121,9 @@
       await loadProfile();
     } catch (error) { if (window.toast) window.toast(error.message); }
   });
+
+  if (token()) {
+    ensureHeaderUser();
+    loadProfile({silent:true});
+  }
 })();
