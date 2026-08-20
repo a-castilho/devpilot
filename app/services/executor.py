@@ -200,7 +200,10 @@ def _codex_attempt(
     auth_mode: str,
     env_overrides: dict[str, str] | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], dict[str, object]]:
-    result = run(command, cwd=path, timeout=timeout, env_overrides=env_overrides)
+    if env_overrides:
+        result = run(command, cwd=path, timeout=timeout, env_overrides=env_overrides)
+    else:
+        result = run(command, cwd=path, timeout=timeout)
     attempt: dict[str, object] = {
         "provider": provider,
         "auth_mode": auth_mode,
@@ -230,8 +233,9 @@ def _api_key_codex_attempt(
     with tempfile.TemporaryDirectory(prefix="devpilot-codex-api-") as directory:
         codex_home = Path(directory)
         auth_file = codex_home / "auth.json"
+        # Codex serializes AuthMode::ApiKey as `apikey` (lowercase enum name).
         auth_file.write_text(
-            json.dumps({"auth_mode": "api_key", "OPENAI_API_KEY": api_key}),
+            json.dumps({"auth_mode": "apikey", "OPENAI_API_KEY": api_key}),
             encoding="utf-8",
         )
         auth_file.chmod(0o600)
