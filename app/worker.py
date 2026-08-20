@@ -12,19 +12,28 @@ from app.services.executor import execute_task
 
 def process_one() -> bool:
     with SessionLocal() as db:
-        task = db.scalar(select(Task).where(Task.status == TaskStatus.queued).order_by(Task.priority.desc(), Task.created_at).limit(1))
+        task = db.scalar(
+            select(Task)
+            .where(Task.status == TaskStatus.queued)
+            .order_by(Task.priority.desc(), Task.created_at)
+            .limit(1)
+        )
         if not task:
             return False
+
         project = db.get(Project, task.project_id)
         task.status = TaskStatus.running
         run = Run(task_id=task.id)
         db.add(run)
         db.commit()
+
         try:
             result = execute_task(project, task)
             run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
             run.summary = result.get("summary", "Execution completed")
             run.logs = json.dumps(result, ensure_ascii=False)
+            if branch := result.get("branch"):
+                task.branch_name = str(branch)
             task.status = TaskStatus.review if run.status == "success" else TaskStatus.failed
             outcome = run.status
         except Exception as error:
@@ -32,8 +41,18 @@ def process_one() -> bool:
             run.summary = str(error)
             task.status = TaskStatus.failed
             outcome = "failed"
+
         run.finished_at = datetime.now(timezone.utc)
-        record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.executed", outcome=outcome, details={"run_id": run.id})
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor="worker",
+            action="task.executed",
+            outcome=outcome,
+            details={"run_id": run.id, "branch": task.branch_name},
+        )
         db.commit()
         return True
 
