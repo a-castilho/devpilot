@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
@@ -28,7 +28,27 @@ class CurrentUserResponse(BaseModel):
     workspace_id: str | None = None
     email: str | None = None
     role: str
+    active: bool = True
     bootstrap: bool = False
+    full_name: str | None = None
+    phone: str | None = None
+    job_title: str | None = None
+    bio: str | None = None
+    avatar_url: str | None = None
+    locale: str = "pt-BR"
+    timezone: str = "America/Sao_Paulo"
+
+
+class ProfileUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    full_name: str | None = Field(default=None, max_length=160)
+    phone: str | None = Field(default=None, max_length=40)
+    job_title: str | None = Field(default=None, max_length=120)
+    bio: str | None = Field(default=None, max_length=1000)
+    avatar_url: str | None = Field(default=None, max_length=500)
+    locale: str = Field(default="pt-BR", min_length=2, max_length=20)
+    timezone: str = Field(default="America/Sao_Paulo", min_length=3, max_length=80)
 
 
 class OrganizationCreate(BaseModel):

@@ -3,13 +3,14 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import User, Workspace
+from app.models import User, UserProfile, Workspace
 from app.schemas import (
     AccessTokenResponse,
     AuthStatusResponse,
     BootstrapUserRequest,
     CurrentUserResponse,
     LoginRequest,
+    ProfileUpdate,
 )
 from app.security import (
     _DUMMY_PASSWORD_HASH,
@@ -39,6 +40,32 @@ def normalized_email(value: str) -> str:
     return value.strip().lower()
 
 
+def _profile_for(db: Session, user: User) -> UserProfile:
+    profile = db.scalar(select(UserProfile).where(UserProfile.user_id == user.id))
+    if profile is None:
+        profile = UserProfile(user_id=user.id)
+        db.add(profile)
+        db.flush()
+    return profile
+
+
+def _public_user(user: User, profile: UserProfile) -> CurrentUserResponse:
+    return CurrentUserResponse(
+        id=user.id,
+        workspace_id=user.workspace_id,
+        email=user.email,
+        role=user.role,
+        active=user.active,
+        full_name=profile.full_name,
+        phone=profile.phone,
+        job_title=profile.job_title,
+        bio=profile.bio,
+        avatar_url=profile.avatar_url,
+        locale=profile.locale,
+        timezone=profile.timezone,
+    )
+
+
 @router.get("/status", response_model=AuthStatusResponse)
 def status(db: Session = Depends(get_db)):
     users = db.scalar(select(func.count(User.id))) or 0
@@ -65,6 +92,7 @@ def bootstrap_user(
     )
     db.add(user)
     db.flush()
+    db.add(UserProfile(user_id=user.id))
     token, ttl = create_access_token(user)
     db.commit()
     return AccessTokenResponse(access_token=token, expires_in=ttl)
@@ -84,11 +112,44 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=CurrentUserResponse)
-def me(principal: Principal = Depends(current_principal)):
-    return CurrentUserResponse(
-        id=principal.user_id,
-        workspace_id=principal.workspace_id,
-        email=principal.email,
-        role=principal.role.value,
-        bootstrap=principal.bootstrap,
-    )
+def me(
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.bootstrap:
+        return CurrentUserResponse(
+            role=Role.ADMIN.value,
+            bootstrap=True,
+            full_name="Administrador bootstrap",
+        )
+    user = db.get(User, principal.user_id)
+    if user is None or not user.active:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    profile = _profile_for(db, user)
+    db.commit()
+    return _public_user(user, profile)
+
+
+@router.patch("/me", response_model=CurrentUserResponse)
+def update_me(
+    payload: ProfileUpdate,
+    principal: Principal = Depends(current_principal),
+    db: Session = Depends(get_db),
+):
+    if principal.bootstrap:
+        raise HTTPException(status_code=409, detail="Perfil bootstrap não é persistente")
+    user = db.get(User, principal.user_id)
+    if user is None or not user.active:
+        raise HTTPException(status_code=404, detail="Usuário não encontrado")
+    profile = _profile_for(db, user)
+    values = payload.model_dump(exclude_unset=True)
+    for key, value in values.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        setattr(profile, key, value)
+    if not profile.locale:
+        profile.locale = "pt-BR"
+    if not profile.timezone:
+        profile.timezone = "America/Sao_Paulo"
+    db.commit()
+    return _public_user(user, profile)

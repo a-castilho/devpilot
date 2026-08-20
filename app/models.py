@@ -53,6 +53,25 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(20), default="user")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    profile: Mapped["UserProfile | None"] = relationship(
+        back_populates="user", cascade="all, delete-orphan", uselist=False
+    )
+
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    full_name: Mapped[str | None] = mapped_column(String(160))
+    phone: Mapped[str | None] = mapped_column(String(40))
+    job_title: Mapped[str | None] = mapped_column(String(120))
+    bio: Mapped[str | None] = mapped_column(Text)
+    avatar_url: Mapped[str | None] = mapped_column(String(500))
+    locale: Mapped[str] = mapped_column(String(20), default="pt-BR")
+    timezone: Mapped[str] = mapped_column(String(80), default="America/Sao_Paulo")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, onupdate=now)
+    user: Mapped[User] = relationship(back_populates="profile")
 
 
 class Organization(Base):

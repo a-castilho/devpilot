@@ -48,7 +48,11 @@ def spa(path: str):
     if path and candidate.is_file():
         return FileResponse(candidate)
     html = (STATIC / "index.html").read_text(encoding="utf-8")
-    capture_script = '<script src="/assets/telemetry-capture.js" defer></script>'
-    if capture_script not in html:
-        html = html.replace("</body>", f"  {capture_script}\n</body>")
+    scripts = [
+        '<script src="/assets/telemetry-capture.js" defer></script>',
+        '<script src="/assets/profile.js" defer></script>',
+    ]
+    for script in scripts:
+        if script not in html:
+            html = html.replace("</body>", f"  {script}\n</body>")
     return HTMLResponse(html)
