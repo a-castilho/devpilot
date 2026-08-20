@@ -187,15 +187,9 @@
     if (!MOBILE || view.dataset.mobileBridge === '1') return;
     view.dataset.mobileBridge = '1';
 
-    window.addEventListener('pointermove', event => {
-      if (!viewIsActive(view) || event.pointerType === 'mouse') return;
-      window.dispatchEvent(new MouseEvent('mousemove', {
-        clientX: event.clientX,
-        clientY: event.clientY,
-        bubbles: false,
-      }));
-    }, {passive: true});
-
+    // O frame compilado registra pointer events nativos. Reemitir mousemove de
+    // touch duplicava a telemetria e fazia o navegador redesenhar em excesso.
+    let lastScrollAt = 0;
     window.addEventListener('scroll', () => {
       if (!viewIsActive(view)) {
         parentLastScrollY = window.scrollY;
@@ -207,11 +201,9 @@
       parentLastScrollY = current;
       if (!delta) return;
 
-      window.dispatchEvent(new WheelEvent('wheel', {
-        deltaY: delta,
-        bubbles: false,
-      }));
-
+      const now = performance.now();
+      if (now - lastScrollAt < 120) return;
+      lastScrollAt = now;
       bridgeScrollToFrame(view, delta);
     }, {passive: true});
   }
@@ -285,31 +277,13 @@
           .chart{height:250px !important;min-height:250px !important}
           .panel{overflow:visible !important}
           .chart-line{filter:drop-shadow(0 0 5px rgba(59,228,208,.55))}
-          .chart-point{animation:devpilotChartPulse .75s ease-in-out infinite alternate}
+          .chart-point{filter:drop-shadow(0 0 3px rgba(59,228,208,.45))}
         }
-        @keyframes devpilotChartPulse{to{r:6;opacity:.6}}
       `;
       doc.head.appendChild(style);
 
-      const synthMove = (x, y) => {
-        doc.dispatchEvent(new MouseEvent('mousemove', {
-          clientX: x,
-          clientY: y,
-          bubbles: true,
-        }));
-      };
-
-      doc.addEventListener('pointermove', event => {
-        if (event.pointerType === 'mouse') return;
-        synthMove(event.clientX, event.clientY);
-      }, {passive: true});
-
-      doc.addEventListener('touchmove', event => {
-        const touch = event.touches?.[0];
-        if (!touch) return;
-        synthMove(touch.clientX, touch.clientY);
-      }, {passive: true});
-
+      // O iframe compilado recebe pointermove nativamente. Não sintetizamos
+      // mousemove: em Chromium isso cria uma segunda sequência de eventos.
       const resize = () => resizeFrameToContent(frame);
       window.setTimeout(resize, 0);
       window.setTimeout(resize, 250);
@@ -489,7 +463,7 @@
         replaceMouseInstruction(view);
         syncMobileKeyboard(view);
       });
-      observer.observe(view, {childList: true, subtree: true, characterData: true});
+      observer.observe(view, {childList: true, subtree: true});
     }
   }
 
@@ -500,6 +474,18 @@
   injectStyles();
   scan();
 
-  const rootObserver = new MutationObserver(scan);
-  rootObserver.observe(document.documentElement, {childList: true, subtree: true});
+  let scanFrame = 0;
+  function scheduleScan() {
+    if (scanFrame) return;
+    scanFrame = window.requestAnimationFrame(() => {
+      scanFrame = 0;
+      scan();
+    });
+  }
+
+  const rootObserver = new MutationObserver(scheduleScan);
+  rootObserver.observe(document.querySelector('main') || document.body, {
+    childList: true,
+    subtree: true,
+  });
 })();
