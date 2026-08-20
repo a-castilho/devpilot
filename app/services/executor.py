@@ -411,6 +411,16 @@ def execute_task(project: Project, task: Task) -> dict:
         )
         result["agents_md_generated"] = True
         result["agents_md_path"] = AGENTS_FILE_NAME
+        if result.get("exit_code", 1) == 0:
+            result["summary"] = (
+                "Análise concluída e AGENTS.md gerado/atualizado. "
+                "O relatório para o cliente está disponível abaixo."
+            )
+        else:
+            result["summary"] = (
+                f"{result.get('summary', 'A análise terminou com falha.')} "
+                "O AGENTS.md foi preservado com o contexto disponível."
+            )
         return result
 
     if not settings.execution_enabled:
