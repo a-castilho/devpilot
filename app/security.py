@@ -254,3 +254,15 @@ def ensure_can_manage_role(actor: Role, target: Role) -> Role:
     if not can_manage_role(canonical_role(actor), target):
         raise HTTPException(status_code=403, detail="Você não pode atribuir este perfil")
     return target
+
+
+def require_bootstrap_access(authorization: str | None = Header(default=None)) -> str:
+    token = _bearer_token(authorization)
+    expected = get_settings().bootstrap_token
+    if not expected or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Invalid or missing bootstrap token")
+    return "owner"
+
+
+def privacy_id(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()[:32]
