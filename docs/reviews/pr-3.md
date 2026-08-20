@@ -8,7 +8,7 @@
 - **Autor:** @acastilho
 - **Base:** `main`
 - **Head:** `feat/agentos-core`
-- **Atualizada em:** 2026-08-19T20:42:51Z
+- **Atualizada em:** 2026-08-20T04:14:13Z
 - **Fonte:** https://github.com/a-castilho/devpilot/pull/3
 
 ## Sinais automáticos de revisão
@@ -16,13 +16,14 @@
 - **Referência de issue detectada:** NÃO
 - **Mudança de UI provável:** SIM
 - **Evidência visual detectada:** NÃO
-- **Arquivos alterados:** 70
+- **Arquivos alterados:** 75
 
 > Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.
 
 ## Arquivos alterados
 
-- `.env.example` (+25/-0)
+- `.env.example` (+31/-0)
+- `.github/workflows/ci.yml` (+5/-0)
 - `AGENTS.md` (+17/-0)
 - `README.md` (+169/-25)
 - `app/agentos/__init__.py` (+6/-0)
@@ -61,23 +62,26 @@
 - `app/agentos/rag.py` (+139/-0)
 - `app/agentos/router.py` (+366/-0)
 - `app/api.py` (+179/-5)
-- `app/config.py` (+25/-0)
-- `app/main.py` (+10/-2)
+- `app/config.py` (+31/-0)
+- `app/main.py` (+12/-2)
 - `app/mcp_server.py` (+72/-0)
 - `app/preflight.py` (+150/-0)
 - `app/provider_runtime_router.py` (+110/-0)
 - `app/schemas.py` (+5/-0)
-- `app/services/executor.py` (+88/-14)
+- `app/services/executor.py` (+400/-23)
 - `app/services/local_executor.py` (+300/-0)
 - `app/services/provider_models.py` (+211/-0)
 - `app/services/provider_runtime.py` (+281/-0)
 - `app/static/app.js` (+12/-4)
-- `app/static/index.html` (+4/-1)
+- `app/static/execution-recovery.js` (+188/-0)
+- `app/static/index.html` (+5/-1)
 - `app/static/provider-models.css` (+28/-0)
 - `app/static/results.css` (+3/-0)
-- `app/worker.py` (+45/-3)
+- `app/task_recovery.py` (+52/-0)
+- `app/worker.py` (+58/-5)
 - `docs/agentos-architecture.md` (+170/-0)
 - `docs/agentos-platform.md` (+174/-0)
+- `docs/codex-execution-recovery.md` (+80/-0)
 - `docs/local-execution.md` (+104/-0)
 - `docs/provider-models.md` (+94/-0)
 - `pyproject.toml` (+3/-2)
@@ -89,7 +93,8 @@
 - `tests/test_agentos_model_gateway.py` (+177/-0)
 - `tests/test_agentos_platform.py` (+250/-0)
 - `tests/test_agentos_reliability.py` (+143/-0)
-- `tests/test_executor.py` (+166/-0)
+- `tests/test_codex_recovery.py` (+179/-0)
+- `tests/test_executor.py` (+170/-0)
 - `tests/test_provider_models.py` (+104/-0)
 - `tests/test_provider_runtime.py` (+214/-0)
 
@@ -224,14 +229,3 @@ The 4 GB profile caps repository files, per-file characters, total indexed chara
 2. Diff e arquivos alterados.
 3. Resultado observável/tela.
 4. Divergências antes do merge.
-
-<!-- COMPROMISSO-GERAL-A-CASTILHO -->
-
----
-
-## Compromisso Geral
-
-**Sempre na melhor prática. No caminho do bem maior.**
-
-**Ir até o fim sem sair do caminho, seja ele qual for.**
-
