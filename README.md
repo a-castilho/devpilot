@@ -1,5 +1,7 @@
 # DevPilot — seu desenvolvedor
 
+**Atualizado em: 20/08/2026**
+
 DevPilot é um SaaS leve para automatizar desenvolvimento de software por dashboard, API
 ou voz. Ele organiza múltiplos projetos e tarefas, aplica instruções `AGENTS.md`, controla
 configurações do Codex, executa trabalho em branches isoladas e registra cada decisão em
