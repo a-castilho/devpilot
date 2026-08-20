@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 import app.models  # noqa: F401
 from app.api import router
 from app.auth_routes import router as auth_router
+from app.provider_models_routes import router as provider_models_router
 from app.user_routes import router as users_router
 from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
@@ -29,6 +30,7 @@ app = FastAPI(title="DevPilot API", version="1.0.0", lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
+app.include_router(provider_models_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
@@ -55,6 +57,7 @@ def spa(path: str):
         '<script src="/assets/profile.js" defer></script>',
         '<script src="/assets/auth-ui.js" defer></script>',
         '<script src="/assets/users.js" defer></script>',
+        '<script src="/assets/provider-models.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
