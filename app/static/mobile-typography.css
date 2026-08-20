@@ -1,6 +1,11 @@
-/* DevPilot global UI scale v1
- * Increases readability and touch targets across the whole dashboard while
- * preserving the eight-item mobile navigation and existing responsive layout.
+/* DevPilot global UI scale v2
+ * Mobile-first readability hierarchy:
+ * - body text: 18px
+ * - secondary/meta text: minimum 16px
+ * - card titles/important values: 20-24px
+ * - section titles: 24-28px
+ * - buttons/controls: 18px
+ * Preserves the existing responsive layout and mobile navigation.
  */
 
 html {
@@ -105,7 +110,7 @@ small,
   input,
   textarea,
   select {
-    font-size: 17px !important;
+    font-size: 18px !important;
   }
 
   main {
@@ -115,8 +120,8 @@ small,
   }
 
   h1 {
-    font-size: clamp(34px, 9vw, 42px) !important;
-    line-height: 1.08 !important;
+    font-size: clamp(28px, 7.5vw, 34px) !important;
+    line-height: 1.12 !important;
     margin-bottom: 18px;
   }
 
@@ -125,21 +130,22 @@ small,
   #task-modal .task-modal-heading h2,
   .reports-hero h2,
   .provider-hero h2 {
-    font-size: clamp(30px, 8vw, 39px) !important;
-    line-height: 1.14 !important;
+    font-size: clamp(24px, 6.8vw, 28px) !important;
+    line-height: 1.18 !important;
   }
 
   h3,
   .panel h3,
   .project-card h3,
-  .provider-panel h3 {
-    font-size: 21px !important;
+  .provider-panel h3,
+  .section-head h3 {
+    font-size: 22px !important;
     line-height: 1.3 !important;
   }
 
   h4,
   .provider-card h4 {
-    font-size: 18px !important;
+    font-size: 20px !important;
     line-height: 1.35 !important;
   }
 
@@ -162,71 +168,14 @@ small,
     line-height: 1.6 !important;
   }
 
-  .eyebrow {
-    font-size: 13px !important;
-    line-height: 1.35 !important;
-    letter-spacing: .14em;
-  }
-
+  /* Secondary/meta text never drops below 16px on mobile. */
+  .eyebrow,
   .pill,
   th,
   .status,
   .provider-status,
   .catalog-source,
-  .provider-chip {
-    font-size: 13px !important;
-    line-height: 1.35 !important;
-  }
-
-  label,
-  #task-modal label,
-  #provider-modal label {
-    font-size: 17px !important;
-    line-height: 1.4 !important;
-    gap: 8px;
-  }
-
-  input,
-  textarea,
-  select,
-  #task-modal input,
-  #task-modal textarea,
-  #task-modal select {
-    min-height: 52px !important;
-    padding: 14px 15px !important;
-    font-size: 17px !important;
-    line-height: 1.45 !important;
-  }
-
-  textarea {
-    min-height: 144px;
-  }
-
-  input::placeholder,
-  textarea::placeholder {
-    font-size: 16px !important;
-    line-height: 1.45 !important;
-    opacity: .86;
-  }
-
-  button,
-  .primary,
-  .ghost,
-  .voice,
-  .link,
-  .provider-card-actions button,
-  .reports-actions button {
-    font-size: 17px !important;
-    line-height: 1.25 !important;
-  }
-
-  .primary,
-  .ghost,
-  .voice {
-    min-height: 50px;
-    padding: 13px 17px;
-  }
-
+  .provider-chip,
   small,
   .hint,
   #task-modal .task-context small,
@@ -241,8 +190,61 @@ small,
   .report-meta,
   .provider-card small,
   .model-catalog-status {
-    font-size: 15px !important;
+    font-size: 16px !important;
     line-height: 1.5 !important;
+  }
+
+  .eyebrow {
+    letter-spacing: .12em;
+  }
+
+  label,
+  #task-modal label,
+  #provider-modal label {
+    font-size: 18px !important;
+    line-height: 1.4 !important;
+    gap: 8px;
+  }
+
+  input,
+  textarea,
+  select,
+  #task-modal input,
+  #task-modal textarea,
+  #task-modal select {
+    min-height: 54px !important;
+    padding: 14px 15px !important;
+    font-size: 18px !important;
+    line-height: 1.45 !important;
+  }
+
+  textarea {
+    min-height: 144px;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    font-size: 16px !important;
+    line-height: 1.45 !important;
+    opacity: .9;
+  }
+
+  button,
+  .primary,
+  .ghost,
+  .voice,
+  .link,
+  .provider-card-actions button,
+  .reports-actions button {
+    font-size: 18px !important;
+    line-height: 1.25 !important;
+  }
+
+  .primary,
+  .ghost,
+  .voice {
+    min-height: 52px;
+    padding: 13px 17px;
   }
 
   .list-row strong,
@@ -250,8 +252,10 @@ small,
   #task-modal .task-assist-card strong,
   .reports-note b,
   .provider-security strong,
-  .catalog-card strong {
-    font-size: 17px !important;
+  .catalog-card strong,
+  .panel strong,
+  .project-card strong {
+    font-size: 20px !important;
     line-height: 1.4 !important;
   }
 
@@ -262,7 +266,8 @@ small,
   }
 
   .metric strong {
-    font-size: 31px !important;
+    font-size: 24px !important;
+    line-height: 1.25 !important;
   }
 
   .list-row {
@@ -284,12 +289,13 @@ small,
     width: 46px;
     height: 46px;
     padding: 0;
-    font-size: 31px !important;
+    font-size: 30px !important;
     line-height: 1 !important;
   }
 
   .sidebar .nav {
     min-height: 52px;
+    font-size: 18px !important;
   }
 
   .sidebar .nav::before {
@@ -300,6 +306,38 @@ small,
     width: 54px !important;
     height: 54px !important;
     min-width: 54px !important;
+  }
+
+  /* Generic mobile text fallbacks for technical/example screens. */
+  .card-title,
+  .panel-title,
+  .section-title,
+  .metric-value,
+  .stat-value,
+  .event-value,
+  .event-title {
+    font-size: 22px !important;
+    line-height: 1.3 !important;
+  }
+
+  .card-label,
+  .metric-label,
+  .stat-label,
+  .event-time,
+  .event-type,
+  .meta,
+  .caption,
+  .helper-text,
+  .footer-note {
+    font-size: 16px !important;
+    line-height: 1.5 !important;
+  }
+
+  .event-description,
+  .technical-note,
+  .analysis-note {
+    font-size: 18px !important;
+    line-height: 1.55 !important;
   }
 }
 
@@ -314,7 +352,12 @@ small,
   }
 
   h1 {
-    font-size: clamp(35px, 10vw, 42px) !important;
+    font-size: clamp(28px, 8vw, 32px) !important;
+  }
+
+  h2,
+  .section-head h2 {
+    font-size: 26px !important;
   }
 
   .section-head {
