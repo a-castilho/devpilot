@@ -1,0 +1,117 @@
+/* DevPilot mobile: um quadro por tela.
+ *
+ * Objetivo: em telas mobile, cada bloco principal ocupa ao menos a area
+ * utilizavel do viewport. Isso evita que o quadro seguinte apareca parcialmente
+ * na parte inferior da tela e mantem a navegacao inferior sempre preservada.
+ */
+@media (max-width: 900px) {
+  :root {
+    --dp-mobile-nav-height: calc(76px + env(safe-area-inset-bottom));
+    --dp-mobile-gap: 14px;
+    --dp-mobile-frame-height: calc(100dvh - var(--dp-mobile-nav-height) - 28px);
+    --dp-mobile-card-height: calc(100dvh - var(--dp-mobile-nav-height) - 112px);
+  }
+
+  html {
+    scroll-snap-type: y proximity;
+    scroll-padding-bottom: var(--dp-mobile-nav-height);
+  }
+
+  body {
+    overscroll-behavior-y: contain;
+  }
+
+  main {
+    padding-bottom: calc(var(--dp-mobile-nav-height) + 18px) !important;
+  }
+
+  /* Primeira tela da Visao geral: cabecalho + hero fecham exatamente o quadro.
+     O bloco de metricas so entra depois do primeiro scroll. */
+  #overview-view > .hero {
+    min-height: calc(100dvh - var(--dp-mobile-nav-height) - 150px) !important;
+    margin-bottom: var(--dp-mobile-gap) !important;
+    align-content: center;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* Segunda tela: indicadores. */
+  #overview-view > .metrics {
+    min-height: var(--dp-mobile-frame-height);
+    margin: 0 0 var(--dp-mobile-gap) !important;
+    align-content: center;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* No mobile os dois paineis da grade passam a ser quadros independentes. */
+  #overview-view > .grid-two {
+    display: contents;
+  }
+
+  #overview-view > .grid-two > .panel {
+    min-height: var(--dp-mobile-frame-height);
+    margin: 0 0 var(--dp-mobile-gap);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* Listas de organizacoes, projetos e provedores: um card por tela. */
+  #organizations-view > .cards,
+  #projects-view > .cards,
+  #providers-view > .cards {
+    display: contents;
+  }
+
+  #organizations-view .project-card,
+  #projects-view .project-card,
+  #providers-view .project-card {
+    min-height: var(--dp-mobile-card-height);
+    margin: 0 0 var(--dp-mobile-gap);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* Telas que possuem um unico quadro principal tambem respeitam o viewport. */
+  #tasks-view > .panel,
+  #audit-view > .panel,
+  #reports-view > .reports-shell {
+    min-height: var(--dp-mobile-card-height);
+    margin-bottom: var(--dp-mobile-gap);
+    scroll-snap-align: start;
+    scroll-snap-stop: always;
+  }
+
+  /* Garante que nenhum bloco horizontal provoque vazamento lateral ao crescer. */
+  #overview-view > .hero,
+  #overview-view > .metrics,
+  #overview-view > .grid-two > .panel,
+  #organizations-view .project-card,
+  #projects-view .project-card,
+  #providers-view .project-card,
+  #tasks-view > .panel,
+  #audit-view > .panel,
+  #reports-view > .reports-shell {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  :root {
+    --dp-mobile-gap: 12px;
+    --dp-mobile-frame-height: calc(100dvh - var(--dp-mobile-nav-height) - 24px);
+    --dp-mobile-card-height: calc(100dvh - var(--dp-mobile-nav-height) - 102px);
+  }
+
+  #overview-view > .hero {
+    min-height: calc(100dvh - var(--dp-mobile-nav-height) - 136px) !important;
+  }
+}
