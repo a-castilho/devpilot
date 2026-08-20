@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/devpilot.db"
     data_dir: Path = Path("./data")
     repositories_dir: Path = Path("./data/repositories")
+    host_actions_dir: Path = Path("./runtime/host-actions")
     bootstrap_token: str = "development-only-token-change-me"
     auth_secret: str = ""
     auth_token_ttl_seconds: int = 3600
@@ -27,6 +28,10 @@ class Settings(BaseSettings):
     def prepare(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.repositories_dir.mkdir(parents=True, exist_ok=True)
+        self.host_actions_dir.mkdir(parents=True, exist_ok=True)
+        (self.host_actions_dir / "pending").mkdir(parents=True, exist_ok=True)
+        (self.host_actions_dir / "processed").mkdir(parents=True, exist_ok=True)
+        (self.host_actions_dir / "failed").mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache
