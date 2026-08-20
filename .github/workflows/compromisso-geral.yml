@@ -1,0 +1,81 @@
+name: Compromisso geral da documentacao
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '*.md'
+      - '**/*.md'
+      - '.github/workflows/compromisso-geral.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: compromisso-geral-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  aplicar:
+    name: Aplicar compromisso em todos os Markdown
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Aplicar bloco padrao
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          marker='<!-- COMPROMISSO-GERAL-A-CASTILHO -->'
+          block_file="$(mktemp)"
+
+          cat > "$block_file" <<'EOF'
+          <!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+          ---
+
+          ## Compromisso Geral
+
+          **Sempre na melhor prática. No caminho do bem maior.**
+
+          **Ir até o fim sem sair do caminho, seja ele qual for.**
+          EOF
+
+          changed=0
+          while IFS= read -r -d '' file; do
+            if ! grep -Fq "$marker" "$file"; then
+              {
+                printf '\n'
+                cat "$block_file"
+                printf '\n'
+              } >> "$file"
+              echo "Compromisso aplicado: $file"
+              changed=1
+            fi
+          done < <(git ls-files -z -- '*.md')
+
+          rm -f "$block_file"
+
+          if [[ "$changed" -eq 0 ]]; then
+            echo 'Todos os documentos Markdown já estão em conformidade.'
+            exit 0
+          fi
+
+          git config user.name 'a-castilho-docs-bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo 'Nenhuma alteração pendente.'
+            exit 0
+          fi
+
+          git commit -m 'docs: aplicar compromisso geral em toda documentação'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
