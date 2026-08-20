@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from app.services.vault import Vault
 
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
+READ_ONLY_MODE_MARKER = "[DEVPILOT_MODE=analysis-read-only]"
 
 
 def repository_path(project: Project) -> Path:
@@ -98,15 +100,93 @@ def ensure_repository(project: Project) -> Path:
     return path
 
 
+def is_read_only_task(task: Task) -> bool:
+    prompt = str(task.prompt or "")
+    normalized = prompt.casefold()
+    return READ_ONLY_MODE_MARKER.casefold() in normalized or "não modifique arquivos" in normalized
+
+
+def codex_command(project: Project, prompt: str) -> list[str]:
+    config = json.loads(project.codex_config or "{}")
+    command = ["codex", "exec", "--json"]
+    if model := config.get("model"):
+        command.extend(["--model", str(model)])
+    command.append(prompt)
+    return command
+
+
+def task_timeout(project: Project) -> int:
+    config = json.loads(project.codex_config or "{}")
+    return int(config.get("timeout_seconds", 1800))
+
+
+def execute_read_only_analysis(project: Project, task: Task, repository: Path) -> dict:
+    """Run analysis in a disposable worktree so tracked project files are never persisted."""
+    with tempfile.TemporaryDirectory(prefix=f"devpilot-analysis-{task.id[:8]}-") as temp_dir:
+        analysis_path = Path(temp_dir) / "repository"
+        worktree = run(
+            [
+                "git",
+                "worktree",
+                "add",
+                "--detach",
+                str(analysis_path),
+                f"origin/{project.default_branch}",
+            ],
+            cwd=repository,
+        )
+        if worktree.returncode:
+            raise RuntimeError(worktree.stderr.strip() or "Unable to prepare isolated analysis workspace")
+
+        try:
+            rules = (
+                f"\n\nProject instructions (reference only):\n{project.agents_md}"
+                if project.agents_md
+                else ""
+            )
+            prompt = (
+                f"Task: {task.title}\n\n{task.prompt}{rules}\n\n"
+                "This is a READ-ONLY ANALYSIS. Inspect the repository and produce a technical report "
+                "with concrete evidence, risks, impact, recommendations, and estimated effort. "
+                "Do not implement, edit, create, delete, rename, commit, push, or merge project files. "
+                "If a change would be useful, describe it instead of applying it."
+            )
+            result = run(
+                codex_command(project, prompt),
+                cwd=analysis_path,
+                timeout=task_timeout(project),
+            )
+            status = run(["git", "status", "--porcelain"], cwd=analysis_path)
+            attempted_changes = bool(status.stdout.strip()) if status.returncode == 0 else None
+            return {
+                "mode": "analysis-read-only",
+                "exit_code": result.returncode,
+                "summary": "Read-only analysis completed in an isolated disposable worktree.",
+                "stdout": result.stdout[-100_000:],
+                "stderr": result.stderr[-20_000:],
+                "attempted_changes": attempted_changes,
+                "persisted_changes": False,
+                "branch": "",
+            }
+        finally:
+            run(["git", "worktree", "remove", "--force", str(analysis_path)], cwd=repository)
+            run(["git", "worktree", "prune"], cwd=repository)
+
+
 def execute_task(project: Project, task: Task) -> dict:
     settings = get_settings()
+    read_only = is_read_only_task(task)
     if not settings.execution_enabled:
         return {
-            "mode": "dry-run",
+            "mode": "analysis-read-only-dry-run" if read_only else "dry-run",
             "summary": "Execution is disabled; task and audit trail were created successfully.",
             "planned_command": ["codex", "exec", "--json", "<task prompt>"],
         }
+
     path = ensure_repository(project)
+    if read_only:
+        return execute_read_only_analysis(project, task, path)
+
     if project.agents_md:
         (path / "AGENTS.md").write_text(project.agents_md, encoding="utf-8")
     branch = task.branch_name or f"devpilot/{task.id[:8]}"
@@ -118,15 +198,11 @@ def execute_task(project: Project, task: Task) -> dict:
         "Inspect the repository, implement the smallest complete change, run relevant checks, "
         "and summarize changes and remaining risks. Do not push or merge."
     )
-    config = json.loads(project.codex_config or "{}")
-    command = ["codex", "exec", "--json"]
-    if model := config.get("model"):
-        command.extend(["--model", str(model)])
-    command.append(prompt)
-    result = run(command, cwd=path, timeout=int(config.get("timeout_seconds", 1800)))
+    result = run(codex_command(project, prompt), cwd=path, timeout=task_timeout(project))
     return {
         "mode": "execute",
         "exit_code": result.returncode,
+        "summary": "Execution completed on an isolated task branch.",
         "stdout": result.stdout[-100_000:],
         "stderr": result.stderr[-20_000:],
         "branch": branch,
