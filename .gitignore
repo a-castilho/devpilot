@@ -6,5 +6,6 @@ __pycache__/
 .coverage
 *.egg-info/
 data/
+runtime/
 *.db
 *.log
