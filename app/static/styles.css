@@ -89,3 +89,7 @@
   .voice-dock button{width:46px;height:46px}
   .toast{left:12px;right:12px}
 }
+
+
+/* Analysis instructions disclosure */
+.task-instructions{margin:0 0 12px;border:1px solid var(--line);border-radius:10px;background:#08142188;overflow:hidden}.task-instructions summary{padding:10px 12px;color:var(--cyan);font-size:12px;font-weight:750;cursor:pointer;list-style:none}.task-instructions summary::-webkit-details-marker{display:none}.task-instructions summary::after{content:'+';float:right;font-size:16px;line-height:1}.task-instructions[open] summary::after{content:'−'}.task-instructions-content{padding:0 12px 12px;border-top:1px solid var(--line)}.task-instructions-content .eyebrow{display:block;margin-top:12px}.task-instructions-content p{margin:6px 0 0;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:#c8d5e5;font-size:13px}.recent-task{border-top:1px solid var(--line)}.recent-task .list-row{border-top:0}.task-instructions-row td{padding-top:0}.task-instructions-empty{color:var(--muted);font-size:11px}@media(max-width:900px){.task-instructions-content p{max-height:180px}.task-instructions-row td{min-width:680px}}

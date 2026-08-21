@@ -343,8 +343,6 @@
     setTimeout(enhanceOpenDialog, 80);
   }, true);
 
-  new MutationObserver(() => {
-    const dialog = document.querySelector('#task-log-modal');
-    if (dialog?.open && context.runId) setTimeout(enhanceOpenDialog, 30);
-  }).observe(document.body, {subtree:true, childList:true, attributes:true, attributeFilter:['open']});
+  // O clique em .task-log-link já agenda a carga do complemento. Observar todo o
+  // modal criava um ciclo: renderizar -> mutação no DOM -> nova chamada à API.
 })();
