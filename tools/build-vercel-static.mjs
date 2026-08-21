@@ -21,6 +21,7 @@ const scripts = [
   'voice-local-update.js',
   'voice-microphone-permission.js',
   'task-failures.js',
+  'task-image-upload.js',
   'consolidated-ui.js',
   'organization-normalization-ui.js',
   'example-project.js',
