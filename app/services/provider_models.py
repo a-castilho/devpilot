@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 
 import httpx
@@ -58,6 +59,19 @@ REFERENCE_MODEL_CATALOG: dict[str, tuple[ProviderModel, ...]] = {
     ),
 }
 
+_OPENAI_TEXT_MODEL = re.compile(r"^(?:gpt-|o\d|codex)", re.IGNORECASE)
+_OPENAI_NON_TEXT_HINTS = (
+    "audio",
+    "embedding",
+    "image",
+    "moderation",
+    "realtime",
+    "search",
+    "transcrib",
+    "tts",
+    "whisper",
+)
+
 
 def reference_provider_models(provider: str) -> list[ProviderModel]:
     return list(REFERENCE_MODEL_CATALOG.get(provider.strip().lower(), ()))
@@ -73,6 +87,61 @@ def _dedupe(models: list[ProviderModel]) -> list[ProviderModel]:
         seen.add(model_id)
         result.append(ProviderModel(id=model_id, label=model.label.strip() or model_id))
     return result
+
+
+def _is_recommended_candidate(provider: str, model: ProviderModel) -> bool:
+    if provider != "openai":
+        return True
+    model_id = model.id.casefold()
+    return bool(_OPENAI_TEXT_MODEL.search(model.id)) and not any(
+        hint in model_id for hint in _OPENAI_NON_TEXT_HINTS
+    )
+
+
+def recommended_provider_models(
+    provider: str,
+    models: list[ProviderModel],
+    *,
+    limit: int = 6,
+) -> list[ProviderModel]:
+    """Return a small, useful default set instead of persisting an entire provider catalog.
+
+    Reference models are preferred when the account exposes them. If those exact model IDs are not
+    available, provider-specific text/code candidates are used. The function never invents model IDs:
+    every recommendation comes from the provider response supplied in ``models``.
+    """
+    provider = provider.strip().lower()
+    available = _dedupe(models)
+    if limit <= 0 or not available:
+        return []
+
+    by_id = {model.id: model for model in available}
+    selected: list[ProviderModel] = []
+    seen: set[str] = set()
+
+    for reference in reference_provider_models(provider):
+        model = by_id.get(reference.id)
+        if model and model.id not in seen and _is_recommended_candidate(provider, model):
+            selected.append(model)
+            seen.add(model.id)
+            if len(selected) >= limit:
+                return selected
+
+    candidates = [model for model in available if _is_recommended_candidate(provider, model)]
+    if provider == "openai":
+        candidates = sorted(candidates, key=lambda item: item.id.casefold(), reverse=True)
+
+    for model in candidates:
+        if model.id in seen:
+            continue
+        selected.append(model)
+        seen.add(model.id)
+        if len(selected) >= limit:
+            break
+
+    if selected:
+        return selected
+    return available[:limit]
 
 
 def _request_json(
