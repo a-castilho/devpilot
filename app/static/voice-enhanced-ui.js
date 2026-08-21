@@ -6,23 +6,24 @@
   const statusNode = modal?.querySelector('#voice-status');
   const startButton = modal?.querySelector('#voice-start');
   const modeSelect = modal?.querySelector('#voice-output-mode');
+  const playbackButton = modal?.querySelector('#voice-playback');
   const actions = modal?.querySelector('.hero-actions');
 
   if (!modal || !panel || !project || !transcript || !statusNode || !startButton || !actions) return;
-  if (panel.dataset.voiceEnhancedUi === '2') return;
-  panel.dataset.voiceEnhancedUi = '2';
+  if (panel.dataset.voiceEnhancedUi === '3') return;
+  panel.dataset.voiceEnhancedUi = '3';
 
   // O áudio é capturado somente pelo botão Gravar. Não existe mais botão para
   // selecionar/enviar arquivo de áudio nem botão manual para enviar a fala.
+  // "Ouvir transcrição" permanece disponível para revisar o texto por voz.
   modal.querySelector('#voice-upload')?.remove();
   modal.querySelector('#voice-upload-input')?.remove();
   modal.querySelector('#voice-send')?.remove();
-  modal.querySelector('#voice-playback')?.remove();
 
   if (!document.querySelector('link[data-voice-enhanced-ui]')) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/assets/voice-enhanced-ui.css?v=20260821-2';
+    link.href = '/assets/voice-enhanced-ui.css?v=20260821-3';
     link.dataset.voiceEnhancedUi = '1';
     document.head.appendChild(link);
   }
@@ -32,6 +33,7 @@
   transcript.setAttribute('aria-label', 'Transcrição da conversa');
   project.setAttribute('aria-label', 'Projeto da conversa de voz');
   startButton.setAttribute('title', 'Iniciar ou parar gravação');
+  playbackButton?.setAttribute('title', 'Ouvir o texto atual da transcrição');
   statusNode.textContent = 'Toque em Gravar e fale. O DevPilot responderá automaticamente em voz.';
 
   const eyebrow = panel.querySelector(':scope > .eyebrow');
@@ -75,6 +77,11 @@
     outputControl.innerHTML = '<span>Voz do DevPilot</span>';
     outputControl.appendChild(modeSelect);
     composer.appendChild(outputControl);
+  }
+
+  if (playbackButton) {
+    playbackButton.classList.add('voice-composer-button', 'voice-playback-button');
+    composer.appendChild(playbackButton);
   }
 
   startButton.classList.add('voice-composer-button', 'voice-record-button');
