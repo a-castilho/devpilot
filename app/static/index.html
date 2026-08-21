@@ -9,7 +9,9 @@
   <link rel="stylesheet" href="/assets/styles.css?v=20260820-mobile4">
   <link rel="stylesheet" href="/assets/consultant-card.css?v=20260820-1">
   <link rel="stylesheet" href="/assets/reports.css?v=20260820-scroll1">
-  <link rel="stylesheet" href="/assets/task-modal.css">\n  <link rel="stylesheet" href="/assets/task-analytics.css">
+  <link rel="stylesheet" href="/assets/task-modal.css">
+  <link rel="stylesheet" href="/assets/task-analytics.css">
+  <link rel="stylesheet" href="/assets/project-builder.css?v=20260821-1">
   <link rel="stylesheet" href="/assets/mobile-hotfix.css?v=20260820-mobile4">
   <link rel="stylesheet" href="/assets/mobile-one-frame.css?v=20260820-1">
 </head>
@@ -60,7 +62,98 @@
       </section>
 
       <section class="view" id="organizations-view"><div class="section-head"><div><p>Cadastre organizações GitHub e sincronize repositórios em modo somente leitura.</p></div><button class="primary" data-open="organization-modal">+ Nova organização</button></div><div class="cards" id="organizations-list"></div></section>
-      <section class="view" id="projects-view"><div class="section-head"><div><p>Cadastre repositório, instruções do agente e perfil do Codex.</p></div><button class="primary" data-open="project-modal">+ Novo projeto</button></div><div class="cards" id="projects-list"></div></section>
+      <section class="view" id="projects-view"><div class="section-head"><div><p>Cadastre repositório, instruções do agente e perfil do Codex.</p></div><button class="primary" type="button" data-project-builder-open>+ Novo projeto</button></div><div class="cards" id="projects-list"></div></section>
+
+      <section class="view" id="new-project-view">
+        <form id="project-builder-form" class="project-builder">
+          <div class="project-builder-main">
+            <div class="project-builder-hero">
+              <div>
+                <span class="eyebrow">NOVO PROJETO · CONFIGURAÇÃO GUIADA</span>
+                <h2>Escolha como o projeto deve nascer.</h2>
+                <p>Deslize com o dedo ou arraste com o mouse pelas opções. Toque nos cards para selecionar tecnologias, arquitetura, padrões, segurança, testes e deploy.</p>
+              </div>
+              <button class="ghost project-builder-back" type="button" data-project-builder-close>← Projetos</button>
+            </div>
+
+            <section class="builder-card">
+              <div class="builder-identity-grid">
+                <label>Nome do projeto<input name="name" placeholder="Ex.: Portal do Cliente" required></label>
+                <label>Slug<input name="slug" placeholder="portal-do-cliente" pattern="[a-z0-9][a-z0-9-]+" required></label>
+              </div>
+              <label class="builder-description">Descrição<textarea name="description" rows="3" placeholder="Objetivo, público e resultado esperado do projeto."></textarea></label>
+            </section>
+
+            <section class="builder-card">
+              <h3>Comece por um perfil</h3>
+              <p>Use um ponto de partida e ajuste cada escolha abaixo.</p>
+              <div class="builder-presets" aria-label="Perfis de projeto">
+                <button class="builder-preset active" type="button" data-builder-preset="saas-balanced">SaaS equilibrado</button>
+                <button class="builder-preset" type="button" data-builder-preset="api-fast">API rápida</button>
+                <button class="builder-preset" type="button" data-builder-preset="lean-mvp">MVP enxuto</button>
+                <button class="builder-preset" type="button" data-builder-preset="enterprise">Enterprise</button>
+              </div>
+            </section>
+
+            <section class="builder-card">
+              <div id="project-builder-groups"></div>
+              <label class="builder-custom">Outras tecnologias ou requisitos
+                <input name="custom_technologies" placeholder="Ex.: RabbitMQ, Elasticsearch, FHIR, Stripe — separados por vírgula">
+              </label>
+            </section>
+
+            <section class="builder-card">
+              <h3>Fluxo de entrega</h3>
+              <p>Defina as regras de engenharia que devem acompanhar o projeto desde o primeiro commit.</p>
+              <div class="builder-delivery">
+                <label class="check"><input type="checkbox" name="conventional_commits" checked> Conventional Commits</label>
+                <label class="check"><input type="checkbox" name="protected_main" checked> Branch principal protegida</label>
+                <label class="check"><input type="checkbox" name="pull_request_review" checked> Revisão por Pull Request</label>
+                <label class="check"><input type="checkbox" name="migrations_reversible" checked> Migrações reversíveis</label>
+              </div>
+              <label class="builder-description">Regras adicionais do cliente<textarea name="extra_rules" rows="4" placeholder="Ex.: usar SOLID, português no domínio, API backward compatible..."></textarea></label>
+            </section>
+
+            <section class="builder-card">
+              <h3>Repositório e execução</h3>
+              <p>As permissões atuais do DevPilot continuam valendo para criação de repositório.</p>
+              <div class="builder-repository-grid">
+                <label class="repository-choice selected" data-repository-choice="connect">
+                  <input type="radio" name="repository_mode" value="connect" checked>
+                  <strong>Conectar repositório existente</strong>
+                  <small>Use um Git já criado e aplique esta especificação ao novo projeto no DevPilot.</small>
+                </label>
+                <label class="repository-choice" data-repository-choice="create">
+                  <input type="radio" name="repository_mode" value="create">
+                  <strong>Criar repositório privado</strong>
+                  <small>Cria automaticamente em a-castilho quando o usuário possui autorização.</small>
+                </label>
+              </div>
+              <p class="builder-notice" id="project-builder-repository-notice"></p>
+              <div class="builder-repository-fields">
+                <label>Organização<select name="organization_id" id="project-builder-organization"><option value="">Sem organização</option></select></label>
+                <label>Branch padrão<input name="default_branch" value="main"></label>
+                <label id="project-builder-existing-repository">Repositório existente<input name="repository_url" placeholder="a-castilho/projeto ou https://github.com/a-castilho/projeto"></label>
+                <label>Modelo de desenvolvimento<input name="model" value="gpt-5.4"></label>
+              </div>
+            </section>
+          </div>
+
+          <aside class="project-builder-aside">
+            <section class="builder-card builder-agents">
+              <div class="builder-summary-head"><h3>Resumo do projeto</h3><span id="project-builder-selection-count">0 escolhas</span></div>
+              <div class="builder-summary" id="project-builder-summary"></div>
+              <details>
+                <summary>Ver AGENTS.md gerado</summary>
+                <pre id="project-builder-agents-preview"></pre>
+              </details>
+              <button class="primary builder-submit" id="project-builder-submit" type="submit">Criar projeto</button>
+              <small class="builder-help">A especificação fica salva em <code>codex_config.project_blueprint</code> e no <code>AGENTS.md</code>.</small>
+            </section>
+          </aside>
+        </form>
+      </section>
+
       <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><section id="task-analytics" class="task-analytics" aria-live="polite"></section><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
       <section class="view" id="reports-view">
@@ -135,7 +228,10 @@
   <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
 
   <script src="/assets/app.js" defer></script>
-  <script src="/assets/task-modal.js" defer></script>\n  <script src="/assets/task-analytics.js" defer></script>
+  <script src="/assets/project-provisioning.js?v=20260821-1" defer></script>
+  <script src="/assets/project-builder.js?v=20260821-1" defer></script>
+  <script src="/assets/task-modal.js" defer></script>
+  <script src="/assets/task-analytics.js" defer></script>
   <script src="/assets/reports.js" defer></script>
   <script src="/assets/example-project.js" defer></script>
   <script src="/assets/example-project-mobile-training.js?v=20260820-1" defer></script>
