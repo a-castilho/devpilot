@@ -27,6 +27,16 @@ class ProjectProvisionCreate(BaseModel):
     codex_config: dict = Field(default_factory=dict)
 
 
+class ProjectDeferredCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=150)
+    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,99}$")
+    description: str = Field(default="", max_length=10_000)
+    agents_md: str = Field(default="", max_length=100_000)
+    codex_config: dict = Field(default_factory=dict)
+    organization_id: str | None = None
+    default_branch: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
+
+
 def workspace(db: Session) -> Workspace:
     item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
     if not item:
@@ -75,6 +85,68 @@ def organization_access_token(db: Session, workspace_id: str, organization: Orga
         return Vault().decrypt(credential.encrypted_secret)
     except ValueError as error:
         raise HTTPException(status_code=409, detail="A credencial GitHub da organização não pôde ser lida.") from error
+
+
+def optional_organization(db: Session, workspace_id: str, organization_id: str | None) -> Organization | None:
+    if not organization_id:
+        return None
+    item = db.scalar(
+        select(Organization).where(
+            Organization.id == organization_id,
+            Organization.workspace_id == workspace_id,
+        )
+    )
+    if not item:
+        raise HTTPException(status_code=404, detail="Organização não encontrada.")
+    return item
+
+
+@router.post("/projects/deferred", status_code=201)
+def create_project_without_repository(
+    payload: ProjectDeferredCreate,
+    db: Session = Depends(get_db),
+):
+    """Create the DevPilot project now and allow the Git repository to be connected later."""
+    ws = workspace(db)
+    existing = db.scalar(
+        select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
+    )
+    if existing:
+        raise HTTPException(409, f"Project slug already exists: {payload.slug}")
+
+    organization = optional_organization(db, ws.id, payload.organization_id)
+    config = dict(payload.codex_config)
+    config["repository_pending"] = True
+    config["repository_mode"] = "deferred"
+
+    item = Project(
+        workspace_id=ws.id,
+        organization_id=organization.id if organization else None,
+        name=payload.name,
+        slug=payload.slug,
+        description=payload.description,
+        repository_url="",
+        default_branch=payload.default_branch,
+        agents_md=payload.agents_md,
+        codex_config=json.dumps(config),
+    )
+    db.add(item)
+    db.flush()
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=item.id,
+        actor="owner",
+        action="project.created_without_repository",
+        details={
+            "slug": item.slug,
+            "repository_pending": True,
+            "organization_id": item.organization_id,
+        },
+    )
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @router.post("/projects/provision", status_code=201)
