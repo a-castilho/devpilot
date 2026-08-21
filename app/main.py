@@ -10,6 +10,7 @@ import app.models  # noqa: F401
 from app.api import router
 from app.auth_routes import router as auth_router
 from app.config import get_settings
+from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
 from app.project_provisioning_routes import router as project_provisioning_router
@@ -91,6 +92,7 @@ app.include_router(task_run_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(provider_models_router)
+app.include_router(deploy_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
 app.include_router(voice_transcription_router)
@@ -146,6 +148,7 @@ def spa(path: str):
         '<script src="/assets/repeatai-pattern-graphs.js" defer></script>',
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
+        '<script src="/assets/deploy-admin.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
