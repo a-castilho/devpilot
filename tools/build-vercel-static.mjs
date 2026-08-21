@@ -25,6 +25,7 @@ const scripts = [
   'consolidated-ui.js',
   'analysis-failure-actions.js',
   'organization-normalization-ui.js',
+  'mobile-project-card-compact.js',
   'example-project.js',
   'repeatai-analysis-scroll.js',
   'repeatai-live-graphs.js',
