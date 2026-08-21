@@ -9,10 +9,10 @@ from uuid import uuid4
 from app.config import get_settings
 
 
-ALLOWED_HOST_ACTIONS = {"update_local"}
+ALLOWED_HOST_ACTIONS = {"update_local", "manual_deploy"}
 
 
-def queue_host_action(action: str, *, transcript: str, actor: str) -> dict:
+def queue_host_action(action: str, *, actor: str, transcript: str = "", **data) -> dict:
     if action not in ALLOWED_HOST_ACTIONS:
         raise ValueError(f"Host action is not allowed: {action}")
 
@@ -20,12 +20,14 @@ def queue_host_action(action: str, *, transcript: str, actor: str) -> dict:
     request_id = uuid4().hex
     created_at = datetime.now(timezone.utc).isoformat()
     payload = {
+        **data,
         "id": request_id,
         "action": action,
-        "transcript": transcript,
         "actor": actor,
         "created_at": created_at,
     }
+    if transcript:
+        payload["transcript"] = transcript
 
     pending = settings.host_actions_dir / "pending"
     pending.mkdir(parents=True, exist_ok=True)
