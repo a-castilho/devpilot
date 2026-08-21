@@ -3,7 +3,7 @@ import re
 from typing import Any
 import unicodedata
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def normalize_organization_identifier(value: str, *, max_length: int) -> str:
@@ -105,6 +105,14 @@ class OrganizationCreate(BaseModel):
         if not isinstance(value, str):
             return value
         return normalize_organization_identifier(value, max_length=39)
+
+    @model_validator(mode="after")
+    def require_managed_organization_token(self):
+        if self.github_login.lower() == "a-castilho" and not self.access_token:
+            raise ValueError(
+                "Para a organização a-castilho, informe um Fine-grained PAT com Resource owner = a-castilho."
+            )
+        return self
 
 
 class OrganizationUpdate(BaseModel):
