@@ -158,6 +158,7 @@ def spa(path: str):
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
         '<script src="/assets/deploy-admin.js" defer></script>',
+        '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
