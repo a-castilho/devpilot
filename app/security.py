@@ -169,25 +169,18 @@ def _bearer_token(authorization: str | None) -> str:
 
 
 def current_principal(authorization: str | None = Header(default=None)) -> Principal:
-    token = _bearer_token(authorization)
-    bootstrap = get_settings().bootstrap_token
-    if bootstrap and hmac.compare_digest(token, bootstrap):
-        return Principal(
-            user_id=None,
-            workspace_id=None,
-            email=None,
-            role=Role.SUPER_ADMIN,
-            bootstrap=True,
-        )
-    return decode_access_token(token)
+    """Authenticate normal API requests using only short-lived user access tokens.
+
+    The bootstrap token is intentionally not accepted here. It is reserved exclusively
+    for ``POST /api/auth/bootstrap`` through ``require_bootstrap_access``.
+    """
+    return decode_access_token(_bearer_token(authorization))
 
 
 def session_principal(
     principal: Principal = Depends(current_principal),
     db: Session = Depends(get_db),
 ) -> Principal:
-    if principal.bootstrap:
-        return principal
     user = db.scalar(select(User).where(User.id == principal.user_id))
     if not user or not user.active or user.workspace_id != principal.workspace_id:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
@@ -257,6 +250,7 @@ def ensure_can_manage_role(actor: Role, target: Role) -> Role:
 
 
 def require_bootstrap_access(authorization: str | None = Header(default=None)) -> str:
+    """Validate the one-purpose token used only to create the first persistent admin."""
     token = _bearer_token(authorization)
     expected = get_settings().bootstrap_token
     if not expected or not hmac.compare_digest(token, expected):

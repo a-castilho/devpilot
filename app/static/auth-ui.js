@@ -12,7 +12,6 @@
       <label id="auth-bootstrap-row" style="display:none">Token de bootstrap<input id="auth-bootstrap" type="password" autocomplete="off"></label>
       <div id="auth-error" class="hint" role="alert"></div>
       <button class="primary" id="auth-submit" type="submit">Entrar</button>
-      <details><summary class="hint">Acesso técnico por token</summary><label>Token<input id="auth-technical-token" type="password" autocomplete="off"></label><button class="ghost" id="auth-token-submit" type="button">Usar token</button></details>
     </form>`;
 
   const errorBox = document.querySelector('#auth-error');
@@ -25,7 +24,7 @@
       bootstrapRequired = Boolean(data.bootstrap_required);
       document.querySelector('#auth-bootstrap-row').style.display = bootstrapRequired ? 'grid' : 'none';
       document.querySelector('#auth-help').textContent = bootstrapRequired
-        ? 'Primeiro acesso: crie o administrador principal usando o token de bootstrap.'
+        ? 'Primeiro acesso: crie o administrador principal usando o token de bootstrap. Depois disso, o token não autentica sessões normais.'
         : 'Use seu e-mail e senha.';
       submit.textContent = bootstrapRequired ? 'Criar administrador e entrar' : 'Entrar';
     } catch (_) {
@@ -48,12 +47,6 @@
       if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
       localStorage.setItem('devpilot-token', data.access_token); location.reload();
     } catch (error) { errorBox.textContent = error.message; submit.disabled = false; }
-  });
-
-  document.querySelector('#auth-token-submit').addEventListener('click', () => {
-    const token = document.querySelector('#auth-technical-token').value.trim();
-    if (!token) return void (errorBox.textContent = 'Informe o token técnico.');
-    localStorage.setItem('devpilot-token', token); location.reload();
   });
 
   if (localStorage.getItem('devpilot-token')) {
