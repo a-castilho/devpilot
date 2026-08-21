@@ -10,8 +10,8 @@
   const actions = modal?.querySelector('.hero-actions');
 
   if (!modal || !panel || !project || !transcript || !statusNode || !startButton || !actions) return;
-  if (panel.dataset.voiceEnhancedUi === '3') return;
-  panel.dataset.voiceEnhancedUi = '3';
+  if (panel.dataset.voiceEnhancedUi === '4') return;
+  panel.dataset.voiceEnhancedUi = '4';
 
   // O áudio é capturado somente pelo botão Gravar. Não existe mais botão para
   // selecionar/enviar arquivo de áudio nem botão manual para enviar a fala.
@@ -127,6 +127,58 @@
     if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
       event.preventDefault();
       window.devpilotVoiceConversationSubmit?.();
+    }
+  });
+
+  // Chromium/Brave can expose SpeechRecognition but fail when its remote speech
+  // service is unavailable. voice-local-update.js already records and sends the
+  // audio to the DevPilot transcription endpoint when its compatible mode is
+  // activated. Detect the native failure and activate that mode automatically,
+  // without forcing the user to press Gravar a second time.
+  const autoFallbackMessages = [
+    'o serviço de voz do navegador falhou',
+    'o reconhecimento pt-br do navegador não está disponível',
+    'o reconhecimento nativo não iniciou',
+    'o reconhecimento nativo falhou',
+  ];
+  let autoFallbackPending = false;
+  let autoFallbackTimer = null;
+
+  const needsAutomaticFallback = () => {
+    const message = String(statusNode.textContent || '').trim().toLowerCase();
+    return autoFallbackMessages.some((fragment) => message.includes(fragment));
+  };
+
+  const scheduleAutomaticFallback = () => {
+    if (!modal.open || autoFallbackPending || !needsAutomaticFallback()) return;
+    if (/parar/i.test(startButton.textContent || '')) return;
+
+    autoFallbackPending = true;
+    statusNode.textContent = 'Serviço nativo indisponível. Ativando modo compatível automaticamente…';
+
+    if (autoFallbackTimer) window.clearTimeout(autoFallbackTimer);
+    autoFallbackTimer = window.setTimeout(() => {
+      autoFallbackTimer = null;
+      autoFallbackPending = false;
+      if (!modal.open) return;
+
+      if (startButton.disabled) {
+        scheduleAutomaticFallback();
+        return;
+      }
+
+      startButton.click();
+    }, 260);
+  };
+
+  const fallbackObserver = new MutationObserver(scheduleAutomaticFallback);
+  fallbackObserver.observe(statusNode, {childList: true, characterData: true, subtree: true});
+
+  modal.addEventListener('close', () => {
+    autoFallbackPending = false;
+    if (autoFallbackTimer) {
+      window.clearTimeout(autoFallbackTimer);
+      autoFallbackTimer = null;
     }
   });
 })();
