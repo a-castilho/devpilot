@@ -28,6 +28,7 @@ const scripts = [
   'example-project.js',
   'repeatai-analysis-scroll.js',
   'repeatai-live-graphs.js',
+  'repeatai-pattern-graphs.js',
   'approval-slider.js',
   'tws-example.js',
 ];
