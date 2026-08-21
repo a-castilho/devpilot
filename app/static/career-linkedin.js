@@ -69,6 +69,70 @@
 
   let careerState = null;
   const stringify = value => JSON.stringify(value ?? {}, null, 2);
+  const wait = milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds));
+  const isNetworkError = error => {
+    const message = String(error?.message || error || '');
+    return error instanceof TypeError || /failed to fetch|networkerror|network request failed|load failed/i.test(message);
+  };
+
+  async function waitForApi(timeoutMs = 7000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const response = await fetch('/health', {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          headers: {'Cache-Control': 'no-cache'},
+        });
+        if (response.ok) return true;
+      } catch (_) {
+        // The app container can be restarting; keep polling until the short deadline.
+      }
+      await wait(450);
+    }
+    return false;
+  }
+
+  async function careerApi(path, options = {}, retries = 1) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        return await api(path, options);
+      } catch (error) {
+        lastError = error;
+        if (!isNetworkError(error)) throw error;
+        if (attempt >= retries) break;
+        toast('Conexão com a API interrompida. Reconectando…');
+        const online = await waitForApi();
+        if (!online) break;
+      }
+    }
+    throw new Error(`API do DevPilot indisponível em ${window.location.host}. Aguarde alguns segundos e tente novamente.`);
+  }
+
+  async function importCareerFile(file, body) {
+    try {
+      return await api('/career/cv/import', {method:'POST', body});
+    } catch (error) {
+      if (!isNetworkError(error)) throw error;
+      toast('Upload interrompido. Reconectando ao DevPilot…');
+      if (!await waitForApi()) {
+        throw new Error(`API do DevPilot indisponível em ${window.location.host}.`);
+      }
+
+      // If the request reached the server but the response was lost, recover the
+      // already imported state instead of sending the same file twice.
+      try {
+        const current = await api('/career');
+        if (current?.profile && current?.source_filename === file.name) return current;
+      } catch (recoveryError) {
+        if (!isNetworkError(recoveryError)) throw recoveryError;
+      }
+
+      return careerApi('/career/cv/import', {method:'POST', body}, 1);
+    }
+  }
+
   const renderList = (target, items, formatter) => {
     target.innerHTML = items?.length ? items.map(formatter).join('') : '<div class="empty">Nenhum item identificado.</div>';
   };
@@ -98,7 +162,7 @@
   }
 
   async function loadCareer() {
-    try { render(await api('/career')); } catch (error) { toast(error.message); }
+    try { render(await careerApi('/career', {}, 2)); } catch (error) { toast(error.message); }
   }
 
   button.onclick = () => {
@@ -109,35 +173,49 @@
   };
 
   document.querySelector('#career-upload-form').onsubmit = async event => {
-    event.preventDefault(); const file = document.querySelector('#career-file').files?.[0];
+    event.preventDefault();
+    const file = document.querySelector('#career-file').files?.[0];
     if (!file) return toast('Selecione um currículo');
     const body = new FormData(); body.append('file', file);
-    try { render(await api('/career/cv/import', {method:'POST', body})); toast('Currículo importado e diff recalculado'); } catch (error) { toast(error.message); }
+    const submit = event.currentTarget.querySelector('button[type="submit"]');
+    const originalLabel = submit?.textContent || 'Importar e comparar';
+    if (submit) { submit.disabled = true; submit.textContent = 'Importando…'; }
+    document.querySelector('#career-source').textContent = `Enviando ${file.name}…`;
+    try {
+      render(await importCareerFile(file, body));
+      toast('Currículo importado e diff recalculado');
+    } catch (error) {
+      toast(error.message);
+      if (careerState) render(careerState);
+      else document.querySelector('#career-source').textContent = 'Falha no envio. Tente novamente.';
+    } finally {
+      if (submit) { submit.disabled = false; submit.textContent = originalLabel; }
+    }
   };
 
   document.querySelector('#career-save-baseline').onclick = async () => {
     try {
       const baseline = JSON.parse(document.querySelector('#career-baseline').value || '{}');
-      render(await api('/career/linkedin/baseline', {method:'PUT', body:JSON.stringify(baseline)})); toast('Baseline salvo');
+      render(await careerApi('/career/linkedin/baseline', {method:'PUT', body:JSON.stringify(baseline)})); toast('Baseline salvo');
     } catch (error) { toast(error instanceof SyntaxError ? 'JSON do baseline inválido' : error.message); }
   };
 
   document.querySelector('#career-clear-baseline').onclick = async () => {
     const empty = {headline:'',about:'',experience:[],skills:[],projects:[],education:[],languages:[]};
-    try { render(await api('/career/linkedin/baseline', {method:'PUT', body:JSON.stringify(empty)})); toast('Baseline limpo'); } catch (error) { toast(error.message); }
+    try { render(await careerApi('/career/linkedin/baseline', {method:'PUT', body:JSON.stringify(empty)})); toast('Baseline limpo'); } catch (error) { toast(error.message); }
   };
 
   document.querySelector('#career-approve').onclick = async () => {
     if (!careerState?.source_sha256) return toast('Importe um currículo primeiro');
     try {
-      render(await api('/career/linkedin/approve', {method:'POST', body:JSON.stringify({expected_source_sha256:careerState.source_sha256})}));
+      render(await careerApi('/career/linkedin/approve', {method:'POST', body:JSON.stringify({expected_source_sha256:careerState.source_sha256})}));
       toast('Alterações aprovadas para sincronização');
     } catch (error) { toast(error.message); }
   };
 
   document.querySelector('#career-export').onclick = async () => {
     try {
-      const payload = await api('/career/linkedin/export');
+      const payload = await careerApi('/career/linkedin/export', {}, 2);
       const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
       const url = URL.createObjectURL(blob); const link = document.createElement('a');
       link.href = url; link.download = `linkedin-sync-${new Date().toISOString().slice(0,10)}.json`; link.click(); URL.revokeObjectURL(url);
