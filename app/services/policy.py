@@ -21,9 +21,10 @@ HIGH_RISK_WORDS = {
 }
 
 REPOSITORY_SHORTHAND = re.compile(
-    r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?$"
+    r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
 )
 SSH_REPOSITORY = re.compile(r"^git@(?P<host>[^:]+):(?P<path>[^\s]+)$")
+_REPOSITORY_WRAPPERS = {"`": "`", '"': '"', "'": "'", "<": ">"}
 
 
 @dataclass(frozen=True)
@@ -32,16 +33,36 @@ class PolicyDecision:
     reasons: tuple[str, ...]
 
 
+def _clean_repository_input(value: str) -> str:
+    raw = str(value or "")
+    raw = raw.replace("\u200b", "").replace("\u200c", "").replace("\u200d", "")
+    raw = raw.replace("\ufeff", "").replace("\u00a0", " ").strip()
+
+    changed = True
+    while changed and len(raw) >= 2:
+        changed = False
+        closing = _REPOSITORY_WRAPPERS.get(raw[0])
+        if closing and raw[-1] == closing:
+            raw = raw[1:-1].strip()
+            changed = True
+
+    # Mobile copy/paste frequently inserts spaces around `/`.
+    raw = re.sub(r"\s*/\s*", "/", raw)
+    return raw.strip()
+
+
 def normalize_repository_url(url: str) -> str:
-    raw = url.strip()
+    raw = _clean_repository_input(url)
     if not raw:
-        raise ValueError("Repository URL is required")
+        raise ValueError("Informe o repositório no formato organização/repositório.")
 
     shorthand = REPOSITORY_SHORTHAND.fullmatch(raw)
     if shorthand:
         raw = f"https://github.com/{shorthand.group('owner')}/{shorthand.group('repo')}"
     elif raw.lower().startswith("github.com/"):
         raw = f"https://{raw}"
+    elif raw.lower().startswith("www.github.com/"):
+        raw = f"https://{raw[4:]}"
     else:
         ssh = SSH_REPOSITORY.fullmatch(raw)
         if ssh:
@@ -49,32 +70,35 @@ def normalize_repository_url(url: str) -> str:
 
     parsed = urlparse(raw)
     if parsed.scheme != "https" or not parsed.hostname:
-        raise ValueError(
-            "Repository must be owner/repo, github.com/owner/repo, an HTTPS URL, or git@host:owner/repo"
-        )
-    if parsed.hostname.lower() not in get_settings().git_hosts:
-        raise ValueError(f"Git host is not allowed: {parsed.hostname}")
+        raise ValueError("Informe o repositório no formato organização/repositório.")
+
+    hostname = parsed.hostname.lower()
+    if hostname == "www.github.com":
+        hostname = "github.com"
+
+    if hostname not in get_settings().git_hosts:
+        raise ValueError(f"Host Git não permitido: {hostname}")
     if parsed.username or parsed.password:
-        raise ValueError("Credentials must not be embedded in repository URLs")
+        raise ValueError("Não inclua usuário, senha ou token na URL do repositório.")
     if parsed.query or parsed.fragment:
-        raise ValueError("Repository URL must not contain query parameters or fragments")
+        raise ValueError("A URL do repositório não pode conter parâmetros ou fragmentos.")
 
     path = parsed.path.strip("/")
     parts = path.split("/") if path else []
     if len(parts) != 2 or any(part in {".", "..", ""} for part in parts):
-        raise ValueError("Repository URL must identify exactly one owner/repository pair")
+        raise ValueError("Informe o repositório no formato organização/repositório.")
 
     owner, repo = parts
     if repo.endswith(".git"):
         repo = repo[:-4]
     if not owner or not repo:
-        raise ValueError("Repository URL must identify a repository")
+        raise ValueError("Informe o repositório no formato organização/repositório.")
     if not re.fullmatch(r"[A-Za-z0-9_.-]+", owner) or not re.fullmatch(
         r"[A-Za-z0-9_.-]+", repo
     ):
-        raise ValueError("Repository owner and name contain unsupported characters")
+        raise ValueError("Informe o repositório no formato organização/repositório.")
 
-    return f"https://{parsed.hostname.lower()}/{owner}/{repo}.git"
+    return f"https://{hostname}/{owner}/{repo}.git"
 
 
 def validate_repository_url(url: str) -> None:
