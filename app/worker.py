@@ -6,10 +6,15 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.models import Project, Run, Task, TaskStatus
+from app.services import executor as executor_service
 from app.services.audit import record
-from app.services.executor import execute_task
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
+from app.services.task_images import enable_executor_image_support
+
+
+enable_executor_image_support(executor_service)
+execute_task = executor_service.execute_task
 
 
 def _failure_text(result: dict | None, error: Exception | None) -> str:

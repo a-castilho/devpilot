@@ -14,6 +14,7 @@ from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
+from app.task_image_routes import router as task_image_router
 from app.task_run_routes import router as task_run_router
 from app.user_routes import router as users_router
 from app.reports import router as reports_router
@@ -76,6 +77,7 @@ app.include_router(users_router)
 app.include_router(router)
 app.include_router(host_action_router)
 app.include_router(task_run_router)
+app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(provider_models_router)
 app.include_router(reports_router)
@@ -118,6 +120,7 @@ def spa(path: str):
         '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
+        '<script src="/assets/task-image-upload.js" defer></script>',
         '<script src="/assets/consolidated-ui.js" defer></script>',
         '<script src="/assets/organization-normalization-ui.js" defer></script>',
         '<script src="/assets/example-project.js" defer></script>',
