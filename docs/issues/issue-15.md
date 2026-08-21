@@ -4,13 +4,13 @@
 
 ## Metadados
 
-- **Status:** Aberta
+- **Status:** Fechada
 - **Autor:** @acastilho
 - **Responsáveis:** —
 - **Labels:** —
 - **Milestone:** —
 - **Criada em:** 2026-08-20T12:16:54Z
-- **Atualizada em:** 2026-08-20T12:16:54Z
+- **Atualizada em:** 2026-08-21T01:17:18Z
 - **Fonte:** https://github.com/a-castilho/devpilot/issues/15
 
 ## Planejado / descrição da issue
