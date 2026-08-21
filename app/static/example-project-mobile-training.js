@@ -61,6 +61,15 @@
     if (live) live.textContent = text;
   }
 
+  function returnToWizard(view) {
+    if (!view?.classList.contains('active')) return;
+    const wizard = view.querySelector('#repeatai-wizard');
+    if (!wizard) return;
+
+    wizard.scrollIntoView({behavior: 'smooth', block: 'start'});
+    setTimeout(() => wizard.focus({preventScroll: true}), 260);
+  }
+
   function autoAdvanceStart(view) {
     if (!view || view.dataset.repeataiStartAuto === '1') return;
     const button = view.querySelector('#repeatai-wizard-actions button');
@@ -205,6 +214,16 @@
           bubbles: true,
         }));
       }, {passive:true});
+    }
+
+    const stop = doc.getElementById('stop');
+    if (stop && stop.dataset.devpilotAutoReturn !== '1') {
+      stop.dataset.devpilotAutoReturn = '1';
+      stop.addEventListener('click', event => {
+        if (!event.isTrusted) return;
+        markCapture(view, false);
+        setTimeout(() => returnToWizard(view), 90);
+      });
     }
 
     if (frame.dataset.startCaptureWhenReady === '1') {
