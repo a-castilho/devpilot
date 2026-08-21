@@ -42,6 +42,17 @@ def _version_frontend_scripts(html: str) -> str:
     return _SCRIPT_SRC_RE.sub(replace, html)
 
 
+def _normalize_index_head(html: str) -> str:
+    start = html.find("<head>")
+    end = html.find("</head>", start)
+    if start < 0 or end < 0:
+        return html
+
+    head = html[start:end]
+    head = head.replace("\\r\\n", "\n").replace("\\n", "\n")
+    return f"{html[:start]}{head}{html[end:]}"
+
+
 def _inject_mobile_scroll_unlock(html: str) -> str:
     asset = STATIC / "mobile-scroll-unlock.css"
     try:
@@ -109,6 +120,7 @@ def spa(path: str):
         return FileResponse(candidate, headers=headers)
 
     html = (STATIC / "index.html").read_text(encoding="utf-8")
+    html = _normalize_index_head(html)
     scripts = [
         '<script src="/assets/telemetry-capture.js" defer></script>',
         '<script src="/assets/profile.js" defer></script>',
