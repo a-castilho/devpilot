@@ -1,41 +1,72 @@
-# DevPilot — seu desenvolvedor
+# DevPilot — consultor de desenvolvimento com IA
 
-**Atualizado em: 20/08/2026**
+DevPilot é uma plataforma SaaS leve para analisar, orientar e automatizar a evolução de projetos de software. Ele atua como um consultor de desenvolvimento: entende o contexto de cada projeto, identifica falhas, riscos e oportunidades, transforma o diagnóstico em recomendações compreensíveis e, quando autorizado, executa correções com acompanhamento completo.
 
-DevPilot é um SaaS leve para automatizar desenvolvimento de software por dashboard, API
-ou voz. Ele organiza múltiplos projetos e tarefas, aplica instruções `AGENTS.md`, controla
-configurações do Codex, executa trabalho em branches isoladas e registra cada decisão em
-uma trilha de auditoria encadeada por hash.
+A plataforma centraliza vários projetos e tarefas em um painel responsivo, recebe instruções por texto, API ou voz, aplica as regras do projeto, trabalha em ambientes Git isolados e mantém cada decisão, aprovação e execução em uma trilha de auditoria.
+
+## Proposta de valor
+
+O DevPilot reduz o trabalho manual entre descobrir um problema e entregar uma solução segura:
+
+- analisa código, configuração, arquitetura, testes e histórico Git;
+- apresenta diagnóstico, impacto, prioridade e recomendação em linguagem clara;
+- gera uma proposta de correção compatível com o contexto e o valor do projeto;
+- transforma análises aprovadas em tarefas rastreáveis, sem duplicá-las;
+- executa trabalho em branch e diretório isolados;
+- acompanha os estados da tarefa, da fila ao resultado;
+- preserva controle humano para ações sensíveis;
+- registra comandos, decisões, aprovações, resultados e falhas.
+
+## Princípios do produto
+
+- **Consultoria antes da execução:** explicar o problema e a solução antes de alterar o projeto.
+- **Controle humano:** push, merge, deploy, dependências, migrações destrutivas e produção exigem autorização explícita.
+- **Isolamento:** dados, credenciais, repositórios e execuções não podem atravessar organizações ou projetos.
+- **Rastreabilidade:** toda ação relevante deve ser atribuível, revisável e auditável.
+- **Reversibilidade:** alterações devem ocorrer em branches exclusivas e ser reversíveis sempre que possível.
+- **Segurança por padrão:** entradas, transcrições e conteúdos de repositórios são tratados como não confiáveis.
+- **Eficiência:** interface e operação devem continuar úteis em máquinas com pouca memória.
 
 ## O que o MVP entrega
 
 - dashboard responsivo/PWA para desktop e celular;
-- projetos com URL Git, branch, `AGENTS.md` e perfil Codex;
-- tarefas vindas do dashboard, voz ou API;
-- fila persistente e worker independente;
-- aprovação humana para ações de risco;
-- executor Codex com `subprocess` sem shell e timeout;
-- vault criptografado para múltiplos provedores de IA;
-- auditoria de comandos, configuração, aprovação e execução;
-- política de hosts Git permitidos e isolamento de diretórios;
+- autenticação por e-mail e senha, usuários, organizações e perfis de acesso;
+- cadastro de projetos com repositório, branch, contexto e perfil do Codex;
+- análise técnica com resumo, riscos, recomendações, gráficos e logs;
+- tarefas criadas pelo dashboard, voz ou API;
+- fila persistente com worker independente ou incorporado;
+- aprovação humana conforme risco;
+- executor Codex com argumentos seguros, diretório fixo e timeout;
+- cofre criptografado para credenciais de provedores;
+- auditoria encadeada por hash;
+- política de hosts Git permitidos e diretórios isolados;
 - Docker Compose com aplicação, worker e PostgreSQL;
-- SQLite para desenvolvimento local sem infraestrutura adicional.
+- SQLite para desenvolvimento local leve.
 
 ## Arquitetura
 
 ```text
-PWA responsiva
-   │ texto / voz / aprovação
-FastAPI ── política ── auditoria hash-chain
-   │                    │
-PostgreSQL/SQLite       vault criptografado
+Painel/PWA
+   │ texto, voz, análise e aprovação
+FastAPI ── autenticação/política ── auditoria hash-chain
+   │                                  │
+PostgreSQL ou SQLite                  vault criptografado
    │
-worker ── projeto isolado ── Codex CLI ── Git branch/PR
+fila/worker ── worktree isolada ── Codex CLI ── branch/PR
 ```
 
-O MVP usa voz encadeada: reconhecimento no dispositivo, transcrição revisável, interpretação,
-aprovação e execução. Isso mantém o comando auditável. Uma evolução natural é substituir a
-captura pelo OpenAI Realtime via WebRTC, usando credenciais efêmeras emitidas pelo backend.
+O backend usa Python 3.12, FastAPI, SQLAlchemy e Pydantic Settings. A interface é servida pela própria aplicação a partir de `app/static`. Em produção, aplicação e worker usam PostgreSQL; no desenvolvimento local, SQLite evita infraestrutura desnecessária.
+
+## Fluxo de análise e correção
+
+1. O usuário seleciona o projeto e informa o objetivo por texto, voz ou API.
+2. O DevPilot captura as instruções e o contexto técnico sem expor segredos.
+3. A análise somente leitura produz resumo, evidências, riscos e recomendações.
+4. O usuário revisa o diagnóstico e autoriza a correção quando necessário.
+5. O sistema cria uma única tarefa, impedindo duplicação da mesma ação.
+6. O worker prepara um ambiente isolado, aplica as regras do projeto e chama o Codex.
+7. Testes, comandos, logs, falhas e resultado ficam associados à execução.
+8. Push, PR, merge ou deploy permanecem etapas separadas e controladas.
 
 ## Executar localmente
 
@@ -47,23 +78,22 @@ pip install -e '.[test]'
 uvicorn app.main:app --reload --port 8080
 ```
 
-Em outro terminal:
+Em outro terminal, quando o worker incorporado estiver desativado:
 
 ```bash
 source .venv/bin/activate
 python -m app.worker
 ```
 
-Abra `http://localhost:8080`. No primeiro acesso, use `DEVPILOT_BOOTSTRAP_TOKEN` somente
-para criar o primeiro usuário `SUPER_ADMIN`. A API devolve um token de sessão e, a partir
-desse momento, o acesso normal deve ser feito por e-mail e senha. O token de bootstrap não
-é aceito como sessão administrativa em endpoints normais.
+Abra `http://localhost:8080`.
+
+No primeiro acesso, use `DEVPILOT_BOOTSTRAP_TOKEN` somente para criar o primeiro usuário `SUPER_ADMIN`. Depois disso, o acesso normal deve ocorrer por e-mail e senha. O token de bootstrap não é uma sessão administrativa e deve ser removido ou rotacionado após a configuração inicial.
 
 ## Docker
 
 ```bash
 cp .env.example .env
-docker compose up --build
+docker compose up -d --build app worker
 ```
 
 Antes de produção, gere uma chave Fernet e configure `DEVPILOT_ENCRYPTION_KEY`:
@@ -72,39 +102,22 @@ Antes de produção, gere uma chave Fernet e configure `DEVPILOT_ENCRYPTION_KEY`
 python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 ```
 
-Mantenha `DEVPILOT_EXECUTION_ENABLED=false` até o host do worker ter Codex CLI e Git
-configurados, credenciais de escopo mínimo e diretório isolado.
+Mantenha `DEVPILOT_EXECUTION_ENABLED=false` até o host de execução possuir Codex CLI e Git configurados, credenciais de escopo mínimo e diretório isolado.
 
-## Fluxo de uma tarefa
+## Validação
 
-1. Cliente dita ou escreve o objetivo.
-2. DevPilot registra transcript/prompt e avalia risco.
-3. Ações sensíveis aguardam aprovação.
-4. O worker cria uma branch exclusiva e chama Codex.
-5. Testes, logs e resumo ficam associados à execução.
-6. Push/PR podem ser adicionados como uma etapa separada e explicitamente aprovada.
+```bash
+python -m compileall app
+pytest
+```
 
-## Próximas etapas para produção
-
-- autenticação OIDC e organizações com RBAC;
-- migrations Alembic e backups automatizados;
-- GitHub App com webhooks e tokens de instalação;
-- OpenAI Realtime/WebRTC e transcrição server-side;
-- eventos ao vivo por SSE/WebSocket;
-- runners efêmeros por tarefa e limites de custo;
-- cobrança por workspace, assentos e minutos de execução;
-- observabilidade OpenTelemetry, SLOs e alertas;
-- análise de segurança e qualidade em PRs.
+Após alterações visuais, valide manualmente o painel em desktop e celular, incluindo menu recolhível, modais, rolagem, temas, estados de carregamento e prevenção de chamadas duplicadas.
 
 ## Segurança
 
-Nunca envie chaves ao frontend após o cadastro. Em produção, use um KMS/secret manager,
-tokens curtos para GitHub Apps, runners sem privilégios e aprovação explícita para push,
-merge, deploy, dependências e operações destrutivas.
+Nunca envie ao frontend chaves de provedores, tokens Git, segredos de autenticação ou valores brutos do ambiente. Em produção, use KMS/secret manager, tokens curtos, runners sem privilégios e aprovação explícita para ações de risco.
 
-`DEVPILOT_BOOTSTRAP_TOKEN` é uma credencial de inicialização, não uma segunda conta de
-administrador. Use-a apenas no endpoint de bootstrap do primeiro usuário, mantenha-a fora
-do frontend e faça rotação/remoção do segredo do ambiente após a configuração inicial.
+Transcrições de voz, prompts, logs e conteúdo de repositórios são entradas não confiáveis. Redija segredos antes de persistir ou exibir informações e nunca execute texto do usuário como uma string de shell.
 
 <!-- COMPROMISSO-GERAL-A-CASTILHO -->
 
@@ -115,4 +128,3 @@ do frontend e faça rotação/remoção do segredo do ambiente após a configura
 **Sempre na melhor prática. No caminho do bem maior.**
 
 **Ir até o fim sem sair do caminho, seja ele qual for.**
-
