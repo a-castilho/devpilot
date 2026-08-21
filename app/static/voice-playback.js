@@ -7,8 +7,8 @@
   if (!modal || !transcript || !statusNode || !actions) return;
   if (modal.querySelector('#voice-output-mode')) return;
 
-  // A conversa por voz não precisa de um botão de envio. Assim que a fala é
-  // transcrita, o DevPilot responde e fala com o cliente automaticamente.
+  // A conversa por voz continua automática, mas o cliente também pode ouvir
+  // novamente o texto atual da transcrição antes de prosseguir.
   modal.querySelector('#voice-send')?.remove();
 
   const wrapper = document.createElement('section');
@@ -27,13 +27,15 @@
         <option value="chatgpt">ChatGPT</option>
       </select>
     </div>
+    <button type="button" class="voice voice-playback-button" id="voice-playback">▶ Ouvir transcrição</button>
     <div id="voice-chat-log" class="voice-chat-log" aria-live="polite">
       <div class="voice-chat-empty">Grave sua mensagem. O DevPilot responderá automaticamente em voz.</div>
     </div>
-    <small id="voice-playback-hint">Escolha a voz da resposta. Não é necessário enviar o áudio manualmente.</small>
+    <small id="voice-playback-hint">Voz local usa o aparelho e, quando o navegador não possui síntese funcional, usa o motor local do DevPilot sem consumir API.</small>
   `;
   actions.parentNode.insertBefore(wrapper, actions);
 
+  const button = wrapper.querySelector('#voice-playback');
   const modeSelect = wrapper.querySelector('#voice-output-mode');
   const hint = wrapper.querySelector('#voice-playback-hint');
   const chatLog = wrapper.querySelector('#voice-chat-log');
@@ -46,6 +48,7 @@
     .voice-playback-head strong{font-size:1rem}
     #voice-output-mode{min-width:150px;max-width:52%;background:#08182a;color:#eef8ff;border:1px solid rgba(72,214,207,.35);border-radius:12px;padding:11px 12px;font:inherit}
     #voice-playback-hint{color:#9fb2c7;line-height:1.35}
+    .voice-playback-button{min-height:44px}
     .voice-chat-log{display:grid;gap:8px;max-height:210px;overflow:auto;padding:2px}
     .voice-chat-empty{padding:12px;border:1px dashed rgba(159,178,199,.24);border-radius:12px;color:#9fb2c7;font-size:.9rem}
     .voice-chat-turn{display:grid;gap:4px;padding:10px 12px;border-radius:13px;border:1px solid rgba(159,178,199,.16);background:rgba(8,24,42,.72)}
@@ -62,6 +65,7 @@
 
   let activeAudio = null;
   let objectUrl = '';
+  let activeUtterance = null;
   let processing = false;
   let history = [];
   let lastProcessedText = '';
@@ -72,7 +76,13 @@
     female: ['luciana', 'maria', 'helena', 'fernanda', 'camila', 'paulina', 'samantha', 'victoria', 'female', 'woman', 'mulher'],
   };
 
+  function setButtonSpeaking(speaking) {
+    button.dataset.speaking = speaking ? '1' : '0';
+    button.textContent = speaking ? '■ Parar voz' : '▶ Ouvir transcrição';
+  }
+
   function stopPlayback() {
+    activeUtterance = null;
     try {
       window.speechSynthesis?.cancel?.();
     } catch (_) {
@@ -91,6 +101,7 @@
       URL.revokeObjectURL(objectUrl);
       objectUrl = '';
     }
+    setButtonSpeaking(false);
   }
 
   function fail(message) {
@@ -115,58 +126,97 @@
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
-  function portugueseVoices() {
-    const voices = window.speechSynthesis?.getVoices?.() || [];
+  function availableVoices() {
+    return window.speechSynthesis?.getVoices?.() || [];
+  }
+
+  async function waitForVoices(timeoutMs = 900) {
+    const current = availableVoices();
+    if (current.length) return current;
+    if (!window.speechSynthesis?.addEventListener) return current;
+
+    return new Promise((resolve) => {
+      let finished = false;
+      const finish = () => {
+        if (finished) return;
+        finished = true;
+        window.speechSynthesis.removeEventListener('voiceschanged', onVoicesChanged);
+        resolve(availableVoices());
+      };
+      const onVoicesChanged = () => finish();
+      window.speechSynthesis.addEventListener('voiceschanged', onVoicesChanged, {once: true});
+      setTimeout(finish, timeoutMs);
+    });
+  }
+
+  function portugueseVoices(voices) {
     const pt = voices.filter((voice) => String(voice.lang || '').toLowerCase().startsWith('pt'));
     return pt.length ? pt : voices;
   }
 
-  function chooseVoice(mode) {
-    const voices = portugueseVoices();
-    if (!voices.length) return null;
-    if (!localVoiceNames[mode]) return voices[0];
+  function chooseVoice(mode, voices) {
+    const candidates = portugueseVoices(voices);
+    if (!candidates.length) return null;
+    if (!localVoiceNames[mode]) return candidates[0];
     const names = localVoiceNames[mode];
-    return voices.find((voice) => {
+    return candidates.find((voice) => {
       const value = `${voice.name || ''} ${voice.voiceURI || ''}`.toLowerCase();
       return names.some((name) => value.includes(name));
-    }) || voices[0];
+    }) || candidates[0];
   }
 
-  function speakLocal(text, mode) {
-    return new Promise((resolve, reject) => {
-      if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
-        reject(new Error('Este navegador não possui síntese de voz local.'));
-        return;
-      }
+  async function speakBrowserLocal(text, mode) {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
+      throw new Error('Síntese de voz do navegador indisponível.');
+    }
 
-      stopPlayback();
-      const utterance = new SpeechSynthesisUtterance(text);
+    const voices = await waitForVoices();
+    if (!voices.length) {
+      throw new Error('Nenhuma voz local foi carregada pelo navegador.');
+    }
+
+    stopPlayback();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = chooseVoice(mode, voices);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || 'pt-BR';
+    } else {
       utterance.lang = 'pt-BR';
-      utterance.voice = chooseVoice(mode);
-      utterance.volume = 1;
+    }
+    utterance.volume = 1;
 
-      if (mode === 'male') {
-        utterance.pitch = 0.78;
-        utterance.rate = 0.95;
-      } else if (mode === 'female') {
-        utterance.pitch = 1.16;
-        utterance.rate = 1.0;
-      } else if (mode === 'machine') {
-        utterance.pitch = 0.58;
-        utterance.rate = 0.82;
-      } else {
-        utterance.pitch = 1.0;
-        utterance.rate = 0.98;
-      }
+    if (mode === 'male') {
+      utterance.pitch = 0.78;
+      utterance.rate = 0.95;
+    } else if (mode === 'female') {
+      utterance.pitch = 1.16;
+      utterance.rate = 1.0;
+    } else if (mode === 'machine') {
+      utterance.pitch = 0.58;
+      utterance.rate = 0.82;
+    } else {
+      utterance.pitch = 1.0;
+      utterance.rate = 0.98;
+    }
 
+    activeUtterance = utterance;
+    return new Promise((resolve, reject) => {
       utterance.onstart = () => {
-        statusNode.textContent = `DevPilot está falando com voz ${modeSelect.options[modeSelect.selectedIndex].text}.`;
+        setButtonSpeaking(true);
+        statusNode.textContent = `Reproduzindo com voz ${modeSelect.options[modeSelect.selectedIndex].text}.`;
       };
       utterance.onend = () => {
-        stopPlayback();
+        activeUtterance = null;
+        setButtonSpeaking(false);
         resolve();
       };
-      utterance.onerror = () => reject(new Error('Não foi possível reproduzir esta voz no aparelho.'));
+      utterance.onerror = (event) => {
+        activeUtterance = null;
+        setButtonSpeaking(false);
+        const code = String(event?.error || 'synthesis-failed');
+        reject(new Error(`Falha na síntese local do navegador: ${code}.`));
+      };
       window.speechSynthesis.speak(utterance);
     });
   }
@@ -179,6 +229,67 @@
       // Non-JSON errors fall back to the supplied message.
     }
     return fallback;
+  }
+
+  async function playAudioResponse(response, playingMessage) {
+    const blob = await response.blob();
+    if (!blob.size) throw new Error('O serviço de voz retornou um áudio vazio.');
+
+    await new Promise(async (resolve, reject) => {
+      objectUrl = URL.createObjectURL(blob);
+      activeAudio = new Audio(objectUrl);
+      activeAudio.onplay = () => {
+        setButtonSpeaking(true);
+        statusNode.textContent = playingMessage;
+      };
+      activeAudio.onended = () => {
+        stopPlayback();
+        resolve();
+      };
+      activeAudio.onerror = () => reject(new Error('O navegador não conseguiu reproduzir o áudio gerado.'));
+      try {
+        await activeAudio.play();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  async function speakServerLocal(text, mode) {
+    stopPlayback();
+    statusNode.textContent = 'Preparando voz local do DevPilot…';
+    const token = localStorage.getItem('devpilot-token') || '';
+    const response = await fetch('/api/voice/speech/local', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({text, voice: mode}),
+    });
+    if (!response.ok) {
+      throw new Error(await errorMessage(response, 'Não foi possível gerar a voz local.'));
+    }
+    await playAudioResponse(
+      response,
+      `Reproduzindo com voz local ${modeSelect.options[modeSelect.selectedIndex].text}.`,
+    );
+  }
+
+  async function speakLocal(text, mode) {
+    try {
+      await speakBrowserLocal(text, mode);
+    } catch (browserError) {
+      try {
+        await speakServerLocal(text, mode);
+        if (typeof toast === 'function') {
+          toast('Voz do navegador indisponível; usando voz local do DevPilot.');
+        }
+      } catch (serverError) {
+        const browserReason = browserError?.message ? ` ${browserError.message}` : '';
+        throw new Error(`${serverError?.message || 'Não foi possível reproduzir a voz local.'}${browserReason}`);
+      }
+    }
   }
 
   async function speakChatGPT(text) {
@@ -198,45 +309,19 @@
       throw new Error(await errorMessage(response, 'Não foi possível gerar a voz ChatGPT.'));
     }
 
-    const blob = await response.blob();
-    if (!blob.size) throw new Error('A voz ChatGPT retornou um áudio vazio.');
-
-    await new Promise(async (resolve, reject) => {
-      objectUrl = URL.createObjectURL(blob);
-      activeAudio = new Audio(objectUrl);
-      activeAudio.onplay = () => {
-        statusNode.textContent = 'DevPilot está falando com voz ChatGPT.';
-      };
-      activeAudio.onended = () => {
-        stopPlayback();
-        resolve();
-      };
-      activeAudio.onerror = () => reject(new Error('O navegador não conseguiu reproduzir o áudio ChatGPT.'));
-      try {
-        await activeAudio.play();
-      } catch (error) {
-        reject(error);
-      }
-    });
+    await playAudioResponse(response, 'DevPilot está falando com voz ChatGPT.');
   }
 
-  async function speakReply(text) {
-    const mode = modeSelect.value;
+  async function speakSelected(text, mode) {
+    if (mode !== 'chatgpt') {
+      await speakLocal(text, mode);
+      return;
+    }
     try {
-      if (mode === 'chatgpt') {
-        await speakChatGPT(text);
-      } else {
-        await speakLocal(text, mode);
-      }
+      await speakChatGPT(text);
     } catch (error) {
-      if (mode === 'chatgpt') {
-        // Se a API de TTS estiver indisponível, a conversa continua usando a voz
-        // local do aparelho em vez de interromper o atendimento ao cliente.
-        await speakLocal(text, 'human');
-        if (typeof toast === 'function') toast('Voz ChatGPT indisponível; usando voz local.');
-        return;
-      }
-      throw error;
+      await speakLocal(text, 'human');
+      if (typeof toast === 'function') toast('Voz ChatGPT indisponível; usando voz local.');
     }
   }
 
@@ -270,7 +355,7 @@
       history.push({role: 'user', text}, {role: 'assistant', text: reply});
       history = history.slice(-12);
       appendTurn('assistant', reply);
-      await speakReply(reply);
+      await speakSelected(reply, modeSelect.value);
       statusNode.textContent = 'DevPilot respondeu. Toque em Gravar para continuar a conversa.';
     } catch (error) {
       fail(error?.message || 'Não foi possível conversar com o DevPilot.');
@@ -278,6 +363,31 @@
       processing = false;
     }
   }
+
+  button.addEventListener('click', async () => {
+    if (button.dataset.speaking === '1') {
+      stopPlayback();
+      statusNode.textContent = 'Reprodução interrompida.';
+      return;
+    }
+
+    const text = transcript.value.trim();
+    if (!text) {
+      fail('Grave ou digite uma transcrição antes de ouvir.');
+      return;
+    }
+
+    button.disabled = true;
+    try {
+      await speakSelected(text, modeSelect.value);
+      statusNode.textContent = 'Transcrição reproduzida.';
+    } catch (error) {
+      fail(error?.message || 'Não foi possível reproduzir a transcrição.');
+    } finally {
+      button.disabled = false;
+      if (button.dataset.speaking !== '1') setButtonSpeaking(false);
+    }
+  });
 
   const observer = new MutationObserver(() => {
     const value = String(statusNode.textContent || '').trim().toLowerCase();
@@ -303,7 +413,7 @@
     localStorage.setItem('devpilot-voice-output-mode', modeSelect.value);
     hint.textContent = modeSelect.value === 'chatgpt'
       ? 'As respostas usam a voz ChatGPT pela conexão OpenAI configurada no DevPilot.'
-      : 'As respostas usam a síntese de voz do próprio aparelho e não consomem TTS da API.';
+      : 'Primeiro usamos a voz do aparelho. Se o navegador falhar, o DevPilot gera a voz localmente sem consumir API.';
   });
 
   modal.addEventListener('close', () => {
