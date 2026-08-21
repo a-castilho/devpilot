@@ -27,15 +27,60 @@ jobs:
             echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy DevPilot to homologation
+      - name: Trigger Render deploy when hook is configured
         env:
           HOOK: ${{ secrets.RENDER_HOMOLOG_DEPLOY_HOOK }}
           SHA: ${{ steps.commit.outputs.sha }}
         shell: bash
         run: |
           if [ -z "$HOOK" ]; then
-            echo "::notice::RENDER_HOMOLOG_DEPLOY_HOOK not configured; deploy skipped."
+            echo "::notice::RENDER_HOMOLOG_DEPLOY_HOOK not configured; relying on Render autoDeployTrigger=commit."
             exit 0
           fi
           SEP='?'; [[ "$HOOK" == *'?'* ]] && SEP='&'
           curl --fail --show-error --silent --request POST "${HOOK}${SEP}ref=${SHA}"
+
+      - name: Wait for homologation health
+        env:
+          BASE_URL: https://devpilot-homolog.onrender.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Waiting for ${BASE_URL}/health"
+          for attempt in $(seq 1 60); do
+            code=$(curl -L -sS -o /tmp/devpilot-health.json -w '%{http_code}' --max-time 20 "${BASE_URL}/health" || true)
+            if [ "$code" = "200" ] && grep -qi 'devpilot' /tmp/devpilot-health.json; then
+              echo "Health check OK on attempt ${attempt}."
+              cat /tmp/devpilot-health.json
+              exit 0
+            fi
+            echo "attempt=${attempt} status=${code}; retrying in 10s"
+            sleep 10
+          done
+          echo "::error::DevPilot homologation health did not become ready."
+          cat /tmp/devpilot-health.json 2>/dev/null || true
+          exit 1
+
+      - name: Verify SPA root is published
+        env:
+          BASE_URL: https://devpilot-homolog.onrender.com
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -L -sS -o /tmp/devpilot-root.html -w '%{http_code}' --max-time 30 "${BASE_URL}/")
+          if [ "$code" != "200" ]; then
+            echo "::error::Root returned HTTP ${code}."
+            cat /tmp/devpilot-root.html || true
+            exit 1
+          fi
+          if grep -Eqi '^Not Found$|\{"detail":"Not Found"\}' /tmp/devpilot-root.html; then
+            echo "::error::Root is still serving a Not Found response instead of the DevPilot SPA."
+            cat /tmp/devpilot-root.html
+            exit 1
+          fi
+          if ! grep -qi 'DevPilot' /tmp/devpilot-root.html; then
+            echo "::error::Root returned 200 but does not look like the DevPilot frontend."
+            head -c 1000 /tmp/devpilot-root.html
+            exit 1
+          fi
+          echo "DevPilot SPA root is online."
