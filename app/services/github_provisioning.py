@@ -25,7 +25,8 @@ def create_github_repository(
     """Create a private initialized repository inside an authorized GitHub organization."""
     if not access_token.strip():
         raise GitHubProvisioningError(
-            "A organização A Castilho não possui credencial GitHub autorizada para criar repositórios.",
+            "A organização A Castilho não possui credencial GitHub autorizada para criar repositórios. "
+            "Configure um Fine-grained PAT com Resource owner = a-castilho.",
             409,
         )
 
@@ -48,15 +49,23 @@ def create_github_repository(
             json=payload,
         )
 
-    if response.status_code in {401, 403}:
+    if response.status_code == 401:
         raise GitHubProvisioningError(
-            "A credencial GitHub da organização não autoriza a criação de repositórios. "
-            "Atualize a credencial com permissão de administração de repositórios.",
+            "O token GitHub é inválido ou expirou. Gere um novo Fine-grained PAT com "
+            "Resource owner = a-castilho.",
+            401,
+        )
+    if response.status_code == 403:
+        raise GitHubProvisioningError(
+            "A credencial GitHub não autoriza criar repositórios em a-castilho. Use um Fine-grained PAT "
+            "com Resource owner = a-castilho e Repository permissions > Administration: Read and write. "
+            "Confirme também que a organização permite criação de repositórios e aprovou o token, se exigido.",
             403,
         )
     if response.status_code == 404:
         raise GitHubProvisioningError(
-            "A organização A Castilho não foi encontrada ou não está acessível pela credencial configurada.",
+            "A organização A Castilho não foi encontrada ou não está acessível pela credencial configurada. "
+            "Confira se o Resource owner do Fine-grained PAT é a-castilho.",
             404,
         )
     if response.status_code == 422:
