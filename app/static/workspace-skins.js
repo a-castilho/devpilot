@@ -1,5 +1,6 @@
 (() => {
   const STORAGE_KEY = 'devpilot-workspace-skin';
+  const PICKER_COLLAPSED_KEY = 'devpilot-workspace-skin-picker-collapsed';
   const CSS_ID = 'devpilot-workspace-skins-css';
   const PICKER_ID = 'devpilot-workspace-skin-picker';
   const SKINS = [
@@ -16,7 +17,7 @@
     const link = document.createElement('link');
     link.id = CSS_ID;
     link.rel = 'stylesheet';
-    link.href = '/assets/workspace-skins.css?v=20260821-1';
+    link.href = '/assets/workspace-skins.css?v=20260821-hide1';
     document.head.appendChild(link);
   }
 
@@ -53,6 +54,45 @@
     meta.content = skin.themeColor;
   }
 
+  function isPickerCollapsed() {
+    return localStorage.getItem(PICKER_COLLAPSED_KEY) === '1';
+  }
+
+  function setPickerCollapsed(collapsed, persist = true) {
+    const picker = document.getElementById(PICKER_ID);
+    if (!picker) return;
+
+    const swatches = picker.querySelector('.workspace-skin-swatches');
+    const toggle = picker.querySelector('.workspace-skin-toggle');
+
+    picker.classList.toggle('is-collapsed', collapsed);
+    picker.dataset.collapsed = String(collapsed);
+
+    if (swatches) {
+      swatches.setAttribute('aria-hidden', String(collapsed));
+      swatches.querySelectorAll('.workspace-skin-swatch').forEach(button => {
+        button.tabIndex = collapsed ? -1 : 0;
+      });
+    }
+
+    if (toggle) {
+      toggle.textContent = collapsed ? '‹' : '›';
+      toggle.setAttribute('aria-expanded', String(!collapsed));
+      toggle.setAttribute('aria-label', collapsed ? 'Mostrar seletor de cores' : 'Esconder seletor de cores');
+      toggle.title = collapsed ? 'Mostrar cores' : 'Esconder cores';
+    }
+
+    if (persist) {
+      localStorage.setItem(PICKER_COLLAPSED_KEY, collapsed ? '1' : '0');
+    }
+  }
+
+  function togglePicker() {
+    const picker = document.getElementById(PICKER_ID);
+    if (!picker) return;
+    setPickerCollapsed(!picker.classList.contains('is-collapsed'));
+  }
+
   function syncPicker(skin) {
     const picker = document.getElementById(PICKER_ID);
     if (!picker) return;
@@ -61,14 +101,6 @@
       button.setAttribute('aria-pressed', String(selected));
       button.title = selected ? `${skin.label} selecionado` : `Usar skin ${button.dataset.label}`;
     });
-
-    const cycle = picker.querySelector('.workspace-skin-cycle');
-    if (!cycle) return;
-    const index = SKINS.findIndex(item => item.id === skin.id);
-    const next = SKINS[(index + 1) % SKINS.length];
-    cycle.setAttribute('aria-label', `Trocar skin. Atual: ${skin.label}. Próxima: ${next.label}`);
-    cycle.title = `Trocar ${skin.label} → ${next.label}`;
-    cycle.dataset.currentSkin = skin.id;
   }
 
   function applySkin(id, announce = false) {
@@ -83,13 +115,6 @@
 
     if (announce && typeof toast === 'function') toast(`Skin alterada para ${skin.label}.`);
     document.dispatchEvent(new CustomEvent('devpilot:workspace-skin', {detail: {skin: skin.id}}));
-  }
-
-  function cycleSkin() {
-    const current = currentSkinId();
-    const index = SKINS.findIndex(skin => skin.id === current);
-    const next = SKINS[(index + 1) % SKINS.length];
-    applySkin(next.id, true);
   }
 
   function removeLegacyTonePicker() {
@@ -123,13 +148,15 @@
       swatches.appendChild(button);
     });
 
-    const cycle = document.createElement('button');
-    cycle.type = 'button';
-    cycle.className = 'workspace-skin-cycle';
-    cycle.textContent = '›';
-    cycle.addEventListener('click', cycleSkin);
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'workspace-skin-toggle';
+    toggle.textContent = '›';
+    toggle.setAttribute('aria-controls', `${PICKER_ID}-swatches`);
+    toggle.addEventListener('click', togglePicker);
 
-    picker.append(swatches, cycle);
+    swatches.id = `${PICKER_ID}-swatches`;
+    picker.append(swatches, toggle);
     document.body.appendChild(picker);
   }
 
@@ -141,6 +168,7 @@
 
     const saved = localStorage.getItem(STORAGE_KEY);
     applySkin(validSkin(saved) ? saved : 'black', false);
+    setPickerCollapsed(isPickerCollapsed(), false);
 
     // O seletor antigo ou texto residual podem ser recriados por outro bundle.
     const observer = new MutationObserver(() => {
