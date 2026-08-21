@@ -11,17 +11,25 @@ services:
       - key: DEVPILOT_ENV
         value: homologation
       - key: DEVPILOT_DATABASE_URL
-        value: sqlite:////tmp/devpilot.db
+        sync: false
       - key: DEVPILOT_DATA_DIR
-        value: /tmp
+        value: /tmp/devpilot
       - key: DEVPILOT_REPOSITORIES_DIR
-        value: /tmp/repositories
+        value: /tmp/devpilot/repositories
+      - key: DEVPILOT_HOST_ACTIONS_DIR
+        value: /tmp/devpilot/host-actions
       - key: DEVPILOT_BOOTSTRAP_TOKEN
         generateValue: true
+      - key: DEVPILOT_AUTH_SECRET
+        generateValue: true
+      - key: DEVPILOT_AUTH_TOKEN_TTL_SECONDS
+        value: "3600"
       - key: DEVPILOT_ENCRYPTION_KEY
         generateValue: true
       - key: DEVPILOT_EXECUTION_ENABLED
         value: "false"
+      - key: DEVPILOT_EMBEDDED_WORKER
+        value: "true"
       - key: DEVPILOT_ALLOWED_GIT_HOSTS
         value: github.com
       - key: DEVPILOT_OPENAI_API_KEY

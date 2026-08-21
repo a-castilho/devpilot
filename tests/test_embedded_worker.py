@@ -1,0 +1,55 @@
+import threading
+
+from app.embedded_worker import EmbeddedWorker
+
+
+def test_embedded_worker_processes_queue_and_stops(monkeypatch):
+    processed = threading.Event()
+
+    monkeypatch.setattr(
+        "app.embedded_worker.worker_runtime_paths",
+        lambda: {"git": "/usr/bin/git", "codex": "/usr/local/bin/codex"},
+    )
+
+    def fake_process_one():
+        processed.set()
+        return False
+
+    monkeypatch.setattr("app.embedded_worker.process_one", fake_process_one)
+
+    worker = EmbeddedWorker(poll_seconds=0.01)
+    worker.start()
+
+    assert processed.wait(1.0)
+    assert worker.is_running
+
+    worker.stop(timeout=1.0)
+    assert not worker.is_running
+
+
+def test_embedded_worker_start_is_idempotent(monkeypatch):
+    entered = threading.Event()
+    release = threading.Event()
+
+    monkeypatch.setattr(
+        "app.embedded_worker.worker_runtime_paths",
+        lambda: {"git": "/usr/bin/git", "codex": "/usr/local/bin/codex"},
+    )
+
+    def fake_process_one():
+        entered.set()
+        release.wait(1.0)
+        return False
+
+    monkeypatch.setattr("app.embedded_worker.process_one", fake_process_one)
+
+    worker = EmbeddedWorker(poll_seconds=0.01)
+    worker.start()
+    assert entered.wait(1.0)
+
+    first_thread = worker._thread
+    worker.start()
+    assert worker._thread is first_thread
+
+    release.set()
+    worker.stop(timeout=1.0)
