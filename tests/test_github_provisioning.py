@@ -88,6 +88,19 @@ def test_create_github_repository_requires_authorized_credential():
         create_github_repository("a-castilho", "novo-projeto", "", "")
     assert error.value.status_code == 409
     assert "credencial" in str(error.value).lower()
+    assert "Resource owner = a-castilho" in str(error.value)
+
+
+def test_create_github_repository_translates_invalid_token(monkeypatch):
+    FakeClient.response = FakeResponse(401, {"message": "Bad credentials"})
+    monkeypatch.setattr(github_provisioning.httpx, "Client", FakeClient)
+
+    with pytest.raises(GitHubProvisioningError) as error:
+        create_github_repository("a-castilho", "novo-projeto", "", "expired-token")
+
+    assert error.value.status_code == 401
+    assert "inválido" in str(error.value)
+    assert "Resource owner = a-castilho" in str(error.value)
 
 
 def test_create_github_repository_translates_permission_failure(monkeypatch):
@@ -99,3 +112,5 @@ def test_create_github_repository_translates_permission_failure(monkeypatch):
 
     assert error.value.status_code == 403
     assert "não autoriza" in str(error.value)
+    assert "Resource owner = a-castilho" in str(error.value)
+    assert "Administration: Read and write" in str(error.value)
