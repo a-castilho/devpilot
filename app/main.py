@@ -137,6 +137,7 @@ def spa(path: str):
         '<script src="/assets/voice-project-start.js" defer></script>',
         '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
+        '<script src="/assets/voice-browser-compat.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/task-image-upload.js" defer></script>',
         '<script src="/assets/consolidated-ui.js" defer></script>',
@@ -167,5 +168,7 @@ def spa(path: str):
             "Cache-Control": "no-store, max-age=0, must-revalidate",
             "Pragma": "no-cache",
             "Expires": "0",
+            "Permissions-Policy": "microphone=(self)",
+            "Feature-Policy": "microphone 'self'",
         },
     )
