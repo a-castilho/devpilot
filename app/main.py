@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 import app.models  # noqa: F401
 from app.api import router
 from app.auth_routes import router as auth_router
+from app.career_routes import router as career_router
 from app.config import get_settings
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
@@ -106,6 +107,7 @@ app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
+app.include_router(career_router)
 app.include_router(host_action_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
@@ -181,6 +183,7 @@ def spa(path: str):
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
         '<script src="/assets/deploy-admin.js" defer></script>',
+        '<script src="/assets/career-linkedin.js" defer></script>',
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
     ]
     for script in scripts:
