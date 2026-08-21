@@ -248,7 +248,7 @@ html[data-workspace-skin] *::-webkit-scrollbar-thumb {
   border-color: var(--surface2) !important;
 }
 
-/* Palette compacta: cada botão representa uma skin e o último botão percorre a ordem. */
+/* Paleta compacta com botão lateral para esconder/mostrar sem perder a skin escolhida. */
 .workspace-skin-picker {
   position: fixed;
   top: 18px;
@@ -263,12 +263,30 @@ html[data-workspace-skin] *::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow: 0 14px 38px #0005;
   backdrop-filter: blur(14px);
+  transition: gap .18s ease, padding .18s ease, box-shadow .18s ease;
 }
 
 .workspace-skin-swatches {
   display: flex;
   align-items: center;
   gap: 7px;
+  max-width: 260px;
+  opacity: 1;
+  overflow: hidden;
+  transition: max-width .2s ease, opacity .14s ease, gap .2s ease;
+}
+
+.workspace-skin-picker.is-collapsed {
+  gap: 0;
+  padding: 4px;
+  box-shadow: 0 8px 22px #0004;
+}
+
+.workspace-skin-picker.is-collapsed .workspace-skin-swatches {
+  max-width: 0;
+  gap: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .workspace-skin-swatch {
@@ -276,6 +294,7 @@ html[data-workspace-skin] *::-webkit-scrollbar-thumb {
   width: 31px;
   height: 31px;
   padding: 0;
+  flex: 0 0 31px;
   border: 2px solid color-mix(in srgb, var(--swatch) 60%, #7b8796);
   border-radius: 50%;
   background: var(--swatch);
@@ -295,23 +314,32 @@ html[data-workspace-skin] *::-webkit-scrollbar-thumb {
   box-shadow: 0 0 0 3px var(--skin-glow), inset 0 0 0 2px #ffffff24;
 }
 
-.workspace-skin-cycle {
+.workspace-skin-toggle {
   width: 42px;
   height: 42px;
   padding: 0;
+  flex: 0 0 42px;
   display: grid;
   place-items: center;
   border: 1px solid var(--skin-button-border);
   border-radius: 13px;
   background: linear-gradient(135deg, var(--skin-accent), var(--skin-accent-2));
   color: var(--skin-accent-contrast);
-  font-size: 20px;
+  font-size: 22px;
+  line-height: 1;
   font-weight: 900;
   cursor: pointer;
   box-shadow: 0 8px 20px var(--skin-glow);
+  transition: transform .14s ease, box-shadow .18s ease;
 }
 
-.workspace-skin-cycle:active {
+.workspace-skin-toggle:hover,
+.workspace-skin-toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 10px 24px var(--skin-glow);
+}
+
+.workspace-skin-toggle:active {
   transform: translateY(1px) scale(.97);
 }
 
@@ -338,12 +366,14 @@ html[data-workspace-skin="white"] .analysis-correction-status {
     padding: 5px;
     border-radius: 14px;
   }
-  .workspace-skin-swatches { gap: 4px; }
-  .workspace-skin-swatch { width: 25px; height: 25px; }
-  .workspace-skin-cycle { width: 36px; height: 36px; border-radius: 11px; font-size: 18px; }
+  .workspace-skin-picker.is-collapsed { padding: 3px; }
+  .workspace-skin-swatches { gap: 4px; max-width: 220px; }
+  .workspace-skin-swatch { width: 25px; height: 25px; flex-basis: 25px; }
+  .workspace-skin-toggle { width: 36px; height: 36px; flex-basis: 36px; border-radius: 11px; font-size: 20px; }
 }
 
 @media (max-width: 430px) {
   .workspace-skin-picker { max-width: calc(100vw - 16px); }
-  .workspace-skin-swatch { width: 23px; height: 23px; }
+  .workspace-skin-swatches { max-width: 185px; }
+  .workspace-skin-swatch { width: 23px; height: 23px; flex-basis: 23px; }
 }
