@@ -33,11 +33,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # The worker executes Git and Codex inside this image. Keep the runtime lean:
-# Debian only installs Git/CA certificates; Node + Codex come from the dedicated
-# stage above, avoiding the very large Debian npm dependency tree.
+# Debian installs only the small native tools needed at runtime. espeak-ng is
+# used on demand as the no-API fallback when Chromium/Brave exposes Web Speech
+# but cannot actually synthesize audio on Linux.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get install -y --no-install-recommends ca-certificates git espeak-ng \
     && git --version \
+    && espeak-ng --version \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=codex-cli /usr/local/bin/node /usr/local/bin/node
