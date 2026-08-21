@@ -10,12 +10,12 @@
   const actions = modal?.querySelector('.hero-actions');
 
   if (!modal || !panel || !project || !transcript || !statusNode || !startButton || !actions) return;
-  if (panel.dataset.voiceEnhancedUi === '4') return;
-  panel.dataset.voiceEnhancedUi = '4';
+  if (panel.dataset.voiceEnhancedUi === '5') return;
+  panel.dataset.voiceEnhancedUi = '5';
 
   // O áudio é capturado somente pelo botão Gravar. Não existe mais botão para
   // selecionar/enviar arquivo de áudio nem botão manual para enviar a fala.
-  // "Ouvir transcrição" permanece disponível para revisar o texto por voz.
+  // A transcrição concluída é enviada automaticamente para a conversa.
   modal.querySelector('#voice-upload')?.remove();
   modal.querySelector('#voice-upload-input')?.remove();
   modal.querySelector('#voice-send')?.remove();
@@ -34,7 +34,7 @@
   project.setAttribute('aria-label', 'Projeto da conversa de voz');
   startButton.setAttribute('title', 'Iniciar ou parar gravação');
   playbackButton?.setAttribute('title', 'Ouvir o texto atual da transcrição');
-  statusNode.textContent = 'Toque em Gravar e fale. O DevPilot responderá automaticamente em voz.';
+  statusNode.textContent = 'Abra o assistente e fale. O DevPilot ouvirá e responderá automaticamente.';
 
   const eyebrow = panel.querySelector(':scope > .eyebrow');
   const title = panel.querySelector(':scope > h2');
@@ -107,10 +107,10 @@
     transcript.value = '';
     const log = modal.querySelector('#voice-chat-log');
     if (log) {
-      log.innerHTML = '<div class="voice-chat-empty">Grave sua mensagem. O DevPilot responderá automaticamente em voz.</div>';
+      log.innerHTML = '<div class="voice-chat-empty">Fale sua mensagem. O DevPilot responderá automaticamente em voz.</div>';
     }
-    statusNode.textContent = 'Pronto. Toque em Gravar para conversar com o DevPilot.';
-    transcript.focus();
+    statusNode.textContent = 'Pronto. Ouvindo automaticamente.';
+    scheduleHandsFreeStart(180);
   });
 
   actions.classList.add('voice-enhanced-actions');
@@ -130,11 +130,119 @@
     }
   });
 
+  const projectKey = (value) => String(value ?? '');
+
+  function renderVoiceProjects(items) {
+    const selected = projectKey(project.value);
+    project.replaceChildren();
+
+    const general = document.createElement('option');
+    general.value = '';
+    general.textContent = 'Geral — sem projeto específico';
+    project.appendChild(general);
+
+    for (const item of items || []) {
+      if (!item?.id) continue;
+      const option = document.createElement('option');
+      option.value = projectKey(item.id);
+      option.textContent = String(item.name || item.slug || item.id);
+      project.appendChild(option);
+    }
+
+    if (selected && [...project.options].some((option) => option.value === selected)) {
+      project.value = selected;
+    } else if (items?.length === 1) {
+      project.value = projectKey(items[0].id);
+    }
+  }
+
+  async function refreshVoiceProjects() {
+    let items = [];
+    try {
+      if (typeof api === 'function') {
+        const response = await api('/projects');
+        if (Array.isArray(response)) items = response;
+      }
+    } catch (_) {
+      // A conversa continua disponível em modo geral mesmo se a atualização falhar.
+    }
+
+    if (!items.length) {
+      try {
+        if (typeof state !== 'undefined' && Array.isArray(state.projects)) items = state.projects;
+      } catch (_) {
+        // Ignore global-state access failures.
+      }
+    }
+
+    renderVoiceProjects(items);
+    return items;
+  }
+
+  let handsFreeTimer = null;
+  let automaticStartPending = false;
+
+  function isRecording() {
+    return /parar/i.test(startButton.textContent || '');
+  }
+
+  function statusIsBusy() {
+    const value = String(statusNode.textContent || '').toLowerCase();
+    return [
+      'pensando',
+      'reproduzindo',
+      'gerando a voz',
+      'preparando voz',
+      'transcrevendo',
+      'finalizando gravação',
+      'solicitando acesso',
+    ].some((fragment) => value.includes(fragment));
+  }
+
+  function scheduleHandsFreeStart(delay = 120) {
+    if (!modal.open) return;
+    if (handsFreeTimer) window.clearTimeout(handsFreeTimer);
+    handsFreeTimer = window.setTimeout(() => {
+      handsFreeTimer = null;
+      if (!modal.open || startButton.disabled || isRecording() || statusIsBusy()) return;
+      automaticStartPending = true;
+      transcript.value = '';
+      startButton.click();
+      window.setTimeout(() => {
+        automaticStartPending = false;
+      }, 300);
+    }, delay);
+  }
+
+  async function activateHandsFree() {
+    if (!modal.open) return;
+    await refreshVoiceProjects();
+    if (!modal.open) return;
+    statusNode.textContent = 'Ouvindo automaticamente… fale agora.';
+    scheduleHandsFreeStart(40);
+  }
+
+  for (const opener of [document.querySelector('#voice-hero'), document.querySelector('#voice-dock')]) {
+    opener?.addEventListener('click', () => {
+      queueMicrotask(() => activateHandsFree());
+    });
+  }
+
+  const modalOpenObserver = new MutationObserver(() => {
+    if (modal.open) activateHandsFree();
+  });
+  modalOpenObserver.observe(modal, {attributes: true, attributeFilter: ['open']});
+
+  startButton.addEventListener('click', () => {
+    if (!isRecording() && !startButton.disabled && !automaticStartPending) {
+      transcript.value = '';
+    }
+  }, true);
+
   // Chromium/Brave can expose SpeechRecognition but fail when its remote speech
-  // service is unavailable. voice-local-update.js already records and sends the
-  // audio to the DevPilot transcription endpoint when its compatible mode is
-  // activated. Detect the native failure and activate that mode automatically,
-  // without forcing the user to press Gravar a second time.
+  // service is unavailable. voice-local-update.js records and sends the audio to
+  // the transcription endpoint in compatible mode. Detect the failure and retry
+  // automatically, without requiring a second click from the user.
   const autoFallbackMessages = [
     'o serviço de voz do navegador falhou',
     'o reconhecimento pt-br do navegador não está disponível',
@@ -151,7 +259,7 @@
 
   const scheduleAutomaticFallback = () => {
     if (!modal.open || autoFallbackPending || !needsAutomaticFallback()) return;
-    if (/parar/i.test(startButton.textContent || '')) return;
+    if (isRecording()) return;
 
     autoFallbackPending = true;
     statusNode.textContent = 'Serviço nativo indisponível. Ativando modo compatível automaticamente…';
@@ -167,18 +275,45 @@
         return;
       }
 
+      transcript.value = '';
       startButton.click();
     }, 260);
   };
 
-  const fallbackObserver = new MutationObserver(scheduleAutomaticFallback);
-  fallbackObserver.observe(statusNode, {childList: true, characterData: true, subtree: true});
+  let submitTimer = null;
+  const statusObserver = new MutationObserver(() => {
+    const value = String(statusNode.textContent || '').trim().toLowerCase();
+
+    if (value.startsWith('transcrição pronta')) {
+      if (submitTimer) window.clearTimeout(submitTimer);
+      submitTimer = window.setTimeout(() => {
+        submitTimer = null;
+        window.devpilotVoiceConversationSubmit?.();
+      }, 20);
+    }
+
+    if (value.startsWith('devpilot respondeu') || value.startsWith('reprodução interrompida')) {
+      scheduleHandsFreeStart(320);
+    }
+
+    scheduleAutomaticFallback();
+  });
+  statusObserver.observe(statusNode, {childList: true, characterData: true, subtree: true});
 
   modal.addEventListener('close', () => {
     autoFallbackPending = false;
+    automaticStartPending = false;
     if (autoFallbackTimer) {
       window.clearTimeout(autoFallbackTimer);
       autoFallbackTimer = null;
+    }
+    if (handsFreeTimer) {
+      window.clearTimeout(handsFreeTimer);
+      handsFreeTimer = null;
+    }
+    if (submitTimer) {
+      window.clearTimeout(submitTimer);
+      submitTimer = null;
     }
   });
 })();
