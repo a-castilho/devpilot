@@ -19,6 +19,7 @@ from app.project_provisioning_routes import router as project_provisioning_route
 from app.provider_models_routes import router as provider_models_router
 from app.task_image_routes import router as task_image_router
 from app.task_run_routes import router as task_run_router
+from app.token_usage_routes import router as token_usage_router
 from app.user_routes import router as users_router
 from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
@@ -122,6 +123,7 @@ app.include_router(telemetry_replay_router)
 app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
 app.include_router(voice_transcription_router)
+app.include_router(token_usage_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
@@ -159,6 +161,7 @@ def spa(path: str):
         '<script src="/assets/profile.js" defer></script>',
         '<script src="/assets/auth-ui.js" defer></script>',
         '<script src="/assets/users.js" defer></script>',
+        '<script src="/assets/token-usage.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
         '<script src="/assets/voice-project-start.js" defer></script>',

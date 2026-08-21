@@ -184,6 +184,8 @@ def session_principal(
     user = db.scalar(select(User).where(User.id == principal.user_id))
     if not user or not user.active or user.workspace_id != principal.workspace_id:
         raise HTTPException(status_code=401, detail="Invalid or expired access token")
+    db.info["principal_user_id"] = user.id
+    db.info["principal_actor"] = f"user:{user.id}"
     return Principal(
         user_id=user.id,
         workspace_id=user.workspace_id,

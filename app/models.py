@@ -190,3 +190,33 @@ class AuditEvent(Base):
     previous_hash: Mapped[str] = mapped_column(String(64), default="")
     event_hash: Mapped[str] = mapped_column(String(64), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class TokenUsage(Base):
+    __tablename__ = "token_usage"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "attempt",
+            "provider",
+            "operation",
+            name="uq_token_usage_run_attempt_provider_operation",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
+    workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    task_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    provider: Mapped[str] = mapped_column(String(50), index=True)
+    model: Mapped[str] = mapped_column(String(120), default="default")
+    operation: Mapped[str] = mapped_column(String(80), index=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    total_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    source: Mapped[str] = mapped_column(String(40), default="provider-reported")
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now, index=True)

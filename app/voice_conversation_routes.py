@@ -13,6 +13,12 @@ from app.db import get_db
 from app.models import Project, ProviderCredential, Workspace
 from app.security import require_access
 from app.services.audit import record
+from app.services.token_usage import (
+    record_usage,
+    serialize_usage,
+    token_counts_from_usage,
+    user_id_from_actor,
+)
 from app.services.vault import Vault
 
 
@@ -158,6 +164,7 @@ async def voice_chat(
     statuses: list[int] = []
     selected_model = ""
     answer = ""
+    usage_payload: dict = {}
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
         for api_key in keys:
@@ -194,6 +201,8 @@ async def voice_chat(
                 answer = _response_text(data)
                 if answer:
                     selected_model = model
+                    raw_usage = data.get("usage")
+                    usage_payload = raw_usage if isinstance(raw_usage, dict) else {}
                     break
                 statuses.append(502)
             if answer:
@@ -213,6 +222,16 @@ async def voice_chat(
         db.commit()
         raise error
 
+    usage = record_usage(
+        db,
+        workspace_id=ws.id,
+        user_id=user_id_from_actor(actor),
+        project_id=payload.project_id,
+        provider="openai",
+        model=selected_model,
+        operation="voice.chat",
+        counts=token_counts_from_usage(usage_payload),
+    )
     record(
         db,
         workspace_id=ws.id,
@@ -228,4 +247,8 @@ async def voice_chat(
         },
     )
     db.commit()
-    return {"reply": answer, "provider": "openai", "model": selected_model}
+
+    result = {"reply": answer, "provider": "openai", "model": selected_model}
+    if usage:
+        result["token_usage"] = serialize_usage(usage)
+    return result
