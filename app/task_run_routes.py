@@ -21,6 +21,57 @@ _SECRET_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
 
+_FAILURE_CODES = {
+    "github_auth": "GITHUB_ACCESS_DENIED",
+    "codex_auth": "CODEX_AUTH_REQUIRED",
+    "git_network": "GIT_NETWORK_ERROR",
+    "filesystem_permission": "FILESYSTEM_PERMISSION_DENIED",
+    "database": "DATABASE_UNAVAILABLE",
+    "repository_state": "REPOSITORY_STATE_INVALID",
+    "unknown": "EXECUTION_FAILED",
+}
+
+_GITHUB_AUTH_PATTERNS = (
+    "requested url returned error: 401",
+    "requested url returned error: 403",
+    "authentication failed",
+    "could not read username",
+    "repository access denied",
+    "write access to repository not granted",
+    "repository not found",
+    "permission denied (publickey)",
+)
+_CODEX_AUTH_PATTERNS = (
+    "not logged in",
+    "invalid api key",
+    "codex login",
+    "401 unauthorized",
+)
+_GIT_NETWORK_PATTERNS = (
+    "could not resolve host",
+    "failed to connect",
+    "connection timed out",
+    "connection reset",
+    "network is unreachable",
+    "temporary failure in name resolution",
+)
+_FILESYSTEM_PATTERNS = (
+    "operation not permitted",
+    "read-only file system",
+    "permission denied",
+)
+_DATABASE_PATTERNS = (
+    "sqlalchemy.exc.operationalerror",
+    "database is unavailable",
+    "could not connect to server",
+)
+_REPOSITORY_STATE_PATTERNS = (
+    "already exists and is not an empty directory",
+    "not a git repository",
+    "index.lock",
+    "shallow.lock",
+)
+
 
 def _workspace_id(db: Session) -> str:
     workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
@@ -61,36 +112,149 @@ def _last_nonempty_line(value: str, limit: int = 700) -> str:
     return sanitize_text(lines[-1])[:limit] if lines else ""
 
 
-def failure_reason(run: Run | None) -> str:
+def _matches(text: str, patterns: tuple[str, ...]) -> bool:
+    normalized = str(text or "").casefold()
+    return any(pattern in normalized for pattern in patterns)
+
+
+def classify_failure_text(value: str) -> str:
+    text = str(value or "")
+    if _matches(text, _GITHUB_AUTH_PATTERNS):
+        return "github_auth"
+    if _matches(text, _GIT_NETWORK_PATTERNS):
+        return "git_network"
+    if _matches(text, _REPOSITORY_STATE_PATTERNS):
+        return "repository_state"
+    if _matches(text, _CODEX_AUTH_PATTERNS):
+        return "codex_auth"
+    if _matches(text, _DATABASE_PATTERNS):
+        return "database"
+    if _matches(text, _FILESYSTEM_PATTERNS):
+        return "filesystem_permission"
+    return "unknown"
+
+
+def _friendly_failure_message(category: str, fallback: str = "") -> str:
+    messages = {
+        "github_auth": (
+            "Credencial GitHub sem acesso ao repositório. Revalide a integração da organização "
+            "e permita leitura do repositório antes de executar novamente."
+        ),
+        "codex_auth": (
+            "O Codex não está autenticado no ambiente de execução. Autorize o Codex no worker "
+            "antes de executar novamente."
+        ),
+        "git_network": (
+            "Falha de rede ao acessar o repositório. O DevPilot pode tentar novamente sem alterar o projeto."
+        ),
+        "repository_state": (
+            "O checkout local do repositório está inconsistente e precisa ser reparado antes da execução."
+        ),
+        "filesystem_permission": (
+            "O sistema operacional bloqueou o acesso necessário. Revise as permissões do ambiente de execução."
+        ),
+        "database": (
+            "O banco de dados do DevPilot está indisponível. A execução foi interrompida para evitar inconsistências."
+        ),
+    }
+    return messages.get(category) or fallback or "Falha registrada sem mensagem detalhada."
+
+
+def failure_details(run: Run | None) -> dict:
     if not run or str(run.status).lower() != "failed":
-        return ""
+        return {
+            "category": "",
+            "code": "",
+            "message": "",
+            "requires_authorization": False,
+        }
 
     payload = _logs_payload(run)
     if isinstance(payload, dict):
         healing = payload.get("self_healing")
         if isinstance(healing, dict):
+            category = str(healing.get("category") or "unknown")
             message = _last_nonempty_line(healing.get("message", ""))
             if message:
-                return message
-        stderr = _last_nonempty_line(payload.get("stderr", ""))
-        if stderr:
-            return stderr
+                return {
+                    "category": category,
+                    "code": _FAILURE_CODES.get(category, _FAILURE_CODES["unknown"]),
+                    "message": message,
+                    "requires_authorization": bool(healing.get("requires_authorization", False)),
+                }
+
+        raw_error = str(payload.get("stderr") or payload.get("raw") or "")
+        category = classify_failure_text(raw_error)
+        raw_message = _last_nonempty_line(raw_error)
+        if category != "unknown":
+            return {
+                "category": category,
+                "code": _FAILURE_CODES[category],
+                "message": _friendly_failure_message(category, raw_message),
+                "requires_authorization": category in {
+                    "github_auth",
+                    "codex_auth",
+                    "filesystem_permission",
+                },
+            }
+        if raw_message:
+            return {
+                "category": "unknown",
+                "code": _FAILURE_CODES["unknown"],
+                "message": raw_message,
+                "requires_authorization": False,
+            }
 
     summary = _last_nonempty_line(run.summary)
+    category = classify_failure_text(summary)
+    if category != "unknown":
+        return {
+            "category": category,
+            "code": _FAILURE_CODES[category],
+            "message": _friendly_failure_message(category, summary),
+            "requires_authorization": category in {
+                "github_auth",
+                "codex_auth",
+                "filesystem_permission",
+            },
+        }
     if summary:
-        return summary
+        return {
+            "category": "unknown",
+            "code": _FAILURE_CODES["unknown"],
+            "message": summary,
+            "requires_authorization": False,
+        }
 
-    return "Falha registrada sem mensagem detalhada."
+    return {
+        "category": "unknown",
+        "code": _FAILURE_CODES["unknown"],
+        "message": "Falha registrada sem mensagem detalhada.",
+        "requires_authorization": False,
+    }
+
+
+def failure_reason(run: Run | None) -> str:
+    return str(failure_details(run).get("message") or "")
 
 
 def _run_summary(task: Task, run: Run | None) -> dict:
     needs_attention = task.status in {TaskStatus.failed, TaskStatus.blocked}
+    details = failure_details(run) if needs_attention else {
+        "category": "",
+        "code": "",
+        "message": "",
+        "requires_authorization": False,
+    }
     return {
         "task_id": task.id,
         "task_status": task.status.value if isinstance(task.status, TaskStatus) else str(task.status),
         "run_id": run.id if run else None,
         "run_status": run.status if run else None,
-        "failure_reason": failure_reason(run) if needs_attention else "",
+        "failure_reason": details["message"],
+        "failure_category": details["category"],
+        "failure_code": details["code"],
+        "requires_authorization": details["requires_authorization"],
         "has_log": bool(run),
         "log_url": f"/api/task-runs/{run.id}" if run else None,
     }
@@ -142,6 +306,7 @@ def task_run_log(run_id: str, db: Session = Depends(get_db)):
         "status": run.status,
         "summary": sanitize_text(run.summary),
         "logs": sanitize_payload(_logs_payload(run)),
+        "failure": failure_details(run),
         "commit_sha": run.commit_sha,
         "pull_request_url": run.pull_request_url,
         "started_at": run.started_at,
