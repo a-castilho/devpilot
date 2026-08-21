@@ -9,6 +9,8 @@ from fastapi.staticfiles import StaticFiles
 import app.models  # noqa: F401
 from app.api import router
 from app.auth_routes import router as auth_router
+from app.config import get_settings
+from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
@@ -55,7 +57,17 @@ def _inject_mobile_scroll_unlock(html: str) -> str:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema(engine)
-    yield
+
+    embedded_worker: EmbeddedWorker | None = None
+    if get_settings().embedded_worker:
+        embedded_worker = EmbeddedWorker()
+        embedded_worker.start()
+
+    try:
+        yield
+    finally:
+        if embedded_worker:
+            embedded_worker.stop()
 
 
 app = FastAPI(title="DevPilot API", version="1.0.0", lifespan=lifespan)
