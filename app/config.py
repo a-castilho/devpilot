@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     auth_token_ttl_seconds: int = 3600
     encryption_key: str = ""
     execution_enabled: bool = False
+    embedded_worker: bool = False
     allowed_git_hosts: str = "github.com"
     openai_model: str = "gpt-5.4"
     realtime_model: str = "gpt-realtime-2.1"
