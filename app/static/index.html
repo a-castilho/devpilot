@@ -9,7 +9,7 @@
   <link rel="stylesheet" href="/assets/styles.css?v=20260820-mobile4">
   <link rel="stylesheet" href="/assets/consultant-card.css?v=20260820-1">
   <link rel="stylesheet" href="/assets/reports.css?v=20260820-scroll1">
-  <link rel="stylesheet" href="/assets/task-modal.css">
+  <link rel="stylesheet" href="/assets/task-modal.css">\n  <link rel="stylesheet" href="/assets/task-analytics.css">
   <link rel="stylesheet" href="/assets/mobile-hotfix.css?v=20260820-mobile4">
   <link rel="stylesheet" href="/assets/mobile-one-frame.css?v=20260820-1">
 </head>
@@ -61,7 +61,7 @@
 
       <section class="view" id="organizations-view"><div class="section-head"><div><p>Cadastre organizações GitHub e sincronize repositórios em modo somente leitura.</p></div><button class="primary" data-open="organization-modal">+ Nova organização</button></div><div class="cards" id="organizations-list"></div></section>
       <section class="view" id="projects-view"><div class="section-head"><div><p>Cadastre repositório, instruções do agente e perfil do Codex.</p></div><button class="primary" data-open="project-modal">+ Novo projeto</button></div><div class="cards" id="projects-list"></div></section>
-      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
+      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><section id="task-analytics" class="task-analytics" aria-live="polite"></section><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
       <section class="view" id="reports-view">
         <div class="reports-shell">
@@ -135,7 +135,7 @@
   <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
 
   <script src="/assets/app.js" defer></script>
-  <script src="/assets/task-modal.js" defer></script>
+  <script src="/assets/task-modal.js" defer></script>\n  <script src="/assets/task-analytics.js" defer></script>
   <script src="/assets/reports.js" defer></script>
   <script src="/assets/example-project.js" defer></script>
   <script src="/assets/example-project-mobile-training.js?v=20260820-1" defer></script>
