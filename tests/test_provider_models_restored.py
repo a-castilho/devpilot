@@ -4,7 +4,12 @@ import httpx
 import pytest
 
 from app.services import provider_models
-from app.services.provider_models import ProviderModelDiscoveryError, discover_provider_models
+from app.services.provider_models import (
+    ProviderModel,
+    ProviderModelDiscoveryError,
+    discover_provider_models,
+    recommended_provider_models,
+)
 
 
 def response(status: int, payload: dict) -> httpx.Response:
@@ -100,3 +105,28 @@ def test_provider_auth_error_does_not_expose_response_body(monkeypatch):
 def test_custom_provider_requires_manual_catalog():
     with pytest.raises(ProviderModelDiscoveryError, match="não oferece descoberta automática"):
         discover_provider_models("custom", "custom-secret")
+
+
+def test_openai_recommendations_prefer_current_text_models_over_legacy_catalog():
+    models = [
+        ProviderModel("babbage-002", "babbage-002"),
+        ProviderModel("chat-latest", "chat-latest"),
+        ProviderModel("davinci-002", "davinci-002"),
+        ProviderModel("text-embedding-3-large", "text-embedding-3-large"),
+        ProviderModel("gpt-5.4", "gpt-5.4"),
+        ProviderModel("gpt-5.4-mini", "gpt-5.4-mini"),
+        ProviderModel("gpt-realtime-2.1", "gpt-realtime-2.1"),
+    ]
+
+    recommended = recommended_provider_models("openai", models)
+
+    assert [model.id for model in recommended] == ["gpt-5.4", "gpt-5.4-mini"]
+
+
+def test_recommendations_are_bounded_and_only_use_available_models():
+    models = [ProviderModel(f"gpt-{index}", f"GPT {index}") for index in range(20)]
+
+    recommended = recommended_provider_models("openai", models, limit=6)
+
+    assert len(recommended) == 6
+    assert {model.id for model in recommended}.issubset({model.id for model in models})
