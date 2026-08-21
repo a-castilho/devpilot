@@ -186,3 +186,14 @@ Os padrões mais relevantes são:
 ## 11. Resumo executivo
 
 O DevPilot usa IA em camadas distintas. O Codex CLI atua como agente de desenvolvimento, OpenAI e Gemini são usados na camada de transcrição, e a interpretação básica da intenção de voz continua determinística. A arquitetura evita transformar o LLM no controlador absoluto do sistema: política, credenciais, auditoria, isolamento, autorização e persistência permanecem sob responsabilidade do DevPilot.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
