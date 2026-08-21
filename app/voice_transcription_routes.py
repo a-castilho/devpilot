@@ -14,6 +14,12 @@ from app.db import get_db
 from app.models import ProviderCredential, Workspace
 from app.security import require_access
 from app.services.audit import record
+from app.services.token_usage import (
+    record_usage,
+    serialize_usage,
+    token_counts_from_usage,
+    user_id_from_actor,
+)
 from app.services.vault import Vault
 
 
@@ -204,7 +210,7 @@ async def _transcribe_openai(
     filename: str,
     content_type: str,
     api_keys: list[str],
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     if not api_keys:
         raise ProviderTranscriptionError(
             "openai",
@@ -233,29 +239,37 @@ async def _transcribe_openai(
             continue
 
         try:
-            text = str(response.json().get("text", "")).strip()
+            response_payload = response.json()
+            text = str(response_payload.get("text", "")).strip()
         except (ValueError, AttributeError):
             statuses.append(502)
             continue
         if text:
-            return text, OPENAI_TRANSCRIPTION_MODEL
+            raw_usage = response_payload.get("usage")
+            return (
+                text,
+                OPENAI_TRANSCRIPTION_MODEL,
+                raw_usage if isinstance(raw_usage, dict) else {},
+            )
         statuses.append(422)
 
     raise _provider_error("openai", statuses)
 
 
-def _google_response_text(response: httpx.Response) -> str:
+def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
     try:
         payload = response.json()
         candidates = payload.get("candidates") or []
         parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
     except (ValueError, AttributeError, IndexError):
-        return ""
-    return " ".join(
+        return "", {}
+    text = " ".join(
         str(part.get("text", "")).strip()
         for part in parts
         if isinstance(part, dict) and str(part.get("text", "")).strip()
     ).strip()
+    usage = payload.get("usageMetadata")
+    return text, usage if isinstance(usage, dict) else {}
 
 
 async def _transcribe_google(
@@ -265,7 +279,7 @@ async def _transcribe_google(
     content_type: str,
     api_keys: list[str],
     models: list[str],
-) -> tuple[str, str]:
+) -> tuple[str, str, dict]:
     if not api_keys:
         raise ProviderTranscriptionError(
             "google",
@@ -328,9 +342,9 @@ async def _transcribe_google(
                 statuses.append(response.status_code)
                 continue
 
-            text = _google_response_text(response)
+            text, usage = _google_response_data(response)
             if text:
-                return text, model
+                return text, model, usage
             statuses.append(422)
 
     raise _provider_error("google", statuses)
@@ -386,12 +400,13 @@ async def transcribe_voice(
     provider = ""
     model = ""
     text = ""
+    usage_payload: dict = {}
     primary_error: ProviderTranscriptionError | None = None
     fallback_error: ProviderTranscriptionError | None = None
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
         try:
-            text, model = await _transcribe_openai(
+            text, model, usage_payload = await _transcribe_openai(
                 client,
                 payload=payload,
                 filename=_filename(audio.filename, content_type),
@@ -404,7 +419,7 @@ async def transcribe_voice(
 
         if not text and google_keys and len(payload) <= GOOGLE_INLINE_AUDIO_MAX_BYTES:
             try:
-                text, model = await _transcribe_google(
+                text, model, usage_payload = await _transcribe_google(
                     client,
                     payload=payload,
                     content_type=content_type,
@@ -437,6 +452,15 @@ async def transcribe_voice(
             fallback_error,
         )
 
+    usage = record_usage(
+        db,
+        workspace_id=ws.id,
+        user_id=user_id_from_actor(actor),
+        provider=provider,
+        model=model,
+        operation="voice.transcription",
+        counts=token_counts_from_usage(usage_payload),
+    )
     record(
         db,
         workspace_id=ws.id,
@@ -451,9 +475,12 @@ async def transcribe_voice(
         },
     )
     db.commit()
-    return {
+    result = {
         "text": text,
         "provider": provider,
         "model": model,
         "fallback": provider != "openai",
     }
+    if usage:
+        result["token_usage"] = serialize_usage(usage)
+    return result
