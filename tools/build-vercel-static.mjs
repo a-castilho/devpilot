@@ -23,6 +23,7 @@ const scripts = [
   'task-failures.js',
   'task-image-upload.js',
   'consolidated-ui.js',
+  'analysis-failure-actions.js',
   'organization-normalization-ui.js',
   'example-project.js',
   'repeatai-analysis-scroll.js',
