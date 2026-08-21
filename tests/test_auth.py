@@ -15,7 +15,6 @@ from app.security import (
     decode_access_token,
     hash_password,
     require_bootstrap_access,
-    require_super_admin,
     session_principal,
     verify_password,
 )
@@ -84,11 +83,15 @@ def test_bootstrap_creates_only_first_super_admin(auth_db):
     assert error.value.status_code == 409
 
 
-def test_bootstrap_token_and_legacy_admin_remain_super_admin(auth_db):
-    assert require_bootstrap_access(authorization="Bearer test-bootstrap-token-with-at-least-32-characters") == "owner"
-    bootstrap = current_principal(authorization="Bearer test-bootstrap-token-with-at-least-32-characters")
-    assert bootstrap.role is Role.SUPER_ADMIN
-    assert require_super_admin(bootstrap) == "owner"
+def test_bootstrap_token_is_only_valid_for_first_user_setup():
+    token = "Bearer test-bootstrap-token-with-at-least-32-characters"
+    assert require_bootstrap_access(authorization=token) == "owner"
+    with pytest.raises(HTTPException) as error:
+        current_principal(authorization=token)
+    assert error.value.status_code == 401
+
+
+def test_legacy_admin_session_remains_super_admin(auth_db):
     admin = add_user(auth_db, role="admin")
     token, _ = create_access_token(admin)
     assert current_principal(authorization=f"Bearer {token}").role is Role.SUPER_ADMIN
