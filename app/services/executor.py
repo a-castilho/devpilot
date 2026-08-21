@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import select
@@ -38,6 +39,15 @@ DEVELOPMENT_DUPLICATE_GUARD = (
     "the relevant checks and report the evidence. If it exists partially, reuse and extend the "
     "existing implementation and change only the verified gaps. Prefer adapting existing files and "
     "flows over adding duplicate endpoints, screens, components, services or models."
+)
+AGENTS_FILE_NAME = "AGENTS.md"
+GENERATED_AGENTS_START = "<!-- DEVPILOT-GENERATED-ANALYSIS:START -->"
+GENERATED_AGENTS_END = "<!-- DEVPILOT-GENERATED-ANALYSIS:END -->"
+_SECRET_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]+\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
 
 
@@ -203,6 +213,93 @@ def development_prompt(task: Task) -> str:
     )
 
 
+def _redact_generated_text(value: str) -> str:
+    text = str(value or "")
+    text = _SECRET_PATTERNS[0].sub(r"\1[REDACTED]", text)
+    for pattern in _SECRET_PATTERNS[1:]:
+        text = pattern.sub("[REDACTED]", text)
+    return text
+
+
+def _without_generated_agents_section(value: str) -> str:
+    text = str(value or "")
+    start = text.find(GENERATED_AGENTS_START)
+    if start < 0:
+        return text.strip()
+    end = text.find(GENERATED_AGENTS_END, start + len(GENERATED_AGENTS_START))
+    if end < 0:
+        return text[:start].rstrip()
+    return (text[:start] + text[end + len(GENERATED_AGENTS_END):]).strip()
+
+
+def build_generated_agents_md(
+    project: Project,
+    task: Task,
+    report: str,
+    base_content: str = "",
+) -> str:
+    base = _without_generated_agents_section(base_content or project.agents_md)
+    if not base:
+        base = (
+            "# Instruções do projeto\n\n"
+            "Este arquivo foi criado pelo DevPilot e reúne orientações para futuras tarefas.\n"
+        )
+
+    generated_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    safe_report = _redact_generated_text(report).strip()
+    if not safe_report:
+        safe_report = "A análise detalhada ainda não foi disponibilizada."
+
+    section = f"""
+{GENERATED_AGENTS_START}
+## Orientações geradas pelo DevPilot
+
+- Projeto: {project.name}
+- Repositório: {project.repository_url}
+- Branch de referência: {project.default_branch}
+- Última atualização: {generated_at}
+- Tarefa de origem: {task.title}
+
+### Diretrizes para futuras tarefas
+
+- Faça uma preflight de duplicidade antes de criar qualquer implementação.
+- Preserve a arquitetura e os padrões já existentes no projeto.
+- Execute os testes e validações relevantes antes de concluir.
+- Nunca exponha credenciais, dados pessoais ou segredos nos logs, commits ou relatórios.
+- Não faça push, merge, deploy ou operações destrutivas sem aprovação explícita.
+
+### Evidências da última análise
+
+{safe_report}
+{GENERATED_AGENTS_END}
+"""
+    return f"{base.rstrip()}\n\n{section.strip()}\n"
+
+
+def write_generated_agents_md(
+    repository: Path,
+    project: Project,
+    task: Task,
+    report: str,
+) -> str:
+    """Persist only the generated instruction file, never disposable analysis-worktree changes."""
+    target = repository / AGENTS_FILE_NAME
+    temporary = target.with_name(f".{target.name}.{task.id[:8]}.tmp")
+    try:
+        existing = target.read_text(encoding="utf-8") if target.is_file() else ""
+        content = build_generated_agents_md(project, task, report, existing)
+        temporary.write_text(content, encoding="utf-8")
+        os.replace(temporary, target)
+        project.agents_md = content
+        return content
+    except OSError as error:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise RuntimeError(f"Unable to generate {AGENTS_FILE_NAME}: {error}") from error
+
+
 def execute_read_only_analysis(project: Project, task: Task, repository: Path) -> dict:
     """Run analysis in a disposable worktree so tracked project files are never persisted."""
     with tempfile.TemporaryDirectory(prefix=f"devpilot-analysis-{task.id[:8]}-") as temp_dir:
@@ -266,24 +363,77 @@ def execute_read_only_analysis(project: Project, task: Task, repository: Path) -
 def execute_task(project: Project, task: Task) -> dict:
     settings = get_settings()
     read_only = is_read_only_task(task)
+
+    if read_only:
+        path = ensure_repository(project)
+        write_generated_agents_md(
+            path,
+            project,
+            task,
+            "A análise foi solicitada e o arquivo de instruções foi preparado. "
+            "A auditoria detalhada será registrada quando o analisador estiver habilitado.",
+        )
+        if not settings.execution_enabled:
+            return {
+                "mode": "analysis-read-only-disabled",
+                "exit_code": 0,
+                "summary": (
+                    "AGENTS.md foi gerado. A execução automática está desativada; "
+                    "a auditoria detalhada aguarda habilitação."
+                ),
+                "client_report": (
+                    "Resumo para o cliente\n"
+                    "O arquivo de instruções do projeto foi gerado com segurança. "
+                    "A análise detalhada ainda não foi executada porque a execução automática está desativada.\n\n"
+                    "O que encontramos\n"
+                    "O DevPilot preparou o AGENTS.md com as regras operacionais básicas do projeto.\n\n"
+                    "Impacto\n"
+                    "As próximas tarefas já poderão usar essas orientações quando a execução for habilitada.\n\n"
+                    "Recomendações\n"
+                    "Habilitar a execução para concluir a auditoria técnica.\n\n"
+                    "Próximo passo\n"
+                    "Habilite a execução automática e solicite novamente a análise."
+                ),
+                "agents_md_generated": True,
+                "agents_md_path": AGENTS_FILE_NAME,
+            }
+
+        result = execute_read_only_analysis(project, task, path)
+        write_generated_agents_md(
+            path,
+            project,
+            task,
+            result.get("client_report") or result.get("summary", ""),
+        )
+        result["agents_md_generated"] = True
+        result["agents_md_path"] = AGENTS_FILE_NAME
+        if result.get("exit_code", 1) == 0:
+            result["summary"] = (
+                "Análise concluída e AGENTS.md gerado/atualizado. "
+                "O relatório para o cliente está disponível abaixo."
+            )
+        else:
+            result["summary"] = (
+                f"{result.get('summary', 'A análise terminou com falha.')} "
+                "O AGENTS.md foi preservado com o contexto disponível."
+            )
+        return result
+
     if not settings.execution_enabled:
         return {
-            "mode": "analysis-read-only-dry-run" if read_only else "dry-run",
+            "mode": "dry-run",
             "summary": "A execução está desativada. A tarefa foi registrada e aguarda execução habilitada.",
             "client_report": (
                 "Resumo para o cliente\nA solicitação foi registrada, mas a execução automática está desativada.\n\n"
-                "O que encontramos\nAinda não houve análise do repositório.\n\n"
+                "O que encontramos\nAinda não houve execução do repositório.\n\n"
                 "Impacto\nNenhuma alteração foi aplicada ao projeto.\n\n"
-                "Recomendações\nHabilitar a execução para permitir a análise completa.\n\n"
+                "Recomendações\nHabilitar a execução para permitir o desenvolvimento.\n\n"
                 "Próximo passo\nAutorize ou habilite a execução da tarefa."
             ),
             "planned_command": ["codex", "exec", "--json", "<task prompt>"],
         }
 
     path = ensure_repository(project)
-    if read_only:
-        return execute_read_only_analysis(project, task, path)
-
     if project.agents_md:
         (path / "AGENTS.md").write_text(project.agents_md, encoding="utf-8")
     branch = task.branch_name or f"devpilot/{task.id[:8]}"
