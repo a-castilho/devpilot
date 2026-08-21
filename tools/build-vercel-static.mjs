@@ -20,6 +20,8 @@ const scripts = [
   'voice-project-start.js',
   'voice-local-update.js',
   'voice-microphone-permission.js',
+  'voice-browser-compat.js',
+  'voice-playback.js',
   'task-failures.js',
   'task-image-upload.js',
   'consolidated-ui.js',
