@@ -1,0 +1,35 @@
+/* Project list: show five description lines and scroll the remainder. */
+#projects-view #projects-list .project-card > p {
+  --project-description-line-height: 1.5em;
+  --project-description-lines: 5;
+  line-height: var(--project-description-line-height);
+  height: calc(var(--project-description-line-height) * var(--project-description-lines));
+  min-height: calc(var(--project-description-line-height) * var(--project-description-lines));
+  max-height: calc(var(--project-description-line-height) * var(--project-description-lines));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+  padding-right: 8px;
+  margin-bottom: 14px;
+  -webkit-overflow-scrolling: touch;
+}
+
+#projects-view #projects-list .project-card > p::-webkit-scrollbar {
+  width: 6px;
+}
+
+#projects-view #projects-list .project-card > p::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#projects-view #projects-list .project-card > p::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+}
+
+#projects-view #projects-list .project-card > p::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
