@@ -54,7 +54,10 @@ source .venv/bin/activate
 python -m app.worker
 ```
 
-Abra `http://localhost:8080` e use o valor de `DEVPILOT_BOOTSTRAP_TOKEN` para entrar.
+Abra `http://localhost:8080`. No primeiro acesso, use `DEVPILOT_BOOTSTRAP_TOKEN` somente
+para criar o primeiro usuário `SUPER_ADMIN`. A API devolve um token de sessão e, a partir
+desse momento, o acesso normal deve ser feito por e-mail e senha. O token de bootstrap não
+é aceito como sessão administrativa em endpoints normais.
 
 ## Docker
 
@@ -98,6 +101,10 @@ configurados, credenciais de escopo mínimo e diretório isolado.
 Nunca envie chaves ao frontend após o cadastro. Em produção, use um KMS/secret manager,
 tokens curtos para GitHub Apps, runners sem privilégios e aprovação explícita para push,
 merge, deploy, dependências e operações destrutivas.
+
+`DEVPILOT_BOOTSTRAP_TOKEN` é uma credencial de inicialização, não uma segunda conta de
+administrador. Use-a apenas no endpoint de bootstrap do primeiro usuário, mantenha-a fora
+do frontend e faça rotação/remoção do segredo do ambiente após a configuração inicial.
 
 <!-- COMPROMISSO-GERAL-A-CASTILHO -->
 
