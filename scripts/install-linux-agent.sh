@@ -87,6 +87,10 @@ After=network.target
 Type=simple
 WorkingDirectory=${ROOT}
 EnvironmentFile=${ENV_FILE}
+# The DevPilot app runs in Docker as uid 10001. The socket remains protected by
+# signed requests, so allow the container process to connect to the UDS even
+# when the host user has a different uid/gid. This also survives Agent restarts.
+UMask=0000
 ExecStart=${PYTHON} -m app.linux_agent
 Restart=on-failure
 RestartSec=2
@@ -160,6 +164,10 @@ if [[ "${healthy}" != "1" ]]; then
   journalctl --user -u devpilot-linux-agent.service -n 60 --no-pager >&2 || true
   exit 1
 fi
+
+# Keep the current socket immediately connectable from the non-root DevPilot
+# container. UMask=0000 above guarantees the same permission after restarts.
+chmod 666 "${SOCKET_PATH}" 2>/dev/null || true
 
 echo "DevPilot Linux Agent instalado e saudável."
 echo "Socket: ${SOCKET_PATH}"
