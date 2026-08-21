@@ -138,7 +138,6 @@ def spa(path: str):
         '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
-        '<script src="/assets/task-command-data.js" defer></script>',
         '<script src="/assets/task-image-upload.js" defer></script>',
         '<script src="/assets/consolidated-ui.js" defer></script>',
         '<script src="/assets/workspace-skins.js" defer></script>',
