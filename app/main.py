@@ -57,15 +57,30 @@ def _normalize_index_head(html: str) -> str:
     return f"{html[:start]}{head}{html[end:]}"
 
 
-def _inject_mobile_scroll_unlock(html: str) -> str:
-    asset = STATIC / "mobile-scroll-unlock.css"
+def _inject_stylesheet(html: str, name: str) -> str:
+    asset = STATIC / name
     try:
         revision = str(asset.stat().st_mtime_ns)
     except OSError:
         revision = "1"
-    link = f'<link rel="stylesheet" href="/assets/mobile-scroll-unlock.css?v={revision}">'
-    if "mobile-scroll-unlock.css" not in html:
+    link = f'<link rel="stylesheet" href="/assets/{name}?v={revision}">'
+    if name not in html:
         html = html.replace("</head>", f"  {link}\n</head>")
+    return html
+
+
+def _inject_mobile_scroll_unlock(html: str) -> str:
+    return _inject_stylesheet(html, "mobile-scroll-unlock.css")
+
+
+def _is_mobile_route(path: str) -> bool:
+    first_segment = path.strip("/").split("/", 1)[0].lower()
+    return first_segment == "mobile"
+
+
+def _mark_mobile_route(html: str) -> str:
+    if 'class="mobile-route"' not in html:
+        html = html.replace("<body>", '<body class="mobile-route">', 1)
     return html
 
 
@@ -126,8 +141,12 @@ def spa(path: str):
             headers = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
         return FileResponse(candidate, headers=headers)
 
+    mobile_route = _is_mobile_route(path)
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = _normalize_index_head(html)
+    if mobile_route:
+        html = _mark_mobile_route(html)
+
     scripts = [
         '<script src="/assets/telemetry-capture.js" defer></script>',
         '<script src="/assets/telemetry-replay-capture.js" defer></script>',
@@ -167,6 +186,8 @@ def spa(path: str):
             html = html.replace("</body>", f"  {script}\n</body>")
 
     html = _inject_mobile_scroll_unlock(html)
+    if mobile_route:
+        html = _inject_stylesheet(html, "mobile-route.css")
     html = _version_frontend_scripts(html)
     return HTMLResponse(
         html,
