@@ -27,3 +27,24 @@ def test_audit_events_form_hash_chain():
         assert events[0].event_hash == first.event_hash
         assert events[1].previous_hash == events[0].event_hash
         assert second.event_hash != first.event_hash
+
+
+def test_legacy_owner_actor_is_attributed_to_authenticated_principal():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        workspace = Workspace(name="Test actor", slug="test-actor")
+        db.add(workspace)
+        db.flush()
+        db.info["principal_actor"] = "user:user-123"
+
+        event = record(
+            db,
+            workspace_id=workspace.id,
+            actor="owner",
+            action="task.created",
+            details={},
+        )
+        db.flush()
+
+        assert event.actor == "user:user-123"
