@@ -40,7 +40,11 @@ function revision(path) {
   return createHash('sha256').update(content).digest('hex').slice(0, 12);
 }
 
-let html = readFileSync(join(source, 'index.html'), 'utf8');
+function normalizeHead(value) {
+  return value.replace(/<head>[\s\S]*?<\/head>/, head => head.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n'));
+}
+
+let html = normalizeHead(readFileSync(join(source, 'index.html'), 'utf8'));
 
 for (const name of scripts) {
   const assetPath = join(source, name);
