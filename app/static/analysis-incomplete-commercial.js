@@ -2,6 +2,7 @@
   const STYLE_ID = 'devpilot-analysis-incomplete-commercial-style';
   const HOURLY_MIN = 180;
   const HOURLY_MAX = 280;
+  const RETRY_COMPLETE_AT = 0.86;
   let scheduled = false;
 
   function injectStyles() {
@@ -17,6 +18,22 @@
       .analysis-incomplete-commercial .analysis-price-summary{margin:0}
       .analysis-incomplete-commercial .analysis-proposal-meta{margin:0}
       .analysis-incomplete-commercial .analysis-proposal-note{margin:0}
+      .analysis-incomplete-actions.has-auto-retry-slider{width:100%}
+      .analysis-auto-retry-slider{--retry-slide:0px;--retry-progress:0%;position:relative;flex:1 0 100%;width:100%;height:64px;overflow:hidden;box-sizing:border-box;border:1px solid #246d63;border-radius:18px;background:linear-gradient(135deg,#071c1e,#0a1724);box-shadow:inset 0 0 0 1px #ffffff05,0 10px 26px #0004;touch-action:pan-y;user-select:none;-webkit-user-select:none;transition:border-color .2s ease,box-shadow .2s ease,background .2s ease}
+      .analysis-auto-retry-fill{position:absolute;inset:0 auto 0 0;width:var(--retry-progress);pointer-events:none;background:linear-gradient(90deg,#14b89d,#39df89);opacity:.3;transition:width .08s linear,opacity .2s ease}
+      .analysis-auto-retry-label{position:absolute;inset:0 16px 0 74px;display:flex;align-items:center;justify-content:center;gap:9px;min-width:0;color:#b7cad8;font-size:11px;font-weight:850;letter-spacing:.035em;text-transform:uppercase;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .2s ease}
+      .analysis-auto-retry-label strong{display:inline-grid;place-items:center;min-width:42px;height:24px;padding:0 8px;border:1px solid #2d8e7f;border-radius:999px;background:#0e342e;color:#61ecd5;font-size:9px;letter-spacing:.08em}
+      .analysis-auto-retry-slider .analysis-retry-task{position:absolute!important;z-index:2;left:5px!important;top:5px!important;width:54px!important;min-width:54px!important;max-width:54px!important;height:54px!important;min-height:54px!important;padding:0!important;margin:0!important;border:0!important;border-radius:14px!important;display:grid!important;place-items:center!important;transform:translateX(var(--retry-slide));background:linear-gradient(135deg,#35e4d1,#3da8f5)!important;color:#06131b!important;box-shadow:0 8px 20px #25bfc34d!important;font-size:0!important;cursor:grab!important;touch-action:none!important;transition:transform .16s ease,background .2s ease,box-shadow .2s ease}
+      .analysis-auto-retry-slider .analysis-retry-task::before{content:'›';font-size:34px;font-weight:950;line-height:1;transform:translateY(-1px)}
+      .analysis-auto-retry-slider.dragging .analysis-retry-task{cursor:grabbing!important;transition:none}
+      .analysis-auto-retry-slider.dragging .analysis-auto-retry-fill{transition:none}
+      .analysis-auto-retry-slider.ready,.analysis-auto-retry-slider.running{border-color:#39dc88;background:#09251c;box-shadow:0 0 0 3px #39dc8816,0 10px 26px #0004}
+      .analysis-auto-retry-slider.ready .analysis-auto-retry-fill,.analysis-auto-retry-slider.running .analysis-auto-retry-fill{opacity:.58}
+      .analysis-auto-retry-slider.ready .analysis-auto-retry-label,.analysis-auto-retry-slider.running .analysis-auto-retry-label{color:#dcffea}
+      .analysis-auto-retry-slider.ready .analysis-retry-task,.analysis-auto-retry-slider.running .analysis-retry-task{background:linear-gradient(135deg,#42e594,#20b86f)!important;box-shadow:0 8px 20px #20b86f45!important}
+      .analysis-auto-retry-slider.ready .analysis-retry-task::before,.analysis-auto-retry-slider.running .analysis-retry-task::before{content:'✓';font-size:24px}
+      .analysis-auto-retry-slider.retry-error{border-color:#ff6577;box-shadow:0 0 0 3px #ff657714}
+      @media(max-width:640px){.analysis-auto-retry-slider{height:70px;border-radius:17px}.analysis-auto-retry-slider .analysis-retry-task{width:60px!important;min-width:60px!important;max-width:60px!important;height:60px!important;min-height:60px!important}.analysis-auto-retry-label{inset:0 10px 0 78px;gap:7px;font-size:10px}.analysis-auto-retry-label strong{min-width:38px;height:22px;font-size:8px}}
     `;
     document.head.appendChild(style);
   }
@@ -133,6 +150,145 @@
     };
   }
 
+  function setRetryProgress(slider, px) {
+    const thumb = slider.querySelector('.analysis-retry-task');
+    if (!thumb) return 0;
+    const max = Math.max(0, slider.clientWidth - thumb.offsetWidth - 10);
+    const value = Math.max(0, Math.min(max, px));
+    const ratio = max ? value / max : 0;
+    slider.style.setProperty('--retry-slide', `${value}px`);
+    slider.style.setProperty('--retry-progress', `${ratio * 100}%`);
+    slider.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+    return ratio;
+  }
+
+  function setRetryLabel(slider, text) {
+    const value = slider.querySelector('.analysis-auto-retry-label span');
+    if (value) value.textContent = text;
+  }
+
+  function resetRetrySlider(slider, message = 'Deslize para repetir procedimento') {
+    if (!slider || slider.dataset.running === '1') return;
+    slider.classList.remove('dragging', 'ready', 'running', 'retry-error');
+    setRetryLabel(slider, message);
+    setRetryProgress(slider, 0);
+  }
+
+  function monitorRetryOutcome(slider, button) {
+    window.setTimeout(function check() {
+      if (!slider.isConnected) return;
+      const dialog = slider.closest('dialog');
+      if (!dialog?.open) return;
+      if (button.disabled) {
+        window.setTimeout(check, 300);
+        return;
+      }
+      slider.dataset.running = '0';
+      slider.classList.remove('running', 'ready');
+      slider.classList.add('retry-error');
+      setRetryLabel(slider, 'Falhou · deslize para tentar novamente');
+      setRetryProgress(slider, 0);
+    }, 400);
+  }
+
+  function activateRetry(slider) {
+    if (!slider || slider.dataset.running === '1') return;
+    const button = slider.querySelector('.analysis-retry-task');
+    if (!button || button.disabled) return resetRetrySlider(slider);
+
+    slider.dataset.running = '1';
+    slider.classList.remove('dragging', 'retry-error');
+    slider.classList.add('ready', 'running');
+    const max = Math.max(0, slider.clientWidth - button.offsetWidth - 10);
+    setRetryProgress(slider, max);
+    setRetryLabel(slider, 'Repetindo procedimento…');
+
+    button.dataset.autoRetryArmed = '1';
+    button.click();
+    button.dataset.autoRetryArmed = '0';
+    monitorRetryOutcome(slider, button);
+  }
+
+  function bindRetrySlider(slider) {
+    if (!slider || slider.dataset.bound === '1') return;
+    slider.dataset.bound = '1';
+    const button = slider.querySelector('.analysis-retry-task');
+    if (!button) return;
+
+    let pointerId = null;
+    let startX = 0;
+    let startSlide = 0;
+
+    button.setAttribute('aria-label', 'Arraste para a direita para repetir o procedimento automaticamente');
+    button.title = 'Arraste até o fim para repetir o procedimento';
+
+    button.addEventListener('click', event => {
+      if (button.dataset.autoRetryArmed === '1') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+
+    button.addEventListener('pointerdown', event => {
+      if (slider.dataset.running === '1' || button.disabled) return;
+      pointerId = event.pointerId;
+      startX = event.clientX;
+      startSlide = parseFloat(getComputedStyle(slider).getPropertyValue('--retry-slide')) || 0;
+      slider.classList.remove('retry-error');
+      slider.classList.add('dragging');
+      button.setPointerCapture?.(pointerId);
+      event.preventDefault();
+    });
+
+    button.addEventListener('pointermove', event => {
+      if (pointerId !== event.pointerId || !slider.classList.contains('dragging')) return;
+      setRetryProgress(slider, startSlide + event.clientX - startX);
+      event.preventDefault();
+    });
+
+    const finish = event => {
+      if (pointerId === null || (event.pointerId != null && event.pointerId !== pointerId)) return;
+      const current = parseFloat(getComputedStyle(slider).getPropertyValue('--retry-slide')) || 0;
+      const ratio = setRetryProgress(slider, current);
+      slider.classList.remove('dragging');
+      pointerId = null;
+      if (ratio >= RETRY_COMPLETE_AT) activateRetry(slider);
+      else resetRetrySlider(slider);
+    };
+
+    button.addEventListener('pointerup', finish);
+    button.addEventListener('pointercancel', finish);
+    button.addEventListener('keydown', event => {
+      if (event.key === 'Home' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        resetRetrySlider(slider);
+      }
+      if (event.key === 'End' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        activateRetry(slider);
+      }
+    });
+  }
+
+  function enhanceRetrySlider(dialog) {
+    const actions = dialog?.querySelector('.analysis-incomplete-actions');
+    const button = actions?.querySelector(':scope > .analysis-retry-task');
+    if (!actions || !button || button.closest('.analysis-auto-retry-slider')) return;
+
+    actions.classList.add('has-auto-retry-slider');
+    const slider = document.createElement('div');
+    slider.className = 'analysis-auto-retry-slider';
+    slider.setAttribute('role', 'slider');
+    slider.setAttribute('aria-label', 'Repetir procedimento automaticamente');
+    slider.setAttribute('aria-valuemin', '0');
+    slider.setAttribute('aria-valuemax', '100');
+    slider.setAttribute('aria-valuenow', '0');
+    slider.innerHTML = '<span class="analysis-auto-retry-fill"></span><span class="analysis-auto-retry-label"><strong>AUTO</strong><span>Deslize para repetir procedimento</span></span>';
+
+    button.parentNode.insertBefore(slider, button);
+    slider.appendChild(button);
+    bindRetrySlider(slider);
+  }
+
   function render(dialog) {
     const proposal = dialog.querySelector('.analysis-proposal-card.analysis-incomplete');
     const content = proposal?.querySelector('.analysis-proposal-content');
@@ -185,7 +341,9 @@
     scheduled = false;
     const dialog = document.getElementById('task-log-modal');
     if (!dialog?.open) return;
+    enhanceRetrySlider(dialog);
     render(dialog);
+    enhanceRetrySlider(dialog);
   }
 
   function schedule() {
