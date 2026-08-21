@@ -87,7 +87,7 @@
   margin-top:12px;
   padding:8px;
   display:grid;
-  grid-template-columns:auto minmax(150px,1fr) auto auto;
+  grid-template-columns:minmax(150px,1fr) auto auto;
   gap:8px;
   align-items:end;
   border:1px solid rgba(111,139,164,.24);
@@ -111,14 +111,19 @@
   border-radius:14px!important;
   white-space:nowrap;
 }
-.voice-upload-button{
-  padding:0 13px;
-  border:1px solid rgba(145,160,176,.2);
+.voice-composer #voice-playback{
+  width:auto;
+  min-width:150px;
+  padding:0 14px;
+  border:1px solid rgba(145,160,176,.22);
   color:#edf7ff;
   background:#20252b;
 }
-.voice-upload-button:hover{border-color:rgba(76,216,208,.42)}
-.voice-composer #voice-playback{width:auto;min-width:118px;padding:0 14px}
+.voice-composer #voice-playback:hover{border-color:rgba(76,216,208,.42)}
+.voice-composer #voice-playback[data-speaking="1"]{
+  border-color:rgba(76,216,208,.56);
+  box-shadow:0 0 0 2px rgba(76,216,208,.08);
+}
 .voice-composer #voice-start{min-width:94px;padding:0 14px}
 .voice-composer #voice-start::first-letter{color:#42dfd5}
 
@@ -134,7 +139,6 @@
   justify-content:flex-end;
   gap:9px;
 }
-.voice-enhanced-actions #voice-send{min-width:170px}
 .voice-clear-button{min-width:88px}
 
 @media (max-width:640px){
@@ -152,10 +156,9 @@
     border-radius:20px;
   }
   .voice-composer .voice-output-control{grid-column:1/-1;grid-row:1}
-  .voice-upload-button{grid-column:1;grid-row:2}
-  .voice-composer #voice-playback{grid-column:2;grid-row:2;min-width:0}
-  .voice-composer #voice-start{grid-column:1/-1;grid-row:3;width:100%}
-  .voice-enhanced-actions{display:grid!important;grid-template-columns:1fr 1.5fr}
+  .voice-composer #voice-playback{grid-column:1;grid-row:2;min-width:0;width:100%}
+  .voice-composer #voice-start{grid-column:2;grid-row:2;width:100%;min-width:0}
+  .voice-enhanced-actions{display:grid!important;grid-template-columns:1fr}
   .voice-enhanced-actions button{width:100%;min-width:0!important}
 }
 
