@@ -4,16 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="${HOME}/.config/devpilot"
 STATE_DIR="${HOME}/.local/share/devpilot-linux-agent"
+AGENT_RUNTIME_DIR="${STATE_DIR}/runtime"
+SOCKET_PATH="${AGENT_RUNTIME_DIR}/agent.sock"
 SYSTEMD_DIR="${HOME}/.config/systemd/user"
 ENV_FILE="${CONFIG_DIR}/linux-agent.env"
 UNIT_FILE="${SYSTEMD_DIR}/devpilot-linux-agent.service"
 DEVPILOT_ENV="${ROOT}/.env"
-RUNTIME_ROOT="${ROOT}/runtime"
-AGENT_RUNTIME_DIR="${RUNTIME_ROOT}/linux-agent"
-SOCKET_PATH="${AGENT_RUNTIME_DIR}/agent.sock"
 
-mkdir -p "${CONFIG_DIR}" "${STATE_DIR}" "${SYSTEMD_DIR}"
+mkdir -p "${CONFIG_DIR}" "${STATE_DIR}" "${AGENT_RUNTIME_DIR}" "${SYSTEMD_DIR}"
 chmod 700 "${CONFIG_DIR}" "${STATE_DIR}"
+chmod 755 "${AGENT_RUNTIME_DIR}"
 
 # Stop a previous crash-loop before changing its runtime/socket configuration.
 systemctl --user stop devpilot-linux-agent.service >/dev/null 2>&1 || true
@@ -47,40 +47,13 @@ if ! "${PYTHON}" -c 'import fastapi, uvicorn, httpx; from app.linux_agent.main i
   exit 1
 fi
 
-prepare_agent_runtime() {
-  # Docker may previously have created ./runtime as root. Keep the Agent socket
-  # in a dedicated user-owned directory instead of making all runtime world-writable.
-  mkdir -p "${AGENT_RUNTIME_DIR}" 2>/dev/null || true
-  if [[ -d "${AGENT_RUNTIME_DIR}" && -w "${AGENT_RUNTIME_DIR}" ]]; then
-    chmod 755 "${AGENT_RUNTIME_DIR}" 2>/dev/null || true
-    return 0
-  fi
-
-  if command -v docker >/dev/null 2>&1; then
-    mkdir -p "${RUNTIME_ROOT}" 2>/dev/null || true
-    local uid gid
-    uid="$(id -u)"
-    gid="$(id -g)"
-    echo "Reparando permissão do runtime do Linux Agent via Docker..."
-    docker run --rm \
-      -v "${RUNTIME_ROOT}:/runtime" \
-      alpine:3.20 \
-      sh -c "mkdir -p /runtime/linux-agent && chown ${uid}:${gid} /runtime/linux-agent && chmod 755 /runtime/linux-agent"
-  fi
-
-  if [[ ! -d "${AGENT_RUNTIME_DIR}" || ! -w "${AGENT_RUNTIME_DIR}" ]]; then
-    echo "ERRO: ${AGENT_RUNTIME_DIR} não é gravável pelo usuário $(id -un)." >&2
-    echo "Proprietário atual:" >&2
-    ls -ld "${RUNTIME_ROOT}" "${AGENT_RUNTIME_DIR}" 2>/dev/null >&2 || true
-    echo "Corrija a propriedade/permissão desse diretório e execute novamente." >&2
-    exit 1
-  fi
-}
-
-prepare_agent_runtime
+# The Unix socket lives entirely under the user's home. Docker only bind-mounts
+# this directory into the app container, so installation never needs docker run,
+# root ownership repair, image pulls, or access to ./runtime.
 rm -f "${SOCKET_PATH}" 2>/dev/null || true
-# Remove the old v1 socket when possible; it is no longer used.
-rm -f "${RUNTIME_ROOT}/linux-agent.sock" 2>/dev/null || true
+# Best-effort cleanup of the two legacy socket locations.
+rm -f "${ROOT}/runtime/linux-agent.sock" 2>/dev/null || true
+rm -f "${ROOT}/runtime/linux-agent/agent.sock" 2>/dev/null || true
 
 if [[ -f "${ENV_FILE}" ]]; then
   SECRET="$(awk -F= '$1=="DEVPILOT_LINUX_AGENT_SECRET"{sub(/^[^=]*=/,"");print;exit}' "${ENV_FILE}")"
