@@ -1,5 +1,8 @@
+import os
 from pathlib import Path
 from types import SimpleNamespace
+
+os.environ.setdefault("DEVPILOT_BOOTSTRAP_TOKEN", "test-token-with-at-least-32-characters")
 
 from app.telemetry_replay import clean_pointer, timeline_event
 
