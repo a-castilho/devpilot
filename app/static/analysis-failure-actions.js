@@ -1,7 +1,5 @@
 (() => {
   const STYLE_ID = 'devpilot-analysis-failure-actions-style';
-  let activeRun = null;
-  let applying = false;
 
   function injectStyles() {
     if (document.getElementById(STYLE_ID)) return;
@@ -20,7 +18,7 @@
       .analysis-incomplete-actions button{min-height:38px;padding:8px 12px;border-radius:9px;font:inherit;font-size:11px;font-weight:850;cursor:pointer}
       .analysis-fix-credential{border:1px solid #2b8b7d;background:#12342f;color:#70edd8}
       .analysis-retry-task{border:1px solid #355b80;background:#10263c;color:#dcecff}
-      .analysis-incomplete-actions button:disabled{opacity:.55;cursor:wait}
+      .analysis-incomplete-actions button:disabled{opacity:.55;cursor:not-allowed}
       .analysis-incomplete-note{margin:0;color:#8397ad;font-size:10px;line-height:1.45}
       #github-credential-repair-modal{width:min(520px,calc(100vw - 28px));padding:0;border:1px solid #29445f;border-radius:17px;background:#091625;color:#edf6ff;box-shadow:0 26px 80px #000b}
       #github-credential-repair-modal::backdrop{background:#020711c9;backdrop-filter:blur(5px)}
@@ -45,18 +43,21 @@
   }
 
   function taskFor(run) {
-    if (typeof state === 'undefined' || !Array.isArray(state.tasks)) return null;
-    return state.tasks.find(task => task.id === run?.task_id) || null;
+    return typeof state !== 'undefined' && Array.isArray(state.tasks)
+      ? state.tasks.find(task => task.id === run?.task_id) || null
+      : null;
   }
 
   function projectFor(task) {
-    if (!task || typeof state === 'undefined' || !Array.isArray(state.projects)) return null;
-    return state.projects.find(project => project.id === task.project_id) || null;
+    return task && typeof state !== 'undefined' && Array.isArray(state.projects)
+      ? state.projects.find(project => project.id === task.project_id) || null
+      : null;
   }
 
   function organizationFor(project) {
-    if (!project?.organization_id || typeof state === 'undefined' || !Array.isArray(state.organizations)) return null;
-    return state.organizations.find(organization => organization.id === project.organization_id) || null;
+    return project?.organization_id && typeof state !== 'undefined' && Array.isArray(state.organizations)
+      ? state.organizations.find(organization => organization.id === project.organization_id) || null
+      : null;
   }
 
   function isAdmin() {
@@ -75,14 +76,13 @@
 
   function repositoryVisibleInSync(repositories, project, syncResult) {
     const expected = normalizeRepository(project?.repository_url);
-    if (!expected) return false;
     const syncedAt = syncResult?.organization?.last_synced_at
       ? new Date(syncResult.organization.last_synced_at).getTime()
       : 0;
+    if (!expected) return false;
 
     return repositories.some(repository => {
-      const candidate = normalizeRepository(repository.clone_url || repository.full_name);
-      if (candidate !== expected) return false;
+      if (normalizeRepository(repository.clone_url || repository.full_name) !== expected) return false;
       if (!syncedAt || !repository.last_seen_at) return true;
       const seenAt = new Date(repository.last_seen_at).getTime();
       return Number.isFinite(seenAt) && Math.abs(seenAt - syncedAt) < 5000;
@@ -91,15 +91,14 @@
 
   async function retrySameTask(taskId, button) {
     if (!taskId) return;
-    const original = button?.textContent;
+    const original = button?.textContent || 'Testar novamente';
     if (button) {
       button.disabled = true;
       button.textContent = 'Retomando…';
     }
     try {
       await api(`/tasks/${taskId}/retry`, {method: 'POST'});
-      const dialog = document.getElementById('task-log-modal');
-      if (dialog?.open) dialog.close();
+      document.getElementById('task-log-modal')?.close();
       if (typeof toast === 'function') toast('A mesma análise foi recolocada na fila, sem criar tarefa duplicada.');
       if (typeof load === 'function') await load();
     } catch (error) {
@@ -107,7 +106,7 @@
     } finally {
       if (button) {
         button.disabled = false;
-        button.textContent = original || 'Testar novamente';
+        button.textContent = original;
       }
     }
   }
@@ -120,26 +119,16 @@
     dialog.id = 'github-credential-repair-modal';
     dialog.innerHTML = `
       <form class="credential-repair-form" id="github-credential-repair-form">
-        <div>
-          <span class="eyebrow">CORRIGIR CREDENCIAL</span>
-          <h2>Restabelecer acesso ao GitHub</h2>
-        </div>
+        <div><span class="eyebrow">CORRIGIR CREDENCIAL</span><h2>Restabelecer acesso ao GitHub</h2></div>
         <p id="github-credential-repair-context">Informe uma credencial com acesso de leitura ao repositório.</p>
-        <label>Token GitHub
-          <input name="access_token" type="password" autocomplete="off" placeholder="github_pat_... ou ghp_..." required>
-        </label>
-        <p>O token é salvo no vault. Antes de retomar a análise, o DevPilot sincroniza a organização e confirma que o repositório desta tarefa apareceu no acesso atual.</p>
+        <label>Token GitHub<input name="access_token" type="password" autocomplete="off" placeholder="github_pat_... ou ghp_..." required></label>
+        <p>O token é salvo no vault. O DevPilot valida a organização e confirma que o repositório da tarefa está acessível antes de retomar a análise.</p>
         <div class="credential-repair-status" id="github-credential-repair-status"></div>
-        <div class="credential-repair-actions">
-          <button type="button" class="ghost" data-close-credential>Cancelar</button>
-          <button type="submit" class="primary">Salvar, validar e retomar</button>
-        </div>
+        <div class="credential-repair-actions"><button type="button" class="ghost" data-close-credential>Cancelar</button><button type="submit" class="primary">Salvar, validar e retomar</button></div>
       </form>`;
     document.body.appendChild(dialog);
     dialog.querySelector('[data-close-credential]').onclick = () => dialog.close();
-    dialog.addEventListener('click', event => {
-      if (event.target === dialog) dialog.close();
-    });
+    dialog.addEventListener('click', event => { if (event.target === dialog) dialog.close(); });
 
     const form = dialog.querySelector('#github-credential-repair-form');
     form.addEventListener('submit', async event => {
@@ -147,11 +136,13 @@
       const status = dialog.querySelector('#github-credential-repair-status');
       const submit = form.querySelector('button[type="submit"]');
       const token = String(new FormData(form).get('access_token') || '').trim();
-      const taskId = dialog.dataset.taskId || '';
-      const projectId = dialog.dataset.projectId || '';
+      const task = typeof state !== 'undefined'
+        ? state.tasks.find(item => item.id === dialog.dataset.taskId)
+        : null;
+      const project = typeof state !== 'undefined'
+        ? state.projects.find(item => item.id === dialog.dataset.projectId)
+        : null;
       const organizationId = dialog.dataset.organizationId || '';
-      const task = typeof state !== 'undefined' ? state.tasks.find(item => item.id === taskId) : null;
-      const project = typeof state !== 'undefined' ? state.projects.find(item => item.id === projectId) : null;
 
       if (!token || !task || !project || !organizationId) {
         status.className = 'credential-repair-status error';
@@ -183,8 +174,7 @@
         await api(`/tasks/${task.id}/retry`, {method: 'POST'});
         form.reset();
         dialog.close();
-        const taskDialog = document.getElementById('task-log-modal');
-        if (taskDialog?.open) taskDialog.close();
+        document.getElementById('task-log-modal')?.close();
         if (typeof toast === 'function') toast('Credencial validada. A mesma análise foi retomada automaticamente.');
         if (typeof load === 'function') await load();
       } catch (error) {
@@ -195,7 +185,6 @@
         submit.textContent = 'Salvar, validar e retomar';
       }
     });
-
     return dialog;
   }
 
@@ -203,161 +192,122 @@
     const task = taskFor(run);
     const project = projectFor(task);
     const organization = organizationFor(project);
-    if (!isAdmin()) {
-      if (typeof toast === 'function') toast('A correção da credencial GitHub exige perfil Super Admin.');
-      return;
-    }
-    if (!task || !project || !organization) {
-      if (typeof toast === 'function') toast('Este projeto não possui uma organização GitHub vinculada para corrigir.');
-      return;
-    }
+    if (!isAdmin()) return typeof toast === 'function' && toast('A correção da credencial GitHub exige perfil Super Admin.');
+    if (!task || !project || !organization) return typeof toast === 'function' && toast('O projeto precisa estar vinculado a uma organização GitHub.');
 
     const dialog = ensureCredentialDialog();
     dialog.dataset.taskId = task.id;
     dialog.dataset.projectId = project.id;
     dialog.dataset.organizationId = organization.id;
-    const context = dialog.querySelector('#github-credential-repair-context');
-    context.textContent = `${project.name} · ${organization.name}. A análise será retomada somente após confirmar acesso ao repositório.`;
+    dialog.querySelector('#github-credential-repair-context').textContent = `${project.name} · ${organization.name}. A análise só será retomada após confirmar acesso ao repositório.`;
     const status = dialog.querySelector('#github-credential-repair-status');
     status.className = 'credential-repair-status';
     status.textContent = '';
-    dialog.querySelector('input[name="access_token"]').value = '';
+    const input = dialog.querySelector('input[name="access_token"]');
+    input.value = '';
     if (!dialog.open) dialog.showModal();
-    dialog.querySelector('input[name="access_token"]').focus();
-  }
-
-  function setTextIfChanged(element, value) {
-    if (element && element.textContent !== value) element.textContent = value;
+    input.focus();
   }
 
   function applyIncompleteState(run) {
-    if (applying || !run || String(run.status || '').toLowerCase() !== 'failed') return;
+    if (!run || String(run.status || '').toLowerCase() !== 'failed') return;
     const dialog = document.getElementById('task-log-modal');
     if (!dialog?.open) return;
     const proposal = dialog.querySelector('.analysis-proposal-card');
     const clientCard = dialog.querySelector('#task-client-card');
-    if (!proposal || !clientCard) return;
+    const content = proposal?.querySelector('.analysis-proposal-content');
+    if (!proposal || !clientCard || !content) return;
 
-    applying = true;
-    try {
-      dialog.dataset.analysisIncomplete = 'true';
-      const failure = run.failure && typeof run.failure === 'object' ? run.failure : {};
-      const category = String(failure.category || 'unknown');
-      const githubAuth = category === 'github_auth';
-      const task = taskFor(run);
-      const project = projectFor(task);
-      const organization = organizationFor(project);
+    const failure = run.failure && typeof run.failure === 'object' ? run.failure : {};
+    const githubAuth = String(failure.category || '') === 'github_auth';
+    const task = taskFor(run);
+    const project = projectFor(task);
+    const organization = organizationFor(project);
+    const expectedTitle = githubAuth ? 'Restabeleça o acesso ao repositório' : 'Resolva o bloqueio antes de continuar';
 
-      const clientEyebrow = clientCard.querySelector(':scope > .eyebrow');
-      setTextIfChanged(clientEyebrow, 'DIAGNÓSTICO AUTOMÁTICO DA FALHA');
+    const alreadyStable = proposal.dataset.failureRunId === run.id
+      && proposal.classList.contains('analysis-incomplete')
+      && proposal.querySelector('.analysis-incomplete-actions')
+      && proposal.querySelector('.analysis-proposal-head h3')?.textContent === expectedTitle
+      && clientCard.querySelector(':scope > .eyebrow')?.textContent === 'DIAGNÓSTICO AUTOMÁTICO DA FALHA';
+    if (alreadyStable) return;
 
-      proposal.classList.add('analysis-incomplete');
-      const head = proposal.querySelector('.analysis-proposal-head');
-      const eyebrow = head?.querySelector('.eyebrow');
-      const title = head?.querySelector('h3');
-      const badge = head?.querySelector('.analysis-review-badge');
-      setTextIfChanged(eyebrow, 'AÇÃO NECESSÁRIA');
-      setTextIfChanged(title, githubAuth ? 'Restabeleça o acesso ao repositório' : 'Resolva o bloqueio antes de continuar');
-      setTextIfChanged(badge, 'ANÁLISE INCOMPLETA');
+    dialog.dataset.analysisIncomplete = 'true';
+    proposal.dataset.failureRunId = run.id;
+    proposal.classList.add('analysis-incomplete');
+    const clientEyebrow = clientCard.querySelector(':scope > .eyebrow');
+    if (clientEyebrow) clientEyebrow.textContent = 'DIAGNÓSTICO AUTOMÁTICO DA FALHA';
 
-      const content = proposal.querySelector('.analysis-proposal-content');
-      if (!content) return;
-      content.className = 'analysis-proposal-content analysis-incomplete-content';
-      content.innerHTML = '';
+    const head = proposal.querySelector('.analysis-proposal-head');
+    const eyebrow = head?.querySelector('.eyebrow');
+    const title = head?.querySelector('h3');
+    const badge = head?.querySelector('.analysis-review-badge');
+    if (eyebrow) eyebrow.textContent = 'AÇÃO NECESSÁRIA';
+    if (title) title.textContent = expectedTitle;
+    if (badge) badge.textContent = 'ANÁLISE INCOMPLETA';
 
-      const alert = document.createElement('div');
-      alert.className = 'analysis-incomplete-alert';
-      const icon = document.createElement('div');
-      icon.className = 'analysis-incomplete-icon';
-      icon.textContent = '!';
-      const copy = document.createElement('div');
-      const strong = document.createElement('strong');
-      strong.textContent = githubAuth ? 'O código ainda não foi analisado.' : 'A análise técnica não foi concluída.';
-      const paragraph = document.createElement('p');
-      paragraph.textContent = failure.message || 'A execução foi interrompida antes de produzir uma análise técnica confiável.';
-      copy.append(strong, paragraph);
-      alert.append(icon, copy);
-      content.appendChild(alert);
+    content.className = 'analysis-proposal-content analysis-incomplete-content';
+    content.innerHTML = '';
 
-      if (failure.code) {
-        const code = document.createElement('span');
-        code.className = 'analysis-incomplete-code';
-        code.textContent = failure.code;
-        content.appendChild(code);
-      }
+    const alert = document.createElement('div');
+    alert.className = 'analysis-incomplete-alert';
+    alert.innerHTML = '<div class="analysis-incomplete-icon">!</div><div><strong></strong><p></p></div>';
+    alert.querySelector('strong').textContent = githubAuth ? 'O código ainda não foi analisado.' : 'A análise técnica não foi concluída.';
+    alert.querySelector('p').textContent = failure.message || 'A execução foi interrompida antes de produzir uma análise técnica confiável.';
+    content.appendChild(alert);
 
-      const actions = document.createElement('div');
-      actions.className = 'analysis-incomplete-actions';
-      if (githubAuth) {
-        const fix = document.createElement('button');
-        fix.type = 'button';
-        fix.className = 'analysis-fix-credential';
-        fix.textContent = 'Corrigir credencial';
-        fix.disabled = !isAdmin() || !organization;
-        fix.title = fix.disabled
-          ? 'É necessário ser Super Admin e o projeto precisa estar vinculado a uma organização GitHub.'
-          : 'Atualizar a credencial, validar o acesso e retomar esta mesma análise.';
-        fix.onclick = () => openCredentialRepair(run);
-        actions.appendChild(fix);
-      }
-
-      const retry = document.createElement('button');
-      retry.type = 'button';
-      retry.className = 'analysis-retry-task';
-      retry.textContent = 'Testar novamente';
-      retry.onclick = () => retrySameTask(run.task_id, retry);
-      actions.appendChild(retry);
-      content.appendChild(actions);
-
-      const note = document.createElement('p');
-      note.className = 'analysis-incomplete-note';
-      note.textContent = githubAuth
-        ? 'A proposta comercial fica bloqueada até o DevPilot acessar o repositório e concluir a auditoria técnica. A retomada reutiliza a tarefa atual.'
-        : 'Estimativas comerciais só são exibidas depois de uma análise técnica concluída com sucesso.';
-      content.appendChild(note);
-    } finally {
-      applying = false;
+    if (failure.code) {
+      const code = document.createElement('span');
+      code.className = 'analysis-incomplete-code';
+      code.textContent = failure.code;
+      content.appendChild(code);
     }
+
+    const actions = document.createElement('div');
+    actions.className = 'analysis-incomplete-actions';
+    if (githubAuth) {
+      const fix = document.createElement('button');
+      fix.type = 'button';
+      fix.className = 'analysis-fix-credential';
+      fix.textContent = 'Corrigir credencial';
+      fix.disabled = !isAdmin() || !organization;
+      fix.title = fix.disabled ? 'Exige Super Admin e organização GitHub vinculada.' : 'Atualizar a credencial, validar o acesso e retomar esta mesma análise.';
+      fix.onclick = () => openCredentialRepair(run);
+      actions.appendChild(fix);
+    }
+
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'analysis-retry-task';
+    retry.textContent = 'Testar novamente';
+    retry.onclick = () => retrySameTask(run.task_id, retry);
+    actions.appendChild(retry);
+    content.appendChild(actions);
+
+    const note = document.createElement('p');
+    note.className = 'analysis-incomplete-note';
+    note.textContent = githubAuth
+      ? 'A proposta comercial fica bloqueada até o DevPilot acessar o repositório e concluir a auditoria. A retomada reutiliza a tarefa atual.'
+      : 'Estimativas comerciais só são exibidas depois de uma análise técnica concluída com sucesso.';
+    content.appendChild(note);
   }
 
   async function inspectRun(runId) {
     if (!runId) return;
     try {
       const run = await api(`/task-runs/${runId}`);
-      activeRun = run;
-      if (String(run.status || '').toLowerCase() === 'failed') {
-        window.requestAnimationFrame(() => applyIncompleteState(run));
-        window.setTimeout(() => applyIncompleteState(run), 120);
-        window.setTimeout(() => applyIncompleteState(run), 420);
-      } else {
-        activeRun = null;
-        const dialog = document.getElementById('task-log-modal');
-        if (dialog) delete dialog.dataset.analysisIncomplete;
-      }
+      if (String(run.status || '').toLowerCase() !== 'failed') return;
+      [0, 120, 420, 1000].forEach(delay => window.setTimeout(() => applyIncompleteState(run), delay));
     } catch (_) {
-      activeRun = null;
+      // A tela original continuará mostrando o erro de carregamento do log.
     }
   }
 
   injectStyles();
   ensureCredentialDialog();
-
   document.addEventListener('click', event => {
     const link = event.target.closest?.('.task-log-link');
-    if (!link) return;
     const runId = runIdFromLink(link);
-    if (runId) window.setTimeout(() => inspectRun(runId), 0);
-  }, true);
-
-  const observer = new MutationObserver(() => {
-    if (!activeRun || applying) return;
-    const dialog = document.getElementById('task-log-modal');
-    if (!dialog?.open) return;
-    window.requestAnimationFrame(() => applyIncompleteState(activeRun));
-  });
-  observer.observe(document.body, {subtree: true, childList: true, characterData: true});
-
-  document.addEventListener('close', event => {
-    if (event.target?.id === 'task-log-modal') activeRun = null;
+    if (runId) inspectRun(runId);
   }, true);
 })();
