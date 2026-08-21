@@ -38,6 +38,7 @@ jobs:
           node --check app/static/task-image-upload.js
           node --check app/static/reports.js
           node --check app/static/project-provisioning.js
+          node --check app/static/provider-models.js
           node --check app/static/voice-project-start.js
           node --check app/static/voice-local-update.js
 
