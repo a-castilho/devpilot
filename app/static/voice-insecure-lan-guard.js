@@ -23,14 +23,14 @@
   };
 
   const desktopMessage =
-    'O navegador bloqueia o microfone neste endereço HTTP. Abra o DevPilot por HTTPS para gravar direto, ou use + Áudio para enviar um arquivo.';
+    'O navegador bloqueia o microfone neste endereço HTTP. Abra o DevPilot por HTTPS para usar a conversa por voz.';
 
   const applyDesktopState = () => {
     statusNode.textContent = desktopMessage;
     startButton.setAttribute('title', 'Microfone direto exige HTTPS neste endereço');
     startButton.setAttribute(
       'aria-label',
-      'Microfone indisponível em HTTP; use HTTPS ou envie um arquivo de áudio',
+      'Microfone indisponível em HTTP; abra o DevPilot por HTTPS',
     );
     startButton.dataset.captureUnavailable = 'insecure-http';
   };
@@ -49,7 +49,7 @@
     applyDesktopState();
 
     if (typeof toast === 'function') {
-      toast('Microfone direto exige HTTPS. Use + Áudio para enviar um arquivo.');
+      toast('Microfone direto exige HTTPS neste endereço.');
     }
   };
 })();
