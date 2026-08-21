@@ -19,6 +19,7 @@ from app.task_run_routes import router as task_run_router
 from app.user_routes import router as users_router
 from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
+from app.version import __version__
 from app.voice_transcription_routes import router as voice_transcription_router
 from app.db import Base, engine
 from app.services.schema import ensure_runtime_schema
@@ -82,7 +83,7 @@ async def lifespan(_: FastAPI):
             embedded_worker.stop()
 
 
-app = FastAPI(title="DevPilot API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
@@ -99,7 +100,7 @@ app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "devpilot", "version": "1.0.0"}
+    return {"status": "ok", "service": "devpilot", "version": __version__}
 
 
 @app.get("/telemetry", include_in_schema=False)
