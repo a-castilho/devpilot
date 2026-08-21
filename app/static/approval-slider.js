@@ -11,9 +11,11 @@
         --slide:0px;
         --slide-pct:0%;
         position:relative;
-        width:min(320px,100%);
-        min-width:210px;
-        height:58px;
+        width:100%;
+        min-width:0;
+        max-width:260px;
+        height:48px;
+        box-sizing:border-box;
         border:1px solid #29445f;
         border-radius:999px;
         overflow:hidden;
@@ -35,12 +37,15 @@
       }
       .approval-slider-label{
         position:absolute;
-        inset:0 16px 0 72px;
+        inset:0 8px 0 50px;
+        min-width:0;
+        overflow:hidden;
+        text-overflow:ellipsis;
         display:flex;
         align-items:center;
         justify-content:center;
         color:#a8bbcf;
-        font-size:12px;
+        font-size:10px;
         font-weight:850;
         letter-spacing:.04em;
         text-transform:uppercase;
@@ -53,11 +58,11 @@
         z-index:2;
         left:5px!important;
         top:5px!important;
-        width:48px!important;
-        min-width:48px!important;
-        max-width:48px!important;
-        height:48px!important;
-        min-height:48px!important;
+        width:38px!important;
+        min-width:38px!important;
+        max-width:38px!important;
+        height:38px!important;
+        min-height:38px!important;
         padding:0!important;
         margin:0!important;
         border:0!important;
@@ -75,7 +80,7 @@
       }
       .approval-slider .approve::before{
         content:'›';
-        font-size:34px;
+        font-size:28px;
         font-weight:900;
         line-height:1;
         transform:translateY(-1px)
@@ -111,10 +116,17 @@
         border-color:#ff6577;
         box-shadow:0 0 0 3px rgba(255,101,119,.08)
       }
-      @media(max-width:900px){
-        .approval-slider{width:100%;max-width:100%;height:62px}
-        .approval-slider .approve{width:52px!important;min-width:52px!important;max-width:52px!important;height:52px!important;min-height:52px!important}
-        .approval-slider-label{inset:0 14px 0 76px;font-size:12px}
+      .task-actions:has(.approval-slider){width:100%;max-width:260px;min-width:0;overflow:hidden}
+      @media(max-width:1100px) and (min-width:821px){
+        .approval-slider{max-width:180px;height:44px}
+        .approval-slider .approve{width:34px!important;min-width:34px!important;max-width:34px!important;height:34px!important;min-height:34px!important}
+        .approval-slider-label{inset:0 6px 0 44px;font-size:8px;letter-spacing:.02em}
+      }
+      @media(max-width:820px){
+        .approval-slider{width:100%;max-width:100%;height:58px}
+        .task-actions:has(.approval-slider){max-width:100%}
+        .approval-slider .approve{width:48px!important;min-width:48px!important;max-width:48px!important;height:48px!important;min-height:48px!important}
+        .approval-slider-label{inset:0 12px 0 66px;font-size:11px}
       }
     `;
     document.head.appendChild(style);
@@ -218,6 +230,14 @@
 
     button.addEventListener('pointerup', finish);
     button.addEventListener('pointercancel', finish);
+
+    if ('ResizeObserver' in window) {
+      const resizeObserver = new ResizeObserver(() => {
+        const current = parseFloat(getComputedStyle(slider).getPropertyValue('--slide')) || 0;
+        setProgress(slider, slider.classList.contains('approved') ? Number.MAX_SAFE_INTEGER : current);
+      });
+      resizeObserver.observe(slider);
+    }
 
     button.addEventListener('keydown', event => {
       if (event.key === 'End' || event.key === 'ArrowRight') {
