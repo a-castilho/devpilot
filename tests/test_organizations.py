@@ -6,6 +6,7 @@ from sqlalchemy import create_engine, inspect, text
 
 import app.models  # noqa: F401
 from app.db import Base
+from app.schemas import OrganizationCreate, normalize_organization_identifier
 from app.services.executor import github_basic_authorization
 from app.services.organizations import normalize_github_repository, project_slug
 from app.services.schema import ensure_runtime_schema
@@ -28,6 +29,23 @@ def test_runtime_schema_upgrades_existing_projects_table():
     ensure_runtime_schema(engine)
     project_columns = {column["name"] for column in inspect(engine).get_columns("projects")}
     assert "organization_id" in project_columns
+
+
+def test_organization_identifier_normalization_strips_separator_after_truncation():
+    value = "a" * 38 + " b"
+    normalized = normalize_organization_identifier(value, max_length=39)
+    assert normalized == "a" * 38
+    assert not normalized.endswith("-")
+
+
+def test_organization_create_accepts_one_character_github_login():
+    organization = OrganizationCreate(
+        name="X Org",
+        slug="X Organização",
+        github_login="x",
+    )
+    assert organization.slug == "x-organizacao"
+    assert organization.github_login == "x"
 
 
 def test_project_slug_is_safe_for_devpilot_projects():
