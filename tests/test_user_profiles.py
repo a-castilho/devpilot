@@ -7,7 +7,14 @@ from sqlalchemy.orm import Session
 from app.db import Base
 from app.models import User, UserProfile, Workspace
 from app.schemas import UserCreate, UserUpdate
-from app.security import Principal, Role, hash_password, require_access
+from app.security import (
+    Principal,
+    Role,
+    can_manage_role,
+    hash_password,
+    require_access,
+    require_roles,
+)
 from app.user_routes import create_user, list_users, update_user
 
 
@@ -77,3 +84,26 @@ def test_viewer_is_read_only_and_analyst_cannot_administer_configuration():
     assert require_access(request("POST", "/api/tasks"), analyst) == "user:a"
     with pytest.raises(HTTPException):
         require_access(request("POST", "/api/providers"), analyst)
+
+
+def test_role_management_matrix_matches_regulaai():
+    expected = {
+        Role.SUPER_ADMIN: set(Role),
+        Role.OWNER: {Role.ADMIN, Role.ANALYST, Role.VIEWER},
+        Role.ADMIN: {Role.ANALYST, Role.VIEWER},
+        Role.ANALYST: set(),
+        Role.VIEWER: set(),
+    }
+    for actor, allowed in expected.items():
+        assert {target for target in Role if can_manage_role(actor, target)} == allowed
+
+
+def test_require_roles_keeps_super_admin_bypass_and_denies_viewer():
+    dependency = require_roles(Role.OWNER, Role.ADMIN)
+    super_admin = Principal("root", "w", "root@example.com", Role.SUPER_ADMIN)
+    viewer = Principal("viewer", "w", "viewer@example.com", Role.VIEWER)
+
+    assert dependency(principal=super_admin) is super_admin
+    with pytest.raises(HTTPException) as error:
+        dependency(principal=viewer)
+    assert error.value.status_code == 403
