@@ -12,7 +12,7 @@
     .brand{display:flex;gap:10px;align-items:center}.brand-mark{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;background:linear-gradient(135deg,var(--cyan),var(--blue));color:#06101a;font-weight:900}.brand strong{display:block;font-size:16px}.brand small{display:block;color:var(--muted);font-size:9px;letter-spacing:.09em}
     .nav{display:grid;gap:6px}.nav button{border:0;border-radius:9px;padding:10px 12px;text-align:left;background:transparent;color:var(--muted);cursor:pointer}.nav button.active{background:#16283c;color:var(--text)}.privacy{margin-top:auto;border:1px solid var(--line);border-radius:12px;padding:12px;color:var(--muted);font-size:10px;background:#0d1b2b}.privacy b{display:block;color:var(--cyan);margin-bottom:4px}
     main{padding:24px min(3.5vw,42px) 42px;min-width:0}.top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}.eyebrow{margin:0 0 3px;color:var(--cyan);font-size:9px;font-weight:900;letter-spacing:.16em}.top h1{margin:0;font-size:25px}.top p{margin:4px 0 0;color:var(--muted)}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    button,.select{border-radius:9px;border:1px solid var(--line);padding:9px 12px;background:var(--panel2);color:var(--text)}button{cursor:pointer;font-weight:750}button:disabled{opacity:.42;cursor:not-allowed}.primary{border:0;background:linear-gradient(135deg,var(--cyan),#52b9ff);color:#06111c}.danger{color:#ffc0ca;border-color:#6c3040}.analyze{border-color:#346db0;background:#10294b;color:#8ec6ff}.status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;background:#102438;color:var(--muted);font-size:10px}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.status.live{color:var(--cyan)}.status.live .dot{background:var(--cyan);box-shadow:0 0 14px var(--cyan)}
+    button,.select{border-radius:9px;border:1px solid var(--line);padding:9px 12px;background:var(--panel2);color:var(--text)}button{cursor:pointer;font-weight:750}button:disabled{opacity:.42;cursor:not-allowed}.primary{border:0;background:linear-gradient(135deg,var(--cyan),#52b9ff);color:#06111c}.danger{color:#ffc0ca;border-color:#6c3040}.analyze{border-color:#346db0;background:#10294b;color:#8ec6ff}.phase-control{transition:opacity .14s ease,transform .14s ease}.phase-control[hidden]{display:none!important}.phase-control.reveal{animation:phaseReveal .16s ease both}@keyframes phaseReveal{from{opacity:0;transform:translateY(-3px) scale(.98)}to{opacity:1;transform:none}}.status{display:inline-flex;align-items:center;gap:7px;padding:7px 10px;border-radius:999px;background:#102438;color:var(--muted);font-size:10px}.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.status.live{color:var(--cyan)}.status.live .dot{background:var(--cyan);box-shadow:0 0 14px var(--cyan)}
     .metrics{display:grid;grid-template-columns:repeat(6,minmax(100px,1fr));gap:10px;margin-bottom:12px}.metric,.panel{border:1px solid var(--line);background:linear-gradient(145deg,var(--panel),#0a1624);border-radius:13px}.metric{padding:14px}.metric span{color:var(--muted);font-size:10px}.metric strong{display:block;margin-top:4px;font-size:22px}
     .layout{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(260px,.8fr);gap:12px}.panel{padding:16px}.panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}.panel-head h2{font-size:14px;margin:0}.panel-head small{color:var(--muted)}.chart{width:100%;height:230px;display:block;border-radius:10px;background:#07111d;border:1px solid #17283b}.axis-label{fill:#71869e;font:9px system-ui}.grid-line{stroke:#15273a;stroke-width:1}.chart-line{fill:none;stroke:var(--cyan);stroke-width:2.5}.chart-area{fill:url(#area)}.chart-point{fill:#b7fff6}
     .tech{display:grid;grid-template-columns:1fr 1fr;gap:9px}.tech-card{padding:11px;border-radius:10px;background:#091524;border:1px solid #172a40}.tech-card span{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:.08em}.tech-card strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.privacy-note{margin-top:12px;padding:11px;border-radius:10px;background:#0a201f;border:1px solid #1f5c55;color:#a8d9d4;font-size:10px}
@@ -44,8 +44,8 @@
           <span class="status" id="status"><span class="dot"></span><span id="statusText">Pronto</span></span>
           <select id="duration" aria-label="Duração da captura"><option value="60">1 minuto</option><option value="120" selected>2 minutos</option><option value="300">5 minutos</option></select>
           <button class="primary" id="start">Iniciar captura</button>
-          <button class="danger" id="stop" disabled>Parar</button>
-          <button class="analyze" id="analyze" disabled>Analisar</button>
+          <button class="danger phase-control" id="stop" disabled hidden>Parar</button>
+          <button class="analyze phase-control" id="analyze" disabled hidden>Analisar</button>
           <button id="reset">Limpar</button>
         </div>
       </div>
@@ -395,8 +395,12 @@
         $('status').classList.add('live');
         $('statusText').textContent='Capturando';
         $('start').disabled=true;
+        $('stop').hidden=false;
         $('stop').disabled=false;
+        $('stop').classList.add('reveal');
+        $('analyze').hidden=true;
         $('analyze').disabled=true;
+        $('analyze').textContent='Analisar';
         $('duration').disabled=true;
         attach();
         clearInterval(state.timer);
@@ -411,10 +415,17 @@
         state.recording=false;
         state.stopAt=Date.now();
         $('status').classList.remove('live');
-        $('statusText').textContent='Gravação finalizada';
+        $('statusText').textContent='Captura finalizada · pronta para análise';
         $('start').disabled=false;
         $('stop').disabled=true;
-        $('analyze').disabled=state.events.length===0;
+        $('stop').hidden=true;
+        $('stop').classList.remove('reveal');
+        $('analyze').hidden=false;
+        $('analyze').disabled=false;
+        $('analyze').classList.remove('reveal');
+        void $('analyze').offsetWidth;
+        $('analyze').classList.add('reveal');
+        $('analyze').focus({preventScroll:true});
         $('duration').disabled=false;
         detach();
         clearInterval(state.timer);
@@ -422,14 +433,18 @@
         tick();
       }
 
-      function analyze(){
-        if(state.recording||!state.events.length)return;
+      async function analyze(){
+        if(state.recording||!state.sessionId)return;
         $('statusText').textContent='Analisando…';
         $('analyze').disabled=true;
+        $('analyze').textContent='Analisando…';
+        await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
         state.analysis=analyzeSession();
         $('statusText').textContent='Análise concluída';
         $('analyze').disabled=false;
+        $('analyze').textContent='Analisar novamente';
         tick();
+        $('patterns').closest('.panel')?.scrollIntoView({behavior:'smooth',block:'start'});
       }
 
       function reset(update=true){
@@ -443,7 +458,12 @@
         $('statusText').textContent='Pronto';
         $('start').disabled=false;
         $('stop').disabled=true;
+        $('stop').hidden=true;
+        $('stop').classList.remove('reveal');
         $('analyze').disabled=true;
+        $('analyze').hidden=true;
+        $('analyze').classList.remove('reveal');
+        $('analyze').textContent='Analisar';
         $('duration').disabled=false;
         $('tMouse').textContent='— / —';
         $('tSession').textContent='—';
