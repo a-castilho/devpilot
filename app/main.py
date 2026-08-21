@@ -154,6 +154,7 @@ def spa(path: str):
         '<script src="/assets/example-project.js" defer></script>',
         '<script src="/assets/repeatai-analysis-scroll.js" defer></script>',
         '<script src="/assets/repeatai-live-graphs.js" defer></script>',
+        '<script src="/assets/repeatai-dashboard-graphs.js" defer></script>',
         '<script src="/assets/repeatai-pattern-graphs.js" defer></script>',
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
