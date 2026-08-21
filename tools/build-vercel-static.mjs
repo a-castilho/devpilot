@@ -37,6 +37,7 @@ const scripts = [
   'repeatai-pattern-graphs.js',
   'approval-slider.js',
   'tws-example.js',
+  'linux-terminal.js',
 ];
 
 function revision(path) {

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     allowed_git_hosts: str = "github.com"
     openai_model: str = "gpt-5.4"
     realtime_model: str = "gpt-realtime-2.1"
+    linux_agent_url: str = "http://127.0.0.1:8787"
+    linux_agent_socket: str = ""
+    linux_agent_secret: str = ""
+    linux_agent_timeout_seconds: float = 5.0
 
     @property
     def git_hosts(self) -> set[str]:

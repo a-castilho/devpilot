@@ -14,6 +14,7 @@ from app.config import get_settings
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
+from app.linux_routes import router as linux_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
 from app.task_image_routes import router as task_image_router
@@ -109,6 +110,7 @@ app.include_router(users_router)
 app.include_router(router)
 app.include_router(career_router)
 app.include_router(host_action_router)
+app.include_router(linux_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
@@ -185,6 +187,7 @@ def spa(path: str):
         '<script src="/assets/deploy-admin.js" defer></script>',
         '<script src="/assets/career-linkedin.js" defer></script>',
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
+        '<script src="/assets/linux-terminal.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:
