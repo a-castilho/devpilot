@@ -126,6 +126,7 @@ def spa(path: str):
         '<script src="/assets/analysis-failure-actions.js" defer></script>',
         '<script src="/assets/analysis-incomplete-commercial.js" defer></script>',
         '<script src="/assets/organization-normalization-ui.js" defer></script>',
+        '<script src="/assets/mobile-project-card-compact.js" defer></script>',
         '<script src="/assets/example-project.js" defer></script>',
         '<script src="/assets/repeatai-analysis-scroll.js" defer></script>',
         '<script src="/assets/repeatai-live-graphs.js" defer></script>',
