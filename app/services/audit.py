@@ -18,6 +18,10 @@ def record(
     task_id: str | None = None,
     outcome: str = "success",
 ) -> AuditEvent:
+    principal_actor = db.info.get("principal_actor")
+    if principal_actor and actor in {"owner", "voice-owner"}:
+        actor = str(principal_actor)
+
     previous = db.scalar(
         select(AuditEvent)
         .where(AuditEvent.workspace_id == workspace_id)
