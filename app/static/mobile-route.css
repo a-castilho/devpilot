@@ -252,6 +252,88 @@ body.mobile-route .voice-dock > span {
   display: none !important;
 }
 
+/* /mobile must keep the voice assistant touch-first even when the URL is
+ * opened in a desktop-sized browser window. The dialog may scroll vertically,
+ * but no child is allowed to create the horizontal scrollbar seen previously.
+ */
+body.mobile-route #voice-modal {
+  width: min(560px, calc(100vw - 16px)) !important;
+  max-width: calc(100vw - 16px) !important;
+  max-height: calc(100dvh - 16px) !important;
+  margin: auto !important;
+  overflow: hidden !important;
+}
+
+body.mobile-route #voice-modal .voice-modal,
+body.mobile-route #voice-modal .voice-modal-enhanced {
+  width: 100% !important;
+  max-width: 100% !important;
+  max-height: calc(100dvh - 16px) !important;
+  padding: 18px !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+}
+
+body.mobile-route #voice-modal .voice-enhanced-heading,
+body.mobile-route #voice-modal .voice-project-control,
+body.mobile-route #voice-modal .voice-transcript-control,
+body.mobile-route #voice-modal .voice-conversation-controls,
+body.mobile-route #voice-modal .voice-composer,
+body.mobile-route #voice-modal .voice-enhanced-actions,
+body.mobile-route #voice-modal #voice-chat-log,
+body.mobile-route #voice-modal #voice-transcript {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+body.mobile-route #voice-modal .voice-composer {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+  gap: 8px !important;
+  border-radius: 20px !important;
+}
+
+body.mobile-route #voice-modal .voice-composer .voice-output-control {
+  grid-column: 1 / -1 !important;
+  grid-row: 1 !important;
+}
+
+body.mobile-route #voice-modal .voice-composer #voice-playback {
+  grid-column: 1 !important;
+  grid-row: 2 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+body.mobile-route #voice-modal .voice-composer #voice-start {
+  grid-column: 2 !important;
+  grid-row: 2 !important;
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+body.mobile-route #voice-modal .voice-playback-head {
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex-wrap: wrap !important;
+}
+
+body.mobile-route #voice-modal #voice-output-mode {
+  min-width: 0 !important;
+  max-width: 100% !important;
+}
+
+body.mobile-route #voice-modal .voice-enhanced-actions {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
+body.mobile-route #voice-modal .voice-enhanced-actions button {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
 @media (max-width: 520px) {
   body.mobile-route main {
     padding: 14px 12px calc(98px + env(safe-area-inset-bottom)) !important;
