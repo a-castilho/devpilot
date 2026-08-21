@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Run, Task, TaskStatus, Workspace
 from app.security import require_access
+from app.services.audit import record
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
@@ -286,6 +287,54 @@ def latest_task_runs(
         latest_by_task.setdefault(run.task_id, run)
 
     return [_run_summary(task, latest_by_task.get(task.id)) for task in tasks]
+
+
+@router.post("/tasks/{task_id}/retry")
+def retry_task(task_id: str, db: Session = Depends(get_db)):
+    workspace_id = _workspace_id(db)
+    task = db.scalar(
+        select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id)
+    )
+    if not task:
+        raise HTTPException(404, "Task not found")
+
+    previous_status = task.status
+    if previous_status not in {TaskStatus.failed, TaskStatus.blocked}:
+        raise HTTPException(409, "Only failed or blocked tasks can be retried")
+
+    latest_run = db.scalar(
+        select(Run)
+        .where(Run.task_id == task.id)
+        .order_by(Run.started_at.desc(), Run.attempt.desc())
+        .limit(1)
+    )
+    details = failure_details(latest_run)
+    task.status = TaskStatus.queued
+    record(
+        db,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        task_id=task.id,
+        actor="owner",
+        action="task.retried",
+        outcome="queued",
+        details={
+            "previous_status": (
+                previous_status.value
+                if isinstance(previous_status, TaskStatus)
+                else str(previous_status)
+            ),
+            "failure_category": details.get("category", ""),
+            "reused_task": True,
+        },
+    )
+    db.commit()
+    return {
+        "task_id": task.id,
+        "status": "queued",
+        "reused_task": True,
+        "failure_category": details.get("category", ""),
+    }
 
 
 @router.get("/task-runs/{run_id}")
