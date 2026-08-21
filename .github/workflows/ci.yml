@@ -44,6 +44,7 @@ jobs:
           node --check app/static/provider-models.js
           node --check app/static/voice-project-start.js
           node --check app/static/voice-local-update.js
+          node --check app/static/voice-insecure-lan-guard.js
           node --check app/static/tasks-lazy-load.js
           node --check app/static/telemetry-replay-capture.js
           node --check app/static/telemetry-replay.js
