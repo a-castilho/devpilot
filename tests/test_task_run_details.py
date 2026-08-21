@@ -5,6 +5,7 @@ from app.task_run_routes import (
     classify_failure_text,
     failure_details,
     failure_reason,
+    router,
     sanitize_text,
 )
 
@@ -86,3 +87,14 @@ def test_sanitize_text_redacts_common_credentials():
     assert "secret-token" not in sanitized
     assert "github_pat_ABC123456789" not in sanitized
     assert "[REDACTED]" in sanitized
+
+
+def test_router_exposes_same_task_retry_without_creating_a_new_task():
+    retry_routes = [
+        route
+        for route in router.routes
+        if getattr(route, "path", "") == "/api/tasks/{task_id}/retry"
+    ]
+
+    assert len(retry_routes) == 1
+    assert "POST" in retry_routes[0].methods
