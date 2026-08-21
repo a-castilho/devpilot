@@ -12,7 +12,7 @@ def normalize_organization_identifier(value: str, *, max_length: int) -> str:
     normalized = "".join(char for char in normalized if not unicodedata.combining(char))
     normalized = normalized.lower().strip()
     normalized = re.sub(r"[^a-z0-9]+", "-", normalized)
-    return normalized.strip("-")[:max_length]
+    return normalized.strip("-")[:max_length].strip("-")
 
 
 class LoginRequest(BaseModel):

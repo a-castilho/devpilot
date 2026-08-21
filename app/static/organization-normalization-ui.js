@@ -10,7 +10,8 @@
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, maxLength);
+    .slice(0, maxLength)
+    .replace(/^-+|-+$/g, '');
 
   const name = form.querySelector('input[name="name"]');
   const slug = form.querySelector('input[name="slug"]');
@@ -43,29 +44,65 @@
     githubLogin.value = normalize(githubLogin.value, 39);
   });
 
-  form.addEventListener('submit', event => {
-    const normalizedSlug = normalize(slug?.value || name?.value, 100);
-    const normalizedLogin = normalize(githubLogin?.value, 39);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (typeof isSuperAdmin === 'function' && !isSuperAdmin()) {
+      if (typeof toast === 'function') toast('Acesso exclusivo do Super Admin');
+      return;
+    }
+
+    const formData = new FormData(form);
+    const normalizedSlug = normalize(formData.get('slug') || formData.get('name'), 100);
+    const normalizedLogin = normalize(formData.get('github_login'), 39);
+    const organizationName = String(formData.get('name') || '').trim();
+
     if (slug) slug.value = normalizedSlug;
     if (githubLogin) githubLogin.value = normalizedLogin;
-    if (normalizedSlug.length < 2 || normalizedLogin.length < 2) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
+
+    if (organizationName.length < 2 || normalizedSlug.length < 2 || normalizedLogin.length < 1) {
       if (typeof toast === 'function') toast('Informe nome, slug e login GitHub válidos.');
       return;
     }
+
+    const payload = {
+      name: organizationName,
+      slug: normalizedSlug,
+      github_login: normalizedLogin,
+    };
+    const accessToken = String(formData.get('access_token') || '').trim();
+    if (accessToken) payload.access_token = accessToken;
+
+    const original = submit?.textContent || 'Conectar organização';
     if (submit) {
-      const original = submit.textContent;
       submit.disabled = true;
       submit.textContent = 'Salvando…';
-      window.setTimeout(() => {
-        if (form.closest('dialog')?.open) {
-          submit.disabled = false;
-          submit.textContent = original;
-        }
-      }, 8000);
     }
-  }, true);
+
+    let organization;
+    try {
+      organization = await api('/organizations', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      form.closest('dialog')?.close();
+      form.reset();
+      slugEdited = false;
+      if (typeof toast === 'function') toast('Organização conectada. Sincronizando repositórios…');
+    } catch (error) {
+      if (typeof toast === 'function') toast(error.message);
+      return;
+    } finally {
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = original;
+      }
+    }
+
+    void (async () => {
+      await load();
+      await syncOrganization(organization.id);
+    })();
+  };
 
   form.addEventListener('reset', () => {
     slugEdited = false;
