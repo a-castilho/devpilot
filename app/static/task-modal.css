@@ -216,7 +216,10 @@
 }
 
 #tasks-view .task-actions{
+  width:100%;
   min-width:0;
+  max-width:100%;
+  overflow:hidden;
 }
 
 #tasks-view tbody td.empty{
@@ -228,7 +231,7 @@
 @media(max-width:1100px){
   #tasks-view thead tr,
   #tasks-view tbody tr{
-    grid-template-columns:minmax(220px,1.8fr) minmax(80px,.8fr) minmax(95px,.85fr) minmax(135px,1.15fr) minmax(75px,.55fr) minmax(80px,.65fr);
+    grid-template-columns:minmax(180px,1.55fr) minmax(64px,.55fr) minmax(70px,.62fr) minmax(100px,.82fr) minmax(54px,.42fr) minmax(150px,1.22fr);
     gap:8px;
   }
   #tasks-view tbody tr{padding:13px}
