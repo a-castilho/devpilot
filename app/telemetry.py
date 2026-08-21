@@ -51,7 +51,7 @@ class SessionCreate(BaseModel):
 
 
 class BrowserEventIn(BaseModel):
-    event_type: Literal["click", "key"]
+    event_type: Literal["click", "key", "mouse_move"]
     occurred_at: datetime | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
 
@@ -117,13 +117,17 @@ def safe_text(value: Any, max_length: int = 40) -> str:
 
 
 def sanitize_browser_payload(event_type: str, payload: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    if event_type == "click":
-        def grid(name: str) -> int:
-            try:
-                return max(0, min(19, int(payload.get(name, 0))))
-            except (TypeError, ValueError):
-                return 0
+    def grid(name: str) -> int:
+        try:
+            return max(0, min(19, int(payload.get(name, 0))))
+        except (TypeError, ValueError):
+            return 0
 
+    if event_type == "mouse_move":
+        clean = {"grid_x": grid("grid_x"), "grid_y": grid("grid_y")}
+        return clean, f"mouse_move:{clean['grid_x']}:{clean['grid_y']}"
+
+    if event_type == "click":
         clean = {
             "grid_x": grid("grid_x"),
             "grid_y": grid("grid_y"),
@@ -417,6 +421,38 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
         item.stopped_at = item.ends_at
         db.commit()
     return session_view(db, item)
+
+
+@router.get("/sessions/{session_id}/events")
+def list_session_events(
+    session_id: str,
+    limit: int = Query(default=2500, ge=1, le=5000),
+    db: Session = Depends(get_db),
+):
+    """Return a sanitized timeline for visual simulation only."""
+    ws = default_workspace(db)
+    item = session_or_404(db, ws.id, session_id)
+    rows = db.scalars(
+        select(TelemetryEvent)
+        .where(TelemetryEvent.session_id == item.id)
+        .order_by(TelemetryEvent.occurred_at, TelemetryEvent.id)
+        .limit(limit)
+    ).all()
+    started_at = aware(item.started_at)
+    return {
+        "session_id": item.id,
+        "truncated": len(rows) == limit,
+        "events": [
+            {
+                "id": row.id,
+                "source": row.source,
+                "event_type": row.event_type,
+                "offset_ms": max(0, int((aware(row.occurred_at) - started_at).total_seconds() * 1000)),
+                "payload": parse_payload(row),
+            }
+            for row in rows
+        ],
+    }
 
 
 @router.post("/sessions/{session_id}/events")

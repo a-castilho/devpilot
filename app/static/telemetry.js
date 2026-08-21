@@ -1,5 +1,6 @@
 const $=(selector)=>document.querySelector(selector);
-const state={token:localStorage.getItem('devpilot-token')||'',session:null,analysisSession:null,recording:false,queue:[],timer:null,flushTimer:null,pollTimer:null,finishing:false};
+const state={token:localStorage.getItem('devpilot-token')||'',session:null,analysisSession:null,recording:false,queue:[],timer:null,flushTimer:null,pollTimer:null,finishing:false,replay:{events:[],index:0,raf:null,startAt:0,elapsed:0,duration:0,playing:false,keyTimer:null}};
+let lastMouseCell='',lastMouseAt=0;
 
 function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3000)}
 function headers(){return {'Authorization':`Bearer ${state.token}`,'Content-Type':'application/json'}}
@@ -32,9 +33,17 @@ function onClick(event){
   enqueue('click',{grid_x:Math.min(19,Math.floor(event.clientX/width*20)),grid_y:Math.min(19,Math.floor(event.clientY/height*20)),tag:String(target.tagName||'').toLowerCase(),role:target.getAttribute?.('role')||'',button:['left','middle','right'][event.button]||'other'});
 }
 function onKey(event){if(!state.recording||event.target.closest('[data-telemetry-control]'))return;enqueue('key',keyPayload(event))}
+function onMouseMove(event){
+  if(!state.recording||event.target.closest('[data-telemetry-control]'))return;
+  const now=performance.now();if(now-lastMouseAt<140)return;
+  const gridX=Math.min(19,Math.floor(event.clientX/Math.max(window.innerWidth,1)*20));
+  const gridY=Math.min(19,Math.floor(event.clientY/Math.max(window.innerHeight,1)*20));
+  const cell=`${gridX}:${gridY}`;if(cell===lastMouseCell)return;
+  lastMouseAt=now;lastMouseCell=cell;enqueue('mouse_move',{grid_x:gridX,grid_y:gridY});
+}
 function enqueue(event_type,payload){state.queue.push({event_type,occurred_at:new Date().toISOString(),payload});$('#queue-count').textContent=state.queue.length;if(state.queue.length>=40)flushQueue()}
-function attachCapture(){document.addEventListener('click',onClick,true);document.addEventListener('keydown',onKey,true)}
-function detachCapture(){document.removeEventListener('click',onClick,true);document.removeEventListener('keydown',onKey,true)}
+function attachCapture(){document.addEventListener('click',onClick,true);document.addEventListener('keydown',onKey,true);document.addEventListener('mousemove',onMouseMove,true)}
+function detachCapture(){document.removeEventListener('click',onClick,true);document.removeEventListener('keydown',onKey,true);document.removeEventListener('mousemove',onMouseMove,true)}
 
 async function flushQueue(){
   if(!state.session||!state.queue.length)return;
@@ -48,6 +57,7 @@ function setRecordingUI(){
   $('#pulse').classList.toggle('active',active);
   $('#status-label').textContent=active?'Gravando atividade':'Pronto para gravar';
   $('#stop').disabled=!active;$('#analyze').disabled=!(state.analysisSession||state.session);
+  $('#replay').disabled=!(state.analysisSession||state.session)||state.replay.playing;
   document.querySelectorAll('.duration').forEach(button=>button.disabled=active);
   if(state.session){$('#browser-count').textContent=state.session.event_counts?.browser||0;$('#terminal-count').textContent=state.session.event_counts?.terminal||0;$('#countdown').textContent=formatTime(state.session.remaining_seconds||0)}else{$('#browser-count').textContent='0';$('#terminal-count').textContent='0';$('#countdown').textContent='00:00'}
 }
@@ -170,10 +180,109 @@ async function loadHistory(){
   }catch(error){toast(error.message)}
 }
 
+
+function replayTarget(){return state.analysisSession||state.session}
+function replayLabel(item){
+  if(item.source==='terminal')return 'Terminal';
+  if(item.event_type==='mouse_move')return 'Mouse';
+  if(item.event_type==='click')return 'Clique';
+  if(item.event_type==='key')return item.payload?.shortcut||'Tecla';
+  return 'Web';
+}
+function resetReplayStage(){
+  cancelAnimationFrame(state.replay.raf);clearTimeout(state.replay.keyTimer);
+  state.replay={events:[],index:0,raf:null,startAt:0,elapsed:0,duration:0,playing:false,keyTimer:null};
+  $('#replay-progress-bar').style.width='0%';$('#replay-clock').textContent='00:00 / 00:00';
+  $('#replay-status').textContent='Pronto para repetir a sessão';
+  $('#terminal-output').innerHTML='<span class="terminal-muted">Os comandos gravados aparecerão aqui sem serem executados.</span>';
+  $('#event-strip').innerHTML='<span>Nenhum evento em reprodução.</span>';
+  $('#key-badge').classList.remove('show');$('#replay-pause').disabled=true;$('#replay-pause').textContent='⏸ Pausar';
+  setRecordingUI();
+}
+function setCursor(payload,clicked=false){
+  const cursor=$('#sim-cursor');
+  cursor.style.left=`${((Number(payload?.grid_x)||0)+.5)*5}%`;
+  cursor.style.top=`${((Number(payload?.grid_y)||0)+.5)*5}%`;
+  if(clicked){cursor.classList.remove('click');void cursor.offsetWidth;cursor.classList.add('click')}
+}
+function showKey(payload){
+  const badge=$('#key-badge');
+  badge.textContent=payload?.shortcut?`Atalho: ${payload.shortcut}`:`Digitação protegida · ${payload?.group||'tecla'}`;
+  badge.classList.add('show');clearTimeout(state.replay.keyTimer);
+  state.replay.keyTimer=setTimeout(()=>badge.classList.remove('show'),700);
+}
+function appendTerminal(payload){
+  const output=$('#terminal-output');
+  if(output.querySelector('.terminal-muted'))output.innerHTML='';
+  const line=document.createElement('span');line.className='terminal-line';line.textContent=String(payload?.command||'comando sanitizado');
+  output.appendChild(line);while(output.children.length>30)output.firstElementChild.remove();
+  output.scrollTop=output.scrollHeight;$('#terminal-shell').textContent=String(payload?.shell||'shell');
+}
+function markReplayEvent(index){
+  document.querySelectorAll('.event-chip').forEach(chip=>{
+    const position=Number(chip.dataset.eventIndex);
+    chip.classList.toggle('active',position===index);
+    chip.classList.toggle('done',position<index);
+    if(position===index)chip.scrollIntoView({behavior:'smooth',inline:'center',block:'nearest'});
+  });
+}
+function renderReplayEvent(item,index){
+  if(item.source==='terminal')appendTerminal(item.payload);
+  else if(item.event_type==='mouse_move')setCursor(item.payload);
+  else if(item.event_type==='click')setCursor(item.payload,true);
+  else if(item.event_type==='key')showKey(item.payload);
+  $('#replay-status').textContent=`${replayLabel(item)} · evento ${index+1} de ${state.replay.events.length}`;
+  markReplayEvent(index);
+}
+function finishReplay(){
+  cancelAnimationFrame(state.replay.raf);state.replay.raf=null;state.replay.playing=false;
+  state.replay.elapsed=state.replay.duration;$('#replay-progress-bar').style.width='100%';
+  $('#replay-clock').textContent=`${formatTime(Math.ceil(state.replay.duration/1000))} / ${formatTime(Math.ceil(state.replay.duration/1000))}`;
+  $('#replay-status').textContent='Simulação concluída · nenhuma ação real foi executada';
+  $('#replay-pause').disabled=true;$('#replay-pause').textContent='⏸ Pausar';setRecordingUI();
+}
+function replayFrame(now){
+  if(!state.replay.playing)return;
+  const speed=Number($('#replay-speed').value)||1;
+  state.replay.elapsed=(now-state.replay.startAt)*speed;
+  while(state.replay.index<state.replay.events.length&&state.replay.events[state.replay.index].offset_ms<=state.replay.elapsed){
+    renderReplayEvent(state.replay.events[state.replay.index],state.replay.index);state.replay.index+=1;
+  }
+  const duration=Math.max(state.replay.duration,1),progress=Math.min(100,state.replay.elapsed/duration*100);
+  $('#replay-progress-bar').style.width=`${progress}%`;
+  $('#replay-clock').textContent=`${formatTime(Math.floor(state.replay.elapsed/1000))} / ${formatTime(Math.ceil(duration/1000))}`;
+  if(state.replay.index>=state.replay.events.length)return finishReplay();
+  state.replay.raf=requestAnimationFrame(replayFrame);
+}
+async function startReplay(){
+  const target=replayTarget();if(!target?.id)return;
+  resetReplayStage();$('#replay').disabled=true;$('#replay-status').textContent='Carregando eventos sanitizados…';
+  try{
+    const data=await api(`/sessions/${target.id}/events?limit=5000`);
+    const events=Array.isArray(data.events)?data.events:[];
+    if(!events.length){$('#replay-status').textContent='Esta sessão não possui eventos para repetir';toast('Nenhum evento gravado');return}
+    state.replay.events=events;state.replay.duration=Math.max(1,events.at(-1)?.offset_ms||0);
+    const visible=events.length<=120?events:events.filter((_,index)=>index%Math.ceil(events.length/120)===0);
+    $('#event-strip').innerHTML=visible.map(item=>`<span class="event-chip" data-event-index="${events.indexOf(item)}">${escapeHtml(replayLabel(item))}</span>`).join('');
+    state.replay.playing=true;state.replay.startAt=performance.now();$('#replay-pause').disabled=false;setRecordingUI();
+    state.replay.raf=requestAnimationFrame(replayFrame);
+  }catch(error){$('#replay-status').textContent='Não foi possível carregar a simulação';toast(error.message);setRecordingUI()}
+}
+function toggleReplayPause(){
+  if(!state.replay.events.length)return;
+  if(state.replay.playing){
+    cancelAnimationFrame(state.replay.raf);state.replay.raf=null;state.replay.playing=false;
+    $('#replay-pause').textContent='▶ Continuar';$('#replay-status').textContent='Simulação pausada';setRecordingUI();return;
+  }
+  const speed=Number($('#replay-speed').value)||1;
+  state.replay.playing=true;state.replay.startAt=performance.now()-(state.replay.elapsed/speed);
+  $('#replay-pause').textContent='⏸ Pausar';setRecordingUI();state.replay.raf=requestAnimationFrame(replayFrame);
+}
+
 const hookText="export DEVPILOT_URL=http://127.0.0.1:8081\nexport DEVPILOT_BOOTSTRAP_TOKEN='seu-token'\nsource tools/devpilot_terminal_capture.sh";
 document.querySelectorAll('.duration').forEach(button=>button.onclick=()=>startSession(button.dataset.seconds));
-$('#stop').onclick=()=>finishSession(true);$('#analyze').onclick=analyzeCurrent;$('#refresh-history').onclick=loadHistory;
+$('#stop').onclick=()=>finishSession(true);$('#analyze').onclick=analyzeCurrent;$('#refresh-history').onclick=loadHistory;$('#replay').onclick=startReplay;$('#replay-pause').onclick=toggleReplayPause;
 $('#copy-hook').onclick=async()=>{try{await navigator.clipboard.writeText(hookText);toast('Configuração copiada')}catch{toast('Não foi possível copiar')}};
 $('#save-token').onclick=()=>{const token=$('#token-input').value.trim();if(!token)return;state.token=token;localStorage.setItem('devpilot-token',token);authState();loadActive();loadHistory()};
-window.addEventListener('beforeunload',()=>{detachCapture();clearTimers()});
+window.addEventListener('beforeunload',()=>{detachCapture();clearTimers();cancelAnimationFrame(state.replay.raf);clearTimeout(state.replay.keyTimer)});
 authState();loadActive();loadHistory();

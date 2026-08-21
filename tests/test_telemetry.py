@@ -32,6 +32,16 @@ def test_terminal_command_redacts_common_secrets():
     assert "--token ***" in redacted
 
 
+def test_mouse_move_is_reduced_to_safe_grid_coordinates():
+    clean, fingerprint = sanitize_browser_payload(
+        "mouse_move",
+        {"grid_x": 28, "grid_y": -7, "text": "must-not-survive"},
+    )
+    assert clean == {"grid_x": 19, "grid_y": 0}
+    assert fingerprint == "mouse_move:19:0"
+    assert "text" not in clean
+
+
 def test_browser_payload_never_keeps_typed_value_or_text_content():
     clean, fingerprint = sanitize_browser_payload(
         "key",

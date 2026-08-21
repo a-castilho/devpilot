@@ -1,6 +1,6 @@
 (()=>{
   const PENDING_KEY='devpilot-telemetry-pending-v1';
-  let activeSession=null,recording=false,queue=[],pollTimer=null,flushTimer=null,attached=false,flushing=false;
+  let activeSession=null,recording=false,queue=[],pollTimer=null,flushTimer=null,attached=false,flushing=false,lastMouseCell='',lastMouseAt=0;
   const token=()=>localStorage.getItem('devpilot-token')||'';
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -90,8 +90,16 @@
     });
   };
   const onKey=event=>{if(recording&&!event.target.closest('[data-telemetry-control]'))enqueue('key',keyPayload(event))};
-  const attach=()=>{if(attached)return;attached=true;document.addEventListener('click',onClick,true);document.addEventListener('keydown',onKey,true)};
-  const detach=()=>{if(!attached)return;attached=false;document.removeEventListener('click',onClick,true);document.removeEventListener('keydown',onKey,true)};
+  const onMouseMove=event=>{
+    if(!recording||event.target.closest('[data-telemetry-control]'))return;
+    const now=performance.now();if(now-lastMouseAt<140)return;
+    const gridX=Math.min(19,Math.floor(event.clientX/Math.max(innerWidth,1)*20));
+    const gridY=Math.min(19,Math.floor(event.clientY/Math.max(innerHeight,1)*20));
+    const cell=`${gridX}:${gridY}`;if(cell===lastMouseCell)return;
+    lastMouseAt=now;lastMouseCell=cell;enqueue('mouse_move',{grid_x:gridX,grid_y:gridY});
+  };
+  const attach=()=>{if(attached)return;attached=true;document.addEventListener('click',onClick,true);document.addEventListener('keydown',onKey,true);document.addEventListener('mousemove',onMouseMove,true)};
+  const detach=()=>{if(!attached)return;attached=false;document.removeEventListener('click',onClick,true);document.removeEventListener('keydown',onKey,true);document.removeEventListener('mousemove',onMouseMove,true)};
 
   const flush=async()=>{
     if(flushing||!activeSession?.id||!queue.length)return false;

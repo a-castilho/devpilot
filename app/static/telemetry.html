@@ -62,6 +62,34 @@ source "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.sh"</code></pre
       </article>
     </section>
 
+    <section class="panel replay-panel" id="replay-panel">
+      <div class="section-title replay-title">
+        <div><p class="eyebrow">SIMULAÇÃO DA SESSÃO</p><h2>Repetição automática do fluxo gravado</h2><p class="replay-note">Reproduz visualmente os eventos; não executa comandos nem interage com páginas reais.</p></div>
+        <div class="replay-actions" data-telemetry-control>
+          <label>Velocidade <select id="replay-speed"><option value="1">1x</option><option value="2" selected>2x</option><option value="4">4x</option></select></label>
+          <button id="replay" class="primary" disabled>▶ Repetir sessão</button>
+          <button id="replay-pause" disabled>⏸ Pausar</button>
+        </div>
+      </div>
+      <div class="replay-progress"><span id="replay-progress-bar"></span></div>
+      <div class="replay-status"><strong id="replay-status">Selecione uma sessão gravada</strong><span id="replay-clock">00:00 / 00:00</span></div>
+      <div class="simulation-stage" id="simulation-stage" aria-live="polite">
+        <div class="fake-browser">
+          <div class="fake-browser-bar"><i></i><i></i><i></i><span>Eventos web</span></div>
+          <div class="fake-browser-body" id="fake-browser-body">
+            <div class="fake-card wide"></div><div class="fake-card"></div><div class="fake-card"></div>
+            <div class="sim-cursor" id="sim-cursor"><span></span></div>
+            <div class="key-badge" id="key-badge">Digitação protegida</div>
+          </div>
+        </div>
+        <div class="fake-terminal">
+          <div class="terminal-title"><span>Terminal sanitizado</span><b id="terminal-shell">bash</b></div>
+          <div id="terminal-output" class="terminal-output"><span class="terminal-muted">Os comandos gravados aparecerão aqui sem serem executados.</span></div>
+        </div>
+      </div>
+      <div class="event-strip" id="event-strip"><span>Nenhum evento em reprodução.</span></div>
+    </section>
+
     <section class="panel analysis-panel">
       <div class="section-title"><div><p class="eyebrow">ANÁLISE</p><h2>Padrões e candidatos à automação</h2></div><div class="score"><span>Score</span><strong id="score">—</strong></div></div>
       <div id="summary" class="summary"><div class="empty">Inicie uma gravação para gerar a primeira análise.</div></div>
