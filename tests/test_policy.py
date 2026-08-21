@@ -18,6 +18,22 @@ def test_git_url_rejects_unapproved_host():
         validate_repository_url("https://example.com/company/project.git")
 
 
+@pytest.mark.parametrize(
+    "repository",
+    [
+        "a-castilho/devpilot",
+        "github.com/a-castilho/devpilot",
+        "https://github.com/a-castilho/devpilot",
+        "https://github.com/a-castilho/devpilot.git",
+        "git@github.com:a-castilho/devpilot.git",
+        "www.github.com/a-castilho/devpilot/",
+        "` https://github.com / a-castilho / devpilot.git `",
+    ],
+)
+def test_git_url_normalizes_supported_github_forms(repository):
+    assert normalize_repository_url(repository) == "https://github.com/a-castilho/devpilot.git"
+
+
 def test_git_url_normalizes_github_shorthand():
     assert (
         normalize_repository_url("a-castilho/regulaai")
@@ -35,6 +51,11 @@ def test_git_url_normalizes_ssh_form_without_credentials():
 def test_git_url_rejects_nested_repository_path():
     with pytest.raises(ValueError):
         normalize_repository_url("https://github.com/company/project/tree/main")
+
+
+def test_git_url_uses_portuguese_format_error():
+    with pytest.raises(ValueError, match="Informe o repositório no formato organização/repositório"):
+        normalize_repository_url("github.com/company/project/tree/main")
 
 
 def test_high_risk_task_requires_approval():
