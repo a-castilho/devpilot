@@ -22,6 +22,8 @@ const scripts = [
   'voice-microphone-permission.js',
   'voice-browser-compat.js',
   'voice-playback.js',
+  'voice-enhanced-ui.js',
+  'voice-insecure-lan-guard.js',
   'task-failures.js',
   'task-image-upload.js',
   'consolidated-ui.js',
