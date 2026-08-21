@@ -11,6 +11,7 @@ from app.services.audit import record
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.services.task_images import enable_executor_image_support
+from app.services.token_usage import extract_codex_usage, record_usage, task_user_id
 
 
 enable_executor_image_support(executor_service)
@@ -39,6 +40,51 @@ def _self_healing_payload(events: list[dict], final_status: str) -> dict:
         "attempts": len(events),
         "steps": steps,
     }
+
+
+def _project_model(project: Project) -> str:
+    try:
+        config = json.loads(project.codex_config or "{}")
+    except (TypeError, ValueError):
+        return "default"
+    return str(config.get("model") or "default")
+
+
+def _record_result_usage(
+    db,
+    *,
+    project: Project,
+    task: Task,
+    run: Run,
+    result: dict | None,
+    execution_attempt: int,
+) -> None:
+    if not isinstance(result, dict):
+        return
+    counts = extract_codex_usage(str(result.get("stdout") or ""))
+    operation = (
+        "task.analysis"
+        if str(result.get("mode") or "").startswith("analysis")
+        else "task.execution"
+    )
+    usage = record_usage(
+        db,
+        workspace_id=task.workspace_id,
+        user_id=task_user_id(db, task.id),
+        project_id=task.project_id,
+        task_id=task.id,
+        run_id=run.id,
+        provider="openai-codex",
+        model=_project_model(project),
+        operation=operation,
+        counts=counts,
+        attempt=execution_attempt,
+    )
+    if usage:
+        result["token_usage"] = {
+            "id": usage.id,
+            **counts.as_dict(),
+        }
 
 
 def process_one() -> bool:
@@ -70,6 +116,15 @@ def process_one() -> bool:
             except Exception as error:
                 current_error = error
                 result = None
+
+            _record_result_usage(
+                db,
+                project=project,
+                task=task,
+                run=run,
+                result=result,
+                execution_attempt=execution_attempt,
+            )
 
             succeeded = isinstance(result, dict) and result.get("exit_code", 0) == 0
             if succeeded:
