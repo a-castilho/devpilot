@@ -24,7 +24,8 @@ services:
       - "8080:8080"
     volumes:
       - devpilot_data:/data
-      - ./runtime:/runtime
+      - ./runtime/host-actions:/runtime/host-actions
+      - ${HOME}/.local/share/devpilot-linux-agent/runtime:/runtime/linux-agent
     depends_on:
       postgres:
         condition: service_healthy
@@ -56,7 +57,7 @@ services:
       DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
     volumes:
       - devpilot_data:/data
-      - ./runtime:/runtime
+      - ./runtime/host-actions:/runtime/host-actions
     depends_on:
       postgres:
         condition: service_healthy
