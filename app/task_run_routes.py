@@ -67,6 +67,11 @@ def failure_reason(run: Run | None) -> str:
 
     payload = _logs_payload(run)
     if isinstance(payload, dict):
+        healing = payload.get("self_healing")
+        if isinstance(healing, dict):
+            message = _last_nonempty_line(healing.get("message", ""))
+            if message:
+                return message
         stderr = _last_nonempty_line(payload.get("stderr", ""))
         if stderr:
             return stderr
@@ -79,13 +84,13 @@ def failure_reason(run: Run | None) -> str:
 
 
 def _run_summary(task: Task, run: Run | None) -> dict:
-    failed = task.status == TaskStatus.failed
+    needs_attention = task.status in {TaskStatus.failed, TaskStatus.blocked}
     return {
         "task_id": task.id,
         "task_status": task.status.value if isinstance(task.status, TaskStatus) else str(task.status),
         "run_id": run.id if run else None,
         "run_status": run.status if run else None,
-        "failure_reason": failure_reason(run) if failed else "",
+        "failure_reason": failure_reason(run) if needs_attention else "",
         "has_log": bool(run),
         "log_url": f"/api/task-runs/{run.id}" if run else None,
     }
