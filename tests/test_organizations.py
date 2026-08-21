@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 os.environ.setdefault("DEVPILOT_BOOTSTRAP_TOKEN", "test-token-with-at-least-32-characters")
 
@@ -46,6 +47,19 @@ def test_organization_create_accepts_one_character_github_login():
     )
     assert organization.slug == "x-organizacao"
     assert organization.github_login == "x"
+
+
+def test_organization_ui_keeps_save_valid_and_non_blocking():
+    script = (
+        Path(__file__).parents[1] / "app" / "static" / "organization-normalization-ui.js"
+    ).read_text(encoding="utf-8")
+    assert "normalizedLogin.length < 1" in script
+    assert "form.onsubmit = async event =>" in script
+    assert ".slice(0, maxLength)" in script
+    assert ".replace(/^-+|-+$/g, '');" in script
+    assert "finally {" in script
+    assert "void (async () => {" in script
+    assert script.index("finally {") < script.index("void (async () => {")
 
 
 def test_project_slug_is_safe_for_devpilot_projects():
