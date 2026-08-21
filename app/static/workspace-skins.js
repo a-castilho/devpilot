@@ -20,6 +20,20 @@
     document.head.appendChild(link);
   }
 
+  function removeEscapedNewlineArtifact() {
+    const removeFrom = parent => {
+      if (!parent) return;
+      [...parent.childNodes].forEach(node => {
+        if (node.nodeType !== Node.TEXT_NODE) return;
+        const value = String(node.nodeValue || '').trim();
+        if (value === '\\n' || value === '\\r\\n') node.remove();
+      });
+    };
+
+    removeFrom(document.body);
+    removeFrom(document.documentElement);
+  }
+
   function validSkin(id) {
     return SKINS.some(skin => skin.id === id);
   }
@@ -121,14 +135,16 @@
 
   function initialize() {
     ensureStylesheet();
+    removeEscapedNewlineArtifact();
     removeLegacyTonePicker();
     buildPicker();
 
     const saved = localStorage.getItem(STORAGE_KEY);
     applySkin(validSkin(saved) ? saved : 'black', false);
 
-    // O seletor antigo pode ser recriado por outro bundle; removemos sem re-renderizar a página.
+    // O seletor antigo ou texto residual podem ser recriados por outro bundle.
     const observer = new MutationObserver(() => {
+      removeEscapedNewlineArtifact();
       const legacy = document.querySelector('.workspace-tone-picker');
       if (legacy) legacy.remove();
       if (document.documentElement.hasAttribute('data-workspace-tone')) {
