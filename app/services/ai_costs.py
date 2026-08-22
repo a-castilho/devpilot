@@ -22,7 +22,7 @@ class TokenPrice:
 
 
 # Standard paid-tier prices captured from official provider pricing on 2026-08-22.
-# The version is persisted with each ledger entry so historical costs never change
+# The version is persisted with each ledger entry so historical values never change
 # when a provider later updates its public price list.
 _STANDARD_PRICES: dict[tuple[str, str], TokenPrice] = {
     ("openai", "gpt-5.6"): TokenPrice(5.00, 0.50, 30.00),
@@ -33,7 +33,6 @@ _STANDARD_PRICES: dict[tuple[str, str], TokenPrice] = {
     ("openai", "gpt-5"): TokenPrice(1.25, 0.125, 10.00),
     ("openai", "gpt-4.1-mini"): TokenPrice(0.40, 0.10, 1.60),
     ("openai", "gpt-4o-mini"): TokenPrice(0.15, 0.075, 0.60),
-    # Audio input / text output pricing for the transcription endpoint.
     ("openai-transcription", "gpt-4o-mini-transcribe"): TokenPrice(1.25, 1.25, 5.00),
     ("google", "gemini-3.6-flash"): TokenPrice(1.50, 0.15, 7.50),
     ("google", "gemini-3.5-flash"): TokenPrice(1.50, 0.15, 9.00),
@@ -96,12 +95,17 @@ def calculate_token_cost_microusd(
     uncached_input = input_tokens - cached_input_tokens
 
     # Rates are USD per 1M tokens. Tokens × rate is therefore micro-USD.
-    cost_microusd = round(
+    value_microusd = round(
         uncached_input * price.input_per_million
         + cached_input_tokens * price.cached_input_per_million
         + output_tokens * price.output_per_million
     )
-    return max(0, int(cost_microusd)), "priced", PRICING_VERSION
+
+    # Codex CLI may be authenticated through a ChatGPT subscription rather than
+    # metered API billing. Preserve its API-equivalent value for comparison, but
+    # never mix that reference amount with authoritative provider spend/budgets.
+    status = "reference" if str(provider or "").strip().lower() == "openai-codex" else "priced"
+    return max(0, int(value_microusd)), status, PRICING_VERSION
 
 
 def record_token_cost(db: Session, usage: TokenUsage) -> AIUsageCost:
