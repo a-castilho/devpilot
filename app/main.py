@@ -179,6 +179,7 @@ def spa(path: str):
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
         '<script src="/assets/voice-playback.js" defer></script>',
         '<script src="/assets/voice-enhanced-ui.js" defer></script>',
+        '<script src="/assets/voice-chatgpt-layout.js" defer></script>',
         '<script src="/assets/voice-insecure-lan-guard.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/task-image-upload.js" defer></script>',
