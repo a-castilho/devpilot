@@ -1,4 +1,4 @@
-/* Desktop navigation grouping. Mobile keeps the existing horizontal icon bar intact. */
+/* Desktop navigation grouping. Keep .nav buttons as direct nav children so late-loaded modules can insert safely. */
 @media (min-width: 901px) {
   .sidebar {
     padding-inline: 16px;
@@ -45,17 +45,12 @@
   .sidebar > nav {
     display: grid;
     align-content: start;
-    gap: 6px;
+    gap: 5px;
     margin-top: 14px;
     overflow-y: auto;
     overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: #38516b transparent;
-  }
-
-  .nav-group {
-    display: grid;
-    gap: 3px;
   }
 
   .nav-group-toggle {
@@ -71,7 +66,7 @@
     color: var(--muted);
     text-align: left;
     cursor: pointer;
-    transition: background .16s ease, color .16s ease, transform .16s ease;
+    transition: background .16s ease, color .16s ease, transform .16s ease, border-color .16s ease;
   }
 
   .nav-group-toggle:hover {
@@ -80,8 +75,8 @@
     transform: translateX(2px);
   }
 
-  .nav-group.active > .nav-group-toggle,
-  .nav-group.open > .nav-group-toggle {
+  .nav-group-toggle.active,
+  .nav-group-toggle.open {
     color: #cffff8;
     background: #13313a;
   }
@@ -108,33 +103,64 @@
     text-align: center;
   }
 
-  .nav-group[data-direct="true"] .nav-group-caret {
-    opacity: 0;
-  }
-
-  .nav-group-items {
-    display: grid;
-    gap: 2px;
-    margin: 2px 0 4px 18px;
-    padding: 3px 0 3px 13px;
-    border-left: 1px solid #35e5d133;
-  }
-
-  .nav-group-items[hidden],
-  .nav-group[data-direct="true"] .nav-group-items {
-    display: none;
-  }
-
-  .nav-group-items .nav {
-    width: 100%;
-    padding: 9px 10px;
+  .sidebar > nav > .nav[data-nav-group] {
+    width: calc(100% - 18px);
+    margin-left: 18px;
+    padding: 9px 10px 9px 13px;
     border-radius: 8px;
+    border-left: 1px solid #35e5d133;
     font-size: 13px;
   }
 
-  .nav-group-items .nav.active {
+  .sidebar > nav > .nav[data-nav-group].active {
     color: var(--cyan);
     background: #35e5d112;
+  }
+
+  .sidebar > nav > .nav-group-collapsed-item,
+  .nav-group-toggle.nav-search-hidden {
+    display: none !important;
+  }
+
+  .super-admin-nav-header {
+    margin-top: 12px;
+    border: 1px solid rgba(245, 158, 11, .48);
+    background: linear-gradient(135deg, rgba(245, 158, 11, .16), rgba(239, 68, 68, .08));
+    color: #ffe6a8;
+    box-shadow: inset 3px 0 rgba(245, 158, 11, .82), 0 8px 24px rgba(0, 0, 0, .12);
+  }
+
+  .super-admin-nav-header:hover,
+  .super-admin-nav-header.active,
+  .super-admin-nav-header.open {
+    color: #fff3c4;
+    border-color: rgba(251, 191, 36, .75);
+    background: linear-gradient(135deg, rgba(245, 158, 11, .24), rgba(239, 68, 68, .12));
+  }
+
+  .super-admin-nav-header .nav-group-icon,
+  .super-admin-nav-header .nav-group-caret {
+    color: #fbbf24;
+  }
+
+  .sidebar > nav > .nav.nav-super-admin-item {
+    border: 1px solid rgba(245, 158, 11, .28);
+    border-left: 3px solid rgba(245, 158, 11, .72);
+    background: rgba(245, 158, 11, .07);
+    color: #f8d98a;
+  }
+
+  .sidebar > nav > .nav.nav-super-admin-item:hover {
+    border-color: rgba(251, 191, 36, .55);
+    background: rgba(245, 158, 11, .13);
+    color: #fff0bd;
+  }
+
+  .sidebar > nav > .nav.nav-super-admin-item.active {
+    color: #fff3c4;
+    border-color: rgba(251, 191, 36, .72);
+    background: rgba(245, 158, 11, .18);
+    box-shadow: inset 3px 0 #fbbf24;
   }
 
   .nav-search-match {
@@ -149,6 +175,10 @@
   }
 }
 
+.nav-super-admin-forbidden {
+  display: none !important;
+}
+
 @media (max-width: 900px) {
   .sidebar-search,
   .sidebar-search-empty,
@@ -156,9 +186,10 @@
     display: none !important;
   }
 
-  .sidebar > nav .nav-group,
-  .sidebar > nav .nav-group-items {
-    display: contents;
+  .sidebar > nav > .nav.nav-super-admin-item {
+    color: #f8d98a;
+    border-color: rgba(245, 158, 11, .35);
+    background: rgba(245, 158, 11, .08);
   }
 }
 
