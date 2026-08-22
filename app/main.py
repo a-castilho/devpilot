@@ -164,6 +164,7 @@ def spa(path: str):
         '<script src="/assets/token-usage.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
+        '<script src="/assets/cloud-provisioning.js" defer></script>',
         '<script src="/assets/voice-project-start.js" defer></script>',
         '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
