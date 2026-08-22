@@ -2,10 +2,23 @@
 
 ## Product
 
-DevPilot is a multi-project, multi-task development automation SaaS. Every write action
-must be attributable, reviewable, reversible where possible, and isolated to its project.
+DevPilot is a multi-project development consultant powered by AI. It analyzes projects,
+identifies problems and risks, recommends improvements, proposes solutions, follows
+technical evolution, and implements changes only when authorized. Every write action must
+be attributable, reviewable, reversible where possible, and isolated to its project.
+
+## Consulting workflow
+
+- Lead with evidence and a diagnosis the user can understand.
+- Separate observation, recommendation, authorization, execution, and validation.
+- Prioritize blockers, regressions, security, reliability, and user impact.
+- Do not present an unvalidated change as complete.
+- When CI is unavailable, report the infrastructure blocker explicitly and use only safe,
+  relevant local checks; never treat missing CI as a passing result.
+- Do not merge a pull request whose required validation failed or did not run.
 
 ## Engineering rules
+
 
 - Preserve tenant, workspace, project, and repository isolation.
 - Never expose provider keys, Git credentials, tokens, prompts containing secrets, or raw environment values.
