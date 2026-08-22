@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import Project, Run, Task, TaskStatus
 from app.services import executor as executor_service
+from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
@@ -87,6 +88,34 @@ def _record_result_usage(
         }
 
 
+def _block_for_budget(db, *, task: Task, run: Run, user_id: str | None, reason: str) -> None:
+    now = datetime.now(timezone.utc)
+    run.status = "blocked"
+    run.summary = reason
+    run.logs = json.dumps(
+        {
+            "mode": "budget-blocked",
+            "summary": reason,
+            "budget_blocked": True,
+            "exit_code": 78,
+        },
+        ensure_ascii=False,
+    )
+    run.finished_at = now
+    task.status = TaskStatus.blocked
+    record(
+        db,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        task_id=task.id,
+        actor=f"user:{user_id}" if user_id else "worker",
+        action="ai.budget.blocked",
+        outcome="blocked",
+        details={"run_id": run.id, "operation": "task.execution", "reason": reason},
+    )
+    db.commit()
+
+
 def process_one() -> bool:
     with SessionLocal() as db:
         task = db.scalar(
@@ -103,12 +132,47 @@ def process_one() -> bool:
         db.add(run)
         db.commit()
 
+        owner_user_id = task_user_id(db, task.id)
+        budget_reason = budget_block_reason(
+            db,
+            workspace_id=task.workspace_id,
+            user_id=owner_user_id,
+            project_id=task.project_id,
+        )
+        if budget_reason:
+            _block_for_budget(
+                db,
+                task=task,
+                run=run,
+                user_id=owner_user_id,
+                reason=budget_reason,
+            )
+            return True
+
         recovery = AutoRecoveryService()
         recovery_events: list[dict] = []
         result: dict | None = None
         final_error: Exception | None = None
 
         for execution_attempt in range(1, recovery.MAX_ATTEMPTS + 1):
+            # Re-check before every self-healing attempt so a retry cannot continue
+            # spending after the previous attempt consumed the remaining budget.
+            budget_reason = budget_block_reason(
+                db,
+                workspace_id=task.workspace_id,
+                user_id=owner_user_id,
+                project_id=task.project_id,
+            )
+            if budget_reason:
+                _block_for_budget(
+                    db,
+                    task=task,
+                    run=run,
+                    user_id=owner_user_id,
+                    reason=budget_reason,
+                )
+                return True
+
             run.attempt = execution_attempt
             current_error: Exception | None = None
             try:
