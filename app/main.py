@@ -2,11 +2,12 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import re
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
+from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
@@ -126,7 +127,10 @@ app.include_router(telemetry_router)
 app.include_router(telemetry_replay_router)
 app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
-app.include_router(voice_transcription_router)
+app.include_router(
+    voice_transcription_router,
+    dependencies=[Depends(require_ai_budget_access)],
+)
 app.include_router(token_usage_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 

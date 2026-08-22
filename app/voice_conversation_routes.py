@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import Project, ProviderCredential, Workspace
 from app.security import require_access
+from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
 from app.services.token_usage import (
     record_usage,
@@ -142,6 +143,27 @@ async def voice_chat(
     actor: str = Depends(require_access),
 ):
     ws = _workspace(db)
+    project_context = _project_context(db, ws.id, payload.project_id)
+    user_id = user_id_from_actor(actor)
+    budget_reason = budget_block_reason(
+        db,
+        workspace_id=ws.id,
+        user_id=user_id,
+        project_id=payload.project_id,
+    )
+    if budget_reason:
+        record(
+            db,
+            workspace_id=ws.id,
+            project_id=payload.project_id,
+            actor=actor,
+            action="ai.budget.blocked",
+            outcome="blocked",
+            details={"operation": "voice.chat", "reason": budget_reason},
+        )
+        db.commit()
+        raise HTTPException(402, budget_reason)
+
     keys = _openai_api_keys(db, ws.id)
     if not keys:
         raise HTTPException(
@@ -149,7 +171,6 @@ async def voice_chat(
             "Nenhuma credencial OpenAI ativa está disponível para a conversa por voz.",
         )
 
-    project_context = _project_context(db, ws.id, payload.project_id)
     input_text = _conversation_input(payload, project_context)
     instructions = (
         "Você é o DevPilot, consultor de desenvolvimento que conversa diretamente com o cliente. "
@@ -225,7 +246,7 @@ async def voice_chat(
     usage = record_usage(
         db,
         workspace_id=ws.id,
-        user_id=user_id_from_actor(actor),
+        user_id=user_id,
         project_id=payload.project_id,
         provider="openai",
         model=selected_model,
