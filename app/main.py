@@ -15,6 +15,7 @@ from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
 from app.investia_admin_routes import router as investia_admin_router
+from app.investia_public_routes import router as investia_public_router
 from app.linux_routes import router as linux_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
@@ -113,6 +114,7 @@ app.include_router(router)
 app.include_router(career_router)
 app.include_router(host_action_router)
 app.include_router(investia_admin_router)
+app.include_router(investia_public_router)
 app.include_router(linux_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
