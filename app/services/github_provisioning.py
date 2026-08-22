@@ -8,6 +8,9 @@ import httpx
 from app.services.organizations import normalize_github_repository
 
 
+MAX_REPOSITORY_NAME_ATTEMPTS = 20
+
+
 @dataclass(frozen=True)
 class GitHubProvisioningError(RuntimeError):
     message: str
@@ -33,6 +36,13 @@ def _ensure_token(access_token: str) -> None:
             "Configure um Fine-grained PAT com Resource owner = a-castilho.",
             409,
         )
+
+
+def _repository_candidate(repository_name: str, attempt: int) -> str:
+    if attempt <= 1:
+        return repository_name
+    suffix = f"-{attempt}"
+    return f"{repository_name[:100 - len(suffix)].rstrip('-')}{suffix}"
 
 
 def starter_files(project_name: str, description: str = "") -> dict[str, str]:
@@ -224,30 +234,7 @@ def _resume_managed_repository(
         ) from error
 
 
-def create_github_repository(
-    organization_login: str,
-    repository_name: str,
-    description: str,
-    access_token: str,
-) -> dict:
-    """Create a private repository and seed the minimum deployable client product."""
-    _ensure_token(access_token)
-    payload = {
-        "name": repository_name,
-        "description": description,
-        "private": True,
-        "auto_init": True,
-    }
-    with httpx.Client(
-        timeout=30.0,
-        follow_redirects=True,
-        headers=_headers(access_token),
-    ) as client:
-        response = client.post(
-            f"https://api.github.com/orgs/{organization_login}/repos",
-            json=payload,
-        )
-
+def _translate_creation_error(response) -> None:
     if response.status_code == 401:
         raise GitHubProvisioningError("O token GitHub é inválido ou expirou.", 401)
     if response.status_code == 403:
@@ -259,42 +246,75 @@ def create_github_repository(
             "A organização A Castilho não foi encontrada ou não está acessível pela credencial configurada.",
             404,
         )
-    if response.status_code == 422:
-        resumed = _resume_managed_repository(
-            organization_login, repository_name, access_token
-        )
-        if resumed:
-            bootstrap_repository(
-                organization_login,
-                repository_name,
-                access_token,
-                project_name=repository_name,
-                description=description,
-                branch=resumed["default_branch"],
-            )
-            return resumed
-        raise GitHubProvisioningError(
-            "Não foi possível criar o repositório no GitHub. O nome pode já estar em uso.",
-            409,
-        )
-    if response.status_code >= 400:
+    if response.status_code >= 400 and response.status_code != 422:
         raise GitHubProvisioningError(
             f"Falha ao criar repositório no GitHub (HTTP {response.status_code}).", 502
         )
 
-    try:
-        remote = normalize_github_repository(response.json())
-    except (KeyError, TypeError, ValueError) as error:
-        raise GitHubProvisioningError(
-            "GitHub retornou uma resposta inválida ao criar o repositório."
-        ) from error
 
-    bootstrap_repository(
-        organization_login,
-        repository_name,
-        access_token,
-        project_name=repository_name,
-        description=description,
-        branch=remote["default_branch"],
+def create_github_repository(
+    organization_login: str,
+    repository_name: str,
+    description: str,
+    access_token: str,
+) -> dict:
+    """Create a private deployable repository, resolving name collisions automatically."""
+    _ensure_token(access_token)
+
+    for attempt in range(1, MAX_REPOSITORY_NAME_ATTEMPTS + 1):
+        candidate = _repository_candidate(repository_name, attempt)
+        payload = {
+            "name": candidate,
+            "description": description,
+            "private": True,
+            "auto_init": True,
+        }
+        with httpx.Client(
+            timeout=30.0,
+            follow_redirects=True,
+            headers=_headers(access_token),
+        ) as client:
+            response = client.post(
+                f"https://api.github.com/orgs/{organization_login}/repos",
+                json=payload,
+            )
+
+        _translate_creation_error(response)
+
+        if response.status_code == 422:
+            resumed = _resume_managed_repository(
+                organization_login, candidate, access_token
+            )
+            if resumed:
+                bootstrap_repository(
+                    organization_login,
+                    candidate,
+                    access_token,
+                    project_name=repository_name,
+                    description=description,
+                    branch=resumed["default_branch"],
+                )
+                return resumed
+            continue
+
+        try:
+            remote = normalize_github_repository(response.json())
+        except (KeyError, TypeError, ValueError) as error:
+            raise GitHubProvisioningError(
+                "GitHub retornou uma resposta inválida ao criar o repositório."
+            ) from error
+
+        bootstrap_repository(
+            organization_login,
+            candidate,
+            access_token,
+            project_name=repository_name,
+            description=description,
+            branch=remote["default_branch"],
+        )
+        return remote
+
+    raise GitHubProvisioningError(
+        "Não foi possível reservar um nome de repositório para o projeto.",
+        409,
     )
-    return remote
