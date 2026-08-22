@@ -11,6 +11,7 @@ from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
+from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
@@ -121,6 +122,7 @@ app.include_router(task_run_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(provider_models_router)
+app.include_router(cloud_admin_router)
 app.include_router(deploy_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
@@ -196,6 +198,7 @@ def spa(path: str):
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
         '<script src="/assets/deploy-admin.js" defer></script>',
+        '<script src="/assets/cloud-admin.js" defer></script>',
         '<script src="/assets/investia-admin.js" defer></script>',
         '<script src="/assets/career-linkedin.js" defer></script>',
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
