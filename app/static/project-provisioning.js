@@ -281,6 +281,46 @@
     const nameInput = form.elements.namedItem('name');
     const slugInput = form.elements.namedItem('slug');
     const submit = form.querySelector('#project-builder-submit');
+    let creationInProgress = false;
+    let progressTimer = null;
+    let progressStartedAt = 0;
+
+    const formatElapsed = milliseconds => {
+      const seconds = Math.max(0, Math.floor(milliseconds / 1000));
+      const minutes = Math.floor(seconds / 60);
+      return `${String(minutes).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    };
+    const setSubmitProgress = (label, showElapsed = false) => {
+      if (!submit) return;
+      const elapsed = showElapsed && progressStartedAt
+        ? ` • ${formatElapsed(Date.now() - progressStartedAt)}`
+        : '';
+      submit.textContent = `${label}${elapsed}`;
+    };
+    const stopProgressTimer = () => {
+      if (progressTimer !== null) {
+        clearInterval(progressTimer);
+        progressTimer = null;
+      }
+    };
+    const startProvisionProgress = () => {
+      stopProgressTimer();
+      progressStartedAt = Date.now();
+      if (submit) {
+        submit.disabled = true;
+        submit.setAttribute('aria-busy', 'true');
+      }
+      setSubmitProgress('2/3 Git + projeto', true);
+      progressTimer = setInterval(() => setSubmitProgress('2/3 Git + projeto', true), 1000);
+    };
+    const resetSubmitProgress = () => {
+      stopProgressTimer();
+      progressStartedAt = 0;
+      if (!submit) return;
+      submit.disabled = false;
+      submit.removeAttribute('aria-busy');
+      submit.textContent = 'Criar projeto';
+    };
 
     [repositoryGrid, notice, organizationField, defaultBranchField, existing].forEach(element => {
       if (element) element.dataset.gitAdminOnly = '1';
@@ -379,6 +419,8 @@
     }, true);
 
     async function createAutomaticProject() {
+      if (creationInProgress) return;
+      creationInProgress = true;
       const name = String(form.elements.namedItem('name')?.value || '').trim();
       const slug = String(form.elements.namedItem('slug')?.value || '').trim();
       const description = String(form.elements.namedItem('description')?.value || '').trim();
@@ -387,10 +429,13 @@
       const blueprint = builderBlueprint(form);
       if (submit) {
         submit.disabled = true;
-        submit.textContent = 'Criando projeto…';
+        submit.setAttribute('aria-busy', 'true');
       }
+      setSubmitProgress('1/3 Preparando projeto');
       clearFeedback();
       try {
+        await new Promise(resolve => setTimeout(resolve, 0));
+        startProvisionProgress();
         await api('/projects/provision', {method: 'POST', body: JSON.stringify({
           name,
           slug,
@@ -403,18 +448,19 @@
             project_blueprint: blueprint,
           },
         })});
+        stopProgressTimer();
+        setSubmitProgress('3/3 Atualizando projetos');
         toast(`Projeto ${name} criado automaticamente`);
         form.reset();
         form.querySelector('[data-builder-preset="saas-balanced"]')?.click();
         await load();
+        setSubmitProgress('Concluído ✓');
         showView('projects');
       } catch (error) {
         showFeedback(projectCreateErrorMessage(error));
       } finally {
-        if (submit) {
-          submit.disabled = false;
-          submit.textContent = 'Criar projeto';
-        }
+        creationInProgress = false;
+        resetSubmitProgress();
       }
     }
 
