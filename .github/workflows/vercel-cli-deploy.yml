@@ -1,5 +1,8 @@
 name: Deploy DevPilot to Vercel via CLI
 
+# This workflow deploys the private organization repository through Vercel CLI.
+# Required repository secret: VERCEL_TOKEN.
+
 on:
   push:
     branches:
