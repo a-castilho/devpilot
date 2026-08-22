@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -29,6 +29,7 @@ _STANDARD_PRICES: dict[tuple[str, str], TokenPrice] = {
     ("openai", "gpt-5.6-sol"): TokenPrice(5.00, 0.50, 30.00),
     ("openai", "gpt-5.6-terra"): TokenPrice(2.00, 0.20, 12.00),
     ("openai", "gpt-5.6-luna"): TokenPrice(0.20, 0.02, 1.20),
+    ("openai", "gpt-5.4"): TokenPrice(2.50, 0.25, 15.00),
     ("openai", "gpt-5"): TokenPrice(1.25, 0.125, 10.00),
     ("openai", "gpt-4.1-mini"): TokenPrice(0.40, 0.10, 1.60),
     ("openai", "gpt-4o-mini"): TokenPrice(0.15, 0.075, 0.60),
@@ -61,7 +62,6 @@ def _lookup_price(provider: str, model: str, operation: str) -> TokenPrice | Non
     if exact:
         return exact
 
-    # Provider snapshots normally append a date or revision to the stable model id.
     candidates = sorted(
         (
             (name, price)
@@ -95,8 +95,7 @@ def calculate_token_cost_microusd(
     output_tokens = max(0, int(output_tokens or 0))
     uncached_input = input_tokens - cached_input_tokens
 
-    # Price values are USD per 1M tokens. Multiplying tokens by that rate yields
-    # micro-USD directly, avoiding floating-point money storage in the database.
+    # Rates are USD per 1M tokens. Tokens × rate is therefore micro-USD.
     cost_microusd = round(
         uncached_input * price.input_per_million
         + cached_input_tokens * price.cached_input_per_million
@@ -106,9 +105,7 @@ def calculate_token_cost_microusd(
 
 
 def record_token_cost(db: Session, usage: TokenUsage) -> AIUsageCost:
-    existing = db.scalar(
-        select(AIUsageCost).where(AIUsageCost.token_usage_id == usage.id)
-    )
+    existing = db.scalar(select(AIUsageCost).where(AIUsageCost.token_usage_id == usage.id))
     if existing:
         return existing
 
@@ -183,10 +180,7 @@ def backfill_cost_ledger(db: Session, workspace_id: str, limit: int = 5000) -> i
     rows = db.scalars(
         select(TokenUsage)
         .outerjoin(AIUsageCost, AIUsageCost.token_usage_id == TokenUsage.id)
-        .where(
-            TokenUsage.workspace_id == workspace_id,
-            AIUsageCost.id.is_(None),
-        )
+        .where(TokenUsage.workspace_id == workspace_id, AIUsageCost.id.is_(None))
         .order_by(TokenUsage.created_at.asc())
         .limit(limit)
     ).all()
@@ -231,19 +225,11 @@ def applicable_budgets(
     user_id: str | None = None,
     project_id: str | None = None,
 ) -> list[AIBudget]:
-    predicates = [
-        AIBudget.workspace_id == workspace_id,
-        AIBudget.scope_type == "workspace",
-    ]
     scope_predicates = [AIBudget.scope_type == "workspace"]
     if user_id:
-        scope_predicates.append(
-            (AIBudget.scope_type == "user") & (AIBudget.scope_id == user_id)
-        )
+        scope_predicates.append((AIBudget.scope_type == "user") & (AIBudget.scope_id == user_id))
     if project_id:
-        scope_predicates.append(
-            (AIBudget.scope_type == "project") & (AIBudget.scope_id == project_id)
-        )
+        scope_predicates.append((AIBudget.scope_type == "project") & (AIBudget.scope_id == project_id))
     return list(
         db.scalars(
             select(AIBudget)
@@ -272,16 +258,8 @@ def budget_status(
     ):
         daily_spent = _spent_since(db, budget, day_start)
         monthly_spent = _spent_since(db, budget, month_start)
-        daily_ratio = (
-            daily_spent / budget.daily_limit_microusd
-            if budget.daily_limit_microusd > 0
-            else 0.0
-        )
-        monthly_ratio = (
-            monthly_spent / budget.monthly_limit_microusd
-            if budget.monthly_limit_microusd > 0
-            else 0.0
-        )
+        daily_ratio = daily_spent / budget.daily_limit_microusd if budget.daily_limit_microusd > 0 else 0.0
+        monthly_ratio = monthly_spent / budget.monthly_limit_microusd if budget.monthly_limit_microusd > 0 else 0.0
         result.append(
             {
                 "id": budget.id,
@@ -300,10 +278,7 @@ def budget_status(
                     budget.hard_stop
                     and (
                         (budget.daily_limit_microusd > 0 and daily_spent >= budget.daily_limit_microusd)
-                        or (
-                            budget.monthly_limit_microusd > 0
-                            and monthly_spent >= budget.monthly_limit_microusd
-                        )
+                        or (budget.monthly_limit_microusd > 0 and monthly_spent >= budget.monthly_limit_microusd)
                     )
                 ),
             }
@@ -327,12 +302,7 @@ def budget_block_reason(
         if not status["blocked"]:
             continue
         scope = status["scope_type"]
-        if scope == "workspace":
-            label = "workspace"
-        elif scope == "project":
-            label = "projeto"
-        else:
-            label = "usuário"
+        label = "workspace" if scope == "workspace" else "projeto" if scope == "project" else "usuário"
         return (
             f"Orçamento de IA do {label} atingido. "
             "A execução foi bloqueada para evitar gasto adicional; o Super Admin pode revisar o limite."
