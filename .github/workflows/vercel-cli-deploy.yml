@@ -45,6 +45,20 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Ensure Vercel project exists
+        if: steps.vercel_auth.outputs.ready == 'true'
+        shell: bash
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if ! npx --yes vercel@latest project inspect devpilot \
+            --token "$VERCEL_TOKEN" \
+            --scope maquina-de-leads1 >/dev/null 2>&1; then
+            npx --yes vercel@latest project add devpilot \
+              --token "$VERCEL_TOKEN" \
+              --scope maquina-de-leads1
+          fi
+
       - name: Deploy production with Vercel CLI
         if: steps.vercel_auth.outputs.ready == 'true'
         shell: bash
