@@ -67,17 +67,25 @@ def user_view(db: Session, user: User) -> UserResponse:
     )
 
 
+def _is_hidden_super_admin(principal: Principal, user: User) -> bool:
+    """SUPER_ADMIN identities are invisible to every non-SUPER_ADMIN principal."""
+    return principal.role is not Role.SUPER_ADMIN and canonical_role(user.role) is Role.SUPER_ADMIN
+
+
 def target_user(db: Session, principal: Principal, user_id: str) -> User:
     workspace_id = actor_workspace_id(db, principal)
     user = db.scalar(select(User).where(User.id == user_id, User.workspace_id == workspace_id))
-    if not user:
+    if not user or _is_hidden_super_admin(principal, user):
+        # Use 404 instead of 403 so lower roles cannot infer that a SUPER_ADMIN account exists.
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
     return user
 
 
 @router.get("/roles")
-def list_roles(_: Principal = Depends(manage_users)):
-    return ROLE_INFO
+def list_roles(principal: Principal = Depends(manage_users)):
+    if principal.role is Role.SUPER_ADMIN:
+        return ROLE_INFO
+    return [item for item in ROLE_INFO if item["value"] != Role.SUPER_ADMIN.value]
 
 
 @router.get("", response_model=list[UserResponse])
@@ -89,6 +97,8 @@ def list_users(
     users = db.scalars(
         select(User).where(User.workspace_id == workspace_id).order_by(User.created_at, User.email)
     ).all()
+    if principal.role is not Role.SUPER_ADMIN:
+        users = [user for user in users if not _is_hidden_super_admin(principal, user)]
     result = [user_view(db, user) for user in users]
     db.commit()
     return result
