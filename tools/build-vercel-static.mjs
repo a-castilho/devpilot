@@ -18,6 +18,7 @@ const scripts = [
   'provider-models.js',
   'project-provisioning.js',
   'cloud-provisioning.js',
+  'homologation-ui.js',
   'voice-project-start.js',
   'voice-local-update.js',
   'voice-microphone-permission.js',
