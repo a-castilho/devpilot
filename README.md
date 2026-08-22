@@ -1,13 +1,23 @@
-# DevPilot — seu desenvolvedor
+# DevPilot — consultor de desenvolvimento com IA
 
-**Atualizado em: 20/08/2026**
+**Atualizado em: 22/08/2026**
 
-DevPilot é um SaaS leve para automatizar desenvolvimento de software por dashboard, API
-ou voz. Ele organiza múltiplos projetos e tarefas, aplica instruções `AGENTS.md`, controla
-configurações do Codex, executa trabalho em branches isoladas e registra cada decisão em
-uma trilha de auditoria encadeada por hash.
+DevPilot é um consultor de desenvolvimento com IA acessível por dashboard, API ou voz.
+Ele analisa projetos, identifica problemas e riscos, recomenda melhorias, propõe soluções,
+acompanha a evolução técnica e, quando autorizado, executa mudanças em branches isoladas.
+Cada decisão e ação fica registrada em uma trilha de auditoria encadeada por hash.
+
+## Como o DevPilot atua
+
+1. observa o estado técnico e reúne evidências;
+2. diagnostica problemas, riscos e regressões;
+3. apresenta recomendações compreensíveis e priorizadas;
+4. propõe uma correção segura, testável e reversível;
+5. solicita autorização quando a ação exigir escrita ou risco;
+6. executa, valida e acompanha o resultado.
 
 ## O que o MVP entrega
+
 
 - dashboard responsivo/PWA para desktop e celular;
 - projetos com URL Git, branch, `AGENTS.md` e perfil Codex;
