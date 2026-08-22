@@ -6,7 +6,11 @@ import pytest
 
 from app.project_provisioning_routes import AUTHORIZED_ORGANIZATION, ProjectProvisionCreate
 from app.services import github_provisioning
-from app.services.github_provisioning import GitHubProvisioningError, create_github_repository
+from app.services.github_provisioning import (
+    GitHubProvisioningError,
+    create_github_repository,
+    homologation_starter_files,
+)
 
 
 class FakeResponse:
@@ -62,6 +66,14 @@ def test_project_provisioning_is_locked_to_a_castilho():
 def test_create_github_repository_creates_private_initialized_repository(monkeypatch):
     FakeClient.response = FakeResponse(201, github_repository_payload())
     monkeypatch.setattr(github_provisioning.httpx, "Client", FakeClient)
+    seeded = {}
+
+    def fake_bootstrap(*args, **kwargs):
+        seeded["args"] = args
+        seeded["kwargs"] = kwargs
+        return {"status": "ready"}
+
+    monkeypatch.setattr(github_provisioning, "bootstrap_github_repository", fake_bootstrap)
 
     result = create_github_repository(
         "a-castilho",
@@ -81,6 +93,25 @@ def test_create_github_repository_creates_private_initialized_repository(monkeyp
     assert result["full_name"] == "a-castilho/novo-projeto"
     assert result["clone_url"] == "https://github.com/a-castilho/novo-projeto.git"
     assert result["visibility"] == "private"
+    assert seeded["kwargs"]["branch"] == "main"
+    assert seeded["kwargs"]["project_name"] == "novo-projeto"
+
+
+def test_homologation_starter_is_deployable_and_has_marker():
+    files = homologation_starter_files("produto", "Projeto teste")
+
+    assert ".devpilot-homologation.json" in files
+    assert '"managed_by":"devpilot"' in files[".devpilot-homologation.json"]
+    assert "Dockerfile" in files
+    assert "backend/main.py" in files
+    assert "requirements.txt" in files
+    assert "index.html" in files
+    assert "vercel.json" in files
+    assert "uvicorn backend.main:app" in files["Dockerfile"]
+    assert "SELECT 1" in files["backend/main.py"]
+    assert "DATABASE_URL" in files["backend/main.py"]
+    assert "${APP_BACKEND_URL}" in files["vercel.json"]
+    assert "fetch('/api/status'" in files["index.html"]
 
 
 def test_create_github_repository_requires_authorized_credential():

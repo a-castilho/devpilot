@@ -13,6 +13,7 @@ from app.career_routes import router as career_router
 from app.config import get_settings
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
+from app.homologation_routes import router as homologation_router
 from app.host_action_routes import router as host_action_router
 from app.linux_routes import router as linux_router
 from app.project_provisioning_routes import router as project_provisioning_router
@@ -115,6 +116,7 @@ app.include_router(linux_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
+app.include_router(homologation_router)
 app.include_router(provider_models_router)
 app.include_router(deploy_router)
 app.include_router(reports_router)
@@ -164,6 +166,8 @@ def spa(path: str):
         '<script src="/assets/token-usage.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
+        '<script src="/assets/cloud-provisioning.js" defer></script>',
+        '<script src="/assets/homologation-ui.js" defer></script>',
         '<script src="/assets/voice-project-start.js" defer></script>',
         '<script src="/assets/voice-local-update.js" defer></script>',
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
