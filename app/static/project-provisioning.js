@@ -1,5 +1,6 @@
 (() => {
   const REPOSITORY_FORMAT_ERROR = 'Informe o repositório no formato organização/repositório.';
+  const GENERIC_PROJECT_CREATE_ERROR = 'Não foi possível criar o projeto. A administração foi notificada.';
 
   const slugify = value => String(value || '')
     .normalize('NFD')
@@ -10,6 +11,9 @@
     .slice(0, 100);
 
   const superAdmin = () => typeof isSuperAdmin === 'function' && isSuperAdmin();
+  const projectCreateErrorMessage = error => superAdmin()
+    ? (error?.message || 'Falha ao criar projeto')
+    : GENERIC_PROJECT_CREATE_ERROR;
 
   function cleanRepositoryInput(value) {
     let raw = String(value || '')
@@ -251,7 +255,7 @@
         form.reset();
         await load();
       } catch (error) {
-        toast(error.message || 'Falha ao criar projeto');
+        toast(projectCreateErrorMessage(error));
       }
     };
 
@@ -405,7 +409,7 @@
         await load();
         showView('projects');
       } catch (error) {
-        showFeedback(error.message || 'Falha ao criar projeto');
+        showFeedback(projectCreateErrorMessage(error));
       } finally {
         if (submit) {
           submit.disabled = false;
