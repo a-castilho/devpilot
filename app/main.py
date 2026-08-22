@@ -190,6 +190,7 @@ def spa(path: str):
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
         '<script src="/assets/deploy-admin.js" defer></script>',
+        '<script src="/assets/investia-admin.js" defer></script>',
         '<script src="/assets/career-linkedin.js" defer></script>',
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
         '<script src="/assets/linux-terminal.js" defer></script>',
