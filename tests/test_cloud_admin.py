@@ -1,0 +1,91 @@
+import pytest
+from fastapi import HTTPException
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+
+from app.cloud_admin_routes import (
+    CloudCredentialUpdate,
+    list_clouds,
+    manage_clouds,
+    save_cloud,
+)
+from app.db import Base
+from app.models import ProviderCredential, Workspace
+from app.security import Principal, Role
+from app.services.vault import Vault
+
+
+@pytest.fixture
+def clouds_db():
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        workspace = Workspace(name="DevPilot", slug="default")
+        other = Workspace(name="Other", slug="other")
+        db.add_all([workspace, other])
+        db.commit()
+        yield db, workspace, other
+    engine.dispose()
+
+
+def principal(workspace: Workspace, role: Role = Role.SUPER_ADMIN) -> Principal:
+    return Principal(
+        user_id="user-1",
+        workspace_id=workspace.id,
+        email="root@example.com",
+        role=role,
+    )
+
+
+def test_cloud_admin_is_super_admin_only(clouds_db):
+    _, workspace, _ = clouds_db
+    with pytest.raises(HTTPException) as error:
+        manage_clouds(principal(workspace, Role.ADMIN))
+
+    assert error.value.status_code == 403
+
+
+def test_cloud_token_is_encrypted_and_never_returned(clouds_db):
+    db, workspace, _ = clouds_db
+    token = "vercel-secret-token-123456"
+    result = save_cloud(
+        "vercel",
+        CloudCredentialUpdate(secret=token, enabled=True, scope="team_example"),
+        db=db,
+        principal=principal(workspace),
+    )
+
+    stored = db.scalar(
+        select(ProviderCredential).where(
+            ProviderCredential.workspace_id == workspace.id,
+            ProviderCredential.provider == "cloud:vercel",
+        )
+    )
+    assert stored is not None
+    assert stored.encrypted_secret != token
+    assert Vault().decrypt(stored.encrypted_secret) == token
+    assert result["configured"] is True
+    assert result["scope"] == "team_example"
+    assert "secret" not in result
+    assert "encrypted_secret" not in result
+
+
+def test_cloud_credentials_are_workspace_isolated(clouds_db):
+    db, workspace, other = clouds_db
+    db.add(
+        ProviderCredential(
+            workspace_id=other.id,
+            provider="cloud:render",
+            label="cloud-admin",
+            encrypted_secret=Vault().encrypt("render-secret-token-123"),
+            models='{"scope":"owner-other"}',
+            enabled=True,
+        )
+    )
+    db.commit()
+
+    items = list_clouds(db=db, principal=principal(workspace))
+    render = next(item for item in items if item["provider"] == "render")
+
+    assert render["configured"] is False
+    assert render["scope"] == ""
