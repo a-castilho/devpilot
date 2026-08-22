@@ -80,7 +80,7 @@ class ProductionHttpMiddleware(BaseHTTPMiddleware):
         self._redis = (
             redis_async.from_url(
                 config.redis_url,
-                encoding=None,
+                decode_responses=False,
                 socket_connect_timeout=0.25,
                 socket_timeout=0.25,
                 health_check_interval=30,
