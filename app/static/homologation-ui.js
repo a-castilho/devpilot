@@ -219,5 +219,5 @@
   } else {
     install();
   }
-  window.setInterval(install, 1200);
+  window.setTimeout(install, 800);
 })();
