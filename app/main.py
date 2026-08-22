@@ -15,6 +15,7 @@ from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
 from app.linux_routes import router as linux_router
+from app.production_http import ProductionHttpConfig, ProductionHttpMiddleware
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
 from app.task_image_routes import router as task_image_router
@@ -106,6 +107,10 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
+app.add_middleware(
+    ProductionHttpMiddleware,
+    config=ProductionHttpConfig.from_env("DEVPILOT", "devpilot"),
+)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)

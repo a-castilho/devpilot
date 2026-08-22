@@ -20,6 +20,15 @@ services:
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
       DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
       DEVPILOT_LINUX_AGENT_SOCKET: /runtime/linux-agent/agent.sock
+      DEVPILOT_REDIS_URL: ${DEVPILOT_REDIS_URL:-redis://redis:6379/0}
+      DEVPILOT_RATE_LIMIT_ENABLED: ${DEVPILOT_RATE_LIMIT_ENABLED:-true}
+      DEVPILOT_RATE_LIMIT_REQUESTS: ${DEVPILOT_RATE_LIMIT_REQUESTS:-120}
+      DEVPILOT_AUTH_RATE_LIMIT_REQUESTS: ${DEVPILOT_AUTH_RATE_LIMIT_REQUESTS:-10}
+      DEVPILOT_RATE_LIMIT_WINDOW_SECONDS: ${DEVPILOT_RATE_LIMIT_WINDOW_SECONDS:-60}
+      DEVPILOT_CACHE_ENABLED: ${DEVPILOT_CACHE_ENABLED:-true}
+      DEVPILOT_CACHE_TTL_SECONDS: ${DEVPILOT_CACHE_TTL_SECONDS:-30}
+      DEVPILOT_CACHE_MAX_BODY_BYTES: ${DEVPILOT_CACHE_MAX_BODY_BYTES:-1048576}
+      DEVPILOT_TRUST_PROXY_HEADERS: ${DEVPILOT_TRUST_PROXY_HEADERS:-false}
     ports:
       - "8080:8080"
     volumes:
@@ -28,6 +37,8 @@ services:
       - ${HOME}/.local/share/devpilot-linux-agent/runtime:/runtime/linux-agent
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       host-actions-init:
         condition: service_completed_successfully
@@ -78,6 +89,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
 volumes:
   devpilot_data:
