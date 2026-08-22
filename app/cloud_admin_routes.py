@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,17 +28,17 @@ CLOUD_PROVIDERS: dict[str, dict[str, str]] = {
     "vercel": {
         "name": "Vercel",
         "dashboard_url": "https://vercel.com/dashboard",
-        "scope_label": "Team ID / scope",
+        "scope_label": "Team ID ou slug",
     },
     "render": {
         "name": "Render",
         "dashboard_url": "https://dashboard.render.com",
-        "scope_label": "Owner ID",
+        "scope_label": "Workspace / Owner ID",
     },
     "neon": {
         "name": "Neon",
         "dashboard_url": "https://console.neon.tech",
-        "scope_label": "Conta / organização (opcional)",
+        "scope_label": "Organization ID (opcional)",
     },
     "github": {
         "name": "GitHub",
@@ -126,6 +127,14 @@ def _headers(provider: str, secret: str) -> dict[str, str]:
     return headers
 
 
+def _vercel_scope_params(scope: str) -> dict[str, str]:
+    if not scope:
+        return {}
+    if scope.startswith("team_"):
+        return {"teamId": scope}
+    return {"slug": scope}
+
+
 def _provider_request(
     provider: str,
     secret: str,
@@ -134,17 +143,25 @@ def _provider_request(
     resources: bool,
 ) -> Any:
     if provider == "vercel":
-        url = "https://api.vercel.com/v9/projects" if resources else "https://api.vercel.com/v2/user"
-        params = {"teamId": scope} if scope and resources else None
+        if resources or scope:
+            url = "https://api.vercel.com/v9/projects"
+            params: dict[str, Any] = {"limit": 50 if resources else 1}
+            params.update(_vercel_scope_params(scope))
+        else:
+            url = "https://api.vercel.com/v2/user"
+            params = None
     elif provider == "render":
         url = "https://api.render.com/v1/services"
         params = {"ownerId": scope, "limit": 50} if scope else {"limit": 50}
     elif provider == "neon":
         url = "https://console.neon.tech/api/v2/projects"
         params = {"limit": 50}
+        if scope:
+            params["org_id"] = scope
     elif provider == "github":
+        encoded_scope = quote(scope, safe="")
         if resources and scope:
-            url = f"https://api.github.com/orgs/{scope}/repos"
+            url = f"https://api.github.com/orgs/{encoded_scope}/repos"
             params = {"per_page": 50, "sort": "updated"}
         elif resources:
             url = "https://api.github.com/user/repos"
@@ -153,6 +170,9 @@ def _provider_request(
                 "sort": "updated",
                 "affiliation": "owner,collaborator,organization_member",
             }
+        elif scope:
+            url = f"https://api.github.com/user/memberships/orgs/{encoded_scope}"
+            params = None
         else:
             url = "https://api.github.com/user"
             params = None
@@ -185,10 +205,21 @@ def _test_payload(provider: str, data: Any) -> dict[str, Any]:
     resource_count: int | None = None
 
     if provider == "vercel" and isinstance(data, dict):
-        user = data.get("user") if isinstance(data.get("user"), dict) else data
-        identity = str(user.get("username") or user.get("email") or user.get("name") or "")
+        projects = data.get("projects")
+        if isinstance(projects, list):
+            resource_count = len(projects)
+        else:
+            user = data.get("user") if isinstance(data.get("user"), dict) else data
+            identity = str(user.get("username") or user.get("email") or user.get("name") or "")
     elif provider == "github" and isinstance(data, dict):
-        identity = str(data.get("login") or data.get("name") or "")
+        organization = data.get("organization") if isinstance(data.get("organization"), dict) else {}
+        identity = str(
+            data.get("login")
+            or data.get("name")
+            or organization.get("login")
+            or organization.get("name")
+            or ""
+        )
     elif provider == "neon" and isinstance(data, dict):
         projects = data.get("projects")
         resource_count = len(projects) if isinstance(projects, list) else 0
