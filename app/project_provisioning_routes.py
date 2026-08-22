@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Organization, Project, ProviderCredential, Repository, Workspace
-from app.security import require_access, require_super_admin
+from app.security import require_access
 from app.services.audit import record
 from app.services.github_provisioning import GitHubProvisioningError, create_github_repository
 from app.services.vault import Vault
@@ -153,9 +153,9 @@ def create_project_without_repository(
 def provision_project(
     payload: ProjectProvisionCreate,
     db: Session = Depends(get_db),
-    actor: str = Depends(require_super_admin),
+    actor: str = Depends(require_access),
 ):
-    """Authorize and create a private repository in a-castilho, then connect it as a DevPilot project."""
+    """Create the private GitHub repository automatically and connect it to the DevPilot project."""
     ws = workspace(db)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
