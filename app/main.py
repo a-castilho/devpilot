@@ -2,14 +2,16 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import re
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
+from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
+from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
@@ -122,13 +124,17 @@ app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(product_delivery_router)
 app.include_router(provider_models_router)
+app.include_router(cloud_admin_router)
 app.include_router(deploy_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
 app.include_router(telemetry_replay_router)
 app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
-app.include_router(voice_transcription_router)
+app.include_router(
+    voice_transcription_router,
+    dependencies=[Depends(require_ai_budget_access)],
+)
 app.include_router(token_usage_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
@@ -176,6 +182,7 @@ def spa(path: str):
         '<script src="/assets/voice-microphone-permission.js" defer></script>',
         '<script src="/assets/voice-playback.js" defer></script>',
         '<script src="/assets/voice-enhanced-ui.js" defer></script>',
+        '<script src="/assets/voice-chatgpt-layout.js" defer></script>',
         '<script src="/assets/voice-insecure-lan-guard.js" defer></script>',
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/task-image-upload.js" defer></script>',
@@ -195,6 +202,7 @@ def spa(path: str):
         '<script src="/assets/approval-slider.js" defer></script>',
         '<script src="/assets/tws-example.js" defer></script>',
         '<script src="/assets/deploy-admin.js" defer></script>',
+        '<script src="/assets/cloud-admin.js" defer></script>',
         '<script src="/assets/investia-admin.js" defer></script>',
         '<script src="/assets/career-linkedin.js" defer></script>',
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',

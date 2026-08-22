@@ -1,168 +1,281 @@
+#voice-modal{
+  position:fixed;
+  inset:0;
+  width:100vw;
+  height:100dvh;
+  max-width:none;
+  max-height:none;
+  margin:0;
+  padding:0;
+  border:0;
+  background:transparent;
+  overflow:visible;
+}
+
 #voice-modal::backdrop{
-  background:rgba(0,5,12,.76);
-  backdrop-filter:blur(7px);
+  background:rgba(0,0,0,.58);
+  backdrop-filter:blur(8px);
 }
 
 #voice-modal .voice-modal-enhanced{
-  width:min(660px,calc(100vw - 28px));
-  max-width:660px;
-  max-height:calc(100dvh - 30px);
-  overflow:auto;
-  padding:24px;
-  border:1px solid rgba(132,160,190,.2);
-  border-radius:20px;
-  background:linear-gradient(180deg,rgba(7,13,22,.99),rgba(4,9,15,.99));
-  box-shadow:0 24px 80px rgba(0,0,0,.52);
-  scrollbar-width:thin;
-  scrollbar-color:#2e6474 transparent;
+  position:absolute;
+  left:50%;
+  bottom:max(18px,env(safe-area-inset-bottom));
+  transform:translateX(-50%);
+  width:min(760px,calc(100vw - 32px));
+  max-width:760px;
+  max-height:none;
+  overflow:visible;
+  padding:0;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
 }
 
-#voice-modal .voice-modal-enhanced::-webkit-scrollbar{width:7px}
-#voice-modal .voice-modal-enhanced::-webkit-scrollbar-track{background:transparent}
-#voice-modal .voice-modal-enhanced::-webkit-scrollbar-thumb{background:#2e6474;border-radius:999px}
+#voice-modal .voice-modal-enhanced .voice-enhanced-heading,
+#voice-modal .voice-modal-enhanced .voice-enhanced-actions{
+  display:none!important;
+}
 
 .voice-modal-enhanced .close{
-  width:36px;
-  height:36px;
-  border-radius:12px;
+  position:absolute;
+  right:0;
+  bottom:72px;
+  z-index:8;
+  width:34px;
+  height:34px;
+  padding:0;
   display:grid;
   place-items:center;
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:999px;
+  background:#2f2f2f;
+  color:#cfcfcf;
+  font-size:20px;
+  line-height:1;
+  box-shadow:0 8px 24px rgba(0,0,0,.28);
 }
+.voice-modal-enhanced .close:hover{background:#3a3a3a;color:#fff}
 
-.voice-enhanced-heading{padding-right:42px;margin-bottom:14px}
-.voice-enhanced-heading .eyebrow{display:block;margin-bottom:8px}
-.voice-enhanced-heading h2{margin:0;font-size:clamp(1.55rem,3vw,2rem);letter-spacing:-.03em}
-
-.voice-project-control,
-.voice-transcript-control,
-.voice-output-control{display:grid;gap:7px}
-.voice-project-control>span,
-.voice-transcript-control>span,
-.voice-output-control>span{
-  color:#9fb3c8;
-  font-size:.72rem;
-  font-weight:800;
-  letter-spacing:.08em;
-  text-transform:uppercase;
-}
-
-.voice-modal-enhanced #voice-project,
-.voice-modal-enhanced #voice-output-mode,
-.voice-modal-enhanced #voice-transcript{
-  background:#081524;
-  color:#edf8ff;
-  border:1px solid rgba(89,151,178,.28);
-  outline:none;
-}
-.voice-modal-enhanced #voice-project:focus,
-.voice-modal-enhanced #voice-output-mode:focus,
-.voice-modal-enhanced #voice-transcript:focus{
-  border-color:#4cd8d0;
-  box-shadow:0 0 0 3px rgba(76,216,208,.1);
-}
-
-.voice-modal-enhanced #voice-project{min-height:46px;border-radius:12px;padding:0 14px}
 .voice-modal-enhanced .voice-visual{
-  min-height:104px;
-  margin:12px 0;
-  padding:12px 14px;
-  border:1px solid rgba(79,128,151,.16);
-  border-radius:16px;
-  background:radial-gradient(circle at 50% 35%,rgba(43,187,185,.12),transparent 48%);
+  position:absolute;
+  left:50%;
+  bottom:72px;
+  transform:translateX(-50%);
+  z-index:6;
+  width:auto;
+  min-width:180px;
+  max-width:calc(100% - 96px);
+  min-height:0;
+  margin:0;
+  padding:7px 12px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:999px;
+  background:#2f2f2f;
+  box-shadow:0 8px 28px rgba(0,0,0,.3);
 }
-.voice-modal-enhanced .voice-visual .pulse-orb{transform:scale(.76);margin:-8px auto -12px}
-.voice-modal-enhanced #voice-status{margin:0;text-align:center;color:#d8e8f4;font-size:.94rem;line-height:1.35}
-
-.voice-modal-enhanced #voice-transcript{
-  width:100%;
-  min-height:118px;
-  max-height:210px;
-  resize:vertical;
-  border-radius:14px;
-  padding:14px 15px;
-  line-height:1.5;
+.voice-modal-enhanced .voice-visual .pulse-orb{display:none!important}
+.voice-modal-enhanced #voice-status{
+  margin:0;
+  overflow:hidden;
+  color:#d7d7d7;
+  font-size:.78rem;
+  line-height:1.25;
+  text-align:center;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 
 .voice-composer{
-  margin-top:12px;
-  padding:8px;
+  position:relative;
+  z-index:7;
+  margin:0;
+  min-height:58px;
+  padding:8px 9px;
   display:grid;
-  grid-template-columns:minmax(150px,1fr) auto auto;
-  gap:8px;
+  grid-template-columns:40px minmax(0,1fr) 40px 44px;
+  gap:5px;
   align-items:end;
-  border:1px solid rgba(111,139,164,.24);
-  border-radius:24px;
-  background:#15191e;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:30px;
+  background:#2f2f2f;
+  box-shadow:0 12px 38px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.035);
 }
-.voice-composer .voice-output-control{gap:3px;min-width:0}
-.voice-composer .voice-output-control>span{padding-left:8px;font-size:.62rem}
-.voice-composer #voice-output-mode{
-  width:100%;
-  min-width:0;
-  height:42px;
-  border-radius:14px;
-  padding:0 11px;
-  background:#20252b;
-  border-color:transparent;
-}
-.voice-composer-button{
-  min-height:42px;
-  border-radius:14px!important;
-  white-space:nowrap;
-}
-.voice-composer #voice-playback{
-  width:auto;
-  min-width:150px;
-  padding:0 14px;
-  border:1px solid rgba(145,160,176,.22);
-  color:#edf7ff;
-  background:#20252b;
-}
-.voice-composer #voice-playback:hover{border-color:rgba(76,216,208,.42)}
-.voice-composer #voice-playback[data-speaking="1"]{
-  border-color:rgba(76,216,208,.56);
-  box-shadow:0 0 0 2px rgba(76,216,208,.08);
-}
-.voice-composer #voice-start{min-width:94px;padding:0 14px}
-.voice-composer #voice-start::first-letter{color:#42dfd5}
 
-.voice-enhanced-hint{
+.voice-chatgpt-options-button,
+.voice-composer-button{
+  align-self:end;
+  width:40px;
+  height:40px;
+  min-width:40px!important;
+  min-height:40px!important;
+  padding:0!important;
+  display:grid!important;
+  place-items:center;
+  border-radius:999px!important;
+  box-shadow:none!important;
+}
+
+.voice-chatgpt-options-button{
+  grid-column:1;
+  border:0;
+  background:transparent;
+  color:#ececec;
+  font-size:30px;
+  font-weight:300;
+  line-height:1;
+}
+.voice-chatgpt-options-button:hover,
+.voice-chatgpt-options-button[aria-expanded="true"]{background:#424242}
+
+.voice-composer .voice-transcript-control{
+  grid-column:2;
+  min-width:0;
   display:block;
-  margin:8px 6px 0;
-  color:#8498ac;
+  align-self:center;
+}
+.voice-composer .voice-transcript-control>span{display:none}
+.voice-composer #voice-transcript{
+  width:100%;
+  min-height:24px;
+  max-height:116px;
+  margin:0;
+  padding:8px 6px 7px;
+  resize:none;
+  overflow-y:auto;
+  border:0;
+  outline:0;
+  border-radius:0;
+  background:transparent;
+  color:#f2f2f2;
+  box-shadow:none;
+  font:inherit;
+  font-size:1rem;
   line-height:1.35;
+  scrollbar-width:thin;
+  scrollbar-color:#666 transparent;
 }
-.voice-enhanced-actions{
-  margin-top:14px!important;
-  display:flex!important;
-  justify-content:flex-end;
-  gap:9px;
+.voice-composer #voice-transcript::placeholder{color:#b4b4b4;opacity:1}
+.voice-composer #voice-transcript:focus{border:0;box-shadow:none}
+
+.voice-composer #voice-playback{
+  grid-column:3;
+  border:0;
+  background:transparent;
+  color:#ececec;
+  font-size:0;
 }
-.voice-clear-button{min-width:88px}
+.voice-composer #voice-playback::before{
+  content:"";
+  width:15px;
+  height:15px;
+  border:2px solid currentColor;
+  border-left-width:5px;
+  border-radius:3px 9px 9px 3px;
+  opacity:.92;
+}
+.voice-composer #voice-playback:hover{background:#424242}
+.voice-composer #voice-playback[data-speaking="1"]{background:#424242;box-shadow:none}
+
+.voice-composer #voice-start{
+  grid-column:4;
+  width:44px;
+  min-width:44px!important;
+  height:44px;
+  min-height:44px!important;
+  border:0;
+  background:#5b64f5;
+  color:#fff;
+  font-size:0;
+}
+.voice-composer #voice-start::before{
+  content:"";
+  width:12px;
+  height:18px;
+  border:2px solid currentColor;
+  border-radius:8px;
+  box-sizing:border-box;
+}
+.voice-composer #voice-start:hover{filter:brightness(1.08)}
+.voice-composer #voice-start:disabled{opacity:.5;filter:none}
+
+.voice-project-control,
+.voice-output-control{
+  display:grid;
+  gap:6px;
+}
+.voice-project-control>span,
+.voice-output-control>span{
+  color:#aaa;
+  font-size:.69rem;
+  font-weight:700;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+}
+
+.voice-chatgpt-options{
+  position:absolute;
+  left:0;
+  bottom:70px;
+  z-index:9;
+  width:min(360px,calc(100vw - 40px));
+  padding:12px;
+  display:grid;
+  gap:10px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:18px;
+  background:#2f2f2f;
+  box-shadow:0 18px 48px rgba(0,0,0,.42);
+}
+.voice-chatgpt-options[hidden]{display:none!important}
+.voice-chatgpt-options #voice-project,
+.voice-chatgpt-options #voice-output-mode{
+  width:100%;
+  height:42px;
+  min-height:42px;
+  padding:0 12px;
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:12px;
+  outline:0;
+  background:#3a3a3a;
+  color:#f2f2f2;
+}
+.voice-chatgpt-options #voice-project:focus,
+.voice-chatgpt-options #voice-output-mode:focus{border-color:#7f86ff;box-shadow:0 0 0 2px rgba(91,100,245,.18)}
+.voice-chatgpt-options .voice-clear-button{
+  width:100%;
+  min-height:40px;
+  border-radius:12px;
+  background:transparent;
+  color:#ddd;
+  border:1px solid rgba(255,255,255,.1);
+}
+.voice-chatgpt-options .voice-clear-button:hover{background:#3a3a3a}
+
+.voice-enhanced-hint{display:none!important}
 
 @media (max-width:640px){
   #voice-modal .voice-modal-enhanced{
-    width:calc(100vw - 16px);
-    max-height:calc(100dvh - 16px);
-    padding:18px;
-    border-radius:18px;
+    bottom:max(10px,env(safe-area-inset-bottom));
+    width:calc(100vw - 18px);
   }
-  .voice-modal-enhanced .voice-visual{min-height:88px;margin:10px 0}
-  .voice-modal-enhanced .voice-visual .pulse-orb{transform:scale(.65);margin:-14px auto -18px}
-  .voice-modal-enhanced #voice-transcript{min-height:105px}
   .voice-composer{
-    grid-template-columns:1fr 1fr;
-    border-radius:20px;
+    min-height:56px;
+    grid-template-columns:38px minmax(0,1fr) 38px 42px;
+    padding:7px 8px;
+    border-radius:28px;
   }
-  .voice-composer .voice-output-control{grid-column:1/-1;grid-row:1}
-  .voice-composer #voice-playback{grid-column:1;grid-row:2;min-width:0;width:100%}
-  .voice-composer #voice-start{grid-column:2;grid-row:2;width:100%;min-width:0}
-  .voice-enhanced-actions{display:grid!important;grid-template-columns:1fr}
-  .voice-enhanced-actions button{width:100%;min-width:0!important}
+  .voice-chatgpt-options-button,
+  .voice-composer-button{width:38px;height:38px;min-width:38px!important;min-height:38px!important}
+  .voice-composer #voice-start{width:42px;height:42px;min-width:42px!important;min-height:42px!important}
+  .voice-modal-enhanced .voice-visual{bottom:68px;max-width:calc(100% - 70px)}
+  .voice-modal-enhanced .close{bottom:68px;width:32px;height:32px}
+  .voice-chatgpt-options{bottom:66px;width:min(340px,calc(100vw - 28px))}
 }
 
 @media (prefers-reduced-motion:reduce){
-  #voice-modal .pulse-orb,
-  #voice-modal .pulse-orb *{animation:none!important;transition:none!important}
+  #voice-modal *,
+  #voice-modal *::before,
+  #voice-modal *::after{animation:none!important;transition:none!important}
 }

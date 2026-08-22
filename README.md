@@ -1,6 +1,6 @@
 # DevPilot — seu desenvolvedor
 
-**Atualizado em: 20/08/2026**
+**Atualizado em: 22/08/2026**
 
 DevPilot é um SaaS leve para automatizar desenvolvimento de software por dashboard, API
 ou voz. Ele organiza múltiplos projetos e tarefas, aplica instruções `AGENTS.md`, controla
@@ -17,6 +17,9 @@ uma trilha de auditoria encadeada por hash.
 - executor Codex com `subprocess` sem shell e timeout;
 - vault criptografado para múltiplos provedores de IA;
 - auditoria de comandos, configuração, aprovação e execução;
+- contabilização de tokens por usuário, projeto, tarefa, execução, provedor e modelo;
+- Centro de Custos de IA com ledger financeiro versionado, cobertura de precificação e histórico;
+- orçamento diário/mensal de IA com alerta e hard stop para evitar gasto adicional;
 - política de hosts Git permitidos e isolamento de diretórios;
 - Docker Compose com aplicação, worker e PostgreSQL;
 - SQLite para desenvolvimento local sem infraestrutura adicional.
@@ -31,11 +34,27 @@ FastAPI ── política ── auditoria hash-chain
 PostgreSQL/SQLite       vault criptografado
    │
 worker ── projeto isolado ── Codex CLI ── Git branch/PR
+   │
+ledger de IA ── preços versionados ── orçamento / hard stop
 ```
 
 O MVP usa voz encadeada: reconhecimento no dispositivo, transcrição revisável, interpretação,
 aprovação e execução. Isso mantém o comando auditável. Uma evolução natural é substituir a
 captura pelo OpenAI Realtime via WebRTC, usando credenciais efêmeras emitidas pelo backend.
+
+## Custos de IA
+
+O DevPilot persiste o consumo reportado pelos provedores e congela o custo calculado com a
+versão de preço vigente no momento da contabilização. Dessa forma, uma alteração futura de
+preço não modifica retroativamente o histórico financeiro. Operações externas que não retornam
+metadados suficientes para uma precificação exata permanecem visíveis como `unpriced`, em vez
+de receberem uma estimativa inventada.
+
+O Super Admin pode definir orçamento diário e mensal. Com `hard stop` habilitado, o worker
+verifica o orçamento antes da primeira execução e novamente antes de cada tentativa de
+autocorreção. Chat, transcrição e TTS remotos também respeitam o bloqueio. A conversão para
+reais é apenas de exibição e pode ser configurada por `DEVPILOT_USD_BRL_RATE`; com valor zero,
+o painel mantém somente o custo autoritativo em USD.
 
 ## Executar localmente
 
@@ -80,9 +99,10 @@ configurados, credenciais de escopo mínimo e diretório isolado.
 1. Cliente dita ou escreve o objetivo.
 2. DevPilot registra transcript/prompt e avalia risco.
 3. Ações sensíveis aguardam aprovação.
-4. O worker cria uma branch exclusiva e chama Codex.
-5. Testes, logs e resumo ficam associados à execução.
-6. Push/PR podem ser adicionados como uma etapa separada e explicitamente aprovada.
+4. O worker valida o orçamento de IA antes de consumir o provedor.
+5. O worker cria uma branch exclusiva e chama Codex.
+6. Tokens, custo, testes, logs e resumo ficam associados à execução.
+7. Push/PR podem ser adicionados como uma etapa separada e explicitamente aprovada.
 
 ## Próximas etapas para produção
 
@@ -91,9 +111,10 @@ configurados, credenciais de escopo mínimo e diretório isolado.
 - GitHub App com webhooks e tokens de instalação;
 - OpenAI Realtime/WebRTC e transcrição server-side;
 - eventos ao vivo por SSE/WebSocket;
-- runners efêmeros por tarefa e limites de custo;
+- runners efêmeros por tarefa;
 - cobrança por workspace, assentos e minutos de execução;
 - observabilidade OpenTelemetry, SLOs e alertas;
+- reconciliação periódica do ledger com faturamento dos provedores;
 - análise de segurança e qualidade em PRs.
 
 ## Segurança
