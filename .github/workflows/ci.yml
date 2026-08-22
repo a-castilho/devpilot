@@ -50,6 +50,7 @@ jobs:
           node --check app/static/telemetry-replay.js
           node --check app/static/linux-terminal.js
           node --check app/static/token-usage.js
+          node --check app/static/investia-admin.js
           bash -n scripts/install-linux-agent.sh
 
       - name: Validate Vercel static frontend
