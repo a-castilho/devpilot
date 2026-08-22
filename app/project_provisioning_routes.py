@@ -9,13 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Organization, Project, ProviderCredential, Repository, Workspace
-from app.security import require_access
+from app.security import Principal, Role, require_access, require_super_admin, session_principal
 from app.services.audit import record
 from app.services.github_provisioning import GitHubProvisioningError, create_github_repository
 from app.services.vault import Vault
 
 
 AUTHORIZED_ORGANIZATION = "a-castilho"
+GENERIC_PROJECT_CREATE_ERROR = "Não foi possível criar o projeto. A administração foi notificada."
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
 
 
@@ -101,12 +102,23 @@ def optional_organization(db: Session, workspace_id: str, organization_id: str |
     return item
 
 
+def provisioning_client_error(principal: Principal, error: Exception) -> HTTPException:
+    """Keep Git/provider details restricted to SUPER_ADMIN while preserving them in audit logs."""
+    if principal.role is Role.SUPER_ADMIN:
+        if isinstance(error, HTTPException):
+            return error
+        if isinstance(error, GitHubProvisioningError):
+            return HTTPException(status_code=error.status_code, detail=str(error))
+    return HTTPException(status_code=503, detail=GENERIC_PROJECT_CREATE_ERROR)
+
+
 @router.post("/projects/deferred", status_code=201)
 def create_project_without_repository(
     payload: ProjectDeferredCreate,
     db: Session = Depends(get_db),
+    _: str = Depends(require_super_admin),
 ):
-    """Create the DevPilot project now and allow the Git repository to be connected later."""
+    """Super Admin escape hatch: create now and connect a Git repository later."""
     ws = workspace(db)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
@@ -153,9 +165,10 @@ def create_project_without_repository(
 def provision_project(
     payload: ProjectProvisionCreate,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    """Create the private GitHub repository automatically and connect it to the DevPilot project."""
+    """Create Git automatically with the centrally managed SUPER_ADMIN organization credential."""
     ws = workspace(db)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
@@ -163,17 +176,17 @@ def provision_project(
     if existing:
         raise HTTPException(409, f"Project slug already exists: {payload.slug}")
 
-    organization = authorized_organization(db, ws.id)
-    access_token = organization_access_token(db, ws.id, organization)
-
+    organization: Organization | None = None
     try:
+        organization = authorized_organization(db, ws.id)
+        access_token = organization_access_token(db, ws.id, organization)
         remote = create_github_repository(
             AUTHORIZED_ORGANIZATION,
             payload.slug,
             payload.description,
             access_token,
         )
-    except GitHubProvisioningError as error:
+    except (HTTPException, GitHubProvisioningError) as error:
         record(
             db,
             workspace_id=ws.id,
@@ -181,13 +194,13 @@ def provision_project(
             action="project.repository_provision",
             outcome="failed",
             details={
-                "organization_id": organization.id,
+                "organization_id": organization.id if organization else None,
                 "repository_name": payload.slug,
-                "error": str(error),
+                "error": str(error.detail) if isinstance(error, HTTPException) else str(error),
             },
         )
         db.commit()
-        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        raise provisioning_client_error(principal, error) from error
 
     item = Project(
         workspace_id=ws.id,
@@ -228,6 +241,7 @@ def provision_project(
             "repository": remote["full_name"],
             "visibility": remote["visibility"],
             "authorized": True,
+            "credential_source": "super_admin_managed_organization",
         },
     )
     db.commit()
