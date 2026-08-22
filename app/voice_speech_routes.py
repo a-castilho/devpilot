@@ -14,7 +14,9 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.models import ProviderCredential, Workspace
 from app.security import require_access
+from app.services.ai_costs import budget_block_reason, record_unpriced_cost
 from app.services.audit import record
+from app.services.token_usage import user_id_from_actor
 from app.services.vault import Vault
 
 
@@ -47,6 +49,7 @@ LOCAL_TTS_VOICES = {
 class SpeechRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4096)
     voice: str = Field(default="coral", max_length=32)
+    project_id: str | None = None
 
 
 class LocalSpeechRequest(BaseModel):
@@ -215,6 +218,26 @@ async def create_speech(
     if voice not in OPENAI_TTS_VOICES:
         raise HTTPException(422, "Voz ChatGPT não suportada.")
 
+    user_id = user_id_from_actor(actor)
+    budget_reason = budget_block_reason(
+        db,
+        workspace_id=ws.id,
+        user_id=user_id,
+        project_id=payload.project_id,
+    )
+    if budget_reason:
+        record(
+            db,
+            workspace_id=ws.id,
+            project_id=payload.project_id,
+            actor=actor,
+            action="ai.budget.blocked",
+            outcome="blocked",
+            details={"operation": "voice.speech", "reason": budget_reason},
+        )
+        db.commit()
+        raise HTTPException(402, budget_reason)
+
     api_keys = _openai_api_keys(db, ws.id)
     if not api_keys:
         raise HTTPException(
@@ -257,9 +280,25 @@ async def create_speech(
                 statuses.append(502)
                 continue
 
+            # The speech endpoint returns binary audio without token usage metadata.
+            # Record it in the same financial ledger as an explicitly unpriced event,
+            # rather than hiding the external spend or fabricating token counts.
+            cost = record_unpriced_cost(
+                db,
+                workspace_id=ws.id,
+                user_id=user_id,
+                project_id=payload.project_id,
+                provider="openai",
+                model=OPENAI_TTS_MODEL,
+                operation="voice.speech",
+                billable_unit="characters",
+                billable_quantity=len(text),
+                source="provider-no-usage",
+            )
             record(
                 db,
                 workspace_id=ws.id,
+                project_id=payload.project_id,
                 actor=actor,
                 action="voice.speech_generated",
                 details={
@@ -267,6 +306,8 @@ async def create_speech(
                     "model": OPENAI_TTS_MODEL,
                     "voice": voice,
                     "characters": len(text),
+                    "cost_event_id": cost.id,
+                    "pricing_status": cost.pricing_status,
                 },
             )
             db.commit()
@@ -280,6 +321,7 @@ async def create_speech(
     record(
         db,
         workspace_id=ws.id,
+        project_id=payload.project_id,
         actor=actor,
         action="voice.speech_failed",
         outcome="failed",
