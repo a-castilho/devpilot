@@ -96,22 +96,11 @@ class CloudProvisioner:
             raise CloudProvisioningError(provider, f"{provider}: API indisponível") from error
 
         if response.status_code >= 400:
-            detail = ""
-            try:
-                payload = response.json()
-                if isinstance(payload, dict):
-                    detail = str(
-                        payload.get("message")
-                        or payload.get("error")
-                        or payload.get("detail")
-                        or ""
-                    )
-            except (ValueError, TypeError):
-                detail = ""
-            suffix = f": {detail[:240]}" if detail else ""
+            # Provider payloads can echo request data. Persist only status/provider,
+            # never a raw response that could contain credentials or environment values.
             raise CloudProvisioningError(
                 provider,
-                f"{provider}: API retornou HTTP {response.status_code}{suffix}",
+                f"{provider}: API retornou HTTP {response.status_code}",
                 status_code=response.status_code,
             )
         if response.status_code == 204 or not response.content:
