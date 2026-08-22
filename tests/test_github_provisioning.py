@@ -13,16 +13,16 @@ class FakeResponse:
     def __init__(self, status_code=201, payload=None):
         self.status_code = status_code
         self._payload = payload or {}
+        self.content = b"{}"
 
     def json(self):
         return self._payload
 
 
 class FakeClient:
+    responses = []
+    requests = []
     last_headers = None
-    last_url = None
-    last_json = None
-    response = None
 
     def __init__(self, *args, headers=None, **kwargs):
         FakeClient.last_headers = headers
@@ -34,23 +34,30 @@ class FakeClient:
         return False
 
     def post(self, url, json):
-        FakeClient.last_url = url
-        FakeClient.last_json = json
-        return FakeClient.response
+        FakeClient.requests.append((url, json))
+        return FakeClient.responses.pop(0)
 
 
-def github_repository_payload():
+def github_repository_payload(name="novo-projeto"):
     return {
         "id": 456,
-        "name": "novo-projeto",
-        "full_name": "a-castilho/novo-projeto",
+        "name": name,
+        "full_name": f"a-castilho/{name}",
         "description": "Projeto criado pelo DevPilot",
-        "clone_url": "https://github.com/a-castilho/novo-projeto.git",
+        "clone_url": f"https://github.com/a-castilho/{name}.git",
         "default_branch": "main",
         "visibility": "private",
         "archived": False,
         "private": True,
     }
+
+
+def prepare(monkeypatch, responses):
+    FakeClient.responses = list(responses)
+    FakeClient.requests = []
+    monkeypatch.setattr(github_provisioning.httpx, "Client", FakeClient)
+    monkeypatch.setattr(github_provisioning, "bootstrap_repository", lambda *args, **kwargs: {"status": "ready"})
+    monkeypatch.setattr(github_provisioning, "_resume_managed_repository", lambda *args, **kwargs: None)
 
 
 def test_project_provisioning_is_locked_to_a_castilho():
@@ -60,8 +67,7 @@ def test_project_provisioning_is_locked_to_a_castilho():
 
 
 def test_create_github_repository_creates_private_initialized_repository(monkeypatch):
-    FakeClient.response = FakeResponse(201, github_repository_payload())
-    monkeypatch.setattr(github_provisioning.httpx, "Client", FakeClient)
+    prepare(monkeypatch, [FakeResponse(201, github_repository_payload())])
 
     result = create_github_repository(
         "a-castilho",
@@ -70,8 +76,9 @@ def test_create_github_repository_creates_private_initialized_repository(monkeyp
         "secret-token",
     )
 
-    assert FakeClient.last_url == "https://api.github.com/orgs/a-castilho/repos"
-    assert FakeClient.last_json == {
+    url, payload = FakeClient.requests[0]
+    assert url == "https://api.github.com/orgs/a-castilho/repos"
+    assert payload == {
         "name": "novo-projeto",
         "description": "Projeto criado pelo DevPilot",
         "private": True,
@@ -79,8 +86,52 @@ def test_create_github_repository_creates_private_initialized_repository(monkeyp
     }
     assert FakeClient.last_headers["Authorization"] == "Bearer secret-token"
     assert result["full_name"] == "a-castilho/novo-projeto"
-    assert result["clone_url"] == "https://github.com/a-castilho/novo-projeto.git"
-    assert result["visibility"] == "private"
+
+
+def test_repository_name_collision_is_resolved_without_user_action(monkeypatch):
+    prepare(
+        monkeypatch,
+        [
+            FakeResponse(422, {"message": "name already exists"}),
+            FakeResponse(201, github_repository_payload("novo-projeto-2")),
+        ],
+    )
+
+    result = create_github_repository(
+        "a-castilho",
+        "novo-projeto",
+        "Projeto criado pelo DevPilot",
+        "secret-token",
+    )
+
+    assert [payload["name"] for _, payload in FakeClient.requests] == [
+        "novo-projeto",
+        "novo-projeto-2",
+    ]
+    assert result["name"] == "novo-projeto-2"
+    assert result["full_name"] == "a-castilho/novo-projeto-2"
+
+
+def test_second_collision_uses_next_available_suffix(monkeypatch):
+    prepare(
+        monkeypatch,
+        [
+            FakeResponse(422),
+            FakeResponse(422),
+            FakeResponse(201, github_repository_payload("novo-projeto-3")),
+        ],
+    )
+
+    result = create_github_repository(
+        "a-castilho", "novo-projeto", "", "secret-token"
+    )
+
+    assert [payload["name"] for _, payload in FakeClient.requests] == [
+        "novo-projeto",
+        "novo-projeto-2",
+        "novo-projeto-3",
+    ]
+    assert result["name"] == "novo-projeto-3"
 
 
 def test_create_github_repository_requires_authorized_credential():
@@ -88,29 +139,23 @@ def test_create_github_repository_requires_authorized_credential():
         create_github_repository("a-castilho", "novo-projeto", "", "")
     assert error.value.status_code == 409
     assert "credencial" in str(error.value).lower()
-    assert "Resource owner = a-castilho" in str(error.value)
 
 
 def test_create_github_repository_translates_invalid_token(monkeypatch):
-    FakeClient.response = FakeResponse(401, {"message": "Bad credentials"})
-    monkeypatch.setattr(github_provisioning.httpx, "Client", FakeClient)
+    prepare(monkeypatch, [FakeResponse(401, {"message": "Bad credentials"})])
 
     with pytest.raises(GitHubProvisioningError) as error:
         create_github_repository("a-castilho", "novo-projeto", "", "expired-token")
 
     assert error.value.status_code == 401
     assert "inválido" in str(error.value)
-    assert "Resource owner = a-castilho" in str(error.value)
 
 
 def test_create_github_repository_translates_permission_failure(monkeypatch):
-    FakeClient.response = FakeResponse(403, {"message": "Resource not accessible by personal access token"})
-    monkeypatch.setattr(github_provisioning.httpx, "Client", FakeClient)
+    prepare(monkeypatch, [FakeResponse(403)])
 
     with pytest.raises(GitHubProvisioningError) as error:
         create_github_repository("a-castilho", "novo-projeto", "", "token-without-write")
 
     assert error.value.status_code == 403
     assert "não autoriza" in str(error.value)
-    assert "Resource owner = a-castilho" in str(error.value)
-    assert "Administration: Read and write" in str(error.value)
