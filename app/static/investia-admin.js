@@ -26,7 +26,11 @@
       .investia-cost-row:last-child{border-bottom:0}
       .investia-result{white-space:pre-wrap;padding:12px;border-radius:12px;background:rgba(0,0,0,.18);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
       .investia-note{padding:12px 14px;border:1px solid var(--border,#26354a);border-radius:14px}
-      @media(max-width:760px){.investia-grid{grid-template-columns:1fr}.investia-cost-row{grid-template-columns:1fr}.investia-actions>*{flex:1 1 auto}}
+      .devai-publication{display:grid;gap:12px;padding:14px;border:1px solid var(--border,#26354a);border-radius:14px}
+      .devai-publication-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+      .devai-publication-actions{display:flex;gap:10px;flex-wrap:wrap}
+      .devai-publication-actions button{min-width:150px}
+      @media(max-width:760px){.investia-grid{grid-template-columns:1fr}.investia-cost-row{grid-template-columns:1fr}.investia-actions>*,.devai-publication-actions>*{flex:1 1 auto}}
     `;
     document.head.appendChild(style);
   }
@@ -41,7 +45,7 @@
     button.className = 'nav';
     button.type = 'button';
     button.dataset.view = 'investia-admin';
-    button.textContent = 'Investia';
+    button.textContent = 'DevAI Invest';
     nav.insertBefore(button, nav.querySelector('[data-view="reports"]') || null);
 
     const section = document.createElement('section');
@@ -51,8 +55,8 @@
       <div class="section-head">
         <div>
           <span class="eyebrow">SUPER ADMIN</span>
-          <h2>Investia</h2>
-          <p>Control plane dos projetos publicados no Investia. O produto Investia permanece separado do DevPilot.</p>
+          <h2>DevAI Invest</h2>
+          <p>Administração dos projetos do DevPilot que podem ser publicados no DevAI Invest. O produto de investimento permanece separado do DevPilot.</p>
         </div>
         <button class="ghost" type="button" id="investia-refresh">Atualizar</button>
       </div>
@@ -85,7 +89,7 @@
                 <label>Máximo por investidor<input name="maximum_investment_per_user" type="number" min="0.01" step="0.01" placeholder="sem limite"></label>
               </div>
               <div class="form-grid">
-                <label>Status
+                <label>Status do projeto
                   <select name="status">
                     <option value="draft">Rascunho</option>
                     <option value="fundraising">Captando</option>
@@ -97,9 +101,28 @@
                     <option value="cancelled">Cancelado</option>
                   </select>
                 </label>
-                <label class="check" style="align-self:end"><input name="public_enabled" type="checkbox"> Liberado para publicação no Investia</label>
+                <label>Estado de publicação
+                  <input id="devai-publication-readonly" value="Não publicado" readonly>
+                </label>
               </div>
+              <input name="public_enabled" type="checkbox" hidden>
               <label>Notas administrativas<textarea name="notes" rows="3"></textarea></label>
+
+              <div class="devai-publication">
+                <div class="devai-publication-head">
+                  <div>
+                    <strong>Publicação no DevAI Invest</strong>
+                    <p class="hint" id="devai-publication-help">Configure e salve o projeto antes de publicar.</p>
+                  </div>
+                  <span id="devai-publication-badge" class="status">NÃO PUBLICADO</span>
+                </div>
+                <div class="devai-publication-actions">
+                  <button class="primary" type="button" id="devai-publish">Publicar no DevAI Invest</button>
+                  <button class="ghost" type="button" id="devai-pause">Pausar no DevAI Invest</button>
+                  <button class="ghost" type="button" id="devai-unpublish">Remover do DevAI Invest</button>
+                </div>
+              </div>
+
               <div class="investia-note">
                 <strong>Regra financeira</strong>
                 <p class="hint">O retorno é calculado sobre o resultado líquido. Custos só entram na dedução depois de aprovados pelo Super Admin.</p>
@@ -156,6 +179,9 @@
     section.querySelector('#investia-project-form').addEventListener('submit', saveProjectConfig);
     section.querySelector('#investia-cost-form').addEventListener('submit', addCost);
     section.querySelector('#investia-preview-form').addEventListener('submit', previewDistribution);
+    section.querySelector('#devai-publish').addEventListener('click', () => changePublication('publish'));
+    section.querySelector('#devai-pause').addEventListener('click', () => changePublication('pause'));
+    section.querySelector('#devai-unpublish').addEventListener('click', () => changePublication('unpublish'));
   }
 
   function openView(button, section) {
@@ -163,7 +189,7 @@
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
     const title = document.getElementById('page-title');
-    if (title) title.textContent = 'Investia';
+    if (title) title.textContent = 'DevAI Invest';
     loadAll();
   }
 
@@ -175,16 +201,60 @@
     return investiaState.configs.find(item => item.project_id === investiaState.selectedId) || null;
   }
 
+  function publicationState(cfg) {
+    if (!cfg?.public_enabled) return 'not_published';
+    if (String(cfg.status || '') === 'paused') return 'paused';
+    return 'published';
+  }
+
+  function publicationLabel(value) {
+    if (value === 'published') return 'PUBLICADO';
+    if (value === 'paused') return 'PAUSADO';
+    return 'NÃO PUBLICADO';
+  }
+
+  function renderPublication() {
+    const cfg = selectedConfig();
+    const stateValue = publicationState(cfg);
+    const badge = document.getElementById('devai-publication-badge');
+    const readonly = document.getElementById('devai-publication-readonly');
+    const help = document.getElementById('devai-publication-help');
+    const publish = document.getElementById('devai-publish');
+    const pause = document.getElementById('devai-pause');
+    const unpublish = document.getElementById('devai-unpublish');
+    if (!badge || !readonly || !help || !publish || !pause || !unpublish) return;
+
+    badge.textContent = publicationLabel(stateValue);
+    readonly.value = publicationLabel(stateValue);
+    publish.disabled = !cfg || stateValue === 'published';
+    pause.disabled = !cfg || stateValue !== 'published';
+    unpublish.disabled = !cfg || stateValue === 'not_published';
+
+    if (!cfg) {
+      help.textContent = 'Configure e salve o projeto antes de publicar.';
+    } else if (stateValue === 'paused') {
+      help.textContent = 'O projeto continua visível no DevAI Invest, mas não aceita novos aportes.';
+      publish.textContent = 'Retomar no DevAI Invest';
+    } else if (stateValue === 'published') {
+      help.textContent = 'Projeto publicado. Novos aportes dependem do status de captação.';
+      publish.textContent = 'Publicar no DevAI Invest';
+    } else {
+      help.textContent = 'Projeto configurado e ainda não publicado no DevAI Invest.';
+      publish.textContent = 'Publicar no DevAI Invest';
+    }
+  }
+
   function renderProjects() {
     const target = document.getElementById('investia-projects');
     if (!target) return;
     target.innerHTML = investiaState.projects.map(project => {
       const cfg = investiaState.configs.find(item => item.project_id === project.id);
+      const pub = publicationState(cfg);
       return `
         <button class="investia-project ${project.id === investiaState.selectedId ? 'active' : ''}" type="button" data-id="${esc(project.id)}">
           <strong>${esc(project.name)}</strong>
           <small>${esc(project.slug || '')}</small>
-          <small>${cfg ? `${esc(cfg.status || 'draft')} · ${cfg.public_enabled ? 'publicável' : 'privado'}` : 'não configurado'}</small>
+          <small>${cfg ? `${esc(cfg.status || 'draft')} · ${publicationLabel(pub).toLowerCase()}` : 'não configurado'}</small>
         </button>`;
     }).join('') || '<div class="empty">Nenhum projeto no DevPilot.</div>';
 
@@ -218,6 +288,7 @@
     form.elements.status.value = cfg?.status || 'draft';
     form.elements.public_enabled.checked = Boolean(cfg?.public_enabled);
     form.elements.notes.value = cfg?.notes || '';
+    renderPublication();
   }
 
   function numberOrNull(value) {
@@ -240,7 +311,7 @@
       maximum_investment_per_user: numberOrNull(form.elements.maximum_investment_per_user.value),
       investor_share_percentage: Number(form.elements.investor_share_percentage.value),
       status: form.elements.status.value,
-      public_enabled: form.elements.public_enabled.checked,
+      public_enabled: Boolean(cfg?.public_enabled),
       notes: form.elements.notes.value,
     };
     if (!cfg) payload.external_project_key = form.elements.external_project_key.value.trim();
@@ -250,7 +321,28 @@
         method: cfg ? 'PATCH' : 'POST',
         body: JSON.stringify(payload),
       });
-      toast('Configuração do Investia salva');
+      toast('Configuração do DevAI Invest salva');
+      await loadAll(true);
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  async function changePublication(action) {
+    const cfg = selectedConfig();
+    const project = selectedProject();
+    if (!project) return toast('Selecione um projeto');
+    if (!cfg) return toast('Salve a configuração antes de publicar');
+
+    const labels = {
+      publish: 'Projeto publicado no DevAI Invest',
+      pause: 'Projeto pausado no DevAI Invest',
+      unpublish: 'Projeto removido do DevAI Invest',
+    };
+
+    try {
+      await api(`/investia/admin/projects/${project.id}/${action}`, {method: 'POST'});
+      toast(labels[action] || 'Publicação atualizada');
       await loadAll(true);
     } catch (error) {
       toast(error.message);
