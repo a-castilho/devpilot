@@ -14,6 +14,7 @@ from app.db import get_db
 from app.models import Project, TokenUsage, User, UserProfile
 from app.security import Principal, require_access, require_super_admin, session_principal
 from app.services.ai_costs import (
+    PRICING_VERSION,
     backfill_cost_ledger,
     budget_status,
     microusd_to_usd,
@@ -91,6 +92,15 @@ def _budget_payload(item: AIBudget, status: dict | None = None) -> dict:
             }
         )
     return result
+
+
+def _cost_cases():
+    billed = case((AIUsageCost.pricing_status == "priced", AIUsageCost.cost_microusd), else_=0)
+    reference = case((AIUsageCost.pricing_status == "reference", AIUsageCost.cost_microusd), else_=0)
+    unpriced = case((AIUsageCost.pricing_status == "unpriced", 1), else_=0)
+    reference_events = case((AIUsageCost.pricing_status == "reference", 1), else_=0)
+    priced_events = case((AIUsageCost.pricing_status == "priced", 1), else_=0)
+    return billed, reference, unpriced, reference_events, priced_events
 
 
 @router.get("/admin/summary")
@@ -189,31 +199,39 @@ def admin_cost_summary(
 ):
     backfilled = backfill_cost_ledger(db, principal.workspace_id)
     if backfilled:
-        db.flush()
+        # Backfill is idempotent and must survive this read request; get_db does
+        # not auto-commit sessions.
+        db.commit()
 
     since = datetime.now(timezone.utc) - timedelta(days=days)
     filters = (
         AIUsageCost.workspace_id == principal.workspace_id,
         AIUsageCost.created_at >= since,
     )
-    unpriced_case = case((AIUsageCost.pricing_status != "priced", 1), else_=0)
+    billed_case, reference_case, unpriced_case, reference_event_case, priced_event_case = _cost_cases()
 
     totals_row = db.execute(
         select(
-            func.coalesce(func.sum(AIUsageCost.cost_microusd), 0),
+            func.coalesce(func.sum(billed_case), 0),
+            func.coalesce(func.sum(reference_case), 0),
             func.count(AIUsageCost.id),
+            func.coalesce(func.sum(priced_event_case), 0),
+            func.coalesce(func.sum(reference_event_case), 0),
             func.coalesce(func.sum(unpriced_case), 0),
         ).where(*filters)
     ).one()
     total_cost_microusd = int(totals_row[0] or 0)
-    total_events = int(totals_row[1] or 0)
-    unpriced_events = int(totals_row[2] or 0)
-    priced_events = max(0, total_events - unpriced_events)
+    reference_cost_microusd = int(totals_row[1] or 0)
+    total_events = int(totals_row[2] or 0)
+    priced_events = int(totals_row[3] or 0)
+    reference_events = int(totals_row[4] or 0)
+    unpriced_events = int(totals_row[5] or 0)
 
     project_rows = db.execute(
         select(
             AIUsageCost.project_id,
-            func.coalesce(func.sum(AIUsageCost.cost_microusd), 0),
+            func.coalesce(func.sum(billed_case), 0),
+            func.coalesce(func.sum(reference_case), 0),
             func.count(AIUsageCost.id),
             func.coalesce(func.sum(unpriced_case), 0),
             func.max(AIUsageCost.created_at),
@@ -236,19 +254,21 @@ def admin_cost_summary(
             "project_id": str(row[0]) if row[0] else None,
             "project_name": projects.get(str(row[0])).name if row[0] and projects.get(str(row[0])) else "Sem projeto",
             "cost_usd": microusd_to_usd(row[1]),
-            "events": int(row[2] or 0),
-            "unpriced_events": int(row[3] or 0),
-            "last_used_at": row[4],
+            "reference_cost_usd": microusd_to_usd(row[2]),
+            "events": int(row[3] or 0),
+            "unpriced_events": int(row[4] or 0),
+            "last_used_at": row[5],
         }
         for row in project_rows
     ]
-    by_project.sort(key=lambda item: item["cost_usd"], reverse=True)
+    by_project.sort(key=lambda item: (item["cost_usd"], item["reference_cost_usd"]), reverse=True)
 
     model_rows = db.execute(
         select(
             AIUsageCost.provider,
             AIUsageCost.model,
-            func.coalesce(func.sum(AIUsageCost.cost_microusd), 0),
+            func.coalesce(func.sum(billed_case), 0),
+            func.coalesce(func.sum(reference_case), 0),
             func.count(AIUsageCost.id),
             func.coalesce(func.sum(unpriced_case), 0),
         )
@@ -260,17 +280,19 @@ def admin_cost_summary(
             "provider": str(row[0]),
             "model": str(row[1]),
             "cost_usd": microusd_to_usd(row[2]),
-            "events": int(row[3] or 0),
-            "unpriced_events": int(row[4] or 0),
+            "reference_cost_usd": microusd_to_usd(row[3]),
+            "events": int(row[4] or 0),
+            "unpriced_events": int(row[5] or 0),
         }
         for row in model_rows
     ]
-    by_model.sort(key=lambda item: item["cost_usd"], reverse=True)
+    by_model.sort(key=lambda item: (item["cost_usd"], item["reference_cost_usd"]), reverse=True)
 
     user_rows = db.execute(
         select(
             AIUsageCost.user_id,
-            func.coalesce(func.sum(AIUsageCost.cost_microusd), 0),
+            func.coalesce(func.sum(billed_case), 0),
+            func.coalesce(func.sum(reference_case), 0),
             func.count(AIUsageCost.id),
             func.coalesce(func.sum(unpriced_case), 0),
         )
@@ -287,12 +309,13 @@ def admin_cost_summary(
                 cost_profiles.get(str(row[0]) if row[0] else ""),
             ),
             "cost_usd": microusd_to_usd(row[1]),
-            "events": int(row[2] or 0),
-            "unpriced_events": int(row[3] or 0),
+            "reference_cost_usd": microusd_to_usd(row[2]),
+            "events": int(row[3] or 0),
+            "unpriced_events": int(row[4] or 0),
         }
         for row in user_rows
     ]
-    by_user.sort(key=lambda item: item["cost_usd"], reverse=True)
+    by_user.sort(key=lambda item: (item["cost_usd"], item["reference_cost_usd"]), reverse=True)
 
     recent_items = db.scalars(
         select(AIUsageCost)
@@ -351,18 +374,26 @@ def admin_cost_summary(
 
     fx_rate = max(0.0, float(get_settings().usd_brl_rate or 0))
     cost_usd = microusd_to_usd(total_cost_microusd)
+    reference_cost_usd = microusd_to_usd(reference_cost_microusd)
+    coverage_denominator = priced_events + unpriced_events
     return {
         "period_days": days,
         "since": since,
-        "pricing_version": "2026-08-22",
+        "pricing_version": PRICING_VERSION,
         "backfilled_events": backfilled,
         "totals": {
             "cost_usd": cost_usd,
             "cost_brl": round(cost_usd * fx_rate, 4) if fx_rate > 0 else None,
+            "reference_cost_usd": reference_cost_usd,
             "events": total_events,
             "priced_events": priced_events,
+            "reference_events": reference_events,
             "unpriced_events": unpriced_events,
-            "coverage_percent": round((priced_events / total_events) * 100, 1) if total_events else 100.0,
+            "coverage_percent": (
+                round((priced_events / coverage_denominator) * 100, 1)
+                if coverage_denominator
+                else 100.0
+            ),
         },
         "usd_brl_rate": fx_rate or None,
         "by_project": by_project,
