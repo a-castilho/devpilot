@@ -81,6 +81,37 @@ def create_github_repository(
             404,
         )
     if response.status_code == 422:
+        # A failed first attempt may already have created the repository. Resume only when
+        # the DevPilot marker exists; otherwise keep the normal name-conflict behavior.
+        with httpx.Client(
+            timeout=30.0,
+            follow_redirects=True,
+            headers=_headers(access_token),
+        ) as client:
+            repository_response = client.get(
+                f"https://api.github.com/repos/{organization_login}/{repository_name}"
+            )
+            marker_response = client.get(
+                f"https://api.github.com/repos/{organization_login}/{repository_name}/contents/"
+                ".devpilot-homologation.json"
+            )
+        if repository_response.status_code == 200 and marker_response.status_code == 200:
+            try:
+                remote = normalize_github_repository(repository_response.json())
+            except (KeyError, TypeError, ValueError) as error:
+                raise GitHubProvisioningError(
+                    "GitHub retornou uma resposta inválida ao retomar o repositório."
+                ) from error
+            bootstrap_github_repository(
+                organization_login,
+                repository_name,
+                access_token,
+                project_name=repository_name,
+                description=description,
+                branch=remote["default_branch"],
+            )
+            return remote
+
         detail = ""
         try:
             data = response.json()
@@ -99,9 +130,19 @@ def create_github_repository(
 
     try:
         data = response.json()
-        return normalize_github_repository(data)
+        remote = normalize_github_repository(data)
     except (KeyError, TypeError, ValueError) as error:
         raise GitHubProvisioningError("GitHub retornou uma resposta inválida ao criar o repositório.") from error
+
+    bootstrap_github_repository(
+        organization_login,
+        repository_name,
+        access_token,
+        project_name=repository_name,
+        description=description,
+        branch=remote["default_branch"],
+    )
+    return remote
 
 
 def homologation_starter_files(project_name: str, description: str = "") -> dict[str, str]:
@@ -222,6 +263,9 @@ def api_status():
 '''
 
     return {
+        ".devpilot-homologation.json": (
+            '{"managed_by":"devpilot","purpose":"homologation-starter","version":1}\n'
+        ),
         "backend/main.py": backend,
         "requirements.txt": "fastapi>=0.116,<1\nuvicorn[standard]>=0.35,<1\npsycopg[binary]>=3.2,<4\n",
         "Dockerfile": (
