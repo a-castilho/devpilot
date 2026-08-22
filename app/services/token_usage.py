@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models import AuditEvent, TokenUsage
+from app.services.ai_costs import record_token_cost
 from app.services.audit import record
 
 
@@ -126,7 +127,7 @@ def task_user_id(db: Session, task_id: str) -> str | None:
 
 
 def serialize_usage(item: TokenUsage) -> dict:
-    return {
+    payload = {
         "id": item.id,
         "user_id": item.user_id,
         "project_id": item.project_id,
@@ -143,6 +144,16 @@ def serialize_usage(item: TokenUsage) -> dict:
         "attempt": item.attempt,
         "created_at": item.created_at,
     }
+    cost = getattr(item, "_cost_event", None)
+    if cost is not None:
+        payload.update(
+            {
+                "cost_usd": round(cost.cost_microusd / 1_000_000, 6),
+                "pricing_status": cost.pricing_status,
+                "pricing_version": cost.pricing_version,
+            }
+        )
+    return payload
 
 
 def record_usage(
@@ -160,7 +171,7 @@ def record_usage(
     attempt: int = 1,
     source: str = "provider-reported",
 ) -> TokenUsage | None:
-    """Persist only actual provider-reported tokens; never fabricate an estimate."""
+    """Persist actual provider-reported tokens and freeze their financial cost."""
     if counts.total_tokens <= 0:
         return None
 
@@ -182,6 +193,8 @@ def record_usage(
     )
     db.add(item)
     db.flush()
+    cost = record_token_cost(db, item)
+    item._cost_event = cost
     record(
         db,
         workspace_id=workspace_id,
@@ -198,6 +211,9 @@ def record_usage(
             "cached_input_tokens": item.cached_input_tokens,
             "output_tokens": item.output_tokens,
             "total_tokens": item.total_tokens,
+            "cost_microusd": cost.cost_microusd,
+            "pricing_status": cost.pricing_status,
+            "pricing_version": cost.pricing_version,
             "source": source,
             "attempt": item.attempt,
         },
