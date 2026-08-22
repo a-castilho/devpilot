@@ -198,8 +198,20 @@ def require_access(
     request: Request,
     principal: Principal = Depends(session_principal),
 ) -> str:
-    if request.method.upper() in _SAFE_METHODS:
+    method = request.method.upper()
+    path = request.url.path.rstrip("/")
+    if method in _SAFE_METHODS:
         return principal.actor
+
+    # Project creation for regular users must always use /api/projects/provision,
+    # which resolves the GitHub credential managed centrally by SUPER_ADMIN.
+    # The manual repository connection endpoint remains a SUPER_ADMIN-only option.
+    if method == "POST" and path == "/api/projects" and principal.role is not Role.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Criação manual de projeto é exclusiva do Super Admin",
+        )
+
     if principal.role is Role.VIEWER:
         raise HTTPException(status_code=403, detail="Perfil de leitura não pode executar esta ação")
     if principal.role is Role.ANALYST and not _analyst_can_write(request):
