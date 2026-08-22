@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.cloud_admin_routes import (
     CloudCredentialUpdate,
+    _provider_request,
     list_clouds,
     manage_clouds,
     save_cloud,
@@ -89,3 +90,74 @@ def test_cloud_credentials_are_workspace_isolated(clouds_db):
 
     assert render["configured"] is False
     assert render["scope"] == ""
+
+
+class FakeResponse:
+    status_code = 200
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def json(self):
+        return self.payload
+
+
+def test_vercel_team_id_scope_is_sent_as_team_id(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse({"projects": []})
+
+    monkeypatch.setattr("app.cloud_admin_routes.httpx.get", fake_get)
+
+    _provider_request("vercel", "token-123456", "team_example", resources=True)
+
+    assert calls[0][0] == "https://api.vercel.com/v9/projects"
+    assert calls[0][1]["params"]["teamId"] == "team_example"
+    assert "slug" not in calls[0][1]["params"]
+
+
+def test_vercel_slug_scope_is_sent_as_slug_and_validated_on_test(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse({"projects": []})
+
+    monkeypatch.setattr("app.cloud_admin_routes.httpx.get", fake_get)
+
+    _provider_request("vercel", "token-123456", "maquina-de-leads1", resources=False)
+
+    assert calls[0][0] == "https://api.vercel.com/v9/projects"
+    assert calls[0][1]["params"]["slug"] == "maquina-de-leads1"
+    assert calls[0][1]["params"]["limit"] == 1
+
+
+def test_neon_organization_scope_is_sent_as_org_id(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse({"projects": []})
+
+    monkeypatch.setattr("app.cloud_admin_routes.httpx.get", fake_get)
+
+    _provider_request("neon", "token-123456", "org-example", resources=True)
+
+    assert calls[0][0] == "https://console.neon.tech/api/v2/projects"
+    assert calls[0][1]["params"]["org_id"] == "org-example"
+
+
+def test_github_organization_scope_is_url_encoded_and_validated(monkeypatch):
+    calls = []
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return FakeResponse({"organization": {"login": "a-castilho"}})
+
+    monkeypatch.setattr("app.cloud_admin_routes.httpx.get", fake_get)
+
+    _provider_request("github", "token-123456", "a-castilho", resources=False)
+
+    assert calls[0][0] == "https://api.github.com/user/memberships/orgs/a-castilho"
