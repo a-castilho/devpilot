@@ -20,6 +20,8 @@ services:
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
       DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
       DEVPILOT_LINUX_AGENT_SOCKET: /runtime/linux-agent/agent.sock
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8080:8080"
     volumes:
