@@ -4,6 +4,7 @@ import re
 import tempfile
 from pathlib import Path
 
+from app.config import get_settings
 from app.models import Project, Task
 from app.services import executor
 
@@ -22,6 +23,21 @@ def _mentor_ref(task: Task, project: Project) -> str:
 
 def execute_mentor_task(project: Project, task: Task) -> dict:
     """Execute a Mentor session without persisting any repository mutation."""
+    if not get_settings().execution_enabled:
+        return {
+            "mode": "analysis-mentor-read-only-disabled",
+            "exit_code": 0,
+            "summary": "Sessão do DevPilot Mentor registrada; execução automática está desativada.",
+            "client_report": (
+                "A sessão de aprendizado foi registrada, mas nenhum modelo foi executado porque "
+                "a execução automática do DevPilot está desativada."
+            ),
+            "attempted_changes": False,
+            "persisted_changes": False,
+            "branch": "",
+            "agents_md_generated": False,
+        }
+
     repository = executor.ensure_repository(project)
     ref = _mentor_ref(task, project)
 
