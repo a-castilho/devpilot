@@ -256,18 +256,54 @@ async def _transcribe_openai(
     raise _provider_error("openai", statuses)
 
 
+def _google_response_text(response_or_payload: httpx.Response | dict) -> str:
+    try:
+        payload = (
+            response_or_payload.json()
+            if isinstance(response_or_payload, httpx.Response)
+            else response_or_payload
+        )
+    except ValueError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+
+    candidates = payload.get("candidates") or []
+    collected: list[str] = []
+    if isinstance(candidates, list):
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                continue
+            content = candidate.get("content") or {}
+            parts = content.get("parts") or [] if isinstance(content, dict) else []
+            if not isinstance(parts, list):
+                continue
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                value = part.get("text")
+                if isinstance(value, str) and value.strip():
+                    collected.append(value.strip())
+        if collected:
+            return " ".join(collected).strip()
+
+    # Defensive support for provider-compatible gateways and future Gemini
+    # envelopes that expose the generated text directly.
+    for key in ("text", "output_text", "response"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
     try:
         payload = response.json()
-        candidates = payload.get("candidates") or []
-        parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
-    except (ValueError, AttributeError, IndexError):
+    except ValueError:
         return "", {}
-    text = " ".join(
-        str(part.get("text", "")).strip()
-        for part in parts
-        if isinstance(part, dict) and str(part.get("text", "")).strip()
-    ).strip()
+    if not isinstance(payload, dict):
+        return "", {}
+    text = _google_response_text(payload)
     usage = payload.get("usageMetadata")
     return text, usage if isinstance(usage, dict) else {}
 
@@ -344,6 +380,8 @@ async def _transcribe_google(
 
             text, usage = _google_response_data(response)
             if text:
+                # A successful Gemini response is terminal. Never preserve a
+                # previous OpenAI quota failure as the final request outcome.
                 return text, model, usage
             statuses.append(422)
 
@@ -426,7 +464,9 @@ async def transcribe_voice(
                     api_keys=google_keys,
                     models=google_models,
                 )
-                provider = "google"
+                if text:
+                    provider = "google"
+                    fallback_error = None
             except ProviderTranscriptionError as error:
                 fallback_error = error
 
@@ -470,6 +510,7 @@ async def transcribe_voice(
             "provider": provider,
             "model": model,
             "fallback": provider != "openai",
+            "openai_status": primary_error.status_code if primary_error else None,
             "bytes": len(payload),
             "content_type": content_type,
         },
