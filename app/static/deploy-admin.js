@@ -1,5 +1,5 @@
 (() => {
-  const MANAGER_ROLES = new Set(['SUPER_ADMIN', 'OWNER', 'ADMIN']);
+  const MANAGER_ROLES = new Set(['SUPER_ADMIN']);
   const deployState = {items: [], selectedId: '', actionId: '', pollTimer: null};
 
   function canManageDeploy() {
@@ -50,7 +50,7 @@
       </div>
       <div class="deploy-admin-grid">
         <article class="panel">
-          <div class="panel-title"><div><span class="eyebrow">ADM</span><h3>Projetos</h3></div></div>
+          <div class="panel-title"><div><span class="eyebrow">SUPER ADMIN</span><h3>Projetos</h3></div></div>
           <div id="deploy-admin-projects" class="deploy-admin-projects"><div class="empty">Carregando projetos...</div></div>
         </article>
         <article class="panel">
@@ -104,7 +104,7 @@
   }
 
   function openDeployView(button, section) {
-    if (!canManageDeploy()) return toast('Acesso restrito ao ADM');
+    if (!canManageDeploy()) return toast('Acesso restrito ao Super Admin');
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
     const title = document.getElementById('page-title');
