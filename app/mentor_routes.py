@@ -15,7 +15,6 @@ from app.mentor_models import LearningEvent, LearningSkill, SecurityFinding, Sec
 from app.models import Project, Task, TaskStatus
 from app.security import Principal, Role, session_principal
 from app.services.audit import record
-from app.services.policy import evaluate_task
 from app.services.project_context import get_or_create_snapshot
 from app.services.security_scanner import scan_project
 
@@ -82,7 +81,12 @@ def _skill_record(
 
 
 def _mentor_prompt(mode: MentorMode, question: str, level: str, summary: dict, skill: str | None) -> str:
-    context = json.dumps(summary, ensure_ascii=False, indent=2)
+    prompt_summary = dict(summary)
+    # Source excerpts are useful for hashing/redaction validation, but the Codex worker can
+    # inspect the pinned worktree directly. Do not duplicate source code inside Task.prompt.
+    prompt_summary.pop("target_excerpt", None)
+    context = json.dumps(prompt_summary, ensure_ascii=False, indent=2)
+    commit_sha = str(summary.get("commit_sha") or "")
     mode_instruction = {
         "explain": "Explique diretamente o que está acontecendo, por que importa e como verificar. Seja conciso.",
         "teach": "Ensine o conceito em etapas, conectando teoria ao código real. Inclua um exemplo e uma checagem de entendimento.",
@@ -91,12 +95,13 @@ def _mentor_prompt(mode: MentorMode, question: str, level: str, summary: dict, s
     }[mode]
     return (
         "[DEVPILOT_MODE=analysis-read-only]\n"
+        f"[DEVPILOT_REF={commit_sha}]\n"
         "Você é o DevPilot Mentor. Não modifique arquivos, não faça push, merge ou deploy. "
-        "Use somente o contexto fornecido e confirme limites quando não houver evidência suficiente. "
+        "Use o repositório isolado e o contexto estrutural fornecido; confirme limites quando não houver evidência suficiente. "
         f"Adapte a linguagem ao nível {level}. {mode_instruction}\n\n"
         f"Competência principal: {skill or 'não informada'}\n"
         f"Pedido do usuário: {question.strip()}\n\n"
-        "Contexto seguro e limitado do projeto (segredos são excluídos/redigidos):\n"
+        "Contexto seguro e limitado do projeto (sem trecho de código persistido no prompt):\n"
         f"{context}\n\n"
         "Estruture a resposta com: Resposta curta; Evidência no projeto; Entenda o conceito; "
         "Como validar; Próximo exercício/ação. Não invente arquivos ou resultados."
@@ -109,7 +114,6 @@ def _task_for_execution(
     project: Project,
     payload: MentorRequest,
 ) -> Task:
-    evaluate_task(payload.question, True)
     task = Task(
         workspace_id=project.workspace_id,
         project_id=project.id,
@@ -248,6 +252,8 @@ def update_skill(
     db: Session = Depends(get_db),
     principal: Principal = Depends(session_principal),
 ):
+    if principal.role is Role.VIEWER:
+        raise HTTPException(status_code=403, detail="Perfil de leitura não pode alterar perfil educacional")
     project = _project(db, principal, project_id)
     normalized = skill.strip()[:120]
     if not normalized:
@@ -292,6 +298,16 @@ def security_scan(
     except RuntimeError as error:
         raise HTTPException(status_code=502, detail=str(error)) from error
 
+    previous_open = db.scalars(
+        select(SecurityFinding).where(
+            SecurityFinding.workspace_id == project.workspace_id,
+            SecurityFinding.project_id == project.id,
+            SecurityFinding.status == "open",
+        )
+    ).all()
+    for previous in previous_open:
+        previous.status = "superseded"
+
     counts = result["counts"]
     summary = (
         f"{counts['critical']} crítico(s), {counts['high']} alto(s), "
@@ -334,6 +350,7 @@ def security_scan(
             "commit_sha": scan.commit_sha,
             "counts": counts,
             "coverage": result["coverage"],
+            "superseded_findings": len(previous_open),
         },
     )
     db.commit()
@@ -396,8 +413,14 @@ def security_fix(
             "finding_id": finding.id,
             "apply": False,
             "remediation": finding.remediation,
+            "status": finding.status,
             "message": "Nenhuma alteração foi iniciada. Envie apply=true para criar uma tarefa sujeita a aprovação.",
         }
+    if finding.status != "open":
+        raise HTTPException(
+            status_code=409,
+            detail="Este achado pertence a um scan anterior. Execute/revise o scan atual antes de criar a correção.",
+        )
     if principal.role in {Role.VIEWER, Role.ANALYST}:
         raise HTTPException(status_code=403, detail="Seu perfil pode analisar, mas não iniciar correções")
 
