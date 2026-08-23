@@ -159,3 +159,24 @@ def test_create_github_repository_translates_permission_failure(monkeypatch):
 
     assert error.value.status_code == 403
     assert "não autoriza" in str(error.value)
+    assert "Administration: Read and write" in str(error.value)
+    assert "Contents: Read and write" in str(error.value)
+
+
+def test_starter_permission_failure_explains_required_contents_scope():
+    with pytest.raises(GitHubProvisioningError) as error:
+        github_provisioning._translate_starter_error(403, operation="verificar")
+
+    assert error.value.status_code == 403
+    message = str(error.value)
+    assert "Contents: Read and write" in message
+    assert "Resource owner = a-castilho" in message
+    assert "Super Admin > Organizações" in message
+
+
+def test_starter_invalid_token_is_returned_as_unauthorized():
+    with pytest.raises(GitHubProvisioningError) as error:
+        github_provisioning._translate_starter_error(401, operation="gravar")
+
+    assert error.value.status_code == 401
+    assert "inválido ou expirou" in str(error.value)
