@@ -55,7 +55,7 @@
   }
 
   function isPickerCollapsed() {
-    return localStorage.getItem(PICKER_COLLAPSED_KEY) === '1';
+    return true;
   }
 
   function setPickerCollapsed(collapsed, persist = true) {
