@@ -9,6 +9,7 @@ from app.models import Project, Run, Task, TaskStatus
 from app.services import executor as executor_service
 from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
+from app.services.delivery_automation import process_one_delivery
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.services.task_images import enable_executor_image_support
@@ -304,7 +305,9 @@ def main() -> None:
     )
 
     while True:
-        if not process_one():
+        task_processed = process_one()
+        delivery_processed = process_one_delivery()
+        if not task_processed and not delivery_processed:
             time.sleep(2)
 
 
