@@ -1,6 +1,10 @@
 (()=>{
   const PENDING_KEY='devpilot-telemetry-pending-v1';
-  let activeSession=null,recording=false,queue=[],pollTimer=null,flushTimer=null,attached=false,flushing=false;
+  const ACTIVE_POLL_MS=2500;
+  const IDLE_POLL_MS=5000;
+  const HIDDEN_POLL_MS=15000;
+  const REQUEST_TIMEOUT_MS=5000;
+  let activeSession=null,recording=false,queue=[],pollTimer=null,flushTimer=null,attached=false,flushing=false,syncing=false,destroyed=false;
   const token=()=>localStorage.getItem('devpilot-token')||'';
   const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
@@ -8,18 +12,23 @@
     const current=token();
     if(!current)return null;
     for(let attempt=0;attempt<3;attempt+=1){
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),REQUEST_TIMEOUT_MS);
       try{
         const response=await fetch(`/api/telemetry${path}`,{
           ...options,
           cache:'no-store',
+          signal:controller.signal,
           headers:{'Authorization':`Bearer ${current}`,'Content-Type':'application/json',...(options.headers||{})}
         });
         if(response.ok)return response.json().catch(()=>({ok:true}));
         if(![502,503,504].includes(response.status))return null;
       }catch(_error){
-        // Docker/rebuild e navegação podem causar falhas transitórias locais.
+        // Timeout, Docker/rebuild e navegação podem causar falhas transitórias locais.
+      }finally{
+        clearTimeout(timeout);
       }
-      if(attempt<2)await sleep(120*(attempt+1));
+      if(attempt<2)await sleep(180*(attempt+1));
     }
     return null;
   };
@@ -107,31 +116,62 @@
     }finally{flushing=false}
   };
 
+  const nextPollDelay=()=>{
+    if(document.hidden)return HIDDEN_POLL_MS;
+    return recording?ACTIVE_POLL_MS:IDLE_POLL_MS;
+  };
+
+  const scheduleSync=(delay=nextPollDelay())=>{
+    if(destroyed)return;
+    clearTimeout(pollTimer);
+    pollTimer=setTimeout(()=>void sync(),Math.max(250,delay));
+  };
+
   const sync=async()=>{
-    const data=await request('/sessions/active');
-    const next=data?.active||null;
-    if(next){
-      const changed=activeSession?.id!==next.id;
-      activeSession=next;recording=true;
-      if(changed)restore(next);
-      attach();
-      if(queue.length)void flush();
-      return;
-    }
-    if(recording||activeSession){
-      // Tenta a fila final antes de esquecer a sessão. Se falhar, ela fica
-      // persistida em localStorage para diagnóstico em vez de sumir silenciosamente.
-      await flush();
-      recording=false;detach();activeSession=null;
-      if(!queue.length)persist();
+    if(destroyed)return;
+    if(syncing){scheduleSync();return}
+    syncing=true;
+    try{
+      const data=await request('/sessions/active');
+      const next=data?.active||null;
+      if(next){
+        const changed=activeSession?.id!==next.id;
+        activeSession=next;recording=true;
+        if(changed)restore(next);
+        attach();
+        if(queue.length)void flush();
+        return;
+      }
+      if(recording||activeSession){
+        // Tenta a fila final antes de esquecer a sessão. Se falhar, ela fica
+        // persistida em localStorage para diagnóstico em vez de sumir silenciosamente.
+        await flush();
+        recording=false;detach();activeSession=null;
+        if(!queue.length)persist();
+      }
+    }finally{
+      syncing=false;
+      scheduleSync();
     }
   };
 
   const preserve=()=>{persist();};
+  const onVisibilityChange=()=>{
+    if(destroyed)return;
+    scheduleSync(document.hidden?HIDDEN_POLL_MS:300);
+  };
+
   mountEntryPoint();
-  pollTimer=setInterval(sync,1800);
-  flushTimer=setInterval(()=>void flush(),900);
-  void sync();
+  flushTimer=setInterval(()=>void flush(),1500);
+  scheduleSync(0);
+  document.addEventListener('visibilitychange',onVisibilityChange);
   window.addEventListener('pagehide',preserve,{capture:true});
-  window.addEventListener('beforeunload',()=>{persist();clearInterval(pollTimer);clearInterval(flushTimer);detach()});
+  window.addEventListener('beforeunload',()=>{
+    destroyed=true;
+    persist();
+    clearTimeout(pollTimer);
+    clearInterval(flushTimer);
+    document.removeEventListener('visibilitychange',onVisibilityChange);
+    detach();
+  });
 })();
