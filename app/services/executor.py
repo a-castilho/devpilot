@@ -40,6 +40,21 @@ DEVELOPMENT_DUPLICATE_GUARD = (
     "existing implementation and change only the verified gaps. Prefer adapting existing files and "
     "flows over adding duplicate endpoints, screens, components, services or models."
 )
+SYSTEM_DESIGN_GATE = (
+    "MANDATORY SECOND PHASE — SYSTEM DESIGN GATE. Complete this phase before editing any file. "
+    "Classify the requested change as SIMPLE or STRUCTURAL and state the classification with evidence. "
+    "SIMPLE changes are narrowly scoped presentation or content changes that do not alter architecture, "
+    "data contracts, persistence, authentication, authorization, integrations, infrastructure, AI behavior, "
+    "multi-tenancy, background processing, queues, concurrency, deployment topology, or externally consumed APIs. "
+    "For a SIMPLE change, explicitly record 'System Design dispensado' and the reason before implementation. "
+    "A STRUCTURAL change requires a concise System Design before implementation. The design must cover affected "
+    "architecture, component responsibilities, API/contracts, data model and migrations, authentication and "
+    "authorization, external dependencies, concurrency/queues when applicable, failure handling and recovery, "
+    "security and tenant isolation, scalability/capacity considerations, observability, deployment strategy, "
+    "backward compatibility, rollback, and the tests needed to validate the change. Identify material risks and "
+    "trade-offs. Reuse the current architecture unless there is concrete evidence that it must change. Only after "
+    "the System Design is complete (or a SIMPLE-change waiver is justified) may implementation begin."
+)
 AGENTS_FILE_NAME = "AGENTS.md"
 GENERATED_AGENTS_START = "<!-- DEVPILOT-GENERATED-ANALYSIS:START -->"
 GENERATED_AGENTS_END = "<!-- DEVPILOT-GENERATED-ANALYSIS:END -->"
@@ -206,9 +221,10 @@ def development_prompt(task: Task) -> str:
     return (
         f"Task: {task.title}\n\n{task.prompt}\n\n"
         f"{DEVELOPMENT_DUPLICATE_GUARD}\n\n"
-        "Only after completing that preflight, implement the smallest complete change that is still "
-        "necessary, run relevant checks, and summarize the preflight evidence, changes and remaining "
-        "risks. Do not push or merge.\n\n"
+        f"{SYSTEM_DESIGN_GATE}\n\n"
+        "Only after completing both mandatory phases, implement the smallest complete change that is still "
+        "necessary, run relevant checks, and summarize the duplication preflight, System Design decision, "
+        "changes and remaining risks. Do not push or merge.\n\n"
         f"{CLIENT_REPORT_INSTRUCTIONS}"
     )
 
@@ -263,6 +279,9 @@ def build_generated_agents_md(
 ### Diretrizes para futuras tarefas
 
 - Faça uma preflight de duplicidade antes de criar qualquer implementação.
+- Antes de implementar, classifique a mudança como SIMPLE ou STRUCTURAL para fins de System Design.
+- Para mudança STRUCTURAL, documente arquitetura, componentes, contratos, dados, segurança, falhas, escalabilidade, observabilidade, deploy e rollback antes de editar arquivos.
+- Para mudança SIMPLE, registre explicitamente "System Design dispensado" e a justificativa antes de editar arquivos.
 - Preserve a arquitetura e os padrões já existentes no projeto.
 - Execute os testes e validações relevantes antes de concluir.
 - Nunca exponha credenciais, dados pessoais ou segredos nos logs, commits ou relatórios.
@@ -327,9 +346,10 @@ def execute_read_only_analysis(project: Project, task: Task, repository: Path) -
             prompt = (
                 f"Task: {task.title}\n\n{task.prompt}{rules}\n\n"
                 "This is a READ-ONLY ANALYSIS. Inspect the repository and produce a technical report "
-                "with concrete evidence, risks, impact, recommendations, and estimated effort. "
-                "Do not implement, edit, create, delete, rename, commit, push, or merge project files. "
-                "If a change would be useful, describe it instead of applying it.\n\n"
+                "with concrete evidence, risks, impact, recommendations, and estimated effort. Include an "
+                "architecture assessment and identify which recommended changes would require a STRUCTURAL "
+                "System Design before implementation. Do not implement, edit, create, delete, rename, commit, "
+                "push, or merge project files. If a change would be useful, describe it instead of applying it.\n\n"
                 f"{CLIENT_REPORT_INSTRUCTIONS}"
             )
             result = run(
