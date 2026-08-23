@@ -245,6 +245,7 @@
 
 .voice-chatgpt-composer #voice-start,
 .voice-chatgpt-composer #voice-stop{
+  position:relative!important;
   grid-column:4;
   grid-row:1;
   width:46px!important;
@@ -268,9 +269,11 @@
 .voice-chatgpt-composer #voice-start::after{
   content:"";
   position:absolute;
+  left:50%;
+  top:50%;
   width:18px;
   height:10px;
-  margin-top:8px;
+  transform:translate(-50%,1px);
   border-bottom:2px solid currentColor;
   border-radius:0 0 10px 10px;
 }
@@ -278,7 +281,6 @@
 
 .voice-chatgpt-composer #voice-stop{
   display:none!important;
-  position:relative;
   background:#fff!important;
   color:#202020!important;
 }
