@@ -20,8 +20,12 @@ enable_executor_image_support(executor_service)
 execute_task = executor_service.execute_task
 
 
+def _is_read_only_mentor(task: Task) -> bool:
+    return task.source == "mentor" and executor_service.is_read_only_task(task)
+
+
 def execute_queued_task(project: Project, task: Task) -> dict:
-    if task.source == "mentor" and executor_service.is_read_only_task(task):
+    if _is_read_only_mentor(task):
         return execute_mentor_task(project, task)
     return execute_task(project, task)
 
@@ -32,6 +36,23 @@ def _failure_text(result: dict | None, error: Exception | None) -> str:
     if not isinstance(result, dict):
         return "Execution failed without a structured result"
     return str(result.get("stderr") or result.get("summary") or "Execution failed")
+
+
+def _mentor_failure_result() -> dict:
+    return {
+        "mode": "analysis-mentor-read-only",
+        "exit_code": 1,
+        "summary": "A sessão do DevPilot Mentor falhou sem executar autocorreções sobre o ambiente.",
+        "client_report": (
+            "A sessão de aprendizado não pôde ser concluída. Por segurança, o DevPilot não executou "
+            "autocorreção, troca de credenciais ou reparo do checkout durante uma sessão somente leitura."
+        ),
+        "stderr": "Mentor read-only execution failed",
+        "attempted_changes": None,
+        "persisted_changes": False,
+        "branch": "",
+        "agents_md_generated": False,
+    }
 
 
 def _self_healing_payload(events: list[dict], final_status: str) -> dict:
@@ -206,6 +227,12 @@ def process_one() -> bool:
                         "Autocorreção concluída e tarefa retomada automaticamente. "
                         + str(result.get("summary") or "Execução concluída.")
                     )
+                break
+
+            if _is_read_only_mentor(task):
+                final_error = current_error
+                if result is None:
+                    result = _mentor_failure_result()
                 break
 
             failure_text = _failure_text(result, current_error)
