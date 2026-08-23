@@ -9,6 +9,7 @@ from app.models import Project, Run, Task, TaskStatus
 from app.services import executor as executor_service
 from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
+from app.services.mentor_executor import execute_mentor_task
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.services.task_images import enable_executor_image_support
@@ -17,6 +18,12 @@ from app.services.token_usage import extract_codex_usage, record_usage, task_use
 
 enable_executor_image_support(executor_service)
 execute_task = executor_service.execute_task
+
+
+def execute_queued_task(project: Project, task: Task) -> dict:
+    if task.source == "mentor" and executor_service.is_read_only_task(task):
+        return execute_mentor_task(project, task)
+    return execute_task(project, task)
 
 
 def _failure_text(result: dict | None, error: Exception | None) -> str:
@@ -176,7 +183,7 @@ def process_one() -> bool:
             run.attempt = execution_attempt
             current_error: Exception | None = None
             try:
-                result = execute_task(project, task)
+                result = execute_queued_task(project, task)
             except Exception as error:
                 current_error = error
                 result = None
