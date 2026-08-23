@@ -188,7 +188,6 @@ def spa(path: str):
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/task-image-upload.js" defer></script>',
         '<script src="/assets/consolidated-ui.js" defer></script>',
-        '<script src="/assets/homolog-theme-picker.js" defer></script>',
         '<script src="/assets/tasks-lazy-load.js" defer></script>',
         '<script src="/assets/workspace-skins.js" defer></script>',
         '<script src="/assets/analysis-commercial-proposal.js" defer></script>',
