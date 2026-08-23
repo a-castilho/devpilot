@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
+import app.mentor_models  # noqa: F401
 from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.auth_routes import router as auth_router
@@ -19,6 +20,7 @@ from app.host_action_routes import router as host_action_router
 from app.investia_admin_routes import router as investia_admin_router
 from app.investia_public_routes import router as investia_public_router
 from app.linux_routes import router as linux_router
+from app.mentor_routes import router as mentor_router
 from app.product_delivery_routes import router as product_delivery_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
@@ -114,6 +116,7 @@ app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
+app.include_router(mentor_router)
 app.include_router(career_router)
 app.include_router(host_action_router)
 app.include_router(investia_admin_router)
@@ -188,6 +191,7 @@ def spa(path: str):
         '<script src="/assets/task-failures.js" defer></script>',
         '<script src="/assets/task-image-upload.js" defer></script>',
         '<script src="/assets/consolidated-ui.js" defer></script>',
+        '<script src="/assets/mentor-security.js" defer></script>',
         '<script src="/assets/tasks-lazy-load.js" defer></script>',
         '<script src="/assets/workspace-skins.js" defer></script>',
         '<script src="/assets/analysis-commercial-proposal.js" defer></script>',
@@ -214,6 +218,7 @@ def spa(path: str):
             html = html.replace("</body>", f"  {script}\n</body>")
 
     html = _inject_mobile_scroll_unlock(html)
+    html = _inject_stylesheet(html, "mentor-security.css")
     if mobile_route:
         html = _inject_stylesheet(html, "mobile-route.css")
     html = _version_frontend_scripts(html)
