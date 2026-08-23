@@ -2,13 +2,29 @@ from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
 
+def _column_names(inspector, table: str) -> set[str]:
+    return {column["name"] for column in inspector.get_columns(table)}
+
+
+def _postgres_enum_name(inspector, table: str, column_name: str) -> str | None:
+    for column in inspector.get_columns(table):
+        if column["name"] != column_name:
+            continue
+        column_type = column.get("type")
+        values = getattr(column_type, "enums", None)
+        name = getattr(column_type, "name", None)
+        if values and name:
+            return str(name)
+    return None
+
+
 def ensure_runtime_schema(engine: Engine) -> None:
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
     statements: list[str] = []
 
     if "projects" in tables:
-        project_columns = {column["name"] for column in inspector.get_columns("projects")}
+        project_columns = _column_names(inspector, "projects")
         if "organization_id" not in project_columns:
             statements.extend(
                 [
@@ -16,6 +32,53 @@ def ensure_runtime_schema(engine: Engine) -> None:
                     "CREATE INDEX IF NOT EXISTS ix_projects_organization_id ON projects (organization_id)",
                 ]
             )
+
+    # Base.metadata.create_all() creates new Investia tables, but it cannot evolve a
+    # persistent PostgreSQL volume that already has an older version of the table.
+    # Keep the runtime migration additive so old DevPilot installations can publish
+    # projects without failing with a generic HTTP 500.
+    if "investia_project_configs" in tables:
+        investia_columns = _column_names(inspector, "investia_project_configs")
+        if "public_enabled" not in investia_columns:
+            statements.append(
+                "ALTER TABLE investia_project_configs ADD COLUMN public_enabled BOOLEAN DEFAULT FALSE"
+            )
+        if "notes" not in investia_columns:
+            statements.append(
+                "ALTER TABLE investia_project_configs ADD COLUMN notes TEXT DEFAULT ''"
+            )
+        if "updated_at" not in investia_columns:
+            statements.append(
+                "ALTER TABLE investia_project_configs ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE"
+                if engine.dialect.name == "postgresql"
+                else "ALTER TABLE investia_project_configs ADD COLUMN updated_at DATETIME"
+            )
+        statements.extend(
+            [
+                "UPDATE investia_project_configs SET public_enabled = FALSE WHERE public_enabled IS NULL",
+                "UPDATE investia_project_configs SET notes = '' WHERE notes IS NULL",
+            ]
+        )
+
+        # SQLAlchemy Enum types are persistent PostgreSQL objects. If an older
+        # database created the enum before newer publication states existed, add
+        # the values in-place instead of requiring the volume to be recreated.
+        if engine.dialect.name == "postgresql":
+            enum_name = _postgres_enum_name(inspector, "investia_project_configs", "status")
+            if enum_name:
+                for value in (
+                    "draft",
+                    "fundraising",
+                    "funded",
+                    "operating",
+                    "distributing",
+                    "completed",
+                    "paused",
+                    "cancelled",
+                ):
+                    statements.append(
+                        f'ALTER TYPE "{enum_name}" ADD VALUE IF NOT EXISTS \'{value}\''
+                    )
 
     if "users" in tables:
         statements.extend(
