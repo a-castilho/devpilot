@@ -267,7 +267,7 @@
     renderBudget(data);
   }
 
-  function renderTokenSummary(data) {
+  function renderTokenSummary(data, projectNames = new Map()) {
     const section = document.getElementById('token-usage-view');
     if (!section) return;
     const totals = data.totals || {};
@@ -284,7 +284,7 @@
     `).join('') || '<tr><td colspan="7" class="empty">Nenhum consumo registrado no período.</td></tr>';
 
     section.querySelector('#token-admin-recent').innerHTML = (data.recent || []).slice(0, 30).map(item => `
-      <div class="token-admin-event"><div><strong>${esc(item.user_name || item.user_email || 'Sistema / legado')}</strong><br><small>${esc(item.operation)}</small></div><div>${esc(item.provider)} · ${esc(item.model)}</div><strong>${format(item.total_tokens)} tokens</strong><time>${new Date(item.created_at).toLocaleString('pt-BR')}</time></div>
+      <div class="token-admin-event"><div><strong>${esc(item.project_id ? (projectNames.get(String(item.project_id)) || 'Projeto não identificado') : 'Sem projeto')}</strong><br><small>${esc(item.user_name || item.user_email || 'Sistema / legado')} · ${esc(item.operation)}</small></div><div>${esc(item.provider)} · ${esc(item.model)}</div><strong>${format(item.total_tokens)} tokens</strong><time>${new Date(item.created_at).toLocaleString('pt-BR')}</time></div>
     `).join('') || '<div class="empty">Nenhum consumo registrado.</div>';
   }
 
@@ -297,7 +297,12 @@
         api(`/token-usage/admin/summary?days=${days}`),
         api(`/token-usage/admin/cost-summary?days=${days}`),
       ]);
-      renderTokenSummary(tokenData);
+      const projectNames = new Map(
+        (costData.by_project || [])
+          .filter(item => item.project_id)
+          .map(item => [String(item.project_id), item.project_name])
+      );
+      renderTokenSummary(tokenData, projectNames);
       renderCostSummary(costData);
     } catch (error) {
       if (typeof toast === 'function') toast(error.message || 'Falha ao carregar custos de IA');
