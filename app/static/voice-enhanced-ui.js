@@ -273,9 +273,14 @@
     stopConversation('Comando enviado. A conversa por voz foi desligada.');
   };
 
-  const submitCurrent = async (expectedSession = sessionToken) => {
-    const text = normalize(transcript.value);
+  const submitCurrent = async (expectedSession = sessionToken, textOverride = '') => {
+    const text = normalize(textOverride || transcript.value);
     if (!text || submitting) return;
+
+    // O composer é apenas para texto digitado. Transcrição de voz nunca deve
+    // aparecer nele e qualquer texto enviado deve sumir imediatamente.
+    transcript.value = '';
+    resizeTranscript();
 
     submitting = true;
     sendButton.disabled = true;
@@ -284,23 +289,29 @@
     try {
       if (isLocalUpdate(text)) {
         await runLocalUpdate(text);
-        transcript.value = '';
-        resizeTranscript();
         return;
       }
 
       if (typeof window.devpilotVoiceConversationSubmit !== 'function') {
         throw new Error('Chat interno do DevPilot indisponível.');
       }
-      await window.devpilotVoiceConversationSubmit();
+
+      // O módulo legado de conversa lê o textarea sincronicamente. Entregamos
+      // o texto somente durante a chamada e limpamos antes que o navegador pinte.
+      transcript.value = text;
+      const submitPromise = window.devpilotVoiceConversationSubmit();
       transcript.value = '';
       resizeTranscript();
+      await submitPromise;
     } catch (error) {
+      transcript.value = '';
+      resizeTranscript();
       const message = error?.message || 'Não foi possível conversar com o DevPilot.';
       statusNode.textContent = message;
       if (typeof toast === 'function') toast(message);
     } finally {
       submitting = false;
+      transcript.value = '';
       resizeTranscript();
     }
 
@@ -315,6 +326,7 @@
   const startNativeRecognition = (SpeechRecognition, expectedSession) => {
     const cycle = ++captureToken;
     let hadError = false;
+    let capturedText = '';
     transcript.value = '';
     resizeTranscript();
 
@@ -326,8 +338,7 @@
 
     recognition.onresult = (event) => {
       if (cycle !== captureToken || expectedSession !== sessionToken) return;
-      transcript.value = [...event.results].map((item) => item[0].transcript).join(' ');
-      resizeTranscript();
+      capturedText = [...event.results].map((item) => item[0].transcript).join(' ');
     };
 
     recognition.onerror = (event) => {
@@ -360,8 +371,10 @@
     recognition.onend = () => {
       recognition = null;
       if (hadError || cycle !== captureToken || expectedSession !== sessionToken || !voiceEnabled) return;
-      if (normalize(transcript.value)) {
-        submitCurrent(expectedSession);
+      const text = normalize(capturedText);
+      capturedText = '';
+      if (text) {
+        submitCurrent(expectedSession, text);
       } else {
         window.setTimeout(() => {
           if (voiceEnabled && expectedSession === sessionToken) startListening(expectedSession);
@@ -427,9 +440,7 @@
             window.setTimeout(() => startListening(expectedSession), 260);
             return;
           }
-          transcript.value = text;
-          resizeTranscript();
-          await submitCurrent(expectedSession);
+          await submitCurrent(expectedSession, text);
         } catch (error) {
           const message = error?.message || 'Falha na transcrição do áudio.';
           stopConversation(message);
@@ -489,7 +500,7 @@
     if (!text || submitting) return;
     const expectedSession = sessionToken;
     if (voiceEnabled) pauseCapture();
-    await submitCurrent(expectedSession);
+    await submitCurrent(expectedSession, text);
   };
 
   transcript.addEventListener('keydown', (event) => {
