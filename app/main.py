@@ -51,7 +51,7 @@ def _version_frontend_scripts(html: str) -> str:
             revision = str(asset.stat().st_mtime_ns)
         except OSError:
             revision = "1"
-        return f'{match.group("prefix")}?v={revision}{match.group("suffix")}''
+        return f'{match.group("prefix")}?v={revision}{match.group("suffix")}'
 
     return _SCRIPT_SRC_RE.sub(replace, html)
 
@@ -73,7 +73,7 @@ def _inject_stylesheet(html: str, name: str) -> str:
         revision = str(asset.stat().st_mtime_ns)
     except OSError:
         revision = "1"
-    link = f'<link rel="stylesheet" href="/assets/{name}?v={revision}>'
+    link = f'<link rel="stylesheet" href="/assets/{name}?v={revision}">'
     if name not in html:
         html = html.replace("</head>", f"  {link}\n</head>")
     return html
