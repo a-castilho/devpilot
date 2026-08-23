@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 import app.mentor_models  # noqa: F401
+from app import worker
 from app.db import Base
 from app.mentor_models import LearningEvent, LearningSkill, SecurityFinding, SecurityScan
 from app.mentor_routes import (
@@ -20,7 +21,7 @@ from app.mentor_routes import (
 )
 from app.models import Project, Task, TaskStatus, User, Workspace
 from app.security import Principal, Role
-from app.services import project_context, security_scanner
+from app.services import mentor_executor, project_context, security_scanner
 
 
 @pytest.fixture
@@ -71,7 +72,11 @@ def commit_all(path, message="fixture"):
 def test_teach_mode_creates_read_only_task_and_learning_event(db, monkeypatch):
     _ws, _user, project, principal = seed(db)
     snapshot = SimpleNamespace(id="snapshot-1")
-    summary = {"commit_sha": "abc", "sampled_files": ["app/main.py"], "target_excerpt": ""}
+    summary = {
+        "commit_sha": "a" * 40,
+        "sampled_files": ["app/main.py"],
+        "target_excerpt": "",
+    }
     monkeypatch.setattr(
         "app.mentor_routes.get_or_create_snapshot",
         lambda *args, **kwargs: (snapshot, summary),
@@ -94,6 +99,7 @@ def test_teach_mode_creates_read_only_task_and_learning_event(db, monkeypatch):
     assert task.status is TaskStatus.queued
     assert task.requires_approval is False
     assert "[DEVPILOT_MODE=analysis-read-only]" in task.prompt
+    assert '"commit_sha": "' + ("a" * 40) + '"' in task.prompt
     assert "nível beginner" in task.prompt
     assert db.query(LearningEvent).filter_by(project_id=project.id).count() == 1
 
@@ -178,6 +184,44 @@ def test_static_security_scanner_finds_risky_patterns(tmp_path, monkeypatch):
         item["file_path"] == "README.md" and item["rule_id"] == "SEC003"
         for item in result["findings"]
     )
+
+
+def test_mentor_executor_uses_context_commit_and_respects_execution_switch(monkeypatch):
+    sha = "b" * 40
+    task = SimpleNamespace(prompt=f'context={{"commit_sha": "{sha}"}}')
+    project = SimpleNamespace(default_branch="main")
+    assert mentor_executor._mentor_ref(task, project) == sha
+
+    monkeypatch.setattr(
+        mentor_executor,
+        "get_settings",
+        lambda: SimpleNamespace(execution_enabled=False),
+    )
+    monkeypatch.setattr(
+        mentor_executor.executor,
+        "ensure_repository",
+        lambda _project: (_ for _ in ()).throw(AssertionError("repository must not be touched")),
+    )
+    disabled_task = SimpleNamespace(id="12345678", prompt=task.prompt)
+    result = mentor_executor.execute_mentor_task(project, disabled_task)
+    assert result["mode"] == "analysis-mentor-read-only-disabled"
+    assert result["persisted_changes"] is False
+
+
+def test_worker_routes_read_only_mentor_away_from_generic_executor(monkeypatch):
+    project = SimpleNamespace(default_branch="main")
+    mentor_task = SimpleNamespace(
+        source="mentor",
+        prompt="[DEVPILOT_MODE=analysis-read-only]\nEnsine este projeto",
+    )
+    execute_task = SimpleNamespace(source="mentor", prompt="Implemente a alteração")
+
+    monkeypatch.setattr(worker, "execute_mentor_task", lambda _project, _task: {"mode": "mentor"})
+    monkeypatch.setattr(worker, "execute_task", lambda _project, _task: {"mode": "generic"})
+
+    assert worker.execute_queued_task(project, mentor_task)["mode"] == "mentor"
+    assert worker.execute_queued_task(project, execute_task)["mode"] == "generic"
+    assert worker._mentor_failure_result()["persisted_changes"] is False
 
 
 def test_security_fix_requires_explicit_apply_and_then_approval(db):
