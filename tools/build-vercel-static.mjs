@@ -23,6 +23,7 @@ const scripts = [
   'voice-browser-compat.js',
   'voice-playback.js',
   'voice-enhanced-ui.js',
+  'voice-chatgpt-layout.js',
   'voice-insecure-lan-guard.js',
   'task-failures.js',
   'task-image-upload.js',
