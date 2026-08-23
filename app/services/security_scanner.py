@@ -5,8 +5,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path, PurePosixPath
 
 from app.models import Project
-from app.services.executor import ensure_repository, run
-from app.services.project_context import repository_commit
+from app.services.executor import run
+from app.services.project_context import readonly_worktree
 
 MAX_FILE_BYTES = 300_000
 MAX_FILES = 2_500
@@ -84,7 +84,7 @@ _RULES = (
     ),
     Rule(
         "SEC008", "high", "authentication", "Validação de assinatura JWT desabilitada",
-        re.compile(r"(?i)(verify_signature[\"']?\s*[:=]\s*False|verify\s*=\s*False)"),
+        re.compile(r"(?i)verify_signature[\"']?\s*[:=]\s*False"),
         "Tokens adulterados podem ser aceitos como autenticados.",
         "Mantenha verificação criptográfica ativa e valide algoritmo, emissor, audiência e expiração.",
     ),
@@ -107,6 +107,7 @@ _TEXT_SUFFIXES = {
     ".txt", ".ini", ".cfg", ".sh", ".sql", ".html", ".css", ".scss", ".go", ".rs",
     ".java", ".kt", ".php", ".rb", ".cs", ".xml",
 }
+_DOCUMENT_SUFFIXES = {".md", ".txt", ".rst"}
 _SECRET_FILENAMES = re.compile(
     r"(^|/)(\.env($|\.)|.*\.(pem|key|p12|pfx)$|id_rsa$|id_ed25519$)", re.IGNORECASE
 )
@@ -114,6 +115,12 @@ _DEPENDENCY_FILES = {
     "pyproject.toml", "requirements.txt", "requirements-dev.txt", "package.json", "package-lock.json",
     "pnpm-lock.yaml", "yarn.lock", "poetry.lock", "Pipfile.lock", "go.mod", "Cargo.lock",
 }
+_TOKEN_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]+\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+)
 
 
 def _tracked_files(repository: Path) -> list[str]:
@@ -130,11 +137,31 @@ def _evidence(line: str) -> str:
         r"\1\2\"[REDACTED]\"",
         clean,
     )
+    clean = _TOKEN_PATTERNS[0].sub(r"\1[REDACTED]", clean)
+    for pattern in _TOKEN_PATTERNS[1:]:
+        clean = pattern.sub("[REDACTED]", clean)
     return clean
 
 
 def _line_number(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
+
+
+def _rule_applies(rule: Rule, path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    suffix = PurePosixPath(normalized).suffix.lower()
+    if suffix in _DOCUMENT_SUFFIXES:
+        return False
+    if rule.category == "ci-cd":
+        return normalized.startswith(".github/workflows/") and suffix in {".yml", ".yaml"}
+    if rule.rule_id == "SEC002" and (
+        normalized.startswith("tests/")
+        or "/tests/" in normalized
+        or normalized.startswith("examples/")
+        or "/examples/" in normalized
+    ):
+        return False
+    return True
 
 
 def _docker_findings(path: str, text: str) -> list[Finding]:
@@ -159,84 +186,88 @@ def _docker_findings(path: str, text: str) -> list[Finding]:
 
 
 def scan_project(project: Project) -> dict:
-    repository = ensure_repository(project)
-    commit_sha = repository_commit(repository, project.default_branch)
-    tracked = _tracked_files(repository)
-    findings: list[Finding] = []
-    scanned_files = 0
-    skipped_large = 0
-    dependency_manifests: list[str] = []
+    with readonly_worktree(project) as (repository, commit_sha):
+        tracked = _tracked_files(repository)
+        findings: list[Finding] = []
+        scanned_files = 0
+        skipped_large = 0
+        dependency_manifests: list[str] = []
 
-    for relative in tracked:
-        if _SECRET_FILENAMES.search(relative):
-            findings.append(
-                Finding(
-                    rule_id="SEC000",
-                    severity="high",
-                    category="secrets",
-                    title="Arquivo sensível versionado",
-                    file_path=relative,
-                    line_number=1,
-                    evidence="nome de arquivo sensível versionado",
-                    impact="Segredos e configuração privada podem permanecer no histórico Git e ser distribuídos a qualquer clone.",
-                    remediation="Remova do Git, adicione ao .gitignore e rotacione qualquer segredo que já tenha sido versionado.",
-                )
-            )
-            continue
-
-        name = PurePosixPath(relative).name
-        if name in _DEPENDENCY_FILES:
-            dependency_manifests.append(relative)
-
-        suffix = PurePosixPath(relative).suffix.lower()
-        if suffix not in _TEXT_SUFFIXES and name not in {"Dockerfile", "Makefile"}:
-            continue
-        target = repository / relative
-        try:
-            if not target.is_file():
-                continue
-            if target.stat().st_size > MAX_FILE_BYTES:
-                skipped_large += 1
-                continue
-            text = target.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-
-        scanned_files += 1
-        lines = text.splitlines()
-        for rule in _RULES:
-            for match in rule.pattern.finditer(text):
-                line_no = _line_number(text, match.start())
-                line = lines[line_no - 1] if lines and line_no <= len(lines) else ""
+        for relative in tracked:
+            if _SECRET_FILENAMES.search(relative):
                 findings.append(
                     Finding(
-                        rule_id=rule.rule_id,
-                        severity=rule.severity,
-                        category=rule.category,
-                        title=rule.title,
+                        rule_id="SEC000",
+                        severity="high",
+                        category="secrets",
+                        title="Arquivo sensível versionado",
                         file_path=relative,
-                        line_number=line_no,
-                        evidence=_evidence(line),
-                        impact=rule.impact,
-                        remediation=rule.remediation,
+                        line_number=1,
+                        evidence="nome de arquivo sensível versionado",
+                        impact="Segredos e configuração privada podem permanecer no histórico Git e ser distribuídos a qualquer clone.",
+                        remediation="Remova do Git, adicione ao .gitignore e rotacione qualquer segredo que já tenha sido versionado.",
                     )
                 )
-        findings.extend(_docker_findings(relative, text))
+                continue
 
-    rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-    findings.sort(
-        key=lambda item: (rank.get(item.severity, 9), item.file_path, item.line_number, item.rule_id)
-    )
-    counts = {severity: sum(1 for item in findings if item.severity == severity) for severity in rank}
-    return {
-        "commit_sha": commit_sha,
-        "findings": [item.as_dict() for item in findings],
-        "counts": counts,
-        "coverage": {
-            "tracked_files": len(tracked),
-            "scanned_text_files": scanned_files,
-            "skipped_large_files": skipped_large,
-            "dependency_manifests": dependency_manifests,
-            "dependency_vulnerability_database": "not-enabled",
-        },
-    }
+            name = PurePosixPath(relative).name
+            if name in _DEPENDENCY_FILES:
+                dependency_manifests.append(relative)
+
+            suffix = PurePosixPath(relative).suffix.lower()
+            if suffix not in _TEXT_SUFFIXES and name not in {"Dockerfile", "Makefile"}:
+                continue
+            target = repository / relative
+            try:
+                if not target.is_file():
+                    continue
+                if target.stat().st_size > MAX_FILE_BYTES:
+                    skipped_large += 1
+                    continue
+                text = target.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+
+            scanned_files += 1
+            lines = text.splitlines()
+            for rule in _RULES:
+                if not _rule_applies(rule, relative):
+                    continue
+                for match in rule.pattern.finditer(text):
+                    line_no = _line_number(text, match.start())
+                    line = lines[line_no - 1] if lines and line_no <= len(lines) else ""
+                    findings.append(
+                        Finding(
+                            rule_id=rule.rule_id,
+                            severity=rule.severity,
+                            category=rule.category,
+                            title=rule.title,
+                            file_path=relative,
+                            line_number=line_no,
+                            evidence=_evidence(line),
+                            impact=rule.impact,
+                            remediation=rule.remediation,
+                        )
+                    )
+            findings.extend(_docker_findings(relative, text))
+
+        rank = {"critical": 0, "high": 1, "medium": 2, "low": 3}
+        findings.sort(
+            key=lambda item: (rank.get(item.severity, 9), item.file_path, item.line_number, item.rule_id)
+        )
+        counts = {
+            severity: sum(1 for item in findings if item.severity == severity)
+            for severity in rank
+        }
+        return {
+            "commit_sha": commit_sha,
+            "findings": [item.as_dict() for item in findings],
+            "counts": counts,
+            "coverage": {
+                "tracked_files": len(tracked),
+                "scanned_text_files": scanned_files,
+                "skipped_large_files": skipped_large,
+                "dependency_manifests": dependency_manifests,
+                "dependency_vulnerability_database": "not-enabled",
+            },
+        }
