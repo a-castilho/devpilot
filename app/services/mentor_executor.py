@@ -8,12 +8,15 @@ from app.models import Project, Task
 from app.services import executor
 
 MENTOR_REF_RE = re.compile(r"\[DEVPILOT_REF=([0-9a-f]{40})\]", re.IGNORECASE)
+MENTOR_CONTEXT_REF_RE = re.compile(r'"commit_sha"\s*:\s*"([0-9a-f]{40})"', re.IGNORECASE)
 
 
 def _mentor_ref(task: Task, project: Project) -> str:
-    match = MENTOR_REF_RE.search(str(task.prompt or ""))
-    if match:
-        return match.group(1).lower()
+    prompt = str(task.prompt or "")
+    for pattern in (MENTOR_REF_RE, MENTOR_CONTEXT_REF_RE):
+        match = pattern.search(prompt)
+        if match:
+            return match.group(1).lower()
     return f"origin/{project.default_branch}"
 
 
