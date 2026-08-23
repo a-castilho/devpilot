@@ -116,6 +116,14 @@ def _block_for_budget(db, *, task: Task, run: Run, user_id: str | None, reason: 
     db.commit()
 
 
+def _final_task_status(run_status: str, needs_authorization: bool) -> TaskStatus:
+    if run_status == "success":
+        return TaskStatus.completed
+    if needs_authorization:
+        return TaskStatus.blocked
+    return TaskStatus.failed
+
+
 def process_one() -> bool:
     with SessionLocal() as db:
         task = db.scalar(
@@ -249,12 +257,7 @@ def process_one() -> bool:
 
         healing = result.get("self_healing") if isinstance(result, dict) else None
         needs_authorization = bool(isinstance(healing, dict) and healing.get("requires_authorization"))
-        if run.status == "success":
-            task.status = TaskStatus.review
-        elif needs_authorization:
-            task.status = TaskStatus.blocked
-        else:
-            task.status = TaskStatus.failed
+        task.status = _final_task_status(run.status, needs_authorization)
 
         if isinstance(healing, dict):
             record(
