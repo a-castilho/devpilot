@@ -17,6 +17,7 @@ from app.mentor_routes import (
     SkillUpdate,
     mentor,
     security_fix,
+    security_scan,
     update_skill,
 )
 from app.models import Project, Task, TaskStatus, User, Workspace
@@ -69,13 +70,15 @@ def commit_all(path, message="fixture"):
     subprocess.run(["git", "commit", "-m", message], cwd=path, check=True, capture_output=True)
 
 
-def test_teach_mode_creates_read_only_task_and_learning_event(db, monkeypatch):
+def test_teach_mode_creates_read_only_task_without_persisting_source_excerpt(db, monkeypatch):
     _ws, _user, project, principal = seed(db)
     snapshot = SimpleNamespace(id="snapshot-1")
+    sha = "a" * 40
     summary = {
-        "commit_sha": "a" * 40,
+        "commit_sha": sha,
         "sampled_files": ["app/main.py"],
-        "target_excerpt": "",
+        "target": "app/main.py",
+        "target_excerpt": 'password="should-never-be-persisted"',
     }
     monkeypatch.setattr(
         "app.mentor_routes.get_or_create_snapshot",
@@ -87,6 +90,7 @@ def test_teach_mode_creates_read_only_task_and_learning_event(db, monkeypatch):
         MentorRequest(
             mode="teach",
             question="Me ensine o fluxo de autenticação",
+            target="app/main.py",
             skill="FastAPI",
             level="beginner",
         ),
@@ -99,7 +103,10 @@ def test_teach_mode_creates_read_only_task_and_learning_event(db, monkeypatch):
     assert task.status is TaskStatus.queued
     assert task.requires_approval is False
     assert "[DEVPILOT_MODE=analysis-read-only]" in task.prompt
-    assert '"commit_sha": "' + ("a" * 40) + '"' in task.prompt
+    assert f"[DEVPILOT_REF={sha}]" in task.prompt
+    assert f'"commit_sha": "{sha}"' in task.prompt
+    assert "should-never-be-persisted" not in task.prompt
+    assert "target_excerpt" not in task.prompt
     assert "nível beginner" in task.prompt
     assert db.query(LearningEvent).filter_by(project_id=project.id).count() == 1
 
@@ -135,6 +142,20 @@ def test_skill_profile_is_project_scoped(db):
     assert item.level == "advanced"
     assert json.loads(item.concepts_seen) == ["multi-stage"]
     assert db.query(LearningSkill).filter_by(project_id=project.id, skill="Docker").count() == 1
+
+
+def test_viewer_cannot_update_learning_profile(db):
+    _ws, _user, project, principal = seed(db, Role.VIEWER)
+    with pytest.raises(HTTPException) as error:
+        update_skill(
+            project.id,
+            "Docker",
+            SkillUpdate(level="beginner", confidence=40),
+            db,
+            principal,
+        )
+    assert error.value.status_code == 403
+    assert db.query(LearningSkill).count() == 0
 
 
 def test_project_context_is_pinned_to_commit_and_redacts_target(tmp_path, monkeypatch):
@@ -222,6 +243,79 @@ def test_worker_routes_read_only_mentor_away_from_generic_executor(monkeypatch):
     assert worker.execute_queued_task(project, mentor_task)["mode"] == "mentor"
     assert worker.execute_queued_task(project, execute_task)["mode"] == "generic"
     assert worker._mentor_failure_result()["persisted_changes"] is False
+
+
+def test_security_scan_supersedes_previous_open_findings(db, monkeypatch):
+    ws, user, project, principal = seed(db)
+    old_scan = SecurityScan(
+        workspace_id=ws.id,
+        project_id=project.id,
+        requested_by_user_id=user.id,
+        commit_sha="old",
+    )
+    db.add(old_scan)
+    db.flush()
+    old_finding = SecurityFinding(
+        workspace_id=ws.id,
+        project_id=project.id,
+        scan_id=old_scan.id,
+        rule_id="SEC003",
+        severity="high",
+        category="code-execution",
+        title="Achado antigo",
+        file_path="app/old.py",
+        line_number=4,
+        evidence="shell=True",
+        impact="injeção",
+        remediation="use lista de argumentos",
+        status="open",
+    )
+    db.add(old_finding)
+    db.commit()
+
+    monkeypatch.setattr(
+        "app.mentor_routes.scan_project",
+        lambda _project: {
+            "commit_sha": "c" * 40,
+            "counts": {"critical": 0, "high": 0, "medium": 1, "low": 0},
+            "coverage": {
+                "tracked_files": 3,
+                "scanned_text_files": 2,
+                "skipped_large_files": 0,
+                "dependency_manifests": [],
+                "dependency_vulnerability_database": "not-enabled",
+            },
+            "findings": [
+                {
+                    "rule_id": "SEC011",
+                    "severity": "medium",
+                    "category": "container",
+                    "title": "Container sem USER não-root explícito",
+                    "file_path": "Dockerfile",
+                    "line_number": 1,
+                    "evidence": "Dockerfile sem diretiva USER",
+                    "impact": "impacto",
+                    "remediation": "adicione USER",
+                }
+            ],
+        },
+    )
+
+    result = security_scan(project.id, db, principal)
+    db.refresh(old_finding)
+    assert old_finding.status == "superseded"
+    assert len(result["findings"]) == 1
+    assert result["findings"][0].status == "open"
+
+    with pytest.raises(HTTPException) as error:
+        security_fix(
+            project.id,
+            old_finding.id,
+            SecurityFixRequest(apply=True),
+            db,
+            principal,
+        )
+    assert error.value.status_code == 409
 
 
 def test_security_fix_requires_explicit_apply_and_then_approval(db):
