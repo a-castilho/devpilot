@@ -45,6 +45,33 @@ def _repository_candidate(repository_name: str, attempt: int) -> str:
     return f"{repository_name[:100 - len(suffix)].rstrip('-')}{suffix}"
 
 
+def _translate_starter_error(status_code: int, *, operation: str) -> None:
+    if status_code == 401:
+        raise GitHubProvisioningError(
+            "O token GitHub usado para preparar o starter é inválido ou expirou. "
+            "Atualize a credencial da organização a-castilho.",
+            401,
+        )
+    if status_code == 403:
+        raise GitHubProvisioningError(
+            "O token GitHub consegue acessar a organização, mas não possui permissão para ler/gravar "
+            "os arquivos do starter. Edite ou gere um Fine-grained PAT com Resource owner = a-castilho "
+            "e Repository permissions > Contents: Read and write. Depois atualize a credencial em "
+            "Super Admin > Organizações e tente criar o projeto novamente.",
+            403,
+        )
+    if status_code == 404 and operation == "write":
+        raise GitHubProvisioningError(
+            "O repositório foi criado, mas o GitHub não encontrou o branch ao gravar o starter. "
+            "Atualize a página e tente novamente; se persistir, verifique o branch padrão do repositório.",
+            409,
+        )
+    raise GitHubProvisioningError(
+        f"Não foi possível {operation} o starter do produto no GitHub (HTTP {status_code}).",
+        502,
+    )
+
+
 def starter_files(project_name: str, description: str = "") -> dict[str, str]:
     safe_name = project_name.strip() or "app"
     safe_description = description.strip() or f"Produto inicial {safe_name}"
@@ -189,9 +216,7 @@ def bootstrap_repository(
                 existing.append(path)
                 continue
             if check.status_code != 404:
-                raise GitHubProvisioningError(
-                    f"Não foi possível verificar o starter do produto no GitHub (HTTP {check.status_code})."
-                )
+                _translate_starter_error(check.status_code, operation="verificar")
             response = client.put(
                 url,
                 json={
@@ -201,9 +226,7 @@ def bootstrap_repository(
                 },
             )
             if response.status_code not in {200, 201}:
-                raise GitHubProvisioningError(
-                    f"Não foi possível criar o starter do produto no GitHub (HTTP {response.status_code})."
-                )
+                _translate_starter_error(response.status_code, operation="gravar")
             created.append(path)
     return {"status": "ready", "branch": branch, "created": created, "existing": existing}
 
@@ -239,7 +262,10 @@ def _translate_creation_error(response) -> None:
         raise GitHubProvisioningError("O token GitHub é inválido ou expirou.", 401)
     if response.status_code == 403:
         raise GitHubProvisioningError(
-            "A credencial GitHub não autoriza criar repositórios em a-castilho.", 403
+            "A credencial GitHub não autoriza criar repositórios em a-castilho. "
+            "Use um Fine-grained PAT com Resource owner = a-castilho e Repository permissions > "
+            "Administration: Read and write e Contents: Read and write.",
+            403,
         )
     if response.status_code == 404:
         raise GitHubProvisioningError(
