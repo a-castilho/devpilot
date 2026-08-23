@@ -111,6 +111,7 @@ _DOCUMENT_SUFFIXES = {".md", ".txt", ".rst"}
 _SECRET_FILENAMES = re.compile(
     r"(^|/)(\.env($|\.)|.*\.(pem|key|p12|pfx)$|id_rsa$|id_ed25519$)", re.IGNORECASE
 )
+_ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
 _DEPENDENCY_FILES = {
     "pyproject.toml", "requirements.txt", "requirements-dev.txt", "package.json", "package-lock.json",
     "pnpm-lock.yaml", "yarn.lock", "poetry.lock", "Pipfile.lock", "go.mod", "Cargo.lock",
@@ -121,6 +122,14 @@ _TOKEN_PATTERNS = (
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
+
+
+def _is_sensitive_filename(path: str) -> bool:
+    normalized = path.replace("\\", "/")
+    name = PurePosixPath(normalized).name.lower()
+    if name.startswith(".env") and name.endswith(_ENV_TEMPLATE_SUFFIXES):
+        return False
+    return bool(_SECRET_FILENAMES.search(normalized))
 
 
 def _tracked_files(repository: Path) -> list[str]:
@@ -194,7 +203,7 @@ def scan_project(project: Project) -> dict:
         dependency_manifests: list[str] = []
 
         for relative in tracked:
-            if _SECRET_FILENAMES.search(relative):
+            if _is_sensitive_filename(relative):
                 findings.append(
                     Finding(
                         rule_id="SEC000",
