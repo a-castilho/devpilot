@@ -22,6 +22,7 @@ from app.linux_routes import router as linux_router
 from app.product_delivery_routes import router as product_delivery_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
+from app.super_admin_voice_routes import router as super_admin_voice_router
 from app.task_image_routes import router as task_image_router
 from app.task_run_routes import router as task_run_router
 from app.token_usage_routes import router as token_usage_router
@@ -124,6 +125,7 @@ app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(product_delivery_router)
 app.include_router(provider_models_router)
+app.include_router(super_admin_voice_router)
 app.include_router(cloud_admin_router)
 app.include_router(deploy_router)
 app.include_router(reports_router)
@@ -176,6 +178,7 @@ def spa(path: str):
         '<script src="/assets/users.js" defer></script>',
         '<script src="/assets/token-usage.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
+        '<script src="/assets/super-admin-voice.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
         '<script src="/assets/product-delivery-ui.js" defer></script>',
         '<script src="/assets/voice-project-start.js" defer></script>',
@@ -213,6 +216,7 @@ def spa(path: str):
         if script not in html:
             html = html.replace("</body>", f"  {script}\n</body>")
 
+    html = _inject_stylesheet(html, "super-admin-voice.css")
     html = _inject_mobile_scroll_unlock(html)
     if mobile_route:
         html = _inject_stylesheet(html, "mobile-route.css")
