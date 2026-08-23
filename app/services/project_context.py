@@ -59,10 +59,13 @@ def _redact_text(text: str) -> str:
     def replace(match: re.Match[str]) -> str:
         return f"{match.group(1)}=[REDACTED]"
 
-    redacted = _SECRET_LINE.sub(replace, text)
-    redacted = _SECRET_VALUE_PATTERNS[0].sub(r"\1[REDACTED]", redacted)
+    # Redact structured bearer/token formats before the generic key=value rule.
+    # Otherwise `Authorization: Bearer <opaque-token>` could become
+    # `Authorization=[REDACTED] <opaque-token>` and leave the credential behind.
+    redacted = _SECRET_VALUE_PATTERNS[0].sub(r"\1[REDACTED]", text)
     for pattern in _SECRET_VALUE_PATTERNS[1:]:
         redacted = pattern.sub("[REDACTED]", redacted)
+    redacted = _SECRET_LINE.sub(replace, redacted)
     return redacted
 
 
