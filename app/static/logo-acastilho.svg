@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">ACS</title>
+  <desc id="desc">Letra A geométrica em verde neon, centralizada, com as três pontas tocando o círculo orbital.</desc>
+  <defs>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7affc5"/><stop offset="0.48" stop-color="#19f889"/><stop offset="1" stop-color="#0ed46f"/></linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0.85" y2="1"><stop offset="0" stop-color="#6dffc0"/><stop offset="0.45" stop-color="#20f68b"/><stop offset="1" stop-color="#0fcf6d"/></linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#abffe0"/><stop offset="1" stop-color="#21ef8b"/></linearGradient>
+    <filter id="glow" x="-35%" y="-35%" width="170%" height="170%"><feGaussianBlur stdDeviation="5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <circle cx="256" cy="256" r="200" fill="none" stroke="url(#ring)" stroke-width="9" filter="url(#glow)"/>
+  <g filter="url(#glow)"><path d="M256 56 L109 392 L166 392 L278 123 Z" fill="url(#face)" stroke="url(#edge)" stroke-width="2.5" stroke-linejoin="round"/><path d="M256 56 L403 392 L346 392 L234 123 Z" fill="url(#face)" stroke="url(#edge)" stroke-width="2.5" stroke-linejoin="round"/><path d="M218 318 H294 L319 366 H193 Z" fill="url(#face)" stroke="url(#edge)" stroke-width="2.5" stroke-linejoin="round"/></g>
+  <circle cx="385" cy="103" r="19" fill="url(#ring)" stroke="#9affe0" stroke-width="2.5" filter="url(#softGlow)"/>
+</svg>
