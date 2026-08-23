@@ -20,7 +20,7 @@ from app.mentor_routes import (
 )
 from app.models import Project, Task, TaskStatus, User, Workspace
 from app.security import Principal, Role
-from app.services import security_scanner
+from app.services import project_context, security_scanner
 
 
 @pytest.fixture
@@ -55,6 +55,17 @@ def seed(db: Session, role=Role.ADMIN):
     db.commit()
     principal = Principal(user_id=user.id, workspace_id=ws.id, email=user.email, role=role)
     return ws, user, project, principal
+
+
+def init_git_repo(path):
+    subprocess.run(["git", "init"], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "tests@devpilot.local"], cwd=path, check=True)
+    subprocess.run(["git", "config", "user.name", "DevPilot Tests"], cwd=path, check=True)
+
+
+def commit_all(path, message="fixture"):
+    subprocess.run(["git", "add", "."], cwd=path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", message], cwd=path, check=True, capture_output=True)
 
 
 def test_teach_mode_creates_read_only_task_and_learning_event(db, monkeypatch):
@@ -120,28 +131,53 @@ def test_skill_profile_is_project_scoped(db):
     assert db.query(LearningSkill).filter_by(project_id=project.id, skill="Docker").count() == 1
 
 
+def test_project_context_is_pinned_to_commit_and_redacts_target(tmp_path, monkeypatch):
+    repo = tmp_path / "context-repo"
+    repo.mkdir()
+    init_git_repo(repo)
+    (repo / "app.py").write_text(
+        'password = "committed-secret-value"\nauthorization: Bearer ghp_123456789012345678901234567890\n'
+    )
+    commit_all(repo)
+    (repo / "app.py").write_text("dirty-marker-that-must-not-be-read\n")
+
+    project = SimpleNamespace(
+        id="project-context-test",
+        name="Context test",
+        description="",
+        default_branch="main",
+    )
+    monkeypatch.setattr(project_context, "ensure_repository", lambda _project: repo)
+    summary = project_context.build_project_context(project, target="app.py")
+
+    assert "dirty-marker-that-must-not-be-read" not in summary["target_excerpt"]
+    assert "committed-secret-value" not in summary["target_excerpt"]
+    assert "ghp_123456789012345678901234567890" not in summary["target_excerpt"]
+    assert "[REDACTED]" in summary["target_excerpt"]
+
+
 def test_static_security_scanner_finds_risky_patterns(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
+    init_git_repo(repo)
     (repo / "app.py").write_text(
         'import subprocess\nsubprocess.run("echo hi", shell=True)\npassword = "super-secret-value"\n'
     )
     (repo / ".env").write_text("TOKEN=do-not-read")
     (repo / "Dockerfile").write_text('FROM python:3.12\nCMD ["python","app.py"]\n')
-    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    (repo / "README.md").write_text("Example only: subprocess.run('echo', shell=True)\n")
+    commit_all(repo)
 
-    project = SimpleNamespace(default_branch="main")
-    monkeypatch.setattr(security_scanner, "ensure_repository", lambda _project: repo)
-    monkeypatch.setattr(
-        security_scanner,
-        "repository_commit",
-        lambda _repo, _branch: "deadbeef",
-    )
+    project = SimpleNamespace(id="security-test", default_branch="main")
+    monkeypatch.setattr(project_context, "ensure_repository", lambda _project: repo)
     result = security_scanner.scan_project(project)
     rules = {item["rule_id"] for item in result["findings"]}
     assert {"SEC000", "SEC002", "SEC003", "SEC011"}.issubset(rules)
     assert "do-not-read" not in json.dumps(result)
+    assert not any(
+        item["file_path"] == "README.md" and item["rule_id"] == "SEC003"
+        for item in result["findings"]
+    )
 
 
 def test_security_fix_requires_explicit_apply_and_then_approval(db):
