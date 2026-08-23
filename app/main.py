@@ -168,6 +168,7 @@ def spa(path: str):
         html = _mark_mobile_route(html)
 
     scripts = [
+        '<script src="/assets/acs-loader.js" defer></script>',
         '<script src="/assets/telemetry-capture.js" defer></script>',
         '<script src="/assets/telemetry-replay-capture.js" defer></script>',
         '<script src="/assets/profile.js" defer></script>',
