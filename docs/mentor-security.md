@@ -22,7 +22,7 @@ Classificação: **STRUCTURAL**. O recurso altera comportamento de IA, persistê
 
 1. Usuário escolhe o projeto e o modo.
 2. Para `explain`, `teach`, `pair` ou `quiz`, o Context Builder atualiza o clone, resolve o SHA e monta o snapshot em um worktree descartável exatamente nesse commit.
-3. O DevPilot cria uma `Task` com marcador `analysis-read-only`; o prompt inclui o SHA/contexto seguro usado na solicitação.
+3. O DevPilot cria uma `Task` com marcador `analysis-read-only`; o prompt inclui o SHA e somente o contexto estrutural seguro. O trecho do arquivo alvo não é persistido no prompt.
 4. O worker identifica `source=mentor` + modo somente leitura e encaminha a tarefa ao `mentor_executor`, não ao executor genérico de análise.
 5. O `mentor_executor` abre outro worktree descartável no mesmo SHA, permite inspeção pelo Codex e proíbe qualquer alteração, instalação, commit, push, merge ou deploy.
 6. O executor do Mentor não grava `AGENTS.md`, não executa self-healing sobre checkout/credenciais e respeita `DEVPILOT_EXECUTION_ENABLED` e o orçamento de IA.
@@ -41,7 +41,7 @@ Classificação: **STRUCTURAL**. O recurso altera comportamento de IA, persistê
 
 ### Perfil educacional
 
-Níveis permitidos por competência: `beginner`, `intermediate`, `advanced`, `expert`. O nível é escopado por usuário + projeto + competência. O usuário pode corrigi-lo explicitamente. Campos auxiliares registram conceitos vistos, pontos para revisão e confiança.
+Níveis permitidos por competência: `beginner`, `intermediate`, `advanced`, `expert`. O nível é escopado por usuário + projeto + competência. O usuário pode corrigi-lo explicitamente. Campos auxiliares registram conceitos vistos, pontos para revisão e confiança. VIEWER pode consultar o próprio perfil, mas não alterá-lo.
 
 ## Segurança
 
@@ -62,7 +62,7 @@ Níveis permitidos por competência: `beginner`, `intermediate`, `advanced`, `ex
 
 Regras de execução/configuração não são aplicadas a documentação Markdown/TXT, e regras de CI/CD são limitadas a `.github/workflows`, reduzindo falsos positivos óbvios. Segredos genéricos em diretórios `tests/` e `examples/` também não são classificados automaticamente como credencial de produção.
 
-Cada achado persiste regra, severidade, categoria, arquivo/linha, evidência redigida, impacto e remediação.
+Cada achado persiste regra, severidade, categoria, arquivo/linha, evidência redigida, impacto e remediação. Quando um scan novo termina com sucesso, os achados `open` do scan anterior passam para `superseded`; eles continuam no histórico, mas deixam de aparecer na visão padrão de pendências. Uma correção com `apply=true` só pode ser criada para um achado `open` do estado atual. Tentar corrigir um achado superseded retorna HTTP 409 e exige revisar o scan mais recente.
 
 ### Dependências
 
@@ -70,13 +70,13 @@ O scanner identifica manifests de dependências, mas **não inventa CVEs**. A co
 
 ### Correção controlada
 
-Consultar a recomendação não altera nada. `POST /security/findings/{finding_id}/fix` com `apply=false` retorna apenas a remediação. Somente `apply=true`, após confirmação na interface, cria uma tarefa `source=security`; a tarefa permanece `awaiting_approval` e passa pelo executor normal. ANALYST/VIEWER não podem iniciar correção.
+Consultar a recomendação não altera nada. `POST /security/findings/{finding_id}/fix` com `apply=false` retorna apenas a remediação. Somente `apply=true`, após confirmação na interface e para um achado atual, cria uma tarefa `source=security`; a tarefa permanece `awaiting_approval` e passa pelo executor normal. ANALYST/VIEWER não podem iniciar correção.
 
 ### Segredos e contexto
 
 O Context Builder não lê arquivos reconhecidos como sensíveis para contexto de IA e redige padrões de senha/token, incluindo Bearer, tokens GitHub e chaves com prefixo `sk-`, no arquivo alvo. O scanner também não retorna o conteúdo de `.env`; nesses casos registra apenas que o arquivo sensível está versionado. Evidências de linhas com possíveis credenciais são redigidas.
 
-O trecho do arquivo alvo não é persistido em `project_snapshots`; o snapshot guarda a identidade/contexto estrutural. A tarefa do Mentor usa contexto redigido e o executor consulta o repositório isolado no SHA correspondente.
+O trecho do arquivo alvo não é persistido em `project_snapshots` nem em `Task.prompt`; o snapshot guarda a identidade/contexto estrutural. A tarefa do Mentor persiste o SHA de referência e o executor consulta o repositório isolado nesse SHA.
 
 ## APIs
 
@@ -114,14 +114,14 @@ O trecho do arquivo alvo não é persistido em `project_snapshots`; o snapshot g
 
 ## Custos e capacidade
 
-A parte local (snapshot e scanner) não usa tokens de IA. O snapshot é cacheado por `project_id + commit_sha + context_hash`; o Context Builder limita a 220 caminhos e 12 mil caracteres para o arquivo alvo. Uma sessão do Mentor é uma tarefa normal e, portanto, usa a fila e os mecanismos de orçamento existentes. O modo `execute` não recebe tratamento privilegiado e continua sob policy/approval.
+A parte local (snapshot e scanner) não usa tokens de IA. O snapshot é cacheado por `project_id + commit_sha + context_hash`; o Context Builder limita a 220 caminhos e 12 mil caracteres para o arquivo alvo durante preparação/redação. Uma sessão do Mentor é uma tarefa normal e, portanto, usa a fila e os mecanismos de orçamento existentes. O modo `execute` não recebe tratamento privilegiado e continua sob policy/approval.
 
 Quando `DEVPILOT_EXECUTION_ENABLED=false`, uma sessão educacional pode ser registrada, mas o `mentor_executor` não abre repositório nem chama Codex. Isso mantém o mesmo interruptor operacional usado pelo restante do sistema.
 
 ## Autorização
 
-- VIEWER: consulta scans/achados/skills, sem iniciar consumo de IA, scan ou correção.
-- ANALYST: pode usar modos educacionais e iniciar scan; não pode iniciar `execute` nem correção.
+- VIEWER: consulta scans/achados/skills, sem iniciar consumo de IA, scan, mudança de skill ou correção.
+- ANALYST: pode usar modos educacionais, atualizar o próprio perfil educacional e iniciar scan; não pode iniciar `execute` nem correção.
 - ADMIN/OWNER/SUPER_ADMIN: podem usar todos os modos; execução/correção continuam aguardando aprovação.
 - O escopo de todas as consultas inclui `workspace_id` e `project_id`; skills também incluem `user_id`.
 
@@ -134,11 +134,11 @@ Eventos adicionados:
 - `security.scan_completed`
 - `security.fix_requested`
 
-Não são registrados conteúdos secretos em `details`.
+Não são registrados conteúdos secretos em `details`. `security.scan_completed` registra também quantos achados anteriores foram superseded.
 
 ## Falhas, rollback e compatibilidade
 
-As tabelas são novas e criadas pelo mecanismo existente `Base.metadata.create_all`; nenhum campo existente é removido ou renomeado. Remover o router/script desativa o recurso sem afetar tarefas já existentes. Scans são append-only; findings antigos continuam vinculados ao commit analisado. Falha ao preparar/fazer fetch do clone retorna erro e não cria scan incompleto.
+As tabelas são novas e criadas pelo mecanismo existente `Base.metadata.create_all`; nenhum campo existente é removido ou renomeado. Remover o router/script desativa o recurso sem afetar tarefas já existentes. Scans são append-only; findings antigos continuam vinculados ao commit analisado, com status `superseded` quando deixam de representar o scan atual. Falha ao preparar/fazer fetch do clone retorna erro e não cria scan incompleto.
 
 Sessões somente leitura do Mentor não entram no `AutoRecoveryService`: se houver falha, a sessão encerra sem quarentenar checkout, alternar credenciais ou executar outra reparação mutável. O usuário pode corrigir o ambiente pelo fluxo administrativo normal e executar novamente.
 
@@ -161,7 +161,9 @@ Além disso, revisar manualmente o dashboard em desktop/mobile e confirmar:
 2. sessões educacionais ficam `queued`, usam o executor dedicado e não alteram `AGENTS.md`;
 3. modo Executar fica `awaiting_approval`;
 4. scanner e Mentor usam o commit exato registrado no contexto/scan;
-5. scan não expõe conteúdo de `.env`;
-6. correção só é criada após confirmação e fica `awaiting_approval`;
-7. tenant/user isolation dos novos endpoints;
-8. execução desabilitada não chama o modelo no Mentor.
+5. prompt persistido do Mentor não contém `target_excerpt`;
+6. scan não expõe conteúdo de `.env`;
+7. um scan novo supersede achados antigos e bloqueia correção baseada em estado obsoleto;
+8. correção só é criada após confirmação e fica `awaiting_approval`;
+9. tenant/user isolation dos novos endpoints;
+10. execução desabilitada não chama o modelo no Mentor.
