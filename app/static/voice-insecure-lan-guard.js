@@ -4,13 +4,14 @@
   const modal = document.querySelector('#voice-modal');
   const transcript = document.querySelector('#voice-transcript');
   const sendButton = document.querySelector('#voice-chat-send');
+  const voicePanel = modal?.querySelector('.voice-modal');
 
-  if (!startButton || !statusNode || !modal || startButton.dataset.insecureLanGuard === '3') return;
+  if (!startButton || !statusNode || !modal || startButton.dataset.insecureLanGuard === '4') return;
 
   const originalStart = startButton.onclick;
   if (typeof originalStart !== 'function') return;
 
-  startButton.dataset.insecureLanGuard = '3';
+  startButton.dataset.insecureLanGuard = '4';
 
   const isLoopback = () => ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
   const isInsecureLan = () => !window.isSecureContext && !isLoopback();
@@ -21,131 +22,163 @@
     const userAgent = String(navigator.userAgent || '');
     if (/Android|iPhone|iPad|iPod|IEMobile|Opera Mini|Mobile/i.test(userAgent)) return true;
 
-    // iPadOS can identify itself as Macintosh while still exposing touch points.
     return /Macintosh/i.test(userAgent) && Number(navigator.maxTouchPoints || 0) > 1;
   };
 
+  const hasNativeSpeechRecognition = () => Boolean(window.SpeechRecognition || window.webkitSpeechRecognition);
+
   const ensureMobileLayoutFix = () => {
     if (!isLikelyMobileDevice()) return;
-    if (document.querySelector('link[data-voice-mobile-fix]')) return;
+    if (!document.querySelector('link[data-voice-mobile-fix]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/assets/voice-mobile-fix.css?v=20260823-1';
+      link.dataset.voiceMobileFix = '1';
+      document.head.appendChild(link);
+    }
 
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = '/assets/voice-mobile-fix.css?v=20260823-1';
-    link.dataset.voiceMobileFix = '1';
-    document.head.appendChild(link);
+    if (!document.querySelector('link[data-voice-conversation-mode]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/assets/voice-conversation-mode.css?v=20260823-1';
+      link.dataset.voiceConversationMode = '1';
+      document.head.appendChild(link);
+    }
   };
 
-  const localMicrophoneUrl = () => {
-    const url = new URL(window.location.href);
-    url.hostname = '127.0.0.1';
-    return url.toString();
+  const conversationModeCard = () => modal.querySelector('#voice-conversation-mode');
+
+  const setConversationModeState = (state, text) => {
+    const card = conversationModeCard();
+    if (!card) return;
+    card.dataset.state = state;
+    const body = card.querySelector('[data-voice-conversation-text]');
+    if (body && text) body.textContent = text;
   };
 
-  const ensureLocalMicrophoneButton = () => {
-    if (!isInsecureLan() || isLikelyMobileDevice()) return;
-    if (modal.querySelector('#voice-open-loopback')) return;
-
-    const actions = modal.querySelector('.voice-enhanced-actions') || modal.querySelector('.hero-actions');
-    if (!actions) return;
-
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.id = 'voice-open-loopback';
-    button.className = 'ghost voice-loopback-button';
-    button.textContent = 'Abrir microfone local';
-    button.setAttribute('title', 'Abrir o DevPilot em 127.0.0.1 para permitir microfone direto');
-    button.onclick = () => window.location.assign(localMicrophoneUrl());
-    actions.appendChild(button);
+  const hideConversationMode = () => {
+    const card = conversationModeCard();
+    if (card) card.hidden = true;
   };
+
+  const focusTextComposer = () => {
+    hideConversationMode();
+    transcript?.focus?.();
+    statusNode.textContent = 'Modo texto ativo. Digite sua mensagem para o DevPilot.';
+  };
+
+  const showConversationMode = () => {
+    ensureMobileLayoutFix();
+    const card = ensureConversationModeCard();
+    if (!card) return;
+    card.hidden = false;
+    setConversationModeState(
+      'ready',
+      'Toque em Conversar agora. O DevPilot vai tentar usar o reconhecimento de voz do próprio navegador, sem abrir câmera ou seletor de arquivos.',
+    );
+  };
+
+  const canUseEnhancedConversation = () => Boolean(
+    modal.querySelector('.voice-modal-enhanced') && sendButton && transcript,
+  );
+
+  const startConversationMode = (event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    showConversationMode();
+
+    if (!canUseEnhancedConversation()) {
+      const message = 'A interface de conversa ainda não terminou de carregar. Reabra esta tela e tente novamente.';
+      statusNode.textContent = message;
+      setConversationModeState('blocked', message);
+      return;
+    }
+
+    if (isInsecureLan() && !hasNativeSpeechRecognition()) {
+      const message = 'Este navegador bloqueia voz contínua neste endereço HTTP. Para conversar pelo microfone, abra o DevPilot por HTTPS.';
+      statusNode.textContent = message;
+      setConversationModeState('blocked', message);
+      if (typeof toast === 'function') toast(message);
+      return;
+    }
+
+    statusNode.textContent = 'Modo conversar: ligando o microfone…';
+    setConversationModeState('starting', 'Ligando o microfone. Fale normalmente quando aparecer “Ouvindo…”.');
+
+    try {
+      const result = originalStart.call(startButton, event);
+      if (result?.catch) {
+        result.catch((error) => {
+          const message = error?.message || 'Não foi possível iniciar o modo conversar.';
+          statusNode.textContent = message;
+          setConversationModeState('blocked', message);
+          if (typeof toast === 'function') toast(message);
+        });
+      }
+    } catch (error) {
+      const message = error?.message || 'Não foi possível iniciar o modo conversar.';
+      statusNode.textContent = message;
+      setConversationModeState('blocked', message);
+      if (typeof toast === 'function') toast(message);
+    }
+  };
+
+  function ensureConversationModeCard() {
+    let card = conversationModeCard();
+    if (card || !voicePanel) return card;
+
+    card = document.createElement('section');
+    card.id = 'voice-conversation-mode';
+    card.className = 'voice-conversation-mode';
+    card.dataset.state = 'ready';
+    card.hidden = true;
+    card.setAttribute('aria-live', 'polite');
+    card.innerHTML = `
+      <div class="voice-conversation-mode__header">
+        <span class="voice-conversation-mode__label">Modo conversar</span>
+        <h3 class="voice-conversation-mode__title">Converse com o DevPilot</h3>
+      </div>
+      <p class="voice-conversation-mode__text" data-voice-conversation-text>
+        Toque em Conversar agora para ligar a voz sem abrir câmera ou seletor de arquivos.
+      </p>
+      <p class="voice-conversation-mode__hint">
+        Em endereço HTTP da rede local, o Android pode bloquear o microfone. Se isso acontecer, use HTTPS.
+      </p>
+      <div class="voice-conversation-mode__actions">
+        <button type="button" class="voice-conversation-mode__button voice-conversation-mode__button--primary" data-voice-conversation-start>
+          Conversar agora
+        </button>
+        <button type="button" class="voice-conversation-mode__button voice-conversation-mode__button--secondary" data-voice-conversation-text-mode>
+          Texto
+        </button>
+      </div>
+    `;
+
+    const composer = voicePanel.querySelector('.voice-chatgpt-composer, .voice-composer');
+    if (composer) composer.before(card);
+    else voicePanel.appendChild(card);
+
+    card.querySelector('[data-voice-conversation-start]')?.addEventListener('click', startConversationMode);
+    card.querySelector('[data-voice-conversation-text-mode]')?.addEventListener('click', focusTextComposer);
+    return card;
+  }
 
   const applyDesktopState = () => {
-    statusNode.textContent =
-      'Este endereço HTTP da rede não libera microfone direto. Abra o DevPilot em 127.0.0.1 ou use HTTPS.';
+    statusNode.textContent = 'Este endereço HTTP da rede não libera microfone direto. Use HTTPS ou abra o DevPilot localmente em 127.0.0.1.';
     startButton.setAttribute('title', 'Microfone direto exige HTTPS ou localhost');
     startButton.setAttribute('aria-label', 'Microfone direto exige HTTPS ou localhost');
     startButton.dataset.captureMode = 'insecure-lan';
-    ensureLocalMicrophoneButton();
   };
-
-  const mobileAudioInput = document.createElement('input');
-  mobileAudioInput.type = 'file';
-  mobileAudioInput.accept = 'audio/*,.webm,.ogg,.m4a,.mp4,.mp3,.wav,.aac,.3gp,.3g2';
-  mobileAudioInput.setAttribute('capture', 'user');
-  mobileAudioInput.hidden = true;
-  mobileAudioInput.tabIndex = -1;
-  mobileAudioInput.setAttribute('aria-hidden', 'true');
-  mobileAudioInput.dataset.voiceMobileLanCapture = '1';
-  modal.appendChild(mobileAudioInput);
-
-  const openMobileRecorder = () => {
-    ensureMobileLayoutFix();
-    statusNode.textContent = 'Abrindo o gravador do celular… grave a mensagem e confirme.';
-    startButton.disabled = true;
-    mobileAudioInput.value = '';
-    mobileAudioInput.click();
-    window.setTimeout(() => {
-      startButton.disabled = false;
-    }, 400);
-  };
-
-  const uploadMobileAudio = async (file) => {
-    if (!file?.size) {
-      statusNode.textContent = 'Nenhum áudio foi capturado. Toque no microfone para tentar novamente.';
-      return;
-    }
-
-    const form = new FormData();
-    form.append('audio', file, file.name || 'voice-mobile.m4a');
-
-    startButton.disabled = true;
-    statusNode.textContent = 'Transcrevendo áudio…';
-
-    try {
-      if (typeof api !== 'function') throw new Error('API de transcrição indisponível.');
-      const data = await api('/voice/transcriptions', {method: 'POST', body: form});
-      const text = String(data?.text || '').trim();
-      if (!text) {
-        statusNode.textContent = 'Nenhuma fala foi reconhecida. Toque no microfone e tente novamente.';
-        return;
-      }
-
-      // A transcrição não deve ficar visível no composer. Entregamos o texto
-      // apenas de forma síncrona ao fluxo já existente e ele é limpo no envio.
-      if (!transcript || !sendButton) throw new Error('Composer de voz indisponível.');
-      transcript.value = text;
-      transcript.dispatchEvent(new Event('input', {bubbles: true}));
-      sendButton.click();
-      transcript.value = '';
-      transcript.dispatchEvent(new Event('input', {bubbles: true}));
-    } catch (error) {
-      const message = error?.message || 'Falha na transcrição do áudio.';
-      statusNode.textContent = message;
-      if (typeof toast === 'function') toast(message);
-    } finally {
-      startButton.disabled = false;
-      mobileAudioInput.value = '';
-    }
-  };
-
-  mobileAudioInput.addEventListener('change', async () => {
-    const file = mobileAudioInput.files?.[0];
-    if (!file) {
-      statusNode.textContent = 'Gravação cancelada. Toque no microfone para tentar novamente.';
-      startButton.disabled = false;
-      return;
-    }
-    await uploadMobileAudio(file);
-  });
 
   ensureMobileLayoutFix();
 
   if (isInsecureLan()) {
     if (isLikelyMobileDevice()) {
-      statusNode.textContent = 'Modo móvel: toque no microfone para gravar sua mensagem.';
-      startButton.setAttribute('title', 'Gravar mensagem no celular');
-      startButton.setAttribute('aria-label', 'Gravar mensagem no celular');
-      startButton.dataset.captureMode = 'mobile-device-recorder';
+      ensureConversationModeCard();
+      startButton.setAttribute('title', 'Modo conversar');
+      startButton.setAttribute('aria-label', 'Abrir modo conversar');
+      startButton.dataset.captureMode = 'conversation-mode';
+      statusNode.textContent = 'Modo conversar disponível. Toque no microfone para começar.';
     } else {
       applyDesktopState();
     }
@@ -153,26 +186,38 @@
 
   startButton.onclick = function guardedInsecureLanVoiceStart(event) {
     if (isInsecureLan() && isLikelyMobileDevice()) {
-      event?.preventDefault?.();
-      openMobileRecorder();
+      startConversationMode(event);
       return;
     }
 
-    if (isInsecureLan()) {
-      applyDesktopState();
-      if (typeof toast === 'function') {
-        toast('Microfone direto exige HTTPS ou acesso local em 127.0.0.1.');
-      }
-    }
-
+    if (isInsecureLan()) applyDesktopState();
     return originalStart.call(startButton, event);
   };
+
+  const statusObserver = new MutationObserver(() => {
+    if (!isInsecureLan() || !isLikelyMobileDevice()) return;
+    const value = String(statusNode.textContent || '').toLowerCase();
+
+    if (/ouvindo|microfone ativo|abrindo o microfone/.test(value)) {
+      setConversationModeState('active', 'Microfone ativo. Pode falar com o DevPilot.');
+      return;
+    }
+
+    if (/bloquead|não permite|https|não foi possível abrir o microfone/.test(value)) {
+      setConversationModeState(
+        'blocked',
+        'O Android bloqueou o microfone neste endereço HTTP. Para voz contínua, abra o DevPilot por HTTPS.',
+      );
+    }
+  });
+  statusObserver.observe(statusNode, {childList: true, subtree: true, characterData: true});
 
   const modalOpenObserver = new MutationObserver(() => {
     if (!modal.open) return;
     ensureMobileLayoutFix();
     if (isInsecureLan() && isLikelyMobileDevice()) {
-      statusNode.textContent = 'Modo móvel: toque no microfone para gravar sua mensagem.';
+      ensureConversationModeCard();
+      statusNode.textContent = 'Modo conversar disponível. Toque no microfone para começar.';
     }
   });
   modalOpenObserver.observe(modal, {attributes: true, attributeFilter: ['open']});
