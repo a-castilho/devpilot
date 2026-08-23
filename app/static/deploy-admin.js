@@ -35,6 +35,7 @@
     button.className = 'nav';
     button.type = 'button';
     button.dataset.view = 'deploy-admin';
+    button.dataset.superAdmin = 'true';
     button.textContent = 'Deploy manual';
     nav.insertBefore(button, nav.querySelector('[data-view="reports"]') || null);
 
