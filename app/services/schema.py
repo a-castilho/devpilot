@@ -33,6 +33,12 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 ]
             )
 
+    # Older workers left successful executions permanently in `review`, but there
+    # is no post-run review transition in the product. Normalize that dead-end
+    # state once at startup so existing dashboards reflect completed work too.
+    if "tasks" in tables:
+        statements.append("UPDATE tasks SET status = 'completed' WHERE status = 'review'")
+
     # Base.metadata.create_all() creates new Investia tables, but it cannot evolve a
     # persistent PostgreSQL volume that already has an older version of the table.
     # Keep the runtime migration additive so old DevPilot installations can publish
