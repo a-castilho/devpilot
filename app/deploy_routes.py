@@ -18,7 +18,7 @@ from app.services.host_actions import queue_host_action
 
 
 router = APIRouter(prefix="/api/admin/deployments", tags=["admin-deployments"])
-manage_deployments = require_roles(Role.SUPER_ADMIN, Role.OWNER, Role.ADMIN)
+manage_deployments = require_roles(Role.SUPER_ADMIN)
 _CONFIG_KEY = "manual_deploy"
 
 
