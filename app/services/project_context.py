@@ -3,7 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import tempfile
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 
 from sqlalchemy import select
@@ -29,6 +32,12 @@ _SENSITIVE_NAME = re.compile(
 _SECRET_LINE = re.compile(
     r"(?i)(api[_-]?key|secret|token|password|passwd|authorization|private[_-]?key)\s*[:=]\s*([^\s#]+)"
 )
+_SECRET_VALUE_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*:\s*bearer\s+)[^\s\"']+"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]+\b"),
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
+    re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
+)
 _IMPORTANT_NAMES = {
     "README.md", "AGENTS.md", "pyproject.toml", "requirements.txt", "package.json",
     "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Dockerfile", "docker-compose.yml",
@@ -50,7 +59,11 @@ def _redact_text(text: str) -> str:
     def replace(match: re.Match[str]) -> str:
         return f"{match.group(1)}=[REDACTED]"
 
-    return _SECRET_LINE.sub(replace, text)
+    redacted = _SECRET_LINE.sub(replace, text)
+    redacted = _SECRET_VALUE_PATTERNS[0].sub(r"\1[REDACTED]", redacted)
+    for pattern in _SECRET_VALUE_PATTERNS[1:]:
+        redacted = pattern.sub("[REDACTED]", redacted)
+    return redacted
 
 
 def _git(repository: Path, args: list[str]) -> str:
@@ -68,60 +81,92 @@ def repository_commit(repository: Path, branch: str) -> str:
     raise RuntimeError("Unable to resolve repository commit")
 
 
-def build_project_context(project: Project, target: str | None = None) -> tuple[dict, Path]:
+@contextmanager
+def readonly_worktree(project: Project) -> Iterator[tuple[Path, str]]:
+    """Yield a disposable checkout pinned to the exact commit being inspected."""
     repository = ensure_repository(project)
     commit_sha = repository_commit(repository, project.default_branch)
-    output = _git(repository, ["ls-files"])
-    tracked = [line.strip() for line in output.splitlines() if line.strip()]
-    safe_files = [path for path in tracked if not _SENSITIVE_NAME.search(path)]
-    sampled = safe_files[:MAX_CONTEXT_FILES]
+    project_marker = str(getattr(project, "id", "project"))[:8]
+    with tempfile.TemporaryDirectory(prefix=f"devpilot-context-{project_marker}-") as temp_dir:
+        checkout = Path(temp_dir) / "repository"
+        result = run(
+            ["git", "worktree", "add", "--detach", str(checkout), commit_sha],
+            cwd=repository,
+            timeout=120,
+        )
+        if result.returncode:
+            raise RuntimeError(result.stderr.strip() or "Unable to prepare read-only repository snapshot")
+        try:
+            yield checkout, commit_sha
+        finally:
+            cleanup = run(
+                ["git", "worktree", "remove", "--force", str(checkout)],
+                cwd=repository,
+                timeout=60,
+            )
+            if cleanup.returncode:
+                run(["git", "worktree", "prune"], cwd=repository, timeout=30)
 
-    suffixes = Counter((PurePosixPath(path).suffix.lower() or "[no-extension]") for path in safe_files)
-    roots = Counter(PurePosixPath(path).parts[0] for path in safe_files if PurePosixPath(path).parts)
-    important = [path for path in safe_files if path in _IMPORTANT_NAMES or PurePosixPath(path).name in _IMPORTANT_NAMES]
 
-    target_path = _safe_target(target)
-    target_excerpt = ""
-    if target_path:
-        if target_path not in tracked:
-            raise ValueError("Target file is not tracked by Git")
-        if _SENSITIVE_NAME.search(target_path):
-            raise ValueError("Sensitive files cannot be added to AI context")
-        suffix = PurePosixPath(target_path).suffix.lower()
-        if suffix not in _TEXT_SUFFIXES and PurePosixPath(target_path).name not in {"Dockerfile", "Makefile"}:
-            raise ValueError("Target file is not an allowed text file")
-        file_path = repository / target_path
-        if not file_path.is_file():
-            raise ValueError("Target file is unavailable in the working copy")
-        target_excerpt = _redact_text(file_path.read_text(encoding="utf-8", errors="replace")[:MAX_TARGET_CHARS])
+def build_project_context(project: Project, target: str | None = None) -> dict:
+    with readonly_worktree(project) as (repository, commit_sha):
+        output = _git(repository, ["ls-files"])
+        tracked = [line.strip() for line in output.splitlines() if line.strip()]
+        safe_files = [path for path in tracked if not _SENSITIVE_NAME.search(path)]
+        sampled = safe_files[:MAX_CONTEXT_FILES]
 
-    summary = {
-        "project": {
-            "id": project.id,
-            "name": project.name,
-            "description": project.description,
-            "default_branch": project.default_branch,
-        },
-        "commit_sha": commit_sha,
-        "tracked_file_count": len(tracked),
-        "safe_file_count": len(safe_files),
-        "sampled_files": sampled,
-        "top_extensions": suffixes.most_common(16),
-        "top_roots": roots.most_common(16),
-        "important_files": important[:40],
-        "target": target_path,
-        "target_excerpt": target_excerpt,
-        "context_limits": {
-            "sampled_files": MAX_CONTEXT_FILES,
-            "target_chars": MAX_TARGET_CHARS,
-        },
-    }
-    encoded = json.dumps(summary, ensure_ascii=False, sort_keys=True)
-    if len(encoded) > MAX_SUMMARY_CHARS:
-        summary["sampled_files"] = sampled[:100]
+        suffixes = Counter((PurePosixPath(path).suffix.lower() or "[no-extension]") for path in safe_files)
+        roots = Counter(PurePosixPath(path).parts[0] for path in safe_files if PurePosixPath(path).parts)
+        important = [
+            path
+            for path in safe_files
+            if path in _IMPORTANT_NAMES or PurePosixPath(path).name in _IMPORTANT_NAMES
+        ]
+
+        target_path = _safe_target(target)
+        target_excerpt = ""
+        if target_path:
+            if target_path not in tracked:
+                raise ValueError("Target file is not tracked by Git")
+            if _SENSITIVE_NAME.search(target_path):
+                raise ValueError("Sensitive files cannot be added to AI context")
+            suffix = PurePosixPath(target_path).suffix.lower()
+            if suffix not in _TEXT_SUFFIXES and PurePosixPath(target_path).name not in {"Dockerfile", "Makefile"}:
+                raise ValueError("Target file is not an allowed text file")
+            file_path = repository / target_path
+            if not file_path.is_file():
+                raise ValueError("Target file is unavailable in the repository snapshot")
+            target_excerpt = _redact_text(
+                file_path.read_text(encoding="utf-8", errors="replace")[:MAX_TARGET_CHARS]
+            )
+
+        summary = {
+            "project": {
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "default_branch": project.default_branch,
+            },
+            "commit_sha": commit_sha,
+            "tracked_file_count": len(tracked),
+            "safe_file_count": len(safe_files),
+            "sampled_files": sampled,
+            "top_extensions": suffixes.most_common(16),
+            "top_roots": roots.most_common(16),
+            "important_files": important[:40],
+            "target": target_path,
+            "target_excerpt": target_excerpt,
+            "context_limits": {
+                "sampled_files": MAX_CONTEXT_FILES,
+                "target_chars": MAX_TARGET_CHARS,
+            },
+        }
         encoded = json.dumps(summary, ensure_ascii=False, sort_keys=True)
-    summary["context_hash"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
-    return summary, repository
+        if len(encoded) > MAX_SUMMARY_CHARS:
+            summary["sampled_files"] = sampled[:100]
+            encoded = json.dumps(summary, ensure_ascii=False, sort_keys=True)
+        summary["context_hash"] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        return summary
 
 
 def get_or_create_snapshot(
@@ -130,7 +175,7 @@ def get_or_create_snapshot(
     project: Project,
     target: str | None = None,
 ) -> tuple[ProjectSnapshot, dict]:
-    summary, _repository = build_project_context(project, target=target)
+    summary = build_project_context(project, target=target)
     snapshot = db.scalar(
         select(ProjectSnapshot).where(
             ProjectSnapshot.project_id == project.id,
