@@ -70,8 +70,8 @@ def test_mobile_task_columns_match_injected_type_column():
     styles = read("app/static/task-analytics.css")
 
     assert "return 'action'" in modal
-    assert "kind === 'action' ? 'Ação'" in modal
-    assert "return 'Ação'" in analytics
+    assert "kind === 'analysis' ? 'Análise' : 'Execução'" in modal
+    assert "return 'Execução'" in analytics
     assert "content:'Tipo'" in styles
     assert "td:nth-child(4)::before{content:'Status'}" in styles
     assert "td:nth-child(5)::before{content:'Prioridade'}" in styles
