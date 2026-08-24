@@ -10,6 +10,101 @@ SYSTEMD_DIR="${HOME}/.config/systemd/user"
 ENV_FILE="${CONFIG_DIR}/linux-agent.env"
 UNIT_FILE="${SYSTEMD_DIR}/devpilot-linux-agent.service"
 DEVPILOT_ENV="${ROOT}/.env"
+TERMINAL_USER="${DEVPILOT_LINUX_TERMINAL_USER:-devpilot}"
+TERMINAL_LAUNCHER="/usr/local/libexec/devpilot-terminal-shell"
+SERVICE_USER="$(id -un)"
+SUDOERS_FILE="/etc/sudoers.d/devpilot-linux-agent-${SERVICE_USER}"
+
+if [[ ! "${TERMINAL_USER}" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]]; then
+  echo "ERRO: nome de usuário Linux dedicado inválido: ${TERMINAL_USER}" >&2
+  exit 1
+fi
+
+require_sudo() {
+  if ! command -v sudo >/dev/null 2>&1; then
+    echo "ERRO: sudo é necessário para provisionar o usuário Linux dedicado do DevPilot." >&2
+    exit 1
+  fi
+  sudo -v
+}
+
+provision_terminal_user() {
+  local created=0
+  local terminal_home
+  local launcher_tmp
+  local sudoers_tmp
+  local visudo_bin
+
+  require_sudo
+
+  if ! getent passwd "${TERMINAL_USER}" >/dev/null 2>&1; then
+    echo "Criando usuário Linux dedicado '${TERMINAL_USER}'..."
+    sudo useradd \
+      --create-home \
+      --shell /bin/bash \
+      --comment "DevPilot isolated Linux terminal" \
+      "${TERMINAL_USER}"
+    sudo passwd -l "${TERMINAL_USER}" >/dev/null 2>&1 || true
+    created=1
+  fi
+
+  terminal_home="$(getent passwd "${TERMINAL_USER}" | awk -F: '{print $6; exit}')"
+  if [[ -z "${terminal_home}" || "${terminal_home}" == "/" ]]; then
+    echo "ERRO: HOME inválida para o usuário dedicado ${TERMINAL_USER}." >&2
+    exit 1
+  fi
+
+  # O usuário dedicado não recebe sudo, docker nem grupos do operador. Ele só
+  # recebe sua própria HOME e um launcher fixo para as sessões do DevPilot.
+  sudo -u "${TERMINAL_USER}" mkdir -p "${terminal_home}/Documents"
+
+  launcher_tmp="$(mktemp)"
+  cat >"${launcher_tmp}" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+TARGET="${1:-${HOME}}"
+cd -- "${TARGET}"
+exec /bin/bash -i
+EOF
+  sudo install -d -o root -g root -m 755 "$(dirname "${TERMINAL_LAUNCHER}")"
+  sudo install -o root -g root -m 755 "${launcher_tmp}" "${TERMINAL_LAUNCHER}"
+  rm -f "${launcher_tmp}"
+
+  # O Agent continua rodando sem root. A única elevação autorizada é trocar
+  # para o usuário menos privilegiado do DevPilot e executar o launcher fixo.
+  sudoers_tmp="$(mktemp)"
+  printf '%s ALL=(%s) NOPASSWD: %s\n' \
+    "${SERVICE_USER}" "${TERMINAL_USER}" "${TERMINAL_LAUNCHER}" \
+    >"${sudoers_tmp}"
+  chmod 600 "${sudoers_tmp}"
+  visudo_bin="$(command -v visudo || true)"
+  if [[ -z "${visudo_bin}" ]]; then
+    rm -f "${sudoers_tmp}"
+    echo "ERRO: visudo não encontrado; não é seguro instalar a regra sudoers." >&2
+    exit 1
+  fi
+  sudo "${visudo_bin}" -cf "${sudoers_tmp}" >/dev/null
+  sudo install -o root -g root -m 440 "${sudoers_tmp}" "${SUDOERS_FILE}"
+  rm -f "${sudoers_tmp}"
+
+  if ! sudo -n -H -u "${TERMINAL_USER}" -- "${TERMINAL_LAUNCHER}" "${terminal_home}" \
+      </dev/null >/dev/null 2>&1; then
+    # O launcher abre shell interativo e pode terminar imediatamente sem TTY;
+    # valide a autorização sudo de forma separada e não exija sessão interativa.
+    if ! sudo -n -u "${TERMINAL_USER}" -- true >/dev/null 2>&1; then
+      echo "ERRO: não foi possível validar a troca para o usuário ${TERMINAL_USER}." >&2
+      exit 1
+    fi
+  fi
+
+  if [[ "${created}" == "1" ]]; then
+    echo "Usuário '${TERMINAL_USER}' criado com senha bloqueada e HOME ${terminal_home}."
+  else
+    echo "Usuário dedicado '${TERMINAL_USER}' já existe; configuração preservada."
+  fi
+}
+
+provision_terminal_user
 
 mkdir -p "${CONFIG_DIR}" "${STATE_DIR}" "${AGENT_RUNTIME_DIR}" "${SYSTEMD_DIR}"
 chmod 700 "${CONFIG_DIR}" "${STATE_DIR}"
@@ -75,6 +170,8 @@ DEVPILOT_LINUX_AGENT_SOCKET=${SOCKET_PATH}
 DEVPILOT_LINUX_AGENT_HOST=127.0.0.1
 DEVPILOT_LINUX_AGENT_PORT=8787
 DEVPILOT_LINUX_AGENT_DATA_DIR=${STATE_DIR}
+DEVPILOT_LINUX_TERMINAL_USER=${TERMINAL_USER}
+DEVPILOT_LINUX_TERMINAL_LAUNCHER=${TERMINAL_LAUNCHER}
 EOF
 chmod 600 "${ENV_FILE}"
 
@@ -137,17 +234,21 @@ systemctl --user restart devpilot-linux-agent.service
 
 healthy=0
 for _ in $(seq 1 30); do
-  if "${PYTHON}" - "${SOCKET_PATH}" <<'PY' >/dev/null 2>&1
+  if "${PYTHON}" - "${SOCKET_PATH}" "${TERMINAL_USER}" <<'PY' >/dev/null 2>&1
 import sys
 import httpx
 
 socket_path = sys.argv[1]
+terminal_user = sys.argv[2]
 transport = httpx.HTTPTransport(uds=socket_path)
 with httpx.Client(transport=transport, base_url="http://devpilot-agent", timeout=1.0) as client:
     response = client.get("/health")
     response.raise_for_status()
     payload = response.json()
     if payload.get("status") != "ok":
+        raise SystemExit(1)
+    account = payload.get("terminal_user") or {}
+    if account.get("username") != terminal_user or not account.get("ready"):
         raise SystemExit(1)
 PY
   then
@@ -158,7 +259,7 @@ PY
 done
 
 if [[ "${healthy}" != "1" ]]; then
-  echo "ERRO: Linux Agent não ficou saudável após a instalação." >&2
+  echo "ERRO: Linux Agent não ficou saudável após a instalação do usuário dedicado." >&2
   systemctl --user status devpilot-linux-agent.service --no-pager >&2 || true
   echo "=== ÚLTIMOS LOGS ===" >&2
   journalctl --user -u devpilot-linux-agent.service -n 60 --no-pager >&2 || true
@@ -170,7 +271,9 @@ fi
 chmod 666 "${SOCKET_PATH}" 2>/dev/null || true
 
 echo "DevPilot Linux Agent instalado e saudável."
+echo "Usuário das sessões diretas: ${TERMINAL_USER}"
 echo "Socket: ${SOCKET_PATH}"
 echo "Status: systemctl --user status devpilot-linux-agent.service --no-pager"
+echo "O usuário do seu terminal não é reutilizado pelas sessões diretas do DevPilot."
 echo "O .env do DevPilot foi configurado com o mesmo segredo do Agent."
 echo "Se o DevPilot estiver em Docker, recrie o serviço app para carregar o .env atualizado."
