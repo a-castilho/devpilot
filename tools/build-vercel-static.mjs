@@ -41,6 +41,7 @@ const scripts = [
   'tws-example.js',
   'cloud-admin.js',
   'linux-terminal.js',
+  'linux-game-access.js',
   'audit-integrity.js',
   'mission-control.js',
 ];
