@@ -17,6 +17,15 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Keep provider adapters behind the provider interface; core workflows must not depend on one AI vendor.
 - Add tests for policy, state transitions, tenant boundaries, and failure paths.
 
+## Local runtime safety
+
+- Never instruct a user to restart DevPilot with a raw `pkill -f` sequence followed by `nohup`.
+- Use `bash scripts/devpilot-local-safe.sh` for local update/restart workflows.
+- Validate the new revision before stopping a healthy local process.
+- Refuse destructive update/restart when the worktree has uncommitted changes.
+- After restart, require `/health` to succeed; if a newly pulled revision fails to boot, restore the previous revision automatically when possible.
+- Keep the user-facing recovery command short and avoid chaining unrelated tests before service recovery.
+
 ## Validation
 
 - Run `pytest` for backend changes.
