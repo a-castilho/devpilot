@@ -158,3 +158,10 @@ class TaskCreate(BaseModel):
 class VoiceCommand(BaseModel):
     project_id: str | None = None
     transcript: str = Field(min_length=2, max_length=20_000)
+
+
+class ProviderCreate(BaseModel):
+    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,49}$")
+    label: str = Field(min_length=2, max_length=100)
+    api_key: str = Field(min_length=8, max_length=10_000)
+    models: list[str] = Field(default_factory=list)
