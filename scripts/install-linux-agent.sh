@@ -87,14 +87,12 @@ EOF
   sudo install -o root -g root -m 440 "${sudoers_tmp}" "${SUDOERS_FILE}"
   rm -f "${sudoers_tmp}"
 
+  # Executar o launcher com stdin fechado valida exatamente a autorização que
+  # o Agent usará. Bash interativo encerra normalmente ao receber EOF.
   if ! sudo -n -H -u "${TERMINAL_USER}" -- "${TERMINAL_LAUNCHER}" "${terminal_home}" \
       </dev/null >/dev/null 2>&1; then
-    # O launcher abre shell interativo e pode terminar imediatamente sem TTY;
-    # valide a autorização sudo de forma separada e não exija sessão interativa.
-    if ! sudo -n -u "${TERMINAL_USER}" -- true >/dev/null 2>&1; then
-      echo "ERRO: não foi possível validar a troca para o usuário ${TERMINAL_USER}." >&2
-      exit 1
-    fi
+    echo "ERRO: não foi possível iniciar o launcher como ${TERMINAL_USER}." >&2
+    exit 1
   fi
 
   if [[ "${created}" == "1" ]]; then
