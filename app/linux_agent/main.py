@@ -15,7 +15,7 @@ from app.linux_agent import __version__
 from app.linux_agent.audit import LinuxAuditError, attest_event, identity_status, linux_identity
 from app.linux_agent.auth import AgentAuthError, canonical_target, verify_request
 from app.linux_agent.ollama_runtime import OllamaRuntimeError, chat_ollama, ensure_ollama
-from app.linux_agent.runtime import SessionManager, SessionNotFound
+from app.linux_agent.runtime import SessionManager, SessionNotFound, TerminalUserUnavailable
 
 
 def agent_secret() -> str:
@@ -30,7 +30,22 @@ def agent_data_dir() -> Path:
     return Path(raw).expanduser()
 
 
-manager = SessionManager(agent_data_dir())
+def direct_terminal_user() -> str:
+    return os.environ.get("DEVPILOT_LINUX_TERMINAL_USER", "devpilot").strip()
+
+
+def direct_terminal_launcher() -> str:
+    return os.environ.get(
+        "DEVPILOT_LINUX_TERMINAL_LAUNCHER",
+        "/usr/local/libexec/devpilot-terminal-shell",
+    ).strip()
+
+
+manager = SessionManager(
+    agent_data_dir(),
+    direct_user=direct_terminal_user(),
+    direct_user_launcher=direct_terminal_launcher(),
+)
 
 
 class ReplayGuard:
@@ -163,12 +178,15 @@ app = FastAPI(
 
 @app.get("/health")
 def health():
-    configured = len(agent_secret()) >= 32
+    signed_requests = len(agent_secret()) >= 32
+    terminal_user = manager.direct_user_status()
+    configured = signed_requests and bool(terminal_user.get("ready"))
     return {
         "status": "ok" if configured else "configuration_required",
         "service": "devpilot-linux-agent",
         "version": __version__,
-        "signed_requests": configured,
+        "signed_requests": signed_requests,
+        "terminal_user": terminal_user,
     }
 
 
@@ -224,6 +242,7 @@ def list_terminal_sessions():
 def create_terminal_session(payload: TerminalCreate):
     try:
         cwd = payload.cwd
+        isolated_workspace = bool(payload.workspace_key)
         if payload.workspace_key:
             isolated_root = user_workspace_dir(payload.workspace_key)
             if cwd:
@@ -237,7 +256,10 @@ def create_terminal_session(payload: TerminalCreate):
             cwd=cwd,
             columns=payload.columns,
             rows=payload.rows,
+            use_direct_user=not isolated_workspace,
         )
+    except TerminalUserUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except (OSError, ValueError) as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
 

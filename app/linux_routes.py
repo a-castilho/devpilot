@@ -92,7 +92,9 @@ def linux_status(principal: Principal = Depends(current_user)):
         "workspace_id": principal.workspace_id,
         "workspace_key": None if super_admin else workspace_key(principal),
         "role": principal.role.value,
-        "mode": "full-host-access" if super_admin else "isolated-user-workspace",
+        "mode": "dedicated-linux-user" if super_admin else "isolated-user-workspace",
+        "linux_user": None,
+        "linux_user_ready": False,
     }
     try:
         health = LinuxAgentClient().health()
@@ -105,10 +107,16 @@ def linux_status(principal: Principal = Depends(current_user)):
             "profile": profile,
         }
 
+    terminal_user = health.get("terminal_user") or {}
+    if super_admin:
+        profile["linux_user"] = terminal_user.get("username")
+        profile["linux_user_ready"] = bool(terminal_user.get("ready"))
+
     if health.get("status") != "ok":
+        reason = terminal_user.get("reason")
         return {
             "connected": False,
-            "error": "Linux Agent requer configuração",
+            "error": str(reason or "Linux Agent requer configuração"),
             "agent": health,
             "system": None,
             "profile": profile,
@@ -142,9 +150,10 @@ def create_terminal_session(
         )
 
     # Usuários comuns continuam estritamente isolados no workspace do perfil.
-    # SUPER_ADMIN representa o operador do Linux hospedeiro: não enviamos
-    # workspace_key, portanto o Agent inicia na HOME real e permite navegar
-    # pelo host conforme as permissões do usuário Linux que executa o Agent.
+    # SUPER_ADMIN abre uma sessão direta, mas o Linux Agent nunca reutiliza o
+    # usuário interativo que executa o DevPilot: ele exige o usuário dedicado
+    # configurado (por padrão `devpilot`) e falha fechado se esse isolamento
+    # ainda não tiver sido provisionado.
     request_payload = {
         "actor": principal.actor,
         "columns": payload.columns,
@@ -165,8 +174,9 @@ def create_terminal_session(
             "session_id": session.get("id"),
             "cwd": session.get("cwd"),
             "pid": session.get("pid"),
+            "linux_user": session.get("linux_user"),
             "workspace_key": None if principal.role is Role.SUPER_ADMIN else workspace_key(principal),
-            "mode": "full-host-access" if principal.role is Role.SUPER_ADMIN else "isolated-user-workspace",
+            "mode": "dedicated-linux-user" if principal.role is Role.SUPER_ADMIN else "isolated-user-workspace",
         },
     )
     db.commit()

@@ -193,9 +193,12 @@
       setText('#linux-agent-status', status.connected ? 'conectado' : 'offline');
       const dot = view?.querySelector('#linux-dot');
       dot?.classList.toggle('online', Boolean(status.connected));
-      const access = profile.mode === 'full-host-access'
-        ? 'Acesso completo ao Linux desta máquina.'
-        : 'Ambiente Linux isolado do seu perfil.';
+      let access = 'Ambiente Linux isolado do seu perfil.';
+      if (profile.mode === 'dedicated-linux-user') {
+        access = profile.linux_user_ready
+          ? `Conta Linux isolada: ${profile.linux_user || 'devpilot'}.`
+          : 'Conta Linux dedicada ainda não está pronta.';
+      }
       setText('#linux-access-label', access);
       if (!status.connected && status.error) setText('#linux-hint', status.error);
     } catch (error) {
@@ -215,8 +218,10 @@
       sessionId = session.id;
       lastSequence = 0;
       setTerminalEnabled(true);
-      setText('#linux-terminal-state', 'aberto');
-      setText('#linux-hint', 'Linux aberto. Escolha uma ação ou digite um comando.');
+      setText('#linux-terminal-state', session.linux_user ? `aberto · ${session.linux_user}` : 'aberto');
+      setText('#linux-hint', session.linux_user
+        ? `Linux aberto como ${session.linux_user}. Escolha uma ação ou digite um comando.`
+        : 'Linux aberto. Escolha uma ação ou digite um comando.');
       const output = view?.querySelector('#linux-terminal-output');
       if (output) output.textContent = '';
       view?.querySelector('#linux-terminal-input')?.focus();

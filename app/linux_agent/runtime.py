@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import pty
+import pwd
 import select
 import shutil
 import signal
@@ -20,11 +21,16 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class TerminalUserUnavailable(RuntimeError):
+    pass
+
+
 @dataclass
 class TerminalSession:
     id: str
     actor: str
     cwd: str
+    linux_user: str
     created_at: str
     process: subprocess.Popen[bytes]
     master_fd: int
@@ -45,6 +51,7 @@ class TerminalSession:
                 "id": self.id,
                 "actor": self.actor,
                 "cwd": self.cwd,
+                "linux_user": self.linux_user,
                 "created_at": self.created_at,
                 "last_activity_at": self.last_activity_at,
                 "state": self.state,
@@ -59,7 +66,14 @@ class SessionNotFound(KeyError):
 
 
 class SessionManager:
-    def __init__(self, data_dir: Path, *, shell: str | None = None) -> None:
+    def __init__(
+        self,
+        data_dir: Path,
+        *,
+        shell: str | None = None,
+        direct_user: str = "",
+        direct_user_launcher: str = "/usr/local/libexec/devpilot-terminal-shell",
+    ) -> None:
         self.data_dir = Path(data_dir).expanduser().resolve()
         self.sessions_dir = self.data_dir / "sessions"
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -69,8 +83,102 @@ class SessionManager:
             pass
         preferred = shell or os.environ.get("SHELL") or "/bin/bash"
         self.shell = preferred if Path(preferred).exists() else "/bin/sh"
+        self.direct_user = direct_user.strip()
+        self.direct_user_launcher = Path(direct_user_launcher).expanduser()
         self._sessions: dict[str, TerminalSession] = {}
         self._lock = threading.RLock()
+
+    @staticmethod
+    def _current_linux_user() -> str:
+        try:
+            return pwd.getpwuid(os.geteuid()).pw_name
+        except (KeyError, OSError):
+            return str(os.geteuid())
+
+    def direct_user_status(self) -> dict[str, Any]:
+        username = self.direct_user
+        if not username:
+            return {
+                "configured": False,
+                "ready": False,
+                "username": None,
+                "uid": None,
+                "home": None,
+                "launcher": str(self.direct_user_launcher),
+                "reason": "DEVPILOT_LINUX_TERMINAL_USER não configurado",
+            }
+
+        try:
+            identity = pwd.getpwnam(username)
+        except KeyError:
+            return {
+                "configured": True,
+                "ready": False,
+                "username": username,
+                "uid": None,
+                "home": None,
+                "launcher": str(self.direct_user_launcher),
+                "reason": "Usuário Linux dedicado ainda não existe",
+            }
+
+        same_user = identity.pw_uid == os.geteuid()
+        launcher_ready = self.direct_user_launcher.is_file() and os.access(
+            self.direct_user_launcher,
+            os.X_OK,
+        )
+        sudo_path = shutil.which("sudo")
+        ready = same_user or bool(launcher_ready and sudo_path)
+        reason = None
+        if not ready:
+            if not launcher_ready:
+                reason = "Launcher protegido do usuário DevPilot não está instalado"
+            elif not sudo_path:
+                reason = "sudo não está disponível para iniciar o usuário DevPilot"
+
+        return {
+            "configured": True,
+            "ready": ready,
+            "username": identity.pw_name,
+            "uid": identity.pw_uid,
+            "gid": identity.pw_gid,
+            "home": identity.pw_dir,
+            "shell": identity.pw_shell,
+            "launcher": str(self.direct_user_launcher),
+            "agent_username": self._current_linux_user(),
+            "same_as_agent": same_user,
+            "reason": reason,
+        }
+
+    def _direct_user_command(self, target_cwd: Path) -> tuple[list[str], str, str]:
+        status = self.direct_user_status()
+        if not status.get("ready"):
+            raise TerminalUserUnavailable(
+                str(status.get("reason") or "Usuário Linux dedicado do DevPilot indisponível")
+            )
+
+        username = str(status["username"])
+        identity = pwd.getpwnam(username)
+        if identity.pw_uid == os.geteuid():
+            shell = identity.pw_shell if identity.pw_shell and Path(identity.pw_shell).exists() else self.shell
+            return [shell, "-i"], str(target_cwd), username
+
+        sudo_path = shutil.which("sudo")
+        if not sudo_path:
+            raise TerminalUserUnavailable("sudo não está disponível para iniciar o usuário DevPilot")
+        return (
+            [
+                sudo_path,
+                "-n",
+                "-H",
+                "-u",
+                username,
+                "--",
+                str(self.direct_user_launcher),
+                str(target_cwd),
+            ],
+            "/",
+            username,
+        )
 
     def create(
         self,
@@ -79,10 +187,28 @@ class SessionManager:
         cwd: str | None = None,
         columns: int = 120,
         rows: int = 34,
+        use_direct_user: bool = False,
     ) -> dict[str, Any]:
-        target_cwd = Path(cwd or Path.home()).expanduser().resolve()
-        if not target_cwd.is_dir():
-            raise ValueError("Diretório inicial não existe")
+        linux_user = self._current_linux_user()
+        command = [self.shell, "-i"]
+        process_cwd: str
+
+        if use_direct_user:
+            status = self.direct_user_status()
+            if not status.get("ready"):
+                raise TerminalUserUnavailable(
+                    str(status.get("reason") or "Usuário Linux dedicado do DevPilot indisponível")
+                )
+            requested_cwd = cwd or str(status.get("home") or "")
+            if not requested_cwd:
+                raise TerminalUserUnavailable("HOME do usuário Linux dedicado não está disponível")
+            target_cwd = Path(requested_cwd).expanduser().resolve(strict=False)
+            command, process_cwd, linux_user = self._direct_user_command(target_cwd)
+        else:
+            target_cwd = Path(cwd or Path.home()).expanduser().resolve()
+            if not target_cwd.is_dir():
+                raise ValueError("Diretório inicial não existe")
+            process_cwd = str(target_cwd)
 
         session_id = uuid4().hex
         session_dir = self.sessions_dir / session_id
@@ -98,15 +224,18 @@ class SessionManager:
             env.setdefault("TERM", "xterm-256color")
             env["DEVPILOT_TERMINAL_SESSION_ID"] = session_id
             process = subprocess.Popen(
-                [self.shell, "-i"],
+                command,
                 stdin=slave_fd,
                 stdout=slave_fd,
                 stderr=slave_fd,
-                cwd=str(target_cwd),
+                cwd=process_cwd,
                 env=env,
                 start_new_session=True,
                 close_fds=True,
             )
+        except Exception:
+            os.close(master_fd)
+            raise
         finally:
             os.close(slave_fd)
 
@@ -114,6 +243,7 @@ class SessionManager:
             id=session_id,
             actor=actor,
             cwd=str(target_cwd),
+            linux_user=linux_user,
             created_at=utc_now(),
             process=process,
             master_fd=master_fd,
@@ -217,6 +347,8 @@ class SessionManager:
             "kernel": os.uname().release,
             "machine": os.uname().machine,
             "pid": os.getpid(),
+            "agent_linux_user": self._current_linux_user(),
+            "direct_terminal_user": self.direct_user_status(),
             "uptime_seconds": uptime_seconds,
             "load": {"1m": load_1, "5m": load_5, "15m": load_15},
             "memory": memory,
