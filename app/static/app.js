@@ -107,3 +107,78 @@ if(!state.token)$('#auth-modal').showModal();else load();
 
   sync();
 })();
+
+/* Standard visual language for every status in DevPilot. */
+(() => {
+  const STYLE_ID = 'devpilot-state-loaders';
+  const activeStates = new Set(['running','processing','in_progress','in progress','analyzing','analysing','executing','syncing','loading','queued','pending','starting','deploying']);
+  const waitingStates = new Set(['blocked','awaiting_approval','awaiting approval','paused','waiting']);
+  const successStates = new Set(['completed','complete','success','succeeded','done','review','approved','active','ativo']);
+  const errorStates = new Set(['failed','failure','error','cancelled','canceled','rejected']);
+
+  const normalize = value => String(value || '').trim().toLowerCase().replace(/[-]+/g,'_').replace(/\s+/g,' ');
+
+  function installStyles() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      .status{align-items:center;gap:7px;min-height:24px;line-height:1;letter-spacing:.02em;transition:border-color .2s ease,background .2s ease,color .2s ease,box-shadow .2s ease}
+      .state-loader{position:relative;display:inline-grid;place-items:center;flex:0 0 12px;width:12px;height:12px;border-radius:50%;color:currentColor}
+      .state-loader::before,.state-loader::after{content:'';position:absolute;inset:0;border-radius:inherit}
+      .status.state-active{color:#65ead4;background:#1aa7901f;box-shadow:inset 0 0 0 1px #36d7c02b}
+      .status.state-active .state-loader::before{border:2px solid currentColor;opacity:.2}
+      .status.state-active .state-loader::after{border:2px solid transparent;border-top-color:currentColor;border-right-color:currentColor;animation:devpilot-state-spin .8s linear infinite;box-shadow:0 0 9px currentColor}
+      .status.state-waiting{color:#ffc86f;background:#ffbb551b;box-shadow:inset 0 0 0 1px #ffbb5524}
+      .status.state-waiting .state-loader::before{inset:2px;background:currentColor;box-shadow:0 0 8px currentColor;animation:devpilot-state-pulse 1.35s ease-in-out infinite}
+      .status.state-success{color:#65ead4;background:#21a6961f}
+      .status.state-success .state-loader::before{content:'✓';inset:auto;position:static;font-size:11px;font-weight:950;line-height:1}
+      .status.state-error{color:#ff8796;background:#ff657719}
+      .status.state-error .state-loader::before{content:'×';inset:auto;position:static;font-size:14px;font-weight:950;line-height:1}
+      .status.state-neutral .state-loader::before{inset:3px;background:currentColor;opacity:.72}
+      @keyframes devpilot-state-spin{to{transform:rotate(360deg)}}
+      @keyframes devpilot-state-pulse{0%,100%{transform:scale(.7);opacity:.45}50%{transform:scale(1);opacity:1}}
+      @media (prefers-reduced-motion:reduce){.status .state-loader::before,.status .state-loader::after{animation:none!important}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function classify(raw) {
+    const value = normalize(raw);
+    if (activeStates.has(value) || activeStates.has(value.replaceAll(' ','_'))) return 'active';
+    if (waitingStates.has(value) || waitingStates.has(value.replaceAll(' ','_'))) return 'waiting';
+    if (successStates.has(value) || successStates.has(value.replaceAll(' ','_'))) return 'success';
+    if (errorStates.has(value) || errorStates.has(value.replaceAll(' ','_'))) return 'error';
+    return 'neutral';
+  }
+
+  function decorate(element) {
+    if (!(element instanceof HTMLElement) || !element.classList.contains('status')) return;
+    const existing = element.querySelector(':scope > .state-loader');
+    const raw = element.dataset.stateValue || element.textContent.trim();
+    const kind = classify(raw);
+    element.dataset.stateValue = raw;
+    element.classList.remove('state-active','state-waiting','state-success','state-error','state-neutral');
+    element.classList.add(`state-${kind}`);
+    element.setAttribute('aria-label', `Estado: ${raw.replaceAll('_',' ')}`);
+    if (!existing) {
+      const loader = document.createElement('span');
+      loader.className = 'state-loader';
+      loader.setAttribute('aria-hidden','true');
+      element.prepend(loader);
+    }
+  }
+
+  function scan(root = document) {
+    if (root instanceof HTMLElement && root.matches('.status')) decorate(root);
+    root.querySelectorAll?.('.status').forEach(decorate);
+  }
+
+  installStyles();
+  scan();
+  new MutationObserver(records => {
+    records.forEach(record => record.addedNodes.forEach(node => {
+      if (node.nodeType === Node.ELEMENT_NODE) scan(node);
+    }));
+  }).observe(document.body,{childList:true,subtree:true});
+})();
