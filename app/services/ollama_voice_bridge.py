@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import ProviderCredential
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
+from app.services.ollama_git_context import build_ollama_git_context
 
 
 def _registered_models() -> list[str]:
@@ -52,6 +53,21 @@ async def try_registered_ollama(
             }
         ]
 
+    git_context = await asyncio.to_thread(build_ollama_git_context, input_text)
+    ollama_input = input_text
+    ollama_instructions = instructions
+    if git_context:
+        ollama_input = (
+            f"{input_text}\n\n{git_context}\n\n"
+            "Use o contexto Git acima como evidência real e somente leitura do projeto selecionado. "
+            "Quando ele indicar indisponibilidade, deixe claro que o Git não pôde ser lido e não invente conteúdo."
+        )
+        ollama_instructions = (
+            f"{instructions} "
+            "Quando houver CONTEXTO GIT SOMENTE LEITURA, responda com base nele e diferencie fatos lidos do Git "
+            "de sugestões. Nunca diga que alterou arquivos apenas por ter lido o repositório."
+        )
+
     agent = LinuxAgentClient()
     agent.timeout = 65.0
     try:
@@ -93,8 +109,8 @@ async def try_registered_ollama(
                 "/v1/ollama/chat",
                 payload={
                     "model": model,
-                    "instructions": instructions,
-                    "input_text": input_text,
+                    "instructions": ollama_instructions,
+                    "input_text": ollama_input,
                 },
             )
         except LinuxAgentError as error:
