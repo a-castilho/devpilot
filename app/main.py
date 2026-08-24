@@ -36,8 +36,11 @@ from app.voice_conversation_routes import router as voice_conversation_router
 from app.voice_speech_routes import router as voice_speech_router
 from app.voice_transcription_routes import router as voice_transcription_router
 from app.db import Base, engine
+from app.services.ollama_voice_bridge import install_voice_ollama_bridge
 from app.services.schema import ensure_runtime_schema
 
+
+install_voice_ollama_bridge()
 
 STATIC = Path(__file__).parent / "static"
 _SCRIPT_SRC_RE = re.compile(
