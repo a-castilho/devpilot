@@ -54,8 +54,6 @@ provision_terminal_user() {
     exit 1
   fi
 
-  # O usuário dedicado não recebe sudo, docker nem grupos do operador. Ele só
-  # recebe sua própria HOME e um launcher fixo para as sessões do DevPilot.
   sudo -u "${TERMINAL_USER}" mkdir -p "${terminal_home}/Documents"
 
   launcher_tmp="$(mktemp)"
@@ -70,10 +68,11 @@ EOF
   sudo install -o root -g root -m 755 "${launcher_tmp}" "${TERMINAL_LAUNCHER}"
   rm -f "${launcher_tmp}"
 
-  # O Agent continua rodando sem root. A única elevação autorizada é trocar
-  # para o usuário menos privilegiado do DevPilot e executar o launcher fixo.
+  # O Agent executa somente o launcher fixo como o usuário menos privilegiado.
+  # SETENV é necessário apenas para preservar as variáveis Git/GitHub que o
+  # próprio backend injeta a partir da credencial criptografada em Clouds.
   sudoers_tmp="$(mktemp)"
-  printf '%s ALL=(%s) NOPASSWD: %s\n' \
+  printf '%s ALL=(%s) NOPASSWD:SETENV: %s\n' \
     "${SERVICE_USER}" "${TERMINAL_USER}" "${TERMINAL_LAUNCHER}" \
     >"${sudoers_tmp}"
   chmod 600 "${sudoers_tmp}"
@@ -87,8 +86,6 @@ EOF
   sudo install -o root -g root -m 440 "${sudoers_tmp}" "${SUDOERS_FILE}"
   rm -f "${sudoers_tmp}"
 
-  # Executar o launcher com stdin fechado valida exatamente a autorização que
-  # o Agent usará. Bash interativo encerra normalmente ao receber EOF.
   if ! sudo -n -H -u "${TERMINAL_USER}" -- "${TERMINAL_LAUNCHER}" "${terminal_home}" \
       </dev/null >/dev/null 2>&1; then
     echo "ERRO: não foi possível iniciar o launcher como ${TERMINAL_USER}." >&2
@@ -108,7 +105,6 @@ mkdir -p "${CONFIG_DIR}" "${STATE_DIR}" "${AGENT_RUNTIME_DIR}" "${SYSTEMD_DIR}"
 chmod 700 "${CONFIG_DIR}" "${STATE_DIR}"
 chmod 755 "${AGENT_RUNTIME_DIR}"
 
-# Stop a previous crash-loop before changing its runtime/socket configuration.
 systemctl --user stop devpilot-linux-agent.service >/dev/null 2>&1 || true
 
 SYSTEM_PYTHON="$(command -v python3 || true)"
@@ -140,11 +136,7 @@ if ! "${PYTHON}" -c 'import fastapi, uvicorn, httpx; from app.linux_agent.main i
   exit 1
 fi
 
-# The Unix socket lives entirely under the user's home. Docker only bind-mounts
-# this directory into the app container, so installation never needs docker run,
-# root ownership repair, image pulls, or access to ./runtime.
 rm -f "${SOCKET_PATH}" 2>/dev/null || true
-# Best-effort cleanup of the two legacy socket locations.
 rm -f "${ROOT}/runtime/linux-agent.sock" 2>/dev/null || true
 rm -f "${ROOT}/runtime/linux-agent/agent.sock" 2>/dev/null || true
 
@@ -182,9 +174,6 @@ After=network.target
 Type=simple
 WorkingDirectory=${ROOT}
 EnvironmentFile=${ENV_FILE}
-# The DevPilot app runs in Docker as uid 10001. The socket remains protected by
-# signed requests, so allow the container process to connect to the UDS even
-# when the host user has a different uid/gid. This also survives Agent restarts.
 UMask=0000
 ExecStart=${PYTHON} -m app.linux_agent
 Restart=on-failure
@@ -264,8 +253,6 @@ if [[ "${healthy}" != "1" ]]; then
   exit 1
 fi
 
-# Keep the current socket immediately connectable from the non-root DevPilot
-# container. UMask=0000 above guarantees the same permission after restarts.
 chmod 666 "${SOCKET_PATH}" 2>/dev/null || true
 
 echo "DevPilot Linux Agent instalado e saudável."
@@ -273,5 +260,6 @@ echo "Usuário das sessões diretas: ${TERMINAL_USER}"
 echo "Socket: ${SOCKET_PATH}"
 echo "Status: systemctl --user status devpilot-linux-agent.service --no-pager"
 echo "O usuário do seu terminal não é reutilizado pelas sessões diretas do DevPilot."
+echo "GitHub do terminal usa a credencial cadastrada em Clouds quando disponível."
 echo "O .env do DevPilot foi configurado com o mesmo segredo do Agent."
 echo "Se o DevPilot estiver em Docker, recrie o serviço app para carregar o .env atualizado."
