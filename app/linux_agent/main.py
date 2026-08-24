@@ -12,6 +12,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from app.linux_agent import __version__
+from app.linux_agent.audit import LinuxAuditError, attest_event, identity_status, linux_identity
 from app.linux_agent.auth import AgentAuthError, canonical_target, verify_request
 from app.linux_agent.ollama_runtime import OllamaRuntimeError, chat_ollama, ensure_ollama
 from app.linux_agent.runtime import SessionManager, SessionNotFound
@@ -113,6 +114,18 @@ class OllamaChatRequest(BaseModel):
     input_text: str = Field(min_length=1, max_length=30_000)
 
 
+class AuditAttestRequest(BaseModel):
+    previous_hash: str = Field(default="", max_length=128)
+    workspace_id: str = Field(min_length=1, max_length=100)
+    project_id: str = Field(default="", max_length=100)
+    task_id: str = Field(default="", max_length=100)
+    run_id: str = Field(default="", max_length=100)
+    actor: str = Field(min_length=1, max_length=200)
+    action: str = Field(min_length=1, max_length=200)
+    outcome: str = Field(default="success", max_length=50)
+    details: dict = Field(default_factory=dict)
+
+
 def user_workspace_dir(workspace_key: str) -> Path:
     if not re.fullmatch(r"[a-f0-9]{16,64}", workspace_key):
         raise ValueError("Identificador de workspace Linux inválido")
@@ -161,7 +174,25 @@ def health():
 
 @app.get("/v1/system", dependencies=[Depends(require_signed_request)])
 def system_snapshot():
-    return manager.system_snapshot()
+    snapshot = manager.system_snapshot()
+    snapshot["linux_identity"] = linux_identity()
+    return snapshot
+
+
+@app.get("/v1/audit/identity", dependencies=[Depends(require_signed_request)])
+def audit_identity():
+    try:
+        return identity_status()
+    except LinuxAuditError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/v1/audit/attest", dependencies=[Depends(require_signed_request)])
+def audit_attest(payload: AuditAttestRequest):
+    try:
+        return attest_event(payload.model_dump())
+    except LinuxAuditError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.post("/v1/ollama/ensure", dependencies=[Depends(require_signed_request)])
