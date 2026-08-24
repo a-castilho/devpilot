@@ -19,6 +19,7 @@ from app.host_action_routes import router as host_action_router
 from app.investia_admin_routes import router as investia_admin_router
 from app.investia_public_routes import router as investia_public_router
 from app.linux_routes import router as linux_router
+from app.ollama_provider_routes import router as ollama_provider_router
 from app.product_delivery_routes import router as product_delivery_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
@@ -120,6 +121,7 @@ app.include_router(host_action_router)
 app.include_router(investia_admin_router)
 app.include_router(investia_public_router)
 app.include_router(linux_router)
+app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
@@ -179,6 +181,7 @@ def spa(path: str):
         '<script src="/assets/token-usage.js" defer></script>',
         '<script src="/assets/token-usage-mobile-fix.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
+        '<script src="/assets/provider-ollama.js" defer></script>',
         '<script src="/assets/super-admin-voice.js" defer></script>',
         '<script src="/assets/project-provisioning.js" defer></script>',
         '<script src="/assets/product-delivery-ui.js" defer></script>',
