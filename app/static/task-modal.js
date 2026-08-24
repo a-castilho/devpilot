@@ -65,29 +65,47 @@
     window.setTimeout(refreshMode, 0);
   });
 
-  // Desenvolvimento: deixa explícito se cada item é análise, ação ou execução.
-  // Ações originadas por análise são marcadas antes de qualquer heurística para
-  // impedir que o texto do diagnóstico faça a ação voltar a ser "Análise".
+  // A classificação visual segue o mesmo contrato do worker: uma ação nunca
+  // volta a aparecer como análise só porque contém o diagnóstico de origem.
   const taskTableBody = document.querySelector('#tasks-table');
 
   function taskKind(task) {
     const prompt = String(task?.prompt || '');
     const source = String(task?.source || '').toLowerCase();
     const lowerPrompt = prompt.toLowerCase();
+    const legacyText = `${task?.title || ''}\n${prompt}`.toLowerCase();
+    const actionSignals = [
+      'correção baseada na análise',
+      'correcao baseada na analise',
+      'ação recomendada',
+      'acao recomendada',
+      'execute as correções',
+      'execute as correcoes',
+      'não faça uma nova análise',
+      'nao faca uma nova analise'
+    ];
 
     if (
       source === 'analysis' ||
       source === 'analysis-action' ||
       lowerPrompt.includes('[analysis-action]') ||
-      lowerPrompt.includes('[analysis-run:')
+      lowerPrompt.includes('[analysis-run:') ||
+      lowerPrompt.includes('[devpilot_stage=execute]') ||
+      lowerPrompt.includes('[devpilot_stage=correct]') ||
+      actionSignals.some(signal => legacyText.includes(signal))
     ) return 'action';
+
+    if (
+      source === 'execution-verification' ||
+      lowerPrompt.includes('[post-execution-verification]') ||
+      lowerPrompt.includes('[devpilot_stage=verify]')
+    ) return 'analysis';
 
     const marker = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
 
     if (marker === 'analysis-read-only' || marker === 'review') return 'analysis';
     if (marker === 'develop' || marker === 'fix') return 'execution';
 
-    const legacyText = `${task?.title || ''}\n${prompt}`.toLowerCase();
     const readOnlySignals = [
       'somente leitura',
       'não modifique arquivos',
@@ -143,15 +161,9 @@
     const tasks = typeof state !== 'undefined' && Array.isArray(state.tasks)
       ? state.tasks
       : [];
-    const rows = [...taskTableBody.querySelectorAll('tr')];
+    const rows = [...taskTableBody.querySelectorAll('tr.task-main-row')];
 
     rows.forEach((row, index) => {
-      const emptyCell = row.querySelector('td.empty');
-      if (emptyCell) {
-        emptyCell.colSpan = Math.max(Number(emptyCell.colSpan || 5), 6);
-        return;
-      }
-
       const task = tasks[index];
       if (!task || row.children.length < 2) return;
 
@@ -166,7 +178,11 @@
       }
 
       cell.innerHTML = `<span class="task-kind-badge ${kind}">${label}</span>`;
+      row.dataset.taskId = task.id || '';
     });
+
+    const emptyCell = taskTableBody.querySelector('td.empty');
+    if (emptyCell) emptyCell.colSpan = Math.max(Number(emptyCell.colSpan || 5), 6);
   }
 
   if (taskTableBody) {
