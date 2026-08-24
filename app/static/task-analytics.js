@@ -15,19 +15,38 @@
     const title = String(task.title || '');
     const prompt = String(task.prompt || '');
     const lowerPrompt = prompt.toLocaleLowerCase('pt-BR');
+    const text = (title + ' ' + prompt).toLocaleLowerCase('pt-BR');
+    const actionSignals = [
+      'correção baseada na análise',
+      'correcao baseada na analise',
+      'ação recomendada',
+      'acao recomendada',
+      'execute as correções',
+      'execute as correcoes',
+      'não faça uma nova análise',
+      'nao faca uma nova analise'
+    ];
 
     if (
       source === 'analysis' ||
       source === 'analysis-action' ||
       lowerPrompt.includes('[analysis-action]') ||
-      lowerPrompt.includes('[analysis-run:')
+      lowerPrompt.includes('[analysis-run:') ||
+      lowerPrompt.includes('[devpilot_stage=execute]') ||
+      lowerPrompt.includes('[devpilot_stage=correct]') ||
+      actionSignals.some(signal => text.includes(signal))
     ) return 'Ação';
+
+    if (
+      source === 'execution-verification' ||
+      lowerPrompt.includes('[post-execution-verification]') ||
+      lowerPrompt.includes('[devpilot_stage=verify]')
+    ) return 'Análise';
 
     const mode = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
     if (mode === 'analysis-read-only' || mode === 'review') return 'Análise';
     if (mode === 'develop' || mode === 'fix') return 'Execução';
 
-    const text = (title + ' ' + prompt).toLocaleLowerCase('pt-BR');
     return /an[aá]lis|audit|diagn[oó]st|revis/.test(text) ? 'Análise' : 'Execução';
   };
   const bars = values => {
@@ -84,7 +103,8 @@
       dashboard:'Painel',
       api:'API',
       analysis:'Análise automática',
-      'analysis-action':'Análise automática'
+      'analysis-action':'Execução automática',
+      'execution-verification':'Validação automática'
     })[String(task.source || '').toLowerCase()] || clean(task.source) || 'Outra');
     const completed = tasks.filter(task => normalizeStatus(task.status) === 'completed').length;
     const active = tasks.filter(task => ['awaiting_approval','queued','running','review','blocked'].includes(normalizeStatus(task.status))).length;
