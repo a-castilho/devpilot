@@ -45,6 +45,73 @@ def _repository_candidate(repository_name: str, attempt: int) -> str:
     return f"{repository_name[:100 - len(suffix)].rstrip('-')}{suffix}"
 
 
+def _response_payload(response) -> dict:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _validation_messages(response) -> list[str]:
+    payload = _response_payload(response)
+    messages: list[str] = []
+
+    root_message = payload.get("message")
+    if isinstance(root_message, str) and root_message.strip():
+        messages.append(root_message.strip())
+
+    errors = payload.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if isinstance(item, str) and item.strip():
+                messages.append(item.strip())
+                continue
+            if not isinstance(item, dict):
+                continue
+            message = item.get("message")
+            if isinstance(message, str) and message.strip():
+                messages.append(message.strip())
+
+    return messages
+
+
+def _is_repository_name_collision(response) -> bool:
+    if response.status_code != 422:
+        return False
+
+    payload = _response_payload(response)
+    errors = payload.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field") or "").strip().lower()
+            code = str(item.get("code") or "").strip().lower()
+            if field == "name" and code in {"already_exists", "already_taken"}:
+                return True
+
+    text = " ".join(_validation_messages(response)).lower()
+    collision_markers = (
+        "name already exists",
+        "already exists on this account",
+        "name has already been taken",
+        "name is already taken",
+        "repository already exists",
+    )
+    return any(marker in text for marker in collision_markers)
+
+
+def _validation_detail(response) -> str:
+    messages = _validation_messages(response)
+    unique: list[str] = []
+    for message in messages:
+        if message not in unique:
+            unique.append(message)
+    detail = " | ".join(unique).strip()
+    return detail[:600]
+
+
 def _translate_starter_error(status_code: int, *, operation: str) -> None:
     if status_code == 401:
         raise GitHubProvisioningError(
@@ -272,7 +339,18 @@ def _translate_creation_error(response) -> None:
             "A organização A Castilho não foi encontrada ou não está acessível pela credencial configurada.",
             404,
         )
-    if response.status_code >= 400 and response.status_code != 422:
+    if response.status_code == 422:
+        if _is_repository_name_collision(response):
+            return
+        detail = _validation_detail(response)
+        detail_text = f" Detalhe: {detail}." if detail else ""
+        raise GitHubProvisioningError(
+            "O GitHub recusou a criação do repositório por uma regra de validação da organização "
+            f"a-castilho.{detail_text} Verifique políticas de criação de repositórios, propriedades "
+            "obrigatórias e permissões da credencial GitHub.",
+            422,
+        )
+    if response.status_code >= 400:
         raise GitHubProvisioningError(
             f"Falha ao criar repositório no GitHub (HTTP {response.status_code}).", 502
         )
