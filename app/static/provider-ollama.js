@@ -141,15 +141,21 @@
   function refreshCatalogCard(data){
     const root=q('#pc-catalog');
     if(!root)return;
-    root.querySelector('[data-ollama-catalog="1"]')?.remove();
-    const article=document.createElement('article');
-    article.className='catalog-card';
-    article.dataset.ollamaCatalog='1';
+    let article=root.querySelector('[data-ollama-catalog="1"]');
+    if(!article){
+      article=document.createElement('article');
+      article.className='catalog-card';
+      article.dataset.ollamaCatalog='1';
+      article.innerHTML='<div class="catalog-row"><strong>Ollama Local</strong><span class="catalog-source"></span></div><p class="catalog-models"></p>';
+      root.append(article);
+    }
     const models=data?.models||[];
     const preview=models.slice(0,5).map(item=>String(item?.label||item?.id||item)).join(' · ');
-    article.innerHTML=`<div class="catalog-row"><strong>Ollama Local</strong><span class="catalog-source ${data?.source==='live'?'live':'reference'}">${data?.source==='live'?'live':'reference'}</span></div><p class="catalog-models"></p>`;
-    article.querySelector('.catalog-models').textContent=preview||(data?.warning||'Linux de homologação ainda não consultado.');
-    root.append(article);
+    const source=article.querySelector('.catalog-source');
+    const sourceName=data?.source==='live'?'live':'reference';
+    if(source){source.className=`catalog-source ${sourceName}`;source.textContent=sourceName}
+    const text=article.querySelector('.catalog-models');
+    if(text)text.textContent=preview||(data?.warning||'Linux de homologação ainda não consultado.');
   }
 
   async function loadCatalogCard(){
@@ -174,7 +180,7 @@
     const observer=new MutationObserver(()=>{
       installOption();
       polishConnections();
-      if(lastCatalog)refreshCatalogCard(lastCatalog);
+      if(lastCatalog&&!q('#pc-catalog [data-ollama-catalog="1"]'))refreshCatalogCard(lastCatalog);
     });
     const providers=q('#providers-view');
     if(providers)observer.observe(providers,{childList:true,subtree:true});
