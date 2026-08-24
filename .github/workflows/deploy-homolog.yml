@@ -91,3 +91,4 @@ jobs:
 
 # manual verification trigger: 2026-08-24T13:02:00-03:00 — project provisioning fallback redeploy
 # manual verification trigger: 2026-08-24T17:27:00-03:00 — Ollama local-first chat + five project ships
+# manual verification trigger: 2026-08-24T17:31:00-03:00 — visual project telemetry and compact cards
