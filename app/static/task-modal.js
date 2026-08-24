@@ -65,15 +65,55 @@
     window.setTimeout(refreshMode, 0);
   });
 
-  // A classificação visual segue o mesmo contrato do worker: uma ação nunca
-  // volta a aparecer como análise só porque contém o diagnóstico de origem.
+  // A classificação visual segue o mesmo contrato do worker. Estágios explícitos
+  // têm precedência sobre texto legado para evitar classificar uma correção como análise.
   const taskTableBody = document.querySelector('#tasks-table');
+
+  const taskKindLabels = {
+    correction: 'Correção',
+    verification: 'Validação',
+    review: 'Revisão',
+    analysis: 'Análise',
+    development: 'Desenvolvimento',
+    game: 'Jogo',
+    deployment: 'Deploy',
+    execution: 'Execução',
+    other: 'Outro'
+  };
 
   function taskKind(task) {
     const prompt = String(task?.prompt || '');
     const source = String(task?.source || '').toLowerCase();
-    const lowerPrompt = prompt.toLowerCase();
-    const legacyText = `${task?.title || ''}\n${prompt}`.toLowerCase();
+    const title = String(task?.title || '');
+    const lowerPrompt = prompt.toLocaleLowerCase('pt-BR');
+    const legacyText = `${title}\n${prompt}`.toLocaleLowerCase('pt-BR');
+    const marker = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
+
+    if (
+      lowerPrompt.includes('[devpilot_stage=correct]') ||
+      marker === 'fix'
+    ) return 'correction';
+
+    if (
+      source === 'execution-verification' ||
+      lowerPrompt.includes('[post-execution-verification]') ||
+      lowerPrompt.includes('[devpilot_stage=verify]')
+    ) return 'verification';
+
+    if (marker === 'review') return 'review';
+    if (marker === 'analysis-read-only') return 'analysis';
+    if (marker === 'develop') return 'development';
+
+    if (
+      lowerPrompt.includes('[devpilot_build_game_v1]') ||
+      /^\s*\[jogo\]/i.test(title)
+    ) return 'game';
+
+    if (
+      lowerPrompt.includes('[devpilot_stage=deploy]') ||
+      /(^|\s)deploy(ment|ar|ado|ando)?(\s|$)/i.test(title)
+    ) return 'deployment';
+
     const actionSignals = [
       'correção baseada na análise',
       'correcao baseada na analise',
@@ -91,20 +131,8 @@
       lowerPrompt.includes('[analysis-action]') ||
       lowerPrompt.includes('[analysis-run:') ||
       lowerPrompt.includes('[devpilot_stage=execute]') ||
-      lowerPrompt.includes('[devpilot_stage=correct]') ||
       actionSignals.some(signal => legacyText.includes(signal))
-    ) return 'action';
-
-    if (
-      source === 'execution-verification' ||
-      lowerPrompt.includes('[post-execution-verification]') ||
-      lowerPrompt.includes('[devpilot_stage=verify]')
-    ) return 'analysis';
-
-    const marker = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
-
-    if (marker === 'analysis-read-only' || marker === 'review') return 'analysis';
-    if (marker === 'develop' || marker === 'fix') return 'execution';
+    ) return 'execution';
 
     const readOnlySignals = [
       'somente leitura',
@@ -119,7 +147,7 @@
 
     return readOnlySignals.some(signal => legacyText.includes(signal))
       ? 'analysis'
-      : 'execution';
+      : 'other';
   }
 
   function ensureTaskKindStyles() {
@@ -129,9 +157,15 @@
     style.textContent = `
       .task-kind-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
       .task-kind-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
+      .task-kind-badge.correction{color:#ff8da1}
+      .task-kind-badge.verification{color:#ffd166}
+      .task-kind-badge.review{color:#c7a6ff}
       .task-kind-badge.analysis{color:#63e6be}
-      .task-kind-badge.action{color:#74c0fc}
+      .task-kind-badge.development{color:#74c0fc}
+      .task-kind-badge.game{color:#55e6ff}
+      .task-kind-badge.deployment{color:#f7b267}
       .task-kind-badge.execution{color:#74c0fc}
+      .task-kind-badge.other{color:#9eb1c8}
     `;
     document.head.appendChild(style);
   }
@@ -161,14 +195,17 @@
     const tasks = typeof state !== 'undefined' && Array.isArray(state.tasks)
       ? state.tasks
       : [];
-    const rows = [...taskTableBody.querySelectorAll('tr.task-main-row')];
+    // O renderer principal usa tr[data-task-id]; o renderer legado usa task-main-row.
+    // Aceitar ambos evita o cabeçalho Tipo com linhas ainda em cinco colunas.
+    const rows = [...taskTableBody.querySelectorAll('tr.task-main-row, tr[data-task-id]')];
 
     rows.forEach((row, index) => {
-      const task = tasks[index];
+      const rowTaskId = String(row.dataset.taskId || '');
+      const task = tasks.find(item => String(item?.id || '') === rowTaskId) || tasks[index];
       if (!task || row.children.length < 2) return;
 
       const kind = taskKind(task);
-      const label = kind === 'analysis' ? 'Análise' : 'Execução';
+      const label = taskKindLabels[kind] || taskKindLabels.other;
       let cell = row.querySelector('.task-kind-cell');
 
       if (!cell) {
@@ -179,6 +216,7 @@
 
       cell.innerHTML = `<span class="task-kind-badge ${kind}">${label}</span>`;
       row.dataset.taskId = task.id || '';
+      row.dataset.taskKind = kind;
     });
 
     const emptyCell = taskTableBody.querySelector('td.empty');
