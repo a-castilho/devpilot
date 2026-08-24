@@ -21,3 +21,14 @@ def test_insecure_lan_guard_preserves_voice_fallback_and_conversation_mode():
     assert "127.0.0.1" in guard
     assert "mobileAudioInput" not in guard
     assert "captureUnavailable = 'insecure-http'" not in guard
+
+
+def test_insecure_lan_guard_clears_stale_active_state_when_voice_stops():
+    guard = read("app/static/voice-insecure-lan-guard.js")
+
+    assert "const resetConversationMode = () => {" in guard
+    assert "card.hidden = true;" in guard
+    assert "voz desligada" in guard
+    assert "conversa por voz foi desligada" in guard
+    assert "modal.addEventListener('close', resetConversationMode);" in guard
+    assert "ensureConversationModeCard();\n      resetConversationMode();" in guard
