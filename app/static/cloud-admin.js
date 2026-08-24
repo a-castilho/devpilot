@@ -40,6 +40,8 @@
       .cloud-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:16px}
       .cloud-metric{border:1px solid var(--border,#26354a);border-radius:14px;padding:12px}
       .cloud-metric strong{display:block;font-size:22px;margin-top:4px}
+      .cloud-license-note{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;margin-bottom:16px;border-color:#36d399;background:rgba(54,211,153,.06)}
+      .cloud-license-note strong{white-space:nowrap}.cloud-license-note span{opacity:.8;line-height:1.45}
       .cloud-resource-list{display:grid;gap:8px;margin-top:12px}
       .cloud-resource{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(90px,.7fr) minmax(80px,.5fr) auto;gap:10px;align-items:center;border:1px solid var(--border,#26354a);border-radius:12px;padding:10px 12px}
       .cloud-resource small{opacity:.68}
@@ -48,6 +50,7 @@
       @media(max-width:760px){
         .cloud-admin-grid{grid-template-columns:1fr}
         .cloud-summary{grid-template-columns:1fr}
+        .cloud-license-note{display:grid}
         .cloud-resource{grid-template-columns:1fr auto}
         .cloud-resource .cloud-kind,.cloud-resource .cloud-status{grid-column:1}
         .cloud-admin-actions>*{flex:1 1 auto}
@@ -79,9 +82,14 @@
     section.innerHTML = `
       <div class="section-head">
         <div>
-          <p>Central do Super Admin para credenciais, conexão e inventário de Vercel, Render, Neon e GitHub.</p>
+          <p>Credenciais próprias para instalação self-managed/licença do código. Usuários de teste usam a infraestrutura gerenciada do DevPilot automaticamente.</p>
         </div>
         <button class="ghost" type="button" id="cloud-admin-refresh">Atualizar</button>
+      </div>
+
+      <div class="panel cloud-license-note">
+        <strong>🔐 Código adquirido / self-managed</strong>
+        <span>Cadastre tokens somente quando a instalação precisar operar nas contas cloud do comprador. No teste do DevPilot, o cliente não cadastra, recebe nem visualiza credenciais: o backend usa a cloud gerenciada como experiência de demonstração.</span>
       </div>
 
       <div id="cloud-admin-summary" class="cloud-summary"></div>
