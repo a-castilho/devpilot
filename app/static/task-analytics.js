@@ -174,3 +174,21 @@
   script.dataset.buildGameSubphasesLoader = 'true';
   document.head.appendChild(script);
 })();
+
+/* Compatibility guard: old workers could leave successful game tasks in review forever. */
+(() => {
+  if (typeof api !== 'function' || api.__buildGameReviewCompat) return;
+  const baseApi = api;
+  const wrappedApi = async (path, options = {}) => {
+    const data = await baseApi(path, options);
+    if (typeof path !== 'string' || !path.startsWith('/tasks?') || !Array.isArray(data)) return data;
+    return data.map(task => {
+      const gameTask = String(task?.prompt || '').includes('[DEVPILOT_BUILD_GAME_V1]');
+      const legacyReview = String(task?.status || '').toLowerCase() === 'review';
+      if (gameTask && legacyReview && task?.requires_approval !== true) return {...task, status:'completed'};
+      return task;
+    });
+  };
+  wrappedApi.__buildGameReviewCompat = true;
+  api = wrappedApi;
+})();
