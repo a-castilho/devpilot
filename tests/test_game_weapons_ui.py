@@ -26,13 +26,19 @@ def test_new_task_becomes_weapon_development_only_in_game_mode():
     assert "Desenvolver arma" in source
 
 
-def test_each_devpilot_mode_has_a_weapon_identity_and_normal_mode_is_restored():
+def test_each_devpilot_mode_uses_the_same_weapon_names_as_the_workshop():
     source = GAME_WEAPONS_JS.read_text(encoding="utf-8")
 
-    assert "Radar · analisar / diagnosticar" in source
-    assert "Canhão · desenvolver / implementar" in source
-    assert "Laser de reparo · corrigir / depurar" in source
-    assert "Escudo · revisar / validar" in source
+    assert "📡 Radar de análise · analisar / diagnosticar" in source
+    assert "⚡ Laser construtor · desenvolver / implementar" in source
+    assert "🎯 Canhão de correção · corrigir / depurar" in source
+    assert "📡 Radar de análise · revisar / validar" in source
+    assert "segurança, testes, deploy e Linux" in source
+
+
+def test_normal_task_vocabulary_is_restored_outside_game_mode():
+    source = GAME_WEAPONS_JS.read_text(encoding="utf-8")
+
     assert "NOVA TAREFA" in source
     assert "Analisar / diagnosticar" in source
     assert "Desenvolver / implementar" in source
