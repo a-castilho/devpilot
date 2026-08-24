@@ -20,10 +20,10 @@ def _api_base_url() -> str:
 
 
 def _listen_address() -> str:
-    # The DevPilot app normally runs in Docker on the same homologation Linux host.
-    # Binding on all host interfaces makes host.docker.internal usable from the app
-    # container. Operators can restrict this with DEVPILOT_OLLAMA_LISTEN.
-    return os.environ.get("DEVPILOT_OLLAMA_LISTEN", "0.0.0.0:11434").strip()
+    # Homologation can override this when the Ollama API must also be reachable
+    # from a container on the same Linux host. The default stays loopback-only;
+    # DevPilot talks to Ollama through the signed Linux Agent proxy.
+    return os.environ.get("DEVPILOT_OLLAMA_LISTEN", "127.0.0.1:11434").strip()
 
 
 def _tags(timeout: float = 2.0) -> list[str]:
@@ -59,12 +59,7 @@ def _log_path(data_dir: Path) -> Path:
 
 
 def ensure_ollama(data_dir: Path, *, startup_timeout: float = 10.0) -> dict[str, Any]:
-    """Ensure one Ollama server process is reachable on the homologation Linux host.
-
-    No shell command is evaluated. The executable path is resolved with shutil.which and
-    started with a fixed argument array. If Ollama is already healthy, no process is
-    created.
-    """
+    """Ensure one Ollama server process is reachable on the homologation Linux host."""
     try:
         models = _tags()
         return {
@@ -101,7 +96,6 @@ def ensure_ollama(data_dir: Path, *, startup_timeout: float = 10.0) -> dict[str,
         log_handle.close()
         raise OllamaRuntimeError("Não foi possível iniciar o Ollama no Linux de homologação") from error
     finally:
-        # Popen keeps its duplicated file descriptor; the agent does not need to retain ours.
         if not log_handle.closed:
             log_handle.close()
 
@@ -121,3 +115,54 @@ def ensure_ollama(data_dir: Path, *, startup_timeout: float = 10.0) -> dict[str,
             last_error = error
 
     raise OllamaRuntimeError("Ollama foi iniciado, mas a API não ficou disponível a tempo") from last_error
+
+
+def chat_ollama(
+    *,
+    model: str,
+    instructions: str,
+    input_text: str,
+    timeout: float = 60.0,
+) -> dict[str, Any]:
+    installed = _tags(timeout=3.0)
+    if model not in installed:
+        raise OllamaRuntimeError(f"Modelo Ollama não instalado: {model}")
+
+    body = json.dumps(
+        {
+            "model": model,
+            "stream": False,
+            "messages": [
+                {"role": "system", "content": instructions},
+                {"role": "user", "content": input_text},
+            ],
+            "options": {"num_predict": 280},
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        f"{_api_base_url()}/api/chat",
+        data=body,
+        headers={
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+            "User-Agent": "DevPilot-Linux-Agent/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        raise OllamaRuntimeError("Ollama falhou ao gerar a resposta no Linux de homologação") from error
+
+    message = payload.get("message") or {}
+    answer = str(message.get("content") or payload.get("response") or "").strip()
+    if not answer:
+        raise OllamaRuntimeError("Ollama retornou uma resposta vazia")
+    return {
+        "answer": answer,
+        "model": model,
+        "input_tokens": int(payload.get("prompt_eval_count") or 0),
+        "output_tokens": int(payload.get("eval_count") or 0),
+    }
