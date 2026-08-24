@@ -22,6 +22,7 @@ from app.host_action_routes import router as host_action_router
 from app.investia_admin_routes import router as investia_admin_router
 from app.investia_public_routes import router as investia_public_router
 from app.linux_routes import router as linux_router
+from app.local_test_routes import router as local_test_router
 from app.ollama_provider_routes import router as ollama_provider_router
 from app.product_delivery_routes import router as product_delivery_router
 from app.project_provisioning_routes import router as project_provisioning_router
@@ -138,6 +139,7 @@ app.include_router(host_action_router)
 app.include_router(investia_admin_router)
 app.include_router(investia_public_router)
 app.include_router(linux_router)
+app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
@@ -228,6 +230,7 @@ def spa(path: str):
         '<script src="/assets/tws-example.js" defer></script>',
         '<script src="/assets/deploy-admin.js" defer></script>',
         '<script src="/assets/cloud-admin.js" defer></script>',
+        '<script src="/assets/super-admin-local-test.js" defer></script>',
         '<script src="/assets/investia-admin.js" defer></script>',
         '<script src="/assets/investia-homologation.js" defer></script>',
         '<script src="/assets/career-linkedin.js" defer></script>',
