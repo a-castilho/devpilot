@@ -41,7 +41,11 @@
     return {title, prompt:'', source, type, status, priority};
   };
 
-  const tasksFromTable = () => [...document.querySelectorAll('#tasks-table tr.task-main-row')]
+  const tasksFromTable = () => [
+    ...document.querySelectorAll(
+      '#tasks-table tr.task-main-row[data-task-id], #tasks-table tr[data-task-id]'
+    )
+  ]
     .map(taskFromRow)
     .filter(Boolean);
 
