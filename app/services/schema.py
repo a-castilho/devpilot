@@ -33,6 +33,8 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 ]
             )
 
+    # Older workers left successful executions in review even though the product
+    # has no post-run review transition. Normalize only that dead-end state.
     if "tasks" in tables:
         statements.append("UPDATE tasks SET status = 'completed' WHERE status = 'review'")
 
@@ -63,6 +65,9 @@ def ensure_runtime_schema(engine: Engine) -> None:
             ]
         )
 
+        # SQLAlchemy Enum types are persistent PostgreSQL objects. If an older
+        # database created the enum before newer publication states existed, add
+        # the values in-place instead of requiring the volume to be recreated.
         if engine.dialect.name == "postgresql":
             enum_name = _postgres_enum_name(inspector, "investia_project_configs", "status")
             if enum_name:
