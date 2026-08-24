@@ -238,6 +238,7 @@ def spa(path: str):
         '<script src="/assets/linux-terminal.js" defer></script>',
         '<script src="/assets/linux-beginner-coach.js" defer></script>',
         '<script src="/assets/build-game.js" defer></script>',
+        '<script src="/assets/mobile-game-mode.js" defer></script>',
         '<script src="/assets/game-linux-training.js" defer></script>',
         '<script src="/assets/audit-integrity.js" defer></script>',
         '<script src="/assets/mission-control.js" defer></script>',
