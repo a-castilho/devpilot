@@ -112,11 +112,60 @@ def provisioning_client_error(principal: Principal, error: Exception) -> HTTPExc
     return HTTPException(status_code=503, detail=GENERIC_PROJECT_CREATE_ERROR)
 
 
+def persist_deferred_project(
+    db: Session,
+    *,
+    ws: Workspace,
+    name: str,
+    slug: str,
+    description: str,
+    agents_md: str,
+    codex_config: dict,
+    organization: Organization | None,
+    default_branch: str,
+    actor: str,
+    source: str,
+) -> Project:
+    config = dict(codex_config)
+    config["repository_pending"] = True
+    config["repository_mode"] = "deferred"
+
+    item = Project(
+        workspace_id=ws.id,
+        organization_id=organization.id if organization else None,
+        name=name,
+        slug=slug,
+        description=description,
+        repository_url="",
+        default_branch=default_branch,
+        agents_md=agents_md,
+        codex_config=json.dumps(config),
+    )
+    db.add(item)
+    db.flush()
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=item.id,
+        actor=actor,
+        action="project.created_without_repository",
+        details={
+            "slug": item.slug,
+            "repository_pending": True,
+            "organization_id": item.organization_id,
+            "source": source,
+        },
+    )
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.post("/projects/deferred", status_code=201)
 def create_project_without_repository(
     payload: ProjectDeferredCreate,
     db: Session = Depends(get_db),
-    _: str = Depends(require_super_admin),
+    actor: str = Depends(require_super_admin),
 ):
     """Super Admin escape hatch: create now and connect a Git repository later."""
     ws = workspace(db)
@@ -127,38 +176,19 @@ def create_project_without_repository(
         raise HTTPException(409, f"Project slug already exists: {payload.slug}")
 
     organization = optional_organization(db, ws.id, payload.organization_id)
-    config = dict(payload.codex_config)
-    config["repository_pending"] = True
-    config["repository_mode"] = "deferred"
-
-    item = Project(
-        workspace_id=ws.id,
-        organization_id=organization.id if organization else None,
+    return persist_deferred_project(
+        db,
+        ws=ws,
         name=payload.name,
         slug=payload.slug,
         description=payload.description,
-        repository_url="",
-        default_branch=payload.default_branch,
         agents_md=payload.agents_md,
-        codex_config=json.dumps(config),
+        codex_config=payload.codex_config,
+        organization=organization,
+        default_branch=payload.default_branch,
+        actor=actor,
+        source="manual",
     )
-    db.add(item)
-    db.flush()
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=item.id,
-        actor="owner",
-        action="project.created_without_repository",
-        details={
-            "slug": item.slug,
-            "repository_pending": True,
-            "organization_id": item.organization_id,
-        },
-    )
-    db.commit()
-    db.refresh(item)
-    return item
 
 
 @router.post("/projects/provision", status_code=201)
@@ -199,6 +229,24 @@ def provision_project(
                 "error": str(error.detail) if isinstance(error, HTTPException) else str(error),
             },
         )
+
+        # A falha do GitHub não deve impedir o Super Admin de cadastrar o projeto.
+        # O projeto fica explicitamente pendente de repositório e pode ser conectado depois.
+        if principal.role is Role.SUPER_ADMIN:
+            return persist_deferred_project(
+                db,
+                ws=ws,
+                name=payload.name,
+                slug=payload.slug,
+                description=payload.description,
+                agents_md=payload.agents_md,
+                codex_config=payload.codex_config,
+                organization=organization,
+                default_branch="main",
+                actor=actor,
+                source="automatic_provision_fallback",
+            )
+
         db.commit()
         raise provisioning_client_error(principal, error) from error
 
