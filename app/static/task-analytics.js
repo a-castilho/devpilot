@@ -212,3 +212,13 @@
   wrappedApi.__buildGameReviewCompat = true;
   api = wrappedApi;
 })();
+
+/* Load the ship weapons development workshop. */
+(() => {
+  if (document.querySelector('script[data-build-game-weapons-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-weapons.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameWeaponsLoader = 'true';
+  document.head.appendChild(script);
+})();
