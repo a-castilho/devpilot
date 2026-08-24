@@ -159,7 +159,7 @@
 (() => {
   if (document.querySelector('script[data-build-game-loader]')) return;
   const script = document.createElement('script');
-  script.src = '/assets/build-game.js?v=20260824-1';
+  script.src = '/assets/build-game.js?v=20260824-2';
   script.async = false;
   script.dataset.buildGameLoader = 'true';
   document.head.appendChild(script);
@@ -169,9 +169,19 @@
 (() => {
   if (document.querySelector('script[data-build-game-subphases-loader]')) return;
   const script = document.createElement('script');
-  script.src = '/assets/build-game-subphases.js?v=20260824-1';
+  script.src = '/assets/build-game-subphases.js?v=20260824-2';
   script.async = false;
   script.dataset.buildGameSubphasesLoader = 'true';
+  document.head.appendChild(script);
+})();
+
+/* Harden New game so a fresh mission resets progress, XP, log and victory state. */
+(() => {
+  if (document.querySelector('script[data-build-game-new-session-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-new-session.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameNewSessionLoader = 'true';
   document.head.appendChild(script);
 })();
 
@@ -179,7 +189,7 @@
 (() => {
   if (document.querySelector('script[data-build-game-url-bonus-loader]')) return;
   const script = document.createElement('script');
-  script.src = '/assets/build-game-url-bonus.js?v=20260824-1';
+  script.src = '/assets/build-game-url-bonus.js?v=20260824-2';
   script.async = false;
   script.dataset.buildGameUrlBonusLoader = 'true';
   document.head.appendChild(script);
