@@ -19,6 +19,9 @@ enable_executor_image_support(executor_service)
 execute_task = executor_service.execute_task
 
 
+PIPELINE_BLOCKING_STATUSES = {"needs_attention", "needs_authorization"}
+
+
 def _failure_text(result: dict | None, error: Exception | None) -> str:
     if error is not None:
         return str(error)
@@ -155,8 +158,6 @@ def process_one() -> bool:
         final_error: Exception | None = None
 
         for execution_attempt in range(1, recovery.MAX_ATTEMPTS + 1):
-            # Re-check before every self-healing attempt so a retry cannot continue
-            # spending after the previous attempt consumed the remaining budget.
             budget_reason = budget_block_reason(
                 db,
                 workspace_id=task.workspace_id,
@@ -229,7 +230,7 @@ def process_one() -> bool:
                 result = recovery.failure_result(decision, failure_text)
             else:
                 result["self_healing"] = _self_healing_payload(recovery_events, decision.status)
-                if decision.requires_authorization or decision.status in {"needs_attention", "needs_authorization"}:
+                if decision.requires_authorization or decision.status in PIPELINE_BLOCKING_STATUSES:
                     result["summary"] = decision.message
             break
 
@@ -243,19 +244,28 @@ def process_one() -> bool:
             recovery_events.append(decision.to_dict())
             result = recovery.failure_result(decision, str(final_error or "Execution failed"))
 
-        run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
+        healing = result.get("self_healing") if isinstance(result, dict) else None
+        healing_status = str(healing.get("status") or "") if isinstance(healing, dict) else ""
+        pipeline_blocked = bool(
+            result.get("exit_code", 0) != 0
+            and isinstance(healing, dict)
+            and healing_status in PIPELINE_BLOCKING_STATUSES
+        )
+
+        if result.get("exit_code", 0) == 0:
+            run.status = "success"
+            task.status = TaskStatus.review
+        elif pipeline_blocked:
+            run.status = "blocked"
+            task.status = TaskStatus.blocked
+        else:
+            run.status = "failed"
+            task.status = TaskStatus.failed
+
         run.summary = result.get("summary", "Execution completed")
         run.logs = json.dumps(result, ensure_ascii=False)
 
-        healing = result.get("self_healing") if isinstance(result, dict) else None
         needs_authorization = bool(isinstance(healing, dict) and healing.get("requires_authorization"))
-        if run.status == "success":
-            task.status = TaskStatus.review
-        elif needs_authorization:
-            task.status = TaskStatus.blocked
-        else:
-            task.status = TaskStatus.failed
-
         if isinstance(healing, dict):
             record(
                 db,
@@ -271,6 +281,7 @@ def process_one() -> bool:
                     "strategy": healing.get("strategy", "none"),
                     "attempts": run.attempt,
                     "requires_authorization": needs_authorization,
+                    "pipeline_blocked": pipeline_blocked,
                 },
             )
 
