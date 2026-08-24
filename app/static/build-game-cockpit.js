@@ -14,6 +14,7 @@
   const REFUND_TASK_STATUSES = new Set(['failed', 'cancelled']);
   let voiceTestSequence = 0;
   let linuxRefreshSequence = 0;
+  const linuxRefreshInFlight = new Map();
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -318,25 +319,52 @@
   }
 
   async function refreshLinuxEconomy(view) {
-    const sequence = ++linuxRefreshSequence;
     const shell = view.querySelector('.build-game-shell');
     if (!shell) return;
+    const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
+    if (!projectId) return;
+
+    const requestKey = `${projectId}:${gameMissionId()}:${linuxEarned(view)}`;
+    const pending = linuxRefreshInFlight.get(requestKey);
+    if (pending) return pending;
+
+    const sequence = ++linuxRefreshSequence;
+    const request = (async () => {
+      try {
+        const tasks = await fetchProjectTasks(projectId);
+        if (sequence !== linuxRefreshSequence || !view.isConnected) return;
+        const economy = linuxEconomy(view, tasks);
+        const fingerprint = [
+          projectId,
+          gameMissionId(),
+          economy.earned,
+          economy.balance,
+          economy.latest?.id || '',
+          economy.latestStatus,
+        ].join(':');
+        const existingWallet = shell.querySelector('[data-linux-wallet]');
+        if (existingWallet?.dataset.linuxWalletFingerprint === fingerprint) return;
+
+        const host = document.createElement('div');
+        host.innerHTML = linuxWalletMarkup(economy).trim();
+        const wallet = host.firstElementChild;
+        if (!wallet) return;
+        wallet.dataset.linuxWalletFingerprint = fingerprint;
+        existingWallet?.remove();
+        const cockpit = shell.querySelector('[data-build-game-cockpit]');
+        if (cockpit) cockpit.insertAdjacentElement('afterend', wallet);
+        else shell.prepend(wallet);
+        wallet.querySelector('[data-linux-infra-buy]')?.addEventListener('click', event => activateLinuxInfra(view, event.currentTarget));
+      } catch (error) {
+        if (sequence === linuxRefreshSequence) toastMessage(`Moeda Linux indisponível: ${error?.message || 'falha ao carregar'}`);
+      }
+    })();
+
+    linuxRefreshInFlight.set(requestKey, request);
     try {
-      const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
-      const tasks = await fetchProjectTasks(projectId);
-      if (sequence !== linuxRefreshSequence || !view.isConnected) return;
-      const economy = linuxEconomy(view, tasks);
-      const host = document.createElement('div');
-      host.innerHTML = linuxWalletMarkup(economy).trim();
-      const wallet = host.firstElementChild;
-      if (!wallet) return;
-      shell.querySelector('[data-linux-wallet]')?.remove();
-      const cockpit = shell.querySelector('[data-build-game-cockpit]');
-      if (cockpit) cockpit.insertAdjacentElement('afterend', wallet);
-      else shell.prepend(wallet);
-      wallet.querySelector('[data-linux-infra-buy]')?.addEventListener('click', event => activateLinuxInfra(view, event.currentTarget));
-    } catch (error) {
-      if (sequence === linuxRefreshSequence) toastMessage(`Moeda Linux indisponível: ${error?.message || 'falha ao carregar'}`);
+      return await request;
+    } finally {
+      if (linuxRefreshInFlight.get(requestKey) === request) linuxRefreshInFlight.delete(requestKey);
     }
   }
 
@@ -385,7 +413,7 @@
 
     const existing = shell.querySelector('[data-build-game-cockpit]');
     if (existing) {
-      void refreshLinuxEconomy(view);
+      if (!shell.querySelector('[data-linux-wallet]')) void refreshLinuxEconomy(view);
       return;
     }
 
