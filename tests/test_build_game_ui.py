@@ -50,20 +50,23 @@ def test_game_preserves_history_and_supports_new_missions():
     assert "XP" in source
 
 
-def test_completed_game_unlocks_verified_test_url_bonus():
+def test_completed_game_requires_real_verified_url_before_mission_completion():
     loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
     bonus = BUILD_GAME_URL_BONUS_JS.read_text(encoding="utf-8")
 
     assert "/assets/build-game-url-bonus.js?v=20260824-1" in loader
     assert "data-build-game-url-bonus-loader" in loader
     assert "#build-game-view .build-game-victory" in bonus
-    assert "BÔNUS DO JOGO DESBLOQUEADO" in bonus
-    assert "Resgatar bônus e gerar URL" in bonus
+    assert "CHEFE FINAL VENCIDO · ENTREGA PENDENTE" in bonus
+    assert "A missão só será concluída quando uma URL pública real responder com sucesso." in bonus
+    assert "ENTREGA FINAL CONCLUÍDA" in bonus
+    assert "Publicar e gerar URL" in bonus
     assert "/delivery/${action}" in bonus
-    assert "status === 'ready' && url" in bonus
+    assert "/delivery/validate-url" in bonus
+    assert "missionDelivered(delivery)" in bonus
     assert "PRONTO PARA TESTAR" in bonus
     assert "noopener noreferrer" in bonus
-    assert "^https?:\\/\\/" in bonus
+    assert "^https:\\/\\/" in bonus
 
 
 def test_legacy_review_does_not_freeze_game_progression():
