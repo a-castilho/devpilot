@@ -32,10 +32,25 @@ def ensure_runtime_schema(engine: Engine) -> None:
                     "CREATE INDEX IF NOT EXISTS ix_projects_organization_id ON projects (organization_id)",
                 ]
             )
+        if "owner_user_id" not in project_columns:
+            statements.extend(
+                [
+                    "ALTER TABLE projects ADD COLUMN owner_user_id VARCHAR(36)",
+                    "CREATE INDEX IF NOT EXISTS ix_projects_owner_user_id ON projects (owner_user_id)",
+                ]
+            )
 
     # Older workers left successful executions in review even though the product
     # has no post-run review transition. Normalize only that dead-end state.
     if "tasks" in tables:
+        task_columns = _column_names(inspector, "tasks")
+        if "owner_user_id" not in task_columns:
+            statements.extend(
+                [
+                    "ALTER TABLE tasks ADD COLUMN owner_user_id VARCHAR(36)",
+                    "CREATE INDEX IF NOT EXISTS ix_tasks_owner_user_id ON tasks (owner_user_id)",
+                ]
+            )
         statements.append("UPDATE tasks SET status = 'completed' WHERE status = 'review'")
 
     # Base.metadata.create_all() creates new Investia tables, but it cannot evolve a
@@ -92,6 +107,53 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 "UPDATE users SET role = 'VIEWER' WHERE role = 'user'",
             ]
         )
+
+        # Legacy DevPilot data predates per-account ownership. Assign those rows to
+        # the persisted SUPER_ADMIN of the same workspace instead of exposing them
+        # to every newly-created user. Tasks inherit the owner of their project.
+        if "projects" in tables:
+            statements.append(
+                """
+                UPDATE projects
+                SET owner_user_id = (
+                    SELECT users.id
+                    FROM users
+                    WHERE users.workspace_id = projects.workspace_id
+                      AND users.role = 'SUPER_ADMIN'
+                    ORDER BY users.created_at ASC, users.id ASC
+                    LIMIT 1
+                )
+                WHERE owner_user_id IS NULL
+                """
+            )
+        if "tasks" in tables and "projects" in tables:
+            statements.append(
+                """
+                UPDATE tasks
+                SET owner_user_id = (
+                    SELECT projects.owner_user_id
+                    FROM projects
+                    WHERE projects.id = tasks.project_id
+                    LIMIT 1
+                )
+                WHERE owner_user_id IS NULL
+                """
+            )
+        if "tasks" in tables:
+            statements.append(
+                """
+                UPDATE tasks
+                SET owner_user_id = (
+                    SELECT users.id
+                    FROM users
+                    WHERE users.workspace_id = tasks.workspace_id
+                      AND users.role = 'SUPER_ADMIN'
+                    ORDER BY users.created_at ASC, users.id ASC
+                    LIMIT 1
+                )
+                WHERE owner_user_id IS NULL
+                """
+            )
 
     if not statements:
         return
