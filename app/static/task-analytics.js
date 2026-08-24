@@ -1,14 +1,16 @@
 (() => {
   const root = () => document.querySelector('#task-analytics');
   const clean = value => String(value || '').replaceAll('_', ' ').trim();
+  const normalizeStatus = value => clean(value).toLowerCase().replaceAll(' ', '_');
   const ptStatus = value => ({
     awaiting_approval:'Aguardando aprovação',queued:'Na fila',running:'Executando',
-    review:'Em revisão',completed:'Concluída',failed:'Falhou',cancelled:'Cancelada'
-  })[value] || clean(value) || 'Sem status';
+    review:'Em revisão',completed:'Concluída',failed:'Falhou',cancelled:'Cancelada',blocked:'Bloqueada'
+  })[normalizeStatus(value)] || clean(value) || 'Sem status';
   const countBy = (items, selector) => items.reduce((acc,item) => {
     const key = selector(item); acc[key] = (acc[key] || 0) + 1; return acc;
   }, {});
   const taskType = task => {
+    if (task.type) return clean(task.type);
     const text = (String(task.title || '') + ' ' + String(task.prompt || '')).toLocaleLowerCase('pt-BR');
     return /an[aá]lis|audit|diagn[oó]st|revis/.test(text) ? 'Análise' : 'Execução';
   };
@@ -22,15 +24,48 @@
       '<strong class="task-bar-value">'+value+'</strong></div>'
     ).join('') + '</div>';
   };
+
+  const taskFromRow = row => {
+    const cells = [...row.querySelectorAll('td')];
+    if (cells.length < 4) return null;
+    const hasTypeColumn = cells.length >= 6;
+    const statusIndex = hasTypeColumn ? 3 : 2;
+    const priorityIndex = hasTypeColumn ? 4 : 3;
+    const title = cells[0]?.querySelector('strong')?.textContent?.trim() || '';
+    const source = cells[1]?.textContent?.trim() || '';
+    const type = hasTypeColumn ? cells[2]?.textContent?.trim() || '' : '';
+    const statusNode = cells[statusIndex]?.querySelector('.status');
+    const statusClass = [...(statusNode?.classList || [])].find(name => name !== 'status');
+    const status = normalizeStatus(statusClass || statusNode?.textContent || cells[statusIndex]?.textContent);
+    const priority = Number(String(cells[priorityIndex]?.textContent || '').replace(/[^0-9.-]/g, '')) || 0;
+    return {title, prompt:'', source, type, status, priority};
+  };
+
+  const tasksFromTable = () => [
+    ...document.querySelectorAll(
+      '#tasks-table tr.task-main-row[data-task-id], #tasks-table tr[data-task-id]'
+    )
+  ]
+    .map(taskFromRow)
+    .filter(Boolean);
+
+  const analyticsTasks = () => {
+    const stateTasks = typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : [];
+    const tableTasks = tasksFromTable();
+    if (!stateTasks.length && tableTasks.length) return tableTasks;
+    if (tableTasks.length && tableTasks.length !== stateTasks.length) return tableTasks;
+    return stateTasks.length ? stateTasks : tableTasks;
+  };
+
   window.renderTaskAnalytics = () => {
     const target = root();
     if (!target) return;
-    const tasks = Array.isArray(state.tasks) ? state.tasks : [];
+    const tasks = analyticsTasks();
     const statusValues = countBy(tasks, task => ptStatus(task.status));
     const typeValues = countBy(tasks, taskType);
-    const sourceValues = countBy(tasks, task => ({voice:'Voz',dashboard:'Painel',api:'API'}[task.source] || clean(task.source) || 'Outra'));
-    const completed = tasks.filter(task => task.status === 'completed').length;
-    const active = tasks.filter(task => ['queued','running','review'].includes(task.status)).length;
+    const sourceValues = countBy(tasks, task => ({voice:'Voz',dashboard:'Painel',api:'API'}[String(task.source || '').toLowerCase()] || clean(task.source) || 'Outra'));
+    const completed = tasks.filter(task => normalizeStatus(task.status) === 'completed').length;
+    const active = tasks.filter(task => ['awaiting_approval','queued','running','review','blocked'].includes(normalizeStatus(task.status))).length;
     const avgPriority = tasks.length ? Math.round(tasks.reduce((sum,task) => sum + Number(task.priority || 0), 0) / tasks.length) : 0;
     const priority = [
       ['Baixa · 0–39',tasks.filter(t => Number(t.priority || 0) < 40).length],
@@ -52,7 +87,28 @@
         '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">'+priority.map(([label,value]) => '<div class="task-priority-item"><i></i><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></article>'+
       '</div>';
   };
-  document.addEventListener('DOMContentLoaded', () => window.renderTaskAnalytics());
+
+  const observeTasks = () => {
+    const table = document.querySelector('#tasks-table');
+    if (!table || table.dataset.analyticsObserved === '1') return;
+    table.dataset.analyticsObserved = '1';
+    let scheduled = false;
+    new MutationObserver(() => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        window.renderTaskAnalytics();
+      });
+    }).observe(table, {childList:true, subtree:true, characterData:true});
+  };
+
+  const boot = () => {
+    observeTasks();
+    window.renderTaskAnalytics();
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
 })();
 
 /* Load project-scoped system testing workspace. */
