@@ -195,11 +195,26 @@
     if (target) target.textContent = providersLoaded ? String(active) : '—';
   };
 
+  const readOverviewFromDom = () => {
+    const values = {};
+    document.querySelectorAll('#metrics .metric').forEach(metric => {
+      const label = metric.querySelector('span')?.textContent?.trim().toLowerCase();
+      const raw = metric.querySelector('strong')?.textContent?.trim();
+      const value = Number(raw);
+      if (!label || !Number.isFinite(value)) return;
+      if (label === 'projetos') values.projects = value;
+      if (label === 'tarefas') values.tasks = value;
+      if (label === 'em andamento') values.active = value;
+      if (label === 'concluídas') values.completed = value;
+    });
+    return Object.keys(values).length ? values : null;
+  };
+
   const renderMission = overview => {
     if (overview) overviewSnapshot = overview;
     createPanel();
     const current = getState();
-    const data = overviewSnapshot || {};
+    const data = overviewSnapshot || readOverviewFromDom() || {};
     const projects = current.projects || [];
     const tasks = current.tasks || [];
     const active = data.active ?? tasks.filter(task => ['running', 'in_progress', 'processing', 'queued'].includes(String(task.status).toLowerCase())).length;
@@ -225,7 +240,7 @@
     const radarDetail = document.querySelector('#mc-radar-detail');
     const authenticated = Boolean(current.currentUser);
 
-    if (status) status.textContent = authenticated ? 'SISTEMAS CONECTADOS' : 'CONEXÃO NECESSÁRIA';
+    if (status) status.textContent = authenticated ? 'SESSÃO CONECTADA' : 'CONEXÃO NECESSÁRIA';
     if (detail) detail.textContent = authenticated
       ? `${projects.length} projeto(s) carregado(s) · ${tasks.length} tarefa(s) recente(s) disponíveis no painel.`
       : 'Autentique-se para carregar os dados operacionais da nave.';
@@ -246,7 +261,7 @@
       providersLoaded = true;
       renderProviders();
     } catch (_) {
-      providersLoaded = true;
+      providersLoaded = false;
       providersSnapshot = [];
       renderProviders();
     }
