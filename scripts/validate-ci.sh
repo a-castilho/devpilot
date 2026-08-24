@@ -35,6 +35,7 @@ node --check app/static/reports.js
 node --check app/static/project-provisioning.js
 node --check app/static/provider-models.js
 node --check app/static/voice-project-start.js
+node --check app/static/voice-chatgpt-layout.js
 node --check app/static/voice-local-update.js
 node --check app/static/voice-insecure-lan-guard.js
 node --check app/static/tasks-lazy-load.js
