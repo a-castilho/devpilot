@@ -100,13 +100,3 @@
     openGraphs(button);
   });
 })();
-
-/* Load the Build Game cockpit skin and DevPilotVoz bridge. */
-(() => {
-  if (document.querySelector('script[data-build-game-cockpit-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/build-game-cockpit.js?v=20260824-1';
-  script.defer = true;
-  script.dataset.buildGameCockpitLoader = 'true';
-  document.head.appendChild(script);
-})();
