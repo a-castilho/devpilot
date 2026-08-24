@@ -36,6 +36,7 @@ class TerminalSession:
     master_fd: int
     log_path: Path
     metadata_path: Path
+    git_provider: str | None = None
     state: str = "running"
     exit_code: int | None = None
     closed_at: str | None = None
@@ -52,6 +53,7 @@ class TerminalSession:
                 "actor": self.actor,
                 "cwd": self.cwd,
                 "linux_user": self.linux_user,
+                "git_provider": self.git_provider,
                 "created_at": self.created_at,
                 "last_activity_at": self.last_activity_at,
                 "state": self.state,
@@ -149,7 +151,12 @@ class SessionManager:
             "reason": reason,
         }
 
-    def _direct_user_command(self, target_cwd: Path) -> tuple[list[str], str, str]:
+    def _direct_user_command(
+        self,
+        target_cwd: Path,
+        *,
+        preserve_env: tuple[str, ...] = (),
+    ) -> tuple[list[str], str, str]:
         status = self.direct_user_status()
         if not status.get("ready"):
             raise TerminalUserUnavailable(
@@ -165,20 +172,46 @@ class SessionManager:
         sudo_path = shutil.which("sudo")
         if not sudo_path:
             raise TerminalUserUnavailable("sudo não está disponível para iniciar o usuário DevPilot")
-        return (
+        command = [sudo_path, "-n", "-H", "-u", username]
+        if preserve_env:
+            command.append(f"--preserve-env={','.join(preserve_env)}")
+        command.extend(
             [
-                sudo_path,
-                "-n",
-                "-H",
-                "-u",
-                username,
                 "--",
                 str(self.direct_user_launcher),
                 str(target_cwd),
-            ],
-            "/",
-            username,
+            ]
         )
+        return command, "/", username
+
+    @staticmethod
+    def _git_environment(git_auth: dict[str, str] | None) -> tuple[dict[str, str], str | None]:
+        if not git_auth:
+            return {}, None
+        provider = str(git_auth.get("provider") or "").strip().lower()
+        host = str(git_auth.get("host") or "").strip().lower()
+        token = str(git_auth.get("token") or "").strip()
+        if provider != "github" or host != "github.com":
+            raise ValueError("Provedor Git do terminal não suportado")
+        if len(token) < 8:
+            raise ValueError("Credencial GitHub do terminal é inválida")
+
+        helper = (
+            "!f() { printf '%s\\n' 'username=x-access-token' "
+            "\"password=$GH_TOKEN\"; }; f"
+        )
+        return {
+            "DEVPILOT_GIT_PROVIDER": "github",
+            "DEVPILOT_GIT_HOST": "github.com",
+            "GH_TOKEN": token,
+            "GITHUB_TOKEN": token,
+            "GIT_TERMINAL_PROMPT": "0",
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "credential.https://github.com.username",
+            "GIT_CONFIG_VALUE_0": "x-access-token",
+            "GIT_CONFIG_KEY_1": "credential.https://github.com.helper",
+            "GIT_CONFIG_VALUE_1": helper,
+        }, "github"
 
     def create(
         self,
@@ -188,10 +221,12 @@ class SessionManager:
         columns: int = 120,
         rows: int = 34,
         use_direct_user: bool = False,
+        git_auth: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         linux_user = self._current_linux_user()
         command = [self.shell, "-i"]
         process_cwd: str
+        git_env, git_provider = self._git_environment(git_auth)
 
         if use_direct_user:
             status = self.direct_user_status()
@@ -203,7 +238,10 @@ class SessionManager:
             if not requested_cwd:
                 raise TerminalUserUnavailable("HOME do usuário Linux dedicado não está disponível")
             target_cwd = Path(requested_cwd).expanduser().resolve(strict=False)
-            command, process_cwd, linux_user = self._direct_user_command(target_cwd)
+            command, process_cwd, linux_user = self._direct_user_command(
+                target_cwd,
+                preserve_env=tuple(git_env),
+            )
         else:
             target_cwd = Path(cwd or Path.home()).expanduser().resolve()
             if not target_cwd.is_dir():
@@ -223,6 +261,7 @@ class SessionManager:
             env = os.environ.copy()
             env.setdefault("TERM", "xterm-256color")
             env["DEVPILOT_TERMINAL_SESSION_ID"] = session_id
+            env.update(git_env)
             process = subprocess.Popen(
                 command,
                 stdin=slave_fd,
@@ -244,6 +283,7 @@ class SessionManager:
             actor=actor,
             cwd=str(target_cwd),
             linux_user=linux_user,
+            git_provider=git_provider,
             created_at=utc_now(),
             process=process,
             master_fd=master_fd,
