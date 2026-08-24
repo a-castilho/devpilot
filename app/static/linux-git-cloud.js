@@ -20,8 +20,10 @@
     'fi',
   ].join(' ');
 
+  let decorating = false;
+
   const decorate = async () => {
-    if (!token()) return;
+    if (!token() || decorating) return;
     const view = document.querySelector('#linux-view');
     if (!view) return;
 
@@ -33,6 +35,7 @@
       button.dataset.linuxHint = 'Git usa automaticamente a credencial GitHub cadastrada em Clouds.';
     }
 
+    decorating = true;
     try {
       const status = await api('/api/linux/status');
       const git = status?.profile?.git_cloud;
@@ -53,13 +56,18 @@
       }
     } catch (_) {
       // O terminal continua funcional mesmo se o indicador não puder ser atualizado.
+    } finally {
+      decorating = false;
     }
   };
 
-  const observer = new MutationObserver(() => {
-    if (document.querySelector('#linux-view')) decorate();
-  });
-  observer.observe(document.documentElement, {childList: true, subtree: true});
+  const waitForLinux = () => {
+    if (document.querySelector('#linux-view')) {
+      decorate();
+      return;
+    }
+    window.setTimeout(waitForLinux, 250);
+  };
 
   document.addEventListener('click', event => {
     if (event.target?.closest?.('[data-view="linux"], [data-linux-view="1"]')) {
@@ -67,6 +75,6 @@
     }
   });
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', decorate);
-  else decorate();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', waitForLinux, {once: true});
+  else waitForLinux();
 })();
