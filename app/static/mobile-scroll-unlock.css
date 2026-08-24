@@ -81,6 +81,68 @@
     scroll-snap-align: none !important;
     scroll-snap-stop: normal !important;
   }
+
+  /* Voice/chat: never crop typed text or sent conversation bubbles on mobile. */
+  #voice-modal .voice-visible-conversation {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding-left: 6px !important;
+    padding-right: 6px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  #voice-modal .voice-visible-turn {
+    box-sizing: border-box !important;
+    width: fit-content !important;
+    max-width: calc(100% - 8px) !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
+  }
+
+  #voice-modal .voice-visible-turn p {
+    box-sizing: border-box !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
+  }
+
+  #voice-modal .voice-visible-turn[data-role="user"] {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+  }
+
+  #voice-modal .voice-visible-turn[data-role="assistant"] {
+    margin-left: 0 !important;
+    margin-right: auto !important;
+  }
+
+  #voice-modal .voice-chatgpt-composer .voice-transcript-control {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+
+  #voice-modal .voice-chatgpt-composer #voice-transcript {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    max-height: 112px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+    white-space: pre-wrap !important;
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 @media (max-width: 520px) {
