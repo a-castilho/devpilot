@@ -3,7 +3,10 @@ from pathlib import Path
 
 BUILD_GAME_JS = Path("app/static/build-game.js")
 BUILD_GAME_URL_BONUS_JS = Path("app/static/build-game-url-bonus.js")
+BUILD_GAME_COCKPIT_JS = Path("app/static/build-game-cockpit.js")
+BUILD_GAME_COCKPIT_CSS = Path("app/static/build-game-cockpit.css")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
+LATE_UI_FIXES_JS = Path("app/static/example-project-graphs-fix.js")
 
 
 def test_build_game_is_loaded_from_dashboard():
@@ -71,3 +74,22 @@ def test_legacy_review_does_not_freeze_game_progression():
     assert "legacyReview" in loader
     assert "task?.requires_approval !== true" in loader
     assert "return {...task, status:'completed'}" in loader
+
+
+def test_build_game_cockpit_skin_is_loaded_and_bridges_devpilot_voice():
+    loader = LATE_UI_FIXES_JS.read_text(encoding="utf-8")
+    source = BUILD_GAME_COCKPIT_JS.read_text(encoding="utf-8")
+    styles = BUILD_GAME_COCKPIT_CSS.read_text(encoding="utf-8")
+
+    assert "/assets/build-game-cockpit.js?v=20260824-1" in loader
+    assert "data-build-game-cockpit-loader" in loader
+    assert "VISÃO DA CABINE" in source
+    assert "COMMS · DEVPILOTVOZ" in source
+    assert "devpilot-build-game-project" in source
+    assert "devpilot-chat-active-project-id" in source
+    assert "window.devpilotChatProjectContext" in source
+    assert "#voice-dock" in source
+    assert "/api/super-admin/voice" in source
+    assert "devpilot:build-game-voice-link" in source
+    assert "build-game-cockpit-window" in styles
+    assert "prefers-reduced-motion:no-preference" in styles
