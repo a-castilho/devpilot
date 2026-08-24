@@ -35,7 +35,7 @@
       lowerPrompt.includes('[devpilot_stage=execute]') ||
       lowerPrompt.includes('[devpilot_stage=correct]') ||
       actionSignals.some(signal => text.includes(signal))
-    ) return 'Ação';
+    ) return 'Execução';
 
     if (
       source === 'execution-verification' ||
@@ -124,7 +124,7 @@
       '</div>'+
       '<div class="task-charts-grid">'+
         '<article class="task-chart"><h3>Tarefas por status</h3>'+bars(statusValues)+'</article>'+
-        '<article class="task-chart"><h3>Tipos de tarefa</h3>'+bars(typeValues)+'</article>'+
+        '<article class="task-chart"><h3>Análise × execução</h3>'+bars(typeValues)+'</article>'+
         '<article class="task-chart"><h3>Origem das tarefas</h3>'+bars(sourceValues)+'</article>'+
         '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">'+priority.map(([label,value]) => '<div class="task-priority-item"><i></i><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></article>'+
       '</div>';
