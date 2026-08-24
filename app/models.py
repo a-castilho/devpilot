@@ -97,6 +97,7 @@ class Project(Base):
     __table_args__ = (UniqueConstraint("workspace_id", "slug"),)
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
     organization_id: Mapped[str | None] = mapped_column(ForeignKey("organizations.id"), index=True)
     name: Mapped[str] = mapped_column(String(150))
     slug: Mapped[str] = mapped_column(String(100))
@@ -136,6 +137,7 @@ class Task(Base):
     __tablename__ = "tasks"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
     title: Mapped[str] = mapped_column(String(240))
     prompt: Mapped[str] = mapped_column(Text)
