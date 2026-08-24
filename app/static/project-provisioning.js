@@ -15,6 +15,27 @@
     ? (error?.message || 'Falha ao criar projeto')
     : GENERIC_PROJECT_CREATE_ERROR;
 
+  function projectRepositoryPending(project) {
+    if (!project || String(project.repository_url || '').trim()) return false;
+    let config = project.codex_config;
+    if (typeof config === 'string') {
+      try {
+        config = JSON.parse(config);
+      } catch (_) {
+        config = {};
+      }
+    }
+    return Boolean(config && typeof config === 'object' && config.repository_pending);
+  }
+
+  function notifyProjectCreated(project, name, successMessage) {
+    if (projectRepositoryPending(project)) {
+      toast(`Projeto ${name} criado. GitHub pendente — conecte o repositório depois em Projetos.`);
+      return;
+    }
+    toast(successMessage);
+  }
+
   function cleanRepositoryInput(value) {
     let raw = String(value || '')
       .replace(/[\u200b\u200c\u200d\ufeff]/g, '')
@@ -235,10 +256,14 @@
 
       try {
         if (create) {
-          await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
-          toast(admin
-            ? `Repositório privado a-castilho/${common.slug} criado e conectado`
-            : `Projeto ${common.name} criado automaticamente`);
+          const project = await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
+          notifyProjectCreated(
+            project,
+            common.name,
+            admin
+              ? `Repositório privado a-castilho/${common.slug} criado e conectado`
+              : `Projeto ${common.name} criado automaticamente`,
+          );
         } else {
           const normalized = normalizeRepositoryInput(f.get('repository_url'));
           if (!normalized.ok) throw new Error(normalized.error);
@@ -436,7 +461,7 @@
       try {
         await new Promise(resolve => setTimeout(resolve, 0));
         startProvisionProgress();
-        await api('/projects/provision', {method: 'POST', body: JSON.stringify({
+        const project = await api('/projects/provision', {method: 'POST', body: JSON.stringify({
           name,
           slug,
           description,
@@ -450,7 +475,7 @@
         })});
         stopProgressTimer();
         setSubmitProgress('3/3 Atualizando projetos');
-        toast(`Projeto ${name} criado automaticamente`);
+        notifyProjectCreated(project, name, `Projeto ${name} criado automaticamente`);
         form.reset();
         form.querySelector('[data-builder-preset="saas-balanced"]')?.click();
         await load();
