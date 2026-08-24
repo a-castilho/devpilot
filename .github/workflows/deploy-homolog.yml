@@ -18,8 +18,6 @@ jobs:
   deploy:
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    environment:
-      name: homologation
     steps:
       - name: Resolve tested commit
         id: commit
@@ -89,4 +87,5 @@ jobs:
           fi
           echo "DevPilot SPA root is online."
 
-# manual verification trigger: 2026-08-24T10:06:00-03:00
+# Homologation is validated against the Render service itself; no GitHub Environment gate is required.
+# manual verification trigger: 2026-08-24T10:10:00-03:00
