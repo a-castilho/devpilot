@@ -47,6 +47,7 @@ node --check app/static/token-usage.js
 node --check app/static/token-usage-mobile-fix.js
 node --check app/static/investia-admin.js
 node --check app/static/system-tests.js
+node --check app/static/mission-control.js
 bash -n scripts/install-linux-agent.sh
 
 "$PYTHON_CMD" -m json.tool vercel.json >/dev/null
@@ -65,5 +66,8 @@ test -f .vercel-static/assets/audit-integrity.js
 test -f .vercel-static/assets/token-usage.js
 test -f .vercel-static/assets/token-usage-mobile-fix.js
 test -f .vercel-static/assets/system-tests.js
+test -f .vercel-static/assets/mission-control.js
+test -f .vercel-static/assets/mission-control.css
+grep -q '/assets/mission-control.js' .vercel-static/index.html
 
 "$PYTHON_CMD" -m pytest
