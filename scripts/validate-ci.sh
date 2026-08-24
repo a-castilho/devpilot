@@ -1,7 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-python -m compileall -q app
+if [[ -n "${PYTHON_BIN:-}" ]]; then
+  PYTHON_CMD="$PYTHON_BIN"
+elif [[ -x ".venv/bin/python" ]]; then
+  PYTHON_CMD=".venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+  PYTHON_CMD="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  PYTHON_CMD="$(command -v python)"
+else
+  echo "Erro: Python não encontrado. Ative o .venv ou instale Python 3.12+." >&2
+  exit 127
+fi
+
+"$PYTHON_CMD" - <<'PY'
+import sys
+if sys.version_info < (3, 12):
+    raise SystemExit(
+        f"Erro: DevPilot requer Python 3.12+, encontrado {sys.version.split()[0]} em {sys.executable}"
+    )
+print(f"Python: {sys.executable} ({sys.version.split()[0]})")
+PY
+
+"$PYTHON_CMD" -m compileall -q app
 
 node --check app/static/app.js
 node --check app/static/task-modal.js
@@ -25,7 +47,7 @@ node --check app/static/investia-admin.js
 node --check app/static/system-tests.js
 bash -n scripts/install-linux-agent.sh
 
-python -m json.tool vercel.json >/dev/null
+"$PYTHON_CMD" -m json.tool vercel.json >/dev/null
 node --check tools/build-vercel-static.mjs
 node tools/build-vercel-static.mjs
 
@@ -41,4 +63,4 @@ test -f .vercel-static/assets/token-usage.js
 test -f .vercel-static/assets/token-usage-mobile-fix.js
 test -f .vercel-static/assets/system-tests.js
 
-pytest
+"$PYTHON_CMD" -m pytest
