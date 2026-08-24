@@ -59,3 +59,11 @@ def test_direct_api_never_accepts_or_falls_back_to_interactive_os_user():
     assert "use_direct_user=not isolated_workspace" in agent_source
     assert '"mode": "dedicated-linux-user" if super_admin else "isolated-user-workspace"' in routes_source
     assert '"linux_user": session.get("linux_user")' in routes_source
+
+
+def test_linux_ui_shows_the_real_dedicated_account():
+    source = (ROOT / "app" / "static" / "linux-terminal.js").read_text(encoding="utf-8")
+
+    assert "Conta Linux isolada:" in source
+    assert "session.linux_user" in source
+    assert "aberto · ${session.linux_user}" in source
