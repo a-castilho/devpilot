@@ -77,12 +77,8 @@
   };
 
   const tasksFromTable = () => [
-    ...document.querySelectorAll(
-      '#tasks-table tr.task-main-row[data-task-id], #tasks-table tr[data-task-id]'
-    )
-  ]
-    .map(taskFromRow)
-    .filter(Boolean);
+    ...document.querySelectorAll('#tasks-table tr.task-main-row[data-task-id], #tasks-table tr[data-task-id]')
+  ].map(taskFromRow).filter(Boolean);
 
   const analyticsTasks = () => {
     const stateTasks = typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : [];
@@ -99,12 +95,8 @@
     const statusValues = countBy(tasks, task => ptStatus(task.status));
     const typeValues = countBy(tasks, taskType);
     const sourceValues = countBy(tasks, task => ({
-      voice:'Voz',
-      dashboard:'Painel',
-      api:'API',
-      analysis:'Análise automática',
-      'analysis-action':'Execução automática',
-      'execution-verification':'Validação automática'
+      voice:'Voz',dashboard:'Painel',api:'API',analysis:'Análise automática',
+      'analysis-action':'Execução automática','execution-verification':'Validação automática'
     })[String(task.source || '').toLowerCase()] || clean(task.source) || 'Outra');
     const completed = tasks.filter(task => normalizeStatus(task.status) === 'completed').length;
     const active = tasks.filter(task => ['awaiting_approval','queued','running','review','blocked'].includes(normalizeStatus(task.status))).length;
@@ -119,7 +111,7 @@
       '<div class="task-kpis">'+
         '<div class="task-kpi"><span>Total</span><strong>'+tasks.length+'</strong><small>tarefas registradas</small></div>'+
         '<div class="task-kpi"><span>Em andamento</span><strong>'+active+'</strong><small>fila, execução e revisão</small></div>'+
-        '<div class="task-kpi"><span>Concluídas</span><strong>'+completed+'</strong><small>'+ (tasks.length ? Math.round(completed/tasks.length*100) : 0) +'% do total</small></div>'+
+        '<div class="task-kpi"><span>Concluídas</span><strong>'+completed+'</strong><small>'+(tasks.length ? Math.round(completed/tasks.length*100) : 0)+'% do total</small></div>'+
         '<div class="task-kpi"><span>Prioridade média</span><strong>'+avgPriority+'</strong><small>escala de 0 a 100</small></div>'+
       '</div>'+
       '<div class="task-charts-grid">'+
@@ -170,5 +162,15 @@
   script.src = '/assets/build-game.js?v=20260824-1';
   script.async = false;
   script.dataset.buildGameLoader = 'true';
+  document.head.appendChild(script);
+})();
+
+/* Load automatic corrective subphases after the build game. */
+(() => {
+  if (document.querySelector('script[data-build-game-subphases-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-subphases.js?v=20260824-1';
+  script.async = false;
+  script.dataset.buildGameSubphasesLoader = 'true';
   document.head.appendChild(script);
 })();
