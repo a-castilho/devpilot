@@ -10,7 +10,7 @@
   let voiceTestSequence = 0;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   })[char]);
 
   const toastMessage = message => {
@@ -147,7 +147,11 @@
 
     dock.click();
     window.setTimeout(() => setVoiceProjectContext(), 0);
-    updateVoiceState(view, 'online', projectLinked ? 'Canal aberto · projeto sincronizado' : 'Canal aberto');
+    updateVoiceState(
+      view,
+      'checking',
+      projectLinked ? 'Canal aberto · projeto sincronizado · aguardando comando' : 'Canal aberto · aguardando comando',
+    );
   }
 
   function cockpitMarkup(snapshot) {
