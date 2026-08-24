@@ -20,6 +20,7 @@ _DEVPILOT_CAPTURE_LAST_COMMAND=""
 __devpilot_capture_prompt() {
   local last_status=$?
   local command_text
+  local capture_pid
 
   command_text="$(HISTTIMEFORMAT= history 1 2>/dev/null | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')"
   if [[ -z "$command_text" || "$command_text" == "$_DEVPILOT_CAPTURE_LAST_COMMAND" ]]; then
@@ -38,7 +39,12 @@ __devpilot_capture_prompt() {
     DEVPILOT_CAPTURE_CWD="$PWD" \
     DEVPILOT_CAPTURE_SHELL="${SHELL##*/}" \
     DEVPILOT_CAPTURE_EXIT_CODE="$last_status" \
-      command python3 "$_DEVPILOT_CAPTURE_HELPER" >/dev/null 2>&1 &
+      command python3 "$_DEVPILOT_CAPTURE_HELPER" </dev/null >/dev/null 2>&1 &
+    capture_pid=$!
+
+    # This helper is fire-and-forget telemetry. Remove it from Bash job control
+    # immediately so interactive shells never print "[n]+ Done/Exit ..." for it.
+    disown "$capture_pid" 2>/dev/null || true
   fi
   return "$last_status"
 }
