@@ -32,4 +32,5 @@ def test_voice_and_text_expose_shared_project_context():
     assert "getProjectId: () => activeProjectId() || null" in source
     assert "setProjectId: (projectId)" in source
     assert "detail: {project_id: value || null}" in source
-    assert "O DevPilot usará este contexto automaticamente." in source
+    assert "storeActiveProject(value)" in source
+    assert "resetConversationForProject(value)" in source
