@@ -93,6 +93,16 @@ def _conversation_input(payload: DevPilotChatRequest, project_context: str) -> s
     return "\n".join(lines)
 
 
+def _chat_provider_order(providers: list[str]) -> list[str]:
+    """Keep interactive chat responsive by trying the local runtime first."""
+    ordered: list[str] = []
+    for provider in ["ollama", *providers]:
+        normalized = str(provider or "").strip().lower()
+        if normalized and normalized not in ordered:
+            ordered.append(normalized)
+    return ordered
+
+
 def _stage_build_task(
     db: Session,
     *,
@@ -175,7 +185,7 @@ async def devpilot_chat(
 
     input_text = _conversation_input(payload, project_context)
     instructions = _mode_instructions(payload.mode)
-    provider_order = _provider_order(db, ws.id)
+    provider_order = _chat_provider_order(_provider_order(db, ws.id))
     effective_order = list(provider_order)
 
     if budget_reason:
