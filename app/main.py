@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
+from app.admin_broadcast_routes import router as admin_broadcast_router
 from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.audit_routes import router as audit_router
@@ -132,6 +133,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
 app.include_router(audit_router)
+app.include_router(admin_broadcast_router)
 app.include_router(career_router)
 app.include_router(chat_mode_router)
 app.include_router(host_action_router)
@@ -195,6 +197,7 @@ def spa(path: str):
         '<script src="/assets/profile.js" defer></script>',
         '<script src="/assets/auth-ui.js" defer></script>',
         '<script src="/assets/users.js" defer></script>',
+        '<script src="/assets/admin-broadcast.js" defer></script>',
         '<script src="/assets/token-usage.js" defer></script>',
         '<script src="/assets/token-usage-mobile-fix.js" defer></script>',
         '<script src="/assets/provider-models.js" defer></script>',
