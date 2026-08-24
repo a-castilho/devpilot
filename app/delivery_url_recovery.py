@@ -4,6 +4,7 @@ import re
 from urllib.parse import quote, urlparse
 
 import httpx
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
@@ -114,36 +115,73 @@ def _probe_public_url(url: str) -> tuple[bool, int]:
 
 
 def _recover_public_url(db: Session, project: Project, actor: str, state: dict) -> dict:
+    previous_status = str(state.get("status") or "").lower()
+    previous_url = _safe_public_url(state.get("url"))
+
     for url in _candidate_urls(db, project, state):
         ok, status_code = _probe_public_url(url)
         if not ok:
             continue
 
+        changed = previous_status != "ready" or previous_url != url or state.get("delivery_gate") != "delivered"
         state["status"] = "ready"
         state["url"] = url
         state["last_error"] = ""
         state["blocked_providers"] = []
         state["delivery_mode"] = "external_public_url"
+        state["delivery_gate"] = "delivered"
         state["checks"] = [
             {
-                "name": "frontend",
+                "name": "public_url",
                 "ok": True,
                 "status_code": status_code,
                 "url": url,
             }
         ]
         delivery.save_delivery(db, project, state)
-        record(
-            db,
-            workspace_id=project.workspace_id,
-            project_id=project.id,
-            actor=actor,
-            action="project.delivery_public_url_recovered",
-            outcome="success",
-            details={"url": url, "status_code": status_code},
-        )
-        db.commit()
+        if changed:
+            record(
+                db,
+                workspace_id=project.workspace_id,
+                project_id=project.id,
+                actor=actor,
+                action="project.delivery_public_url_recovered",
+                outcome="success",
+                details={"url": url, "status_code": status_code},
+            )
+            db.commit()
         return state
+    return state
+
+
+def _mark_waiting_for_testable_url(
+    db: Session,
+    project: Project,
+    actor: str,
+    state: dict,
+) -> dict:
+    previous_status = str(state.get("status") or "").lower()
+    previous_url = _safe_public_url(state.get("url"))
+
+    if previous_status == "ready" or previous_url:
+        state["status"] = "deploying"
+        state["last_candidate_url"] = previous_url
+        state["url"] = ""
+    state["delivery_gate"] = "waiting_for_testable_url"
+    state["last_error"] = (
+        "A missão ainda não terminou: a URL pública precisa responder com sucesso antes da conclusão."
+    )
+    delivery.save_delivery(db, project, state)
+    record(
+        db,
+        workspace_id=project.workspace_id,
+        project_id=project.id,
+        actor=actor,
+        action="project.delivery_url_not_testable",
+        outcome="pending",
+        details={"previous_status": previous_status, "candidate_url": previous_url},
+    )
+    db.commit()
     return state
 
 
@@ -154,8 +192,47 @@ def _run_delivery_with_public_url_recovery(
 ) -> dict:
     state = _ORIGINAL_RUN_DELIVERY(db, project, actor)
     status = str(state.get("status") or "").lower()
+
     if status in _RECOVERABLE_STATUSES:
         return _recover_public_url(db, project, actor, state)
+
+    if status == "ready":
+        url = _safe_public_url(state.get("url"))
+        if url:
+            ok, _ = _probe_public_url(url)
+            if ok:
+                state["delivery_gate"] = "delivered"
+                delivery.save_delivery(db, project, state)
+                return state
+        return _mark_waiting_for_testable_url(db, project, actor, state)
+
+    return state
+
+
+@delivery.router.post("/projects/{project_id}/delivery/validate-url")
+def validate_delivery_url(
+    project_id: str,
+    db: Session = Depends(delivery.get_db),
+    actor: str = Depends(delivery.require_access),
+):
+    """Revalidate the final game reward against a real, reachable public URL.
+
+    A completed build-game task is not enough to finish the mission. The delivery gate only
+    becomes ``delivered`` when DevPilot can perform a real HTTP request to a public Vercel or
+    Render URL and receive a successful/redirect response.
+    """
+    project = delivery.project_or_404(db, project_id)
+    state = delivery.initial_delivery(project)
+    recovered = _recover_public_url(db, project, actor, state)
+    if str(recovered.get("status") or "").lower() == "ready" and _safe_public_url(recovered.get("url")):
+        return recovered
+
+    if str(state.get("status") or "").lower() == "ready" or _safe_public_url(state.get("url")):
+        return _mark_waiting_for_testable_url(db, project, actor, state)
+
+    if state.get("delivery_gate") != "waiting_for_testable_url":
+        state["delivery_gate"] = "waiting_for_testable_url"
+        delivery.save_delivery(db, project, state)
     return state
 
 
@@ -164,7 +241,8 @@ def install_delivery_url_recovery() -> None:
 
     Managed Neon/Render/Vercel credentials remain the primary delivery path. The bridge makes
     that path consume the canonical credentials from Super Admin > Clouds. If managed deploy is
-    still pending, DevPilot can also recover an already-published Vercel/Render URL.
+    still pending, DevPilot can also recover an already-published Vercel/Render URL. A build-game
+    mission is only considered delivered after the public URL is reachable.
     """
     install_delivery_cloud_bridge()
     current = delivery.run_delivery
