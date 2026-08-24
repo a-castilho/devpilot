@@ -8,18 +8,31 @@ from app.db import SessionLocal
 from app.models import Project, Run, Task, TaskStatus
 from app.services import executor as executor_service
 from app.services.ai_costs import budget_block_reason
+from app.services.alternating_flow import execute_task
 from app.services.audit import record
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
+from app.services.task_flow import (
+    ACTION_MARKER,
+    CORRECTION_STAGE_MARKER,
+    FLOW_MARKER,
+    IMPLEMENTATION_STAGE_MARKER,
+    VERIFICATION_MARKER,
+    VERIFICATION_STAGE_MARKER,
+    execution_branch,
+    is_analysis_action_task,
+    is_analysis_task,
+    is_correction_action,
+    is_verification_analysis,
+)
 from app.services.task_images import enable_executor_image_support
 from app.services.token_usage import extract_codex_usage, record_usage, task_user_id
 
 
 enable_executor_image_support(executor_service)
-execute_task = executor_service.execute_task
 
-_ANALYSIS_MODES = {"analysis-read-only", "review"}
-_ACTION_MARKER = "[analysis-action]"
+# Backward-compatible name used by tests and older integrations.
+_ACTION_MARKER = ACTION_MARKER
 
 
 def _failure_text(result: dict | None, error: Exception | None) -> str:
@@ -128,44 +141,17 @@ def _final_task_status(run_status: str, needs_authorization: bool) -> TaskStatus
     return TaskStatus.failed
 
 
-def _task_mode(task: Task) -> str:
-    prompt = str(task.prompt or "")
-    prefix = "[DEVPILOT_MODE="
-    start = prompt.upper().find(prefix)
-    if start < 0:
-        return ""
-    start += len(prefix)
-    end = prompt.find("]", start)
-    return prompt[start:end].strip().lower() if end > start else ""
-
-
 def _is_analysis_task(task: Task) -> bool:
-    prompt = str(task.prompt or "")
-    normalized_prompt = prompt.lower()
-    source = str(task.source or "").lower()
+    """Compatibility wrapper around the shared deterministic flow classifier."""
+    return is_analysis_task(task)
 
-    # Actions created from an analysis must never be analysed again.
-    if source in {"analysis", "analysis-action"}:
-        return False
-    if _ACTION_MARKER in normalized_prompt or "[analysis-run:" in normalized_prompt:
-        return False
 
-    mode = _task_mode(task)
-    if mode:
-        return mode in _ANALYSIS_MODES
+def _is_analysis_action_task(task: Task) -> bool:
+    return is_analysis_action_task(task)
 
-    legacy = f"{task.title or ''}\n{prompt}".lower()
-    return any(
-        signal in legacy
-        for signal in (
-            "análise técnica de ",
-            "analise tecnica de ",
-            "auditoria somente leitura",
-            "somente leitura do projeto",
-            "não modifique arquivos",
-            "nao modifique arquivos",
-        )
-    )
+
+def _is_correction_action(task: Task) -> bool:
+    return is_correction_action(task)
 
 
 def _analysis_report(result: dict | None, run: Run) -> str:
@@ -189,21 +175,60 @@ def _analysis_action_priority(report: str) -> int:
     return 70
 
 
-def _analysis_action_title(project: Project) -> str:
+def _analysis_action_title(project: Project, correction: bool = False) -> str:
+    if correction:
+        return f"Correção pós-validação · {project.name}"[:240]
     return f"Ação recomendada · {project.name}"[:240]
 
 
-def _analysis_action_prompt(run: Run, report: str) -> str:
+def _analysis_action_prompt(
+    run: Run,
+    report: str,
+    *,
+    correction: bool = False,
+    target_branch: str = "",
+) -> str:
     marker = f"[analysis-run:{run.id}]"
+    stage = CORRECTION_STAGE_MARKER if correction else IMPLEMENTATION_STAGE_MARKER
+    branch_marker = f"[execution-branch:{target_branch}]\n" if target_branch else ""
+    instruction = (
+        "Execute somente as correções residuais apontadas pela validação abaixo. "
+        "Esta é a correção final do ciclo: não crie uma nova análise depois dela. "
+        if correction
+        else "Execute as correções e melhorias recomendadas no diagnóstico abaixo. "
+        "Não faça uma nova análise nesta etapa: transforme os achados em implementação verificável. "
+    )
     return (
-        f"{_ACTION_MARKER}\n"
+        f"{FLOW_MARKER}\n"
+        f"{stage}\n"
+        "[DEVPILOT_MODE=fix]\n"
+        f"{ACTION_MARKER}\n"
         f"{marker}\n"
-        "Execute as correções e melhorias recomendadas no diagnóstico abaixo. "
-        "Não faça uma nova análise: transforme os achados em implementação verificável. "
+        f"{branch_marker}"
+        f"{instruction}"
         "Priorize riscos críticos, preserve compatibilidade, execute testes relevantes e "
         "registre claramente o que foi alterado.\n\n"
         "DIAGNÓSTICO DE ORIGEM:\n"
         f"{report}"
+    )[:100_000]
+
+
+def _verification_analysis_title(project: Project) -> str:
+    return f"Validação pós-execução · {project.name}"[:240]
+
+
+def _verification_analysis_prompt(run: Run, task: Task, branch: str) -> str:
+    return (
+        f"{FLOW_MARKER}\n"
+        f"{VERIFICATION_STAGE_MARKER}\n"
+        "[DEVPILOT_MODE=analysis-read-only]\n"
+        f"{VERIFICATION_MARKER}\n"
+        f"[execution-task:{task.id}]\n"
+        f"[execution-run:{run.id}]\n"
+        f"[execution-branch:{branch}]\n"
+        "Valide a implementação que acabou de ser executada. Analise exatamente o snapshot da branch "
+        "de execução, confirme com evidências o que foi corrigido, identifique regressões e liste somente "
+        "lacunas residuais que ainda exigem correção. Não modifique arquivos nesta etapa."
     )[:100_000]
 
 
@@ -216,6 +241,8 @@ def _ensure_analysis_action(
     result: dict | None,
 ) -> Task | None:
     if run.status != "success" or not _is_analysis_task(task):
+        return None
+    if not str((result or {}).get("mode") or "").startswith("analysis-read-only"):
         return None
 
     marker = f"[analysis-run:{run.id}]"
@@ -232,15 +259,22 @@ def _ensure_analysis_action(
         return existing
 
     report = _analysis_report(result, run)
+    correction = is_verification_analysis(task)
+    target_branch = execution_branch(task) if correction else ""
     action_task = Task(
         workspace_id=task.workspace_id,
         project_id=task.project_id,
-        title=_analysis_action_title(project),
-        prompt=_analysis_action_prompt(run, report),
-        source="analysis",
-        status=TaskStatus.awaiting_approval,
-        requires_approval=True,
-        priority=_analysis_action_priority(report),
+        title=_analysis_action_title(project, correction=correction),
+        prompt=_analysis_action_prompt(
+            run,
+            report,
+            correction=correction,
+            target_branch=target_branch,
+        ),
+        source="analysis-action",
+        status=TaskStatus.queued,
+        requires_approval=False,
+        priority=100,
     )
     db.add(action_task)
     db.flush()
@@ -251,15 +285,80 @@ def _ensure_analysis_action(
         task_id=action_task.id,
         actor="worker",
         action="analysis.action_created",
-        outcome="awaiting_approval",
+        outcome="queued",
         details={
             "analysis_task_id": task.id,
             "analysis_run_id": run.id,
             "priority": action_task.priority,
             "automatic": True,
+            "flow_stage": "correct" if correction else "execute",
+            "target_branch": target_branch,
         },
     )
     return action_task
+
+
+def _ensure_execution_verification(
+    db,
+    *,
+    project: Project,
+    task: Task,
+    run: Run,
+    result: dict | None,
+) -> Task | None:
+    if run.status != "success" or not _is_analysis_action_task(task):
+        return None
+    if _is_correction_action(task):
+        return None
+    if str((result or {}).get("mode") or "") != "execute":
+        return None
+
+    branch = str((result or {}).get("branch") or "").strip()
+    if not branch:
+        return None
+
+    marker = f"[execution-run:{run.id}]"
+    existing = db.scalar(
+        select(Task)
+        .where(
+            Task.workspace_id == task.workspace_id,
+            Task.project_id == task.project_id,
+            Task.prompt.contains(marker),
+        )
+        .limit(1)
+    )
+    if existing:
+        return existing
+
+    verification = Task(
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        title=_verification_analysis_title(project),
+        prompt=_verification_analysis_prompt(run, task, branch),
+        source="execution-verification",
+        status=TaskStatus.queued,
+        requires_approval=False,
+        priority=100,
+    )
+    db.add(verification)
+    db.flush()
+    record(
+        db,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        task_id=verification.id,
+        actor="worker",
+        action="analysis.verification_created",
+        outcome="queued",
+        details={
+            "execution_task_id": task.id,
+            "execution_run_id": run.id,
+            "branch": branch,
+            "automatic": True,
+            "flow_stage": "verify",
+        },
+    )
+    return verification
 
 
 def process_one() -> bool:
@@ -422,6 +521,13 @@ def process_one() -> bool:
             run=run,
             result=result,
         )
+        generated_verification = _ensure_execution_verification(
+            db,
+            project=project,
+            task=task,
+            run=run,
+            result=result,
+        )
         record(
             db,
             workspace_id=task.workspace_id,
@@ -434,6 +540,9 @@ def process_one() -> bool:
                 "run_id": run.id,
                 "attempt": run.attempt,
                 "generated_action_task_id": generated_action.id if generated_action else None,
+                "generated_verification_task_id": (
+                    generated_verification.id if generated_verification else None
+                ),
             },
         )
         db.commit()
