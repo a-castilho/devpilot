@@ -29,17 +29,19 @@
     const style = document.createElement('style');
     style.id = 'build-game-subphases-style';
     style.textContent = `
-      .build-game-subphases{grid-column:1/-1;margin:4px 0 0 58px;padding:12px 0 0 16px;border-left:2px solid rgba(101,223,255,.2);display:grid;gap:8px}
-      .build-game-subphases-head{display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted,#9eacc2);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800}
-      .build-game-subphase{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid rgba(101,223,255,.12);border-radius:12px;background:rgba(4,13,24,.62)}
+      #build-game-view .build-game-phase{min-width:0;box-sizing:border-box}
+      .build-game-subphases{grid-column:1/-1;width:100%;min-width:0;box-sizing:border-box;margin:4px 0 0;padding:12px 0 0 16px;border-left:2px solid rgba(101,223,255,.2);display:grid;gap:8px;overflow:hidden}
+      .build-game-subphases-head{min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px;color:var(--muted,#9eacc2);font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;font-weight:800;flex-wrap:wrap}
+      .build-game-subphase{width:100%;min-width:0;box-sizing:border-box;display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid rgba(101,223,255,.12);border-radius:12px;background:rgba(4,13,24,.62)}
       .build-game-subphase.completed{border-color:rgba(104,240,187,.22)}
       .build-game-subphase.failed,.build-game-subphase.blocked{border-color:rgba(255,116,116,.28)}
       .build-game-subphase-icon{display:grid;place-items:center;width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,.05)}
-      .build-game-subphase-copy{min-width:0}.build-game-subphase-copy small{display:block;color:#65dfff;font-size:.64rem;font-weight:800;letter-spacing:.06em}.build-game-subphase-copy strong{display:block;margin:2px 0;font-size:.82rem}.build-game-subphase-copy p{margin:0;color:var(--muted,#9eacc2);font-size:.72rem;white-space:normal;overflow-wrap:anywhere}
-      .build-game-subphase-state{display:flex;align-items:center;gap:7px;justify-content:flex-end}
-      .build-game-subphase-error{grid-column:1/-1;padding:8px 10px;border-radius:9px;background:rgba(255,97,97,.07);color:#ffb1b1;font-size:.72rem}
-      .build-game-subphase-wait{grid-column:1/-1;padding:9px 11px;border:1px dashed rgba(255,190,94,.28);border-radius:10px;color:#e5c18c;font-size:.72rem}
-      @media(max-width:800px){.build-game-subphases{margin-left:10px;padding-left:10px}.build-game-subphase{grid-template-columns:32px minmax(0,1fr)}.build-game-subphase-state{grid-column:1/-1;justify-content:flex-start}}
+      .build-game-subphase-copy{min-width:0;overflow:hidden}.build-game-subphase-copy small{display:block;color:#65dfff;font-size:.64rem;font-weight:800;letter-spacing:.06em}.build-game-subphase-copy strong{display:block;margin:2px 0;font-size:.82rem;overflow-wrap:anywhere}.build-game-subphase-copy p{margin:0;color:var(--muted,#9eacc2);font-size:.72rem;white-space:normal;overflow-wrap:anywhere}
+      .build-game-subphase-state{min-width:0;max-width:100%;display:flex;align-items:center;gap:7px;justify-content:flex-end;flex-wrap:wrap}
+      .build-game-subphase-error{grid-column:1/-1;min-width:0;box-sizing:border-box;padding:8px 10px;border-radius:9px;background:rgba(255,97,97,.07);color:#ffb1b1;font-size:.72rem;overflow-wrap:anywhere}
+      .build-game-subphase-wait{grid-column:1/-1;min-width:0;box-sizing:border-box;padding:9px 11px;border:1px dashed rgba(255,190,94,.28);border-radius:10px;color:#e5c18c;font-size:.72rem;overflow-wrap:anywhere}
+      @media(max-width:800px){.build-game-subphases{margin:4px 0 0;padding:10px 0 0 10px}.build-game-subphase{grid-template-columns:32px minmax(0,1fr);padding:10px}.build-game-subphase-state{grid-column:1/-1;justify-content:flex-start}}
+      @media(max-width:520px){.build-game-subphases{padding-left:8px}.build-game-subphase{grid-template-columns:28px minmax(0,1fr);gap:8px}.build-game-subphase-icon{width:28px;height:28px}.build-game-subphases-head{font-size:.62rem}}
     `;
     document.head.appendChild(style);
   };

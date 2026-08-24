@@ -47,6 +47,15 @@ def test_subphases_are_visible_and_bounded():
     assert "build-game-subphase-error" in source
 
 
+def test_subphase_css_does_not_overflow_phase_grid():
+    source = SUBPHASES_JS.read_text(encoding="utf-8")
+    assert "grid-column:1/-1;width:100%;min-width:0;box-sizing:border-box;margin:4px 0 0" in source
+    assert "margin:4px 0 0;padding:10px 0 0 10px" in source
+    assert "margin-left:58px" not in source
+    assert "overflow-wrap:anywhere" in source
+    assert "#build-game-view .build-game-phase{min-width:0;box-sizing:border-box}" in source
+
+
 def test_ci_checks_subphase_asset():
     source = VALIDATE_CI.read_text(encoding="utf-8")
     assert "node --check app/static/build-game-subphases.js" in source
