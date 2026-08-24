@@ -10,8 +10,8 @@
   const ACTIVE_PROJECT_STORAGE_KEY = 'devpilot-chat-active-project-id';
 
   if (!modal || !panel || !transcript || !sendButton || !stage || !statusNode) return;
-  if (panel.dataset.voiceChatgptLayout === '5') return;
-  panel.dataset.voiceChatgptLayout = '5';
+  if (panel.dataset.voiceChatgptLayout === '6') return;
+  panel.dataset.voiceChatgptLayout = '6';
   panel.classList.add('voice-ui-polished');
 
   if (!document.querySelector('link[data-voice-ui-polish]')) {
@@ -83,6 +83,85 @@
 
   const normalize = (value) => String(value || '').trim().replace(/\s+/g, ' ');
   const normalizeProjectId = (value) => String(value ?? '').trim();
+
+  const ACTION_WORDS = {
+    deploy: ['deploy', 'implante', 'implantar', 'publique', 'publicar', 'produção', 'production'],
+    develop: [
+      'corrija', 'corrigir', 'implemente', 'implementar', 'desenvolva', 'desenvolver',
+      'execute', 'executar', 'aplique', 'aplicar', 'ajuste', 'ajustar', 'conserte',
+      'consertar', 'rode', 'rodar', 'reinicie', 'reiniciar',
+    ],
+    test: ['teste', 'testar', 'valide', 'validar', 'homologue', 'homologar'],
+    analyze: ['analise', 'analisar', 'audite', 'auditar', 'revise', 'revisar', 'verifique', 'verificar'],
+  };
+  const QUESTION_PREFIX = /^(?:como|o que|qual|quais|por que|porque|onde|quando|posso|devo|seria|explique|me explique)\b/i;
+
+  const containsActionWord = (text, words) => {
+    const lowered = ` ${normalize(text).toLowerCase()} `;
+    return words.some((word) => lowered.includes(` ${word} `) || lowered.includes(` ${word},`) || lowered.includes(` ${word}.`) || lowered.includes(` ${word}:`));
+  };
+
+  const classifyActionIntent = (text) => {
+    const cleaned = normalize(text);
+    if (!cleaned || QUESTION_PREFIX.test(cleaned)) return null;
+    if (containsActionWord(cleaned, ACTION_WORDS.deploy)) return {action: 'deploy', label: 'Implantação'};
+    if (containsActionWord(cleaned, ACTION_WORDS.develop)) return {action: 'develop', label: 'Execução'};
+    if (containsActionWord(cleaned, ACTION_WORDS.test)) return {action: 'test', label: 'Teste'};
+    if (containsActionWord(cleaned, ACTION_WORDS.analyze)) return {action: 'analyze', label: 'Análise operacional'};
+    return null;
+  };
+
+  const buildOperationalPrompt = (intent, text) => {
+    const cleaned = normalize(text);
+    if (intent.action === 'deploy') {
+      return `Implantação solicitada pelo DevPilot Voz. Execute o fluxo de implantação no projeto selecionado, respeite os gates de segurança, testes e aprovação configurados e registre o resultado real. Pedido original: ${cleaned}`;
+    }
+    if (intent.action === 'test') {
+      return `Teste solicitado pelo DevPilot Voz. Execute as validações e testes adequados no projeto selecionado, registre falhas com evidências e devolva o resultado real. Pedido original: ${cleaned}`;
+    }
+    if (intent.action === 'analyze') {
+      return `Análise operacional solicitada pelo DevPilot Voz. Analise o projeto selecionado, produza achados objetivos e converta cada achado relevante em uma ação concreta e rastreável. Não afirme que uma alteração foi executada se ela não foi executada. Pedido original: ${cleaned}`;
+    }
+    return `Execução solicitada pelo DevPilot Voz. Implemente a solicitação no projeto selecionado, valide a alteração e registre o resultado real. Não pare apenas na análise quando a correção for executável e segura. Pedido original: ${cleaned}`;
+  };
+
+  const createOperationalTask = async (intent, text, projectId) => {
+    const titleText = `${intent.label}: ${normalize(text)}`;
+    const priority = intent.action === 'deploy' ? 90 : intent.action === 'develop' ? 80 : intent.action === 'test' ? 70 : 65;
+    const task = await api('/tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        project_id: projectId,
+        title: titleText.slice(0, 240),
+        prompt: buildOperationalPrompt(intent, text),
+        source: 'voice',
+        priority,
+        requires_approval: false,
+      }),
+    });
+
+    const taskStatus = String(task?.status || '').toLowerCase();
+    const awaitingApproval = taskStatus.includes('awaiting_approval');
+    const taskId = String(task?.id || '').trim();
+    const suffix = taskId ? ` Tarefa ${taskId}.` : '';
+    const reply = awaitingApproval
+      ? `${intent.label} preparada e aguardando aprovação por envolver uma ação protegida.${suffix}`
+      : `${intent.label} enviada para execução no projeto selecionado.${suffix}`;
+
+    window.dispatchEvent(new CustomEvent('devpilot:voice-task-created', {
+      detail: {
+        task_id: taskId || null,
+        project_id: projectId,
+        action: intent.action,
+        status: taskStatus || null,
+        requires_approval: awaitingApproval,
+      },
+    }));
+
+    return {task, reply, awaitingApproval};
+  };
+
+  window.devpilotVoiceIntentClassifier = classifyActionIntent;
 
   const scrollConversation = () => {
     conversation.scrollTop = conversation.scrollHeight;
@@ -260,8 +339,28 @@
 
     const requestHistory = history.slice(-12);
     const projectId = activeProjectId();
+    const actionIntent = classifyActionIntent(text);
 
     try {
+      if (actionIntent) {
+        if (!projectId) {
+          throw new Error('Selecione um projeto antes de executar uma ação por voz.');
+        }
+
+        const execution = await createOperationalTask(actionIntent, text, projectId);
+        if (sequence !== requestSequence) return;
+
+        thinking.remove();
+        history.push({role: 'user', text}, {role: 'assistant', text: execution.reply});
+        history = history.slice(-12);
+        appendTurn('assistant', execution.reply);
+        statusNode.textContent = execution.awaitingApproval
+          ? 'Ação protegida aguardando aprovação.'
+          : 'Ação enviada para execução.';
+        speakReply(execution.reply);
+        return;
+      }
+
       const data = await api('/voice/chat', {
         method: 'POST',
         body: JSON.stringify({
@@ -296,9 +395,8 @@
     }
   }
 
-  // Voz e texto compartilham a mesma sessão e o mesmo projeto ativo. O projeto
-  // selecionado no chat é enviado automaticamente; o usuário não precisa
-  // repetir nome, repositório ou branch em cada comando.
+  // Voz e texto compartilham a mesma sessão e o mesmo projeto ativo. Perguntas
+  // seguem para o chat; comandos operacionais seguem para a fila real de tarefas.
   window.devpilotVoiceConversationSubmit = submitVisibleConversation;
 
   modal.addEventListener('close', () => {
