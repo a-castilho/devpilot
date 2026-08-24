@@ -7,10 +7,11 @@
   const statusNode = panel?.querySelector('#voice-status');
   const projectSelect = panel?.querySelector('#voice-project');
   const modeSelect = panel?.querySelector('#voice-output-mode');
+  const ACTIVE_PROJECT_STORAGE_KEY = 'devpilot-chat-active-project-id';
 
   if (!modal || !panel || !transcript || !sendButton || !stage || !statusNode) return;
-  if (panel.dataset.voiceChatgptLayout === '4') return;
-  panel.dataset.voiceChatgptLayout = '4';
+  if (panel.dataset.voiceChatgptLayout === '5') return;
+  panel.dataset.voiceChatgptLayout = '5';
   panel.classList.add('voice-ui-polished');
 
   if (!document.querySelector('link[data-voice-ui-polish]')) {
@@ -81,6 +82,7 @@
   let requestSequence = 0;
 
   const normalize = (value) => String(value || '').trim().replace(/\s+/g, ' ');
+  const normalizeProjectId = (value) => String(value ?? '').trim();
 
   const scrollConversation = () => {
     conversation.scrollTop = conversation.scrollHeight;
@@ -113,6 +115,105 @@
     conversation.appendChild(thinking);
     scrollConversation();
     return thinking;
+  };
+
+  const projectOptionExists = (projectId) => {
+    if (!projectSelect) return false;
+    const expected = normalizeProjectId(projectId);
+    return [...projectSelect.options].some((option) => normalizeProjectId(option.value) === expected);
+  };
+
+  const projectLabel = (projectId) => {
+    if (!projectSelect) return '';
+    const expected = normalizeProjectId(projectId);
+    return [...projectSelect.options].find(
+      (option) => normalizeProjectId(option.value) === expected,
+    )?.textContent?.trim() || '';
+  };
+
+  const storeActiveProject = (projectId) => {
+    const value = normalizeProjectId(projectId);
+    localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, value);
+    window.dispatchEvent(new CustomEvent('devpilot:active-project-changed', {
+      detail: {project_id: value || null},
+    }));
+    return value;
+  };
+
+  const restoreActiveProject = () => {
+    if (!projectSelect) return '';
+
+    const storedRaw = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+    if (storedRaw !== null) {
+      const stored = normalizeProjectId(storedRaw);
+      if (projectOptionExists(stored)) {
+        projectSelect.value = stored;
+        return stored;
+      }
+    }
+
+    const selected = normalizeProjectId(projectSelect.value);
+    if (projectOptionExists(selected)) {
+      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, selected);
+      return selected;
+    }
+
+    const firstProject = [...projectSelect.options].find((option) => normalizeProjectId(option.value));
+    if (firstProject) {
+      projectSelect.value = firstProject.value;
+      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, normalizeProjectId(firstProject.value));
+      return normalizeProjectId(firstProject.value);
+    }
+
+    return '';
+  };
+
+  const activeProjectId = () => restoreActiveProject();
+
+  const resetConversationForProject = (projectId) => {
+    requestSequence += 1;
+    requestInFlight = false;
+    history = [];
+    conversation.querySelector('.voice-visible-thinking')?.remove();
+    conversation.innerHTML = '<div class="voice-visible-empty">Converse com o DevPilot por texto ou voz.</div>';
+    try {
+      window.speechSynthesis?.cancel?.();
+    } catch (_) {
+      // Best effort only.
+    }
+
+    const label = projectLabel(projectId);
+    statusNode.textContent = projectId
+      ? `Projeto ativo: ${label || projectId}. O DevPilot usará este contexto automaticamente.`
+      : 'Conversa geral ativa, sem projeto específico.';
+  };
+
+  if (projectSelect) {
+    projectSelect.addEventListener('change', () => {
+      const previous = localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY);
+      const next = storeActiveProject(projectSelect.value);
+      if (normalizeProjectId(previous) !== next) resetConversationForProject(next);
+    });
+
+    new MutationObserver(() => {
+      restoreActiveProject();
+    }).observe(projectSelect, {childList: true, subtree: true});
+
+    restoreActiveProject();
+  }
+
+  window.devpilotChatProjectContext = {
+    getProjectId: () => activeProjectId() || null,
+    setProjectId: (projectId) => {
+      if (!projectSelect) return false;
+      const value = normalizeProjectId(projectId);
+      if (!projectOptionExists(value)) return false;
+      const previous = activeProjectId();
+      projectSelect.value = value;
+      storeActiveProject(value);
+      if (previous !== value) resetConversationForProject(value);
+      return true;
+    },
   };
 
   const speakReply = (text) => {
@@ -158,13 +259,14 @@
     statusNode.textContent = 'DevPilot está pensando…';
 
     const requestHistory = history.slice(-12);
+    const projectId = activeProjectId();
 
     try {
       const data = await api('/voice/chat', {
         method: 'POST',
         body: JSON.stringify({
           transcript: text,
-          project_id: projectSelect?.value || null,
+          project_id: projectId || null,
           history: requestHistory,
         }),
       });
@@ -194,8 +296,9 @@
     }
   }
 
-  // O layout novo assume o envio de chat diretamente. O módulo legado continua
-  // disponível para reprodução, mas não é mais responsável por renderizar a resposta.
+  // Voz e texto compartilham a mesma sessão e o mesmo projeto ativo. O projeto
+  // selecionado no chat é enviado automaticamente; o usuário não precisa
+  // repetir nome, repositório ou branch em cada comando.
   window.devpilotVoiceConversationSubmit = submitVisibleConversation;
 
   modal.addEventListener('close', () => {
@@ -211,4 +314,10 @@
       // Best effort only.
     }
   });
+
+  const modalProjectObserver = new MutationObserver(() => {
+    if (!modal.open) return;
+    restoreActiveProject();
+  });
+  modalProjectObserver.observe(modal, {attributes: true, attributeFilter: ['open']});
 })();
