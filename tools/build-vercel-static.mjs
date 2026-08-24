@@ -42,6 +42,7 @@ const scripts = [
   'cloud-admin.js',
   'linux-terminal.js',
   'linux-game-access.js',
+  'linux-update-command.js',
   'audit-integrity.js',
   'mission-control.js',
 ];
