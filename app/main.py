@@ -142,7 +142,7 @@ app.include_router(linux_router)
 app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
-app.include_router(task_image_router)
+app.include_router(task_image_routes if False else task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(product_delivery_router)
 app.include_router(provider_models_router)
@@ -237,6 +237,8 @@ def spa(path: str):
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
         '<script src="/assets/linux-terminal.js" defer></script>',
         '<script src="/assets/linux-beginner-coach.js" defer></script>',
+        '<script src="/assets/build-game.js" defer></script>',
+        '<script src="/assets/game-linux-training.js" defer></script>',
         '<script src="/assets/audit-integrity.js" defer></script>',
         '<script src="/assets/mission-control.js" defer></script>',
     ]
