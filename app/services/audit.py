@@ -9,11 +9,12 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.linux_agent.audit import verify_attestation
-from app.models import AuditEvent
+from app.models import AuditEvent, Project, Task
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
 
 
 LINUX_AUDIT_KEY = "_linux_audit"
+_SCOPE_DISABLED_OPTION = "devpilot_account_scope_disabled"
 
 
 def _serialize(details: dict[str, Any]) -> str:
@@ -91,6 +92,37 @@ def _attest(
     return attestation, None
 
 
+def _event_owner_user_id(
+    db: Session,
+    *,
+    project_id: str | None,
+    task_id: str | None,
+) -> str | None:
+    principal_user_id = db.info.get("principal_user_id")
+    if principal_user_id:
+        return str(principal_user_id)
+
+    if task_id:
+        owner_user_id = db.scalar(
+            select(Task.owner_user_id)
+            .where(Task.id == task_id)
+            .execution_options(**{_SCOPE_DISABLED_OPTION: True})
+        )
+        if owner_user_id:
+            return str(owner_user_id)
+
+    if project_id:
+        owner_user_id = db.scalar(
+            select(Project.owner_user_id)
+            .where(Project.id == project_id)
+            .execution_options(**{_SCOPE_DISABLED_OPTION: True})
+        )
+        if owner_user_id:
+            return str(owner_user_id)
+
+    return None
+
+
 def record(
     db: Session,
     *,
@@ -106,13 +138,22 @@ def record(
     if principal_actor and actor in {"owner", "voice-owner"}:
         actor = str(principal_actor)
 
+    # The hash chain is workspace-global even though normal account reads are scoped.
+    # Always resolve the previous event without row-level filtering so every user's
+    # event remains part of one tamper-evident chain visible to SUPER_ADMIN.
     previous = db.scalar(
         select(AuditEvent)
         .where(AuditEvent.workspace_id == workspace_id)
         .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
         .limit(1)
+        .execution_options(**{_SCOPE_DISABLED_OPTION: True})
     )
     previous_hash = previous.event_hash if previous else ""
+    owner_user_id = _event_owner_user_id(
+        db,
+        project_id=project_id,
+        task_id=task_id,
+    )
 
     base_details = dict(details)
     base_details.pop(LINUX_AUDIT_KEY, None)
@@ -157,6 +198,7 @@ def record(
 
     event = AuditEvent(
         workspace_id=workspace_id,
+        owner_user_id=owner_user_id,
         project_id=project_id,
         task_id=task_id,
         actor=actor,

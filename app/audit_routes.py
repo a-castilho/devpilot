@@ -12,6 +12,7 @@ from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
 
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
+_SCOPE_DISABLED_OPTION = "devpilot_account_scope_disabled"
 
 
 def current_principal(principal: Principal = Depends(session_principal)) -> Principal:
@@ -37,10 +38,13 @@ def audit_integrity(
     db: Session = Depends(get_db),
     principal: Principal = Depends(current_principal),
 ):
+    # Integrity validates the single workspace-global chain. Account-level filtering
+    # applies to normal audit history reads, but not to this aggregate hash check.
     events = db.scalars(
         select(AuditEvent)
         .where(AuditEvent.workspace_id == principal.workspace_id)
         .order_by(AuditEvent.created_at.asc(), AuditEvent.id.asc())
+        .execution_options(**{_SCOPE_DISABLED_OPTION: True})
     ).all()
     result = verify_chain(events)
     result["workspace_id"] = principal.workspace_id
