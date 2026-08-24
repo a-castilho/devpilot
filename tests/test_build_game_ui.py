@@ -5,8 +5,8 @@ BUILD_GAME_JS = Path("app/static/build-game.js")
 BUILD_GAME_URL_BONUS_JS = Path("app/static/build-game-url-bonus.js")
 BUILD_GAME_COCKPIT_JS = Path("app/static/build-game-cockpit.js")
 BUILD_GAME_COCKPIT_CSS = Path("app/static/build-game-cockpit.css")
+INDEX_HTML = Path("app/static/index.html")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
-LATE_UI_FIXES_JS = Path("app/static/example-project-graphs-fix.js")
 
 
 def test_build_game_is_loaded_from_dashboard():
@@ -77,12 +77,11 @@ def test_legacy_review_does_not_freeze_game_progression():
 
 
 def test_build_game_cockpit_skin_is_loaded_and_bridges_devpilot_voice():
-    loader = LATE_UI_FIXES_JS.read_text(encoding="utf-8")
+    dashboard = INDEX_HTML.read_text(encoding="utf-8")
     source = BUILD_GAME_COCKPIT_JS.read_text(encoding="utf-8")
     styles = BUILD_GAME_COCKPIT_CSS.read_text(encoding="utf-8")
 
-    assert "/assets/build-game-cockpit.js?v=20260824-1" in loader
-    assert "data-build-game-cockpit-loader" in loader
+    assert "/assets/build-game-cockpit.js?v=20260824-1" in dashboard
     assert "VISÃO DA CABINE" in source
     assert "COMMS · DEVPILOTVOZ" in source
     assert "devpilot-build-game-project" in source
