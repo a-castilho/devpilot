@@ -48,6 +48,15 @@
     document.head.appendChild(link);
   };
 
+  const ensureEnhancements = () => {
+    if (document.querySelector('script[data-mission-control-ai-dashboard]')) return;
+    const script = document.createElement('script');
+    script.src = '/assets/mission-control-ai-dashboard.js?v=20260824-1';
+    script.defer = true;
+    script.dataset.missionControlAiDashboard = '1';
+    document.head.appendChild(script);
+  };
+
   const createPanel = () => {
     const overview = document.querySelector('#overview-view');
     if (!overview || document.querySelector('#mission-control-panel')) return;
@@ -322,6 +331,7 @@
     bindActions();
     hookExistingRender();
     renderMission(overviewSnapshot);
+    ensureEnhancements();
     const saved = localStorage.getItem(STORAGE_KEY);
     setMode(saved === MODE_MISSION ? MODE_MISSION : MODE_PROFESSIONAL, false);
   };
