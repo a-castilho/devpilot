@@ -7,6 +7,7 @@ import time
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -106,12 +107,20 @@ async def require_signed_request(
         raise HTTPException(status_code=409, detail="Requisição repetida bloqueada")
 
 
+class TerminalGitAuth(BaseModel):
+    provider: Literal["github"]
+    host: Literal["github.com"] = "github.com"
+    token: str = Field(min_length=8, max_length=10_000)
+    scope: str = Field(default="", max_length=200)
+
+
 class TerminalCreate(BaseModel):
     actor: str = Field(min_length=1, max_length=200)
     workspace_key: str | None = Field(default=None, min_length=16, max_length=64)
     cwd: str | None = Field(default=None, max_length=4096)
     columns: int = Field(default=120, ge=20, le=400)
     rows: int = Field(default=34, ge=5, le=200)
+    git_auth: TerminalGitAuth | None = None
 
 
 class TerminalInput(BaseModel):
@@ -257,6 +266,7 @@ def create_terminal_session(payload: TerminalCreate):
             columns=payload.columns,
             rows=payload.rows,
             use_direct_user=not isolated_workspace,
+            git_auth=payload.git_auth.model_dump() if payload.git_auth else None,
         )
     except TerminalUserUnavailable as error:
         raise HTTPException(status_code=503, detail=str(error)) from error
