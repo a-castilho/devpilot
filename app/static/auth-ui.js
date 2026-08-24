@@ -2,6 +2,7 @@
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
   let bootstrapRequired = false;
+  let localBootstrapAvailable = false;
 
   modal.innerHTML = `
     <form class="modal" id="auth-form">
@@ -16,17 +17,22 @@
 
   const errorBox = document.querySelector('#auth-error');
   const submit = document.querySelector('#auth-submit');
+  const bootstrapRow = document.querySelector('#auth-bootstrap-row');
 
   async function readStatus() {
     try {
       const response = await fetch('/api/auth/status');
       const data = await response.json();
       bootstrapRequired = Boolean(data.bootstrap_required);
-      document.querySelector('#auth-bootstrap-row').style.display = bootstrapRequired ? 'grid' : 'none';
+      localBootstrapAvailable = Boolean(data.local_bootstrap_available);
+      const needsManualToken = bootstrapRequired && !localBootstrapAvailable;
+      bootstrapRow.style.display = needsManualToken ? 'grid' : 'none';
       document.querySelector('#auth-help').textContent = bootstrapRequired
-        ? 'Primeiro acesso: crie o administrador principal usando o token de bootstrap. Depois disso, o token não autentica sessões normais.'
+        ? (localBootstrapAvailable
+          ? 'Primeiro acesso neste Linux: informe e-mail e senha. O DevPilot criará o Super Admin sem exigir token manual.'
+          : 'Primeiro acesso remoto: por segurança, conclua no próprio Linux ou informe o token de bootstrap.')
         : 'Use seu e-mail e senha.';
-      submit.textContent = bootstrapRequired ? 'Criar administrador e entrar' : 'Entrar';
+      submit.textContent = bootstrapRequired ? 'Criar Super Admin e entrar' : 'Entrar';
     } catch (_) {
       errorBox.textContent = 'Não foi possível consultar o estado da autenticação.';
     }
@@ -39,7 +45,15 @@
     let endpoint = '/api/auth/login';
     if (bootstrapRequired) {
       endpoint = '/api/auth/bootstrap';
-      headers.Authorization = `Bearer ${document.querySelector('#auth-bootstrap').value.trim()}`;
+      if (!localBootstrapAvailable) {
+        const bootstrapToken = document.querySelector('#auth-bootstrap').value.trim();
+        if (!bootstrapToken) {
+          errorBox.textContent = 'Informe o token de bootstrap ou faça o primeiro acesso diretamente no Linux.';
+          submit.disabled = false;
+          return;
+        }
+        headers.Authorization = `Bearer ${bootstrapToken}`;
+      }
     }
     try {
       const response = await fetch(endpoint, {method:'POST', headers, body:JSON.stringify(payload)});
