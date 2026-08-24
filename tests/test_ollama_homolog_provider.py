@@ -50,5 +50,5 @@ def test_ensure_ollama_starts_with_fixed_argument_array(monkeypatch, tmp_path: P
 
     assert result["started"] is True
     assert popen["args"] == ["/usr/local/bin/ollama", "serve"]
-    assert popen["kwargs"]["env"]["OLLAMA_HOST"] == "0.0.0.0:11434"
+    assert popen["kwargs"]["env"]["OLLAMA_HOST"] == "127.0.0.1:11434"
     assert popen["kwargs"]["start_new_session"] is True
