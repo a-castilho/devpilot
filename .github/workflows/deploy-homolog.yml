@@ -89,4 +89,4 @@ jobs:
           fi
           echo "DevPilot SPA root is online."
 
-# manual verification trigger: 2026-08-24T10:12:00-03:00
+# manual verification trigger: 2026-08-24T13:02:00-03:00 — project provisioning fallback redeploy
