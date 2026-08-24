@@ -54,3 +54,13 @@
   };
   document.addEventListener('DOMContentLoaded', () => window.renderTaskAnalytics());
 })();
+
+/* Load project-scoped system testing workspace. */
+(() => {
+  if (document.querySelector('script[data-system-tests-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/system-tests.js?v=20260824-1';
+  script.async = false;
+  script.dataset.systemTestsLoader = 'true';
+  document.head.appendChild(script);
+})();
