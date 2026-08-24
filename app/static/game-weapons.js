@@ -11,23 +11,23 @@
 
   const weaponModes = {
     'analysis-read-only': {
-      option: 'Radar · analisar / diagnosticar',
-      title: 'Radar de diagnóstico',
+      option: '📡 Radar de análise · analisar / diagnosticar',
+      title: 'Radar de análise',
       text: 'Varre o repositório em modo somente leitura para localizar riscos, falhas, evidências e oportunidades antes de qualquer disparo de implementação.'
     },
     develop: {
-      option: 'Canhão · desenvolver / implementar',
-      title: 'Canhão de implementação',
+      option: '⚡ Laser construtor · desenvolver / implementar',
+      title: 'Laser construtor',
       text: 'Transforma um objetivo aprovado em código real, reaproveitando o que já existe e construindo somente o que estiver faltando.'
     },
     fix: {
-      option: 'Laser de reparo · corrigir / depurar',
-      title: 'Laser de reparo',
+      option: '🎯 Canhão de correção · corrigir / depurar',
+      title: 'Canhão de correção',
       text: 'Mira na causa raiz, aplica uma correção mínima e valida regressões antes de considerar o alvo atingido.'
     },
     review: {
-      option: 'Escudo · revisar / validar',
-      title: 'Escudo de revisão',
+      option: '📡 Radar de análise · revisar / validar',
+      title: 'Radar de revisão',
       text: 'Reforça a defesa do projeto revisando regressões, segurança, testes e inconsistências sem implementar mudanças automaticamente.'
     }
   };
@@ -132,7 +132,7 @@
     if (parts.eyebrow) parts.eyebrow.textContent = 'ARSENAL DA NAVE';
     if (parts.title) parts.title.textContent = 'Desenvolver armas';
     if (parts.description) {
-      parts.description.textContent = 'No modo Jogo, cada análise ou ação vira uma arma de desenvolvimento. Escolha o tipo, defina o alvo e prepare o próximo disparo da nave.';
+      parts.description.textContent = 'No modo Jogo, cada análise ou ação vira uma arma de desenvolvimento. Escolha o mecanismo, defina o alvo e prepare o próximo disparo; segurança, testes, deploy e Linux também entram no arsenal pela classificação da oficina.';
     }
     setLabelText(parts.modeLabel, 'Tipo de arma');
     setLabelText(parts.titleLabel, 'Nome da arma');
