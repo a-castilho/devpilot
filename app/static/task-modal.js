@@ -130,7 +130,7 @@
       .task-kind-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
       .task-kind-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
       .task-kind-badge.analysis{color:#63e6be}
-      .task-kind-badge.action{color:#ffd166}
+      .task-kind-badge.action{color:#74c0fc}
       .task-kind-badge.execution{color:#74c0fc}
     `;
     document.head.appendChild(style);
@@ -168,7 +168,7 @@
       if (!task || row.children.length < 2) return;
 
       const kind = taskKind(task);
-      const label = kind === 'analysis' ? 'Análise' : kind === 'action' ? 'Ação' : 'Execução';
+      const label = kind === 'analysis' ? 'Análise' : 'Execução';
       let cell = row.querySelector('.task-kind-cell');
 
       if (!cell) {
