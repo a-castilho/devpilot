@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 BUILD_GAME_JS = Path("app/static/build-game.js")
+BUILD_GAME_URL_BONUS_JS = Path("app/static/build-game-url-bonus.js")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
 
 
@@ -44,6 +45,22 @@ def test_game_preserves_history_and_supports_new_missions():
     assert "Começar uma nova partida? O histórico atual será preservado nas tarefas." in source
     assert ".devpilot/build-game.md" in source
     assert "XP" in source
+
+
+def test_completed_game_unlocks_verified_test_url_bonus():
+    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    bonus = BUILD_GAME_URL_BONUS_JS.read_text(encoding="utf-8")
+
+    assert "/assets/build-game-url-bonus.js?v=20260824-1" in loader
+    assert "data-build-game-url-bonus-loader" in loader
+    assert "#build-game-view .build-game-victory" in bonus
+    assert "BÔNUS DO JOGO DESBLOQUEADO" in bonus
+    assert "Resgatar bônus e gerar URL" in bonus
+    assert "/delivery/${action}" in bonus
+    assert "status === 'ready' && url" in bonus
+    assert "PRONTO PARA TESTAR" in bonus
+    assert "noopener noreferrer" in bonus
+    assert "^https?:\\/\\/" in bonus
 
 
 def test_legacy_review_does_not_freeze_game_progression():
