@@ -1,3 +1,23 @@
+/* Project grid: keep exactly five project ships visible per desktop row. */
+@media (min-width: 901px) {
+  #projects-view #projects-list.cards {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  #projects-view #projects-list .project-card {
+    min-width: 0;
+    padding: 14px;
+  }
+
+  #projects-view #projects-list .project-card > h3,
+  #projects-view #projects-list .project-card > code {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}
+
 /* Project list: show five description lines and scroll the remainder. */
 #projects-view #projects-list .project-card > p {
   --project-description-line-height: 1.5em;
