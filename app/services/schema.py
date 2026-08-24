@@ -53,6 +53,16 @@ def ensure_runtime_schema(engine: Engine) -> None:
             )
         statements.append("UPDATE tasks SET status = 'completed' WHERE status = 'review'")
 
+    if "audit_events" in tables:
+        audit_columns = _column_names(inspector, "audit_events")
+        if "owner_user_id" not in audit_columns:
+            statements.extend(
+                [
+                    "ALTER TABLE audit_events ADD COLUMN owner_user_id VARCHAR(36)",
+                    "CREATE INDEX IF NOT EXISTS ix_audit_events_owner_user_id ON audit_events (owner_user_id)",
+                ]
+            )
+
     # Base.metadata.create_all() creates new Investia tables, but it cannot evolve a
     # persistent PostgreSQL volume that already has an older version of the table.
     # Keep the runtime migration additive so old DevPilot installations can publish
@@ -110,7 +120,8 @@ def ensure_runtime_schema(engine: Engine) -> None:
 
         # Legacy DevPilot data predates per-account ownership. Assign those rows to
         # the persisted SUPER_ADMIN of the same workspace instead of exposing them
-        # to every newly-created user. Tasks inherit the owner of their project.
+        # to every newly-created user. Tasks and audit events inherit their related
+        # project/task owner first, then fall back to the workspace SUPER_ADMIN.
         if "projects" in tables:
             statements.append(
                 """
@@ -147,6 +158,49 @@ def ensure_runtime_schema(engine: Engine) -> None:
                     SELECT users.id
                     FROM users
                     WHERE users.workspace_id = tasks.workspace_id
+                      AND users.role = 'SUPER_ADMIN'
+                    ORDER BY users.created_at ASC, users.id ASC
+                    LIMIT 1
+                )
+                WHERE owner_user_id IS NULL
+                """
+            )
+        if "audit_events" in tables and "tasks" in tables:
+            statements.append(
+                """
+                UPDATE audit_events
+                SET owner_user_id = (
+                    SELECT tasks.owner_user_id
+                    FROM tasks
+                    WHERE tasks.id = audit_events.task_id
+                    LIMIT 1
+                )
+                WHERE owner_user_id IS NULL
+                  AND task_id IS NOT NULL
+                """
+            )
+        if "audit_events" in tables and "projects" in tables:
+            statements.append(
+                """
+                UPDATE audit_events
+                SET owner_user_id = (
+                    SELECT projects.owner_user_id
+                    FROM projects
+                    WHERE projects.id = audit_events.project_id
+                    LIMIT 1
+                )
+                WHERE owner_user_id IS NULL
+                  AND project_id IS NOT NULL
+                """
+            )
+        if "audit_events" in tables:
+            statements.append(
+                """
+                UPDATE audit_events
+                SET owner_user_id = (
+                    SELECT users.id
+                    FROM users
+                    WHERE users.workspace_id = audit_events.workspace_id
                       AND users.role = 'SUPER_ADMIN'
                     ORDER BY users.created_at ASC, users.id ASC
                     LIMIT 1
