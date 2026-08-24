@@ -37,51 +37,75 @@
     return `${current.toFixed(i >= 2 ? 1 : 0)} ${units[i]}`;
   }
 
+  function linuxMarkup() {
+    return `
+      <div class="section-head"><p>Seu ambiente Linux privado para trabalhar nos projetos do DevPilot.</p></div>
+      <div class="linux-shell">
+        <div class="linux-status-grid">
+          <article class="linux-stat"><small>Linux Agent</small><strong id="linux-agent-status">Consultando…</strong></article>
+          <article class="linux-stat"><small>Workspace</small><strong id="linux-workspace">—</strong></article>
+          <article class="linux-stat"><small>Host</small><strong id="linux-hostname">—</strong></article>
+          <article class="linux-stat"><small>Memória</small><strong id="linux-memory">—</strong></article>
+          <article class="linux-stat"><small>Load 1m</small><strong id="linux-load">—</strong></article>
+        </div>
+        <div class="linux-info">Cada usuário autenticado recebe um workspace Linux isolado. Sessões, diretório inicial e acesso ao terminal são vinculados ao perfil do usuário; outro usuário não pode operar sua sessão.</div>
+        <article class="linux-terminal-card">
+          <div class="linux-terminal-toolbar">
+            <button class="primary" id="linux-terminal-start" type="button">Abrir meu Linux</button>
+            <button class="ghost" id="linux-terminal-stop" type="button" disabled>Encerrar</button>
+            <button class="ghost" id="linux-terminal-clear" type="button">Limpar tela</button>
+            <span class="linux-spacer"></span><span class="linux-terminal-state" id="linux-terminal-state">sem sessão</span>
+          </div>
+          <pre class="linux-terminal-output" id="linux-terminal-output" aria-live="polite"></pre>
+          <div class="linux-terminal-entry">
+            <textarea id="linux-terminal-input" spellcheck="false" placeholder="Digite um comando Linux. Enter envia; Shift+Enter quebra linha." disabled></textarea>
+            <button class="primary" id="linux-terminal-send" type="button" disabled>Enviar</button>
+          </div>
+        </article>
+      </div>`;
+  }
+
   function ensureUI() {
-    if (view && nav) return;
-    nav = document.querySelector('.sidebar nav .nav[data-linux-view="1"]');
+    nav = document.querySelector('.sidebar nav .nav[data-view="linux"]') || document.querySelector('.sidebar nav .nav[data-linux-view="1"]');
     if (!nav) {
-      nav = document.createElement('button'); nav.className = 'nav'; nav.dataset.linuxView = '1'; nav.textContent = 'Linux';
+      nav = document.createElement('button');
+      nav.className = 'nav';
+      nav.textContent = 'Linux';
       document.querySelector('.sidebar nav')?.appendChild(nav);
     }
-    nav.dataset.view = 'linux'; nav.dataset.linuxView = '1';
+    nav.dataset.view = 'linux';
+    nav.dataset.linuxView = '1';
 
     view = document.querySelector('#linux-view');
     if (!view) {
-      view = document.createElement('section'); view.className = 'view'; view.id = 'linux-view';
-      view.innerHTML = `
-        <div class="section-head"><p>Seu ambiente Linux privado para trabalhar nos projetos do DevPilot.</p></div>
-        <div class="linux-shell">
-          <div class="linux-status-grid">
-            <article class="linux-stat"><small>Linux Agent</small><strong id="linux-agent-status">Consultando…</strong></article>
-            <article class="linux-stat"><small>Workspace</small><strong id="linux-workspace">—</strong></article>
-            <article class="linux-stat"><small>Host</small><strong id="linux-hostname">—</strong></article>
-            <article class="linux-stat"><small>Memória</small><strong id="linux-memory">—</strong></article>
-            <article class="linux-stat"><small>Load 1m</small><strong id="linux-load">—</strong></article>
-          </div>
-          <div class="linux-info">Cada usuário autenticado recebe um workspace Linux isolado. Sessões, diretório inicial e acesso ao terminal são vinculados ao perfil do usuário; outro usuário não pode operar sua sessão.</div>
-          <article class="linux-terminal-card">
-            <div class="linux-terminal-toolbar">
-              <button class="primary" id="linux-terminal-start" type="button">Abrir meu Linux</button>
-              <button class="ghost" id="linux-terminal-stop" type="button" disabled>Encerrar</button>
-              <button class="ghost" id="linux-terminal-clear" type="button">Limpar tela</button>
-              <span class="linux-spacer"></span><span class="linux-terminal-state" id="linux-terminal-state">sem sessão</span>
-            </div>
-            <pre class="linux-terminal-output" id="linux-terminal-output" aria-live="polite"></pre>
-            <div class="linux-terminal-entry">
-              <textarea id="linux-terminal-input" spellcheck="false" placeholder="Digite um comando Linux. Enter envia; Shift+Enter quebra linha." disabled></textarea>
-              <button class="primary" id="linux-terminal-send" type="button" disabled>Enviar</button>
-            </div>
-          </article>
-        </div>`;
+      view = document.createElement('section');
+      view.className = 'view';
+      view.id = 'linux-view';
       document.querySelector('main')?.appendChild(view);
     }
-    nav.addEventListener('click', show);
-    document.querySelector('#linux-terminal-start')?.addEventListener('click', createSession);
-    document.querySelector('#linux-terminal-stop')?.addEventListener('click', closeSession);
-    document.querySelector('#linux-terminal-clear')?.addEventListener('click', () => { const output = document.querySelector('#linux-terminal-output'); if (output) output.textContent = ''; });
-    document.querySelector('#linux-terminal-send')?.addEventListener('click', sendInput);
-    document.querySelector('#linux-terminal-input')?.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendInput(); } });
+    if (!view.querySelector('.linux-shell')) view.innerHTML = linuxMarkup();
+
+    if (nav.dataset.linuxBound !== '1') {
+      nav.dataset.linuxBound = '1';
+      nav.addEventListener('click', show);
+    }
+    const bind = (selector, key, handler) => {
+      const element = document.querySelector(selector);
+      if (!element || element.dataset[key] === '1') return;
+      element.dataset[key] = '1';
+      element.addEventListener('click', handler);
+    };
+    bind('#linux-terminal-start', 'linuxStartBound', createSession);
+    bind('#linux-terminal-stop', 'linuxStopBound', closeSession);
+    bind('#linux-terminal-clear', 'linuxClearBound', () => { const output = document.querySelector('#linux-terminal-output'); if (output) output.textContent = ''; });
+    bind('#linux-terminal-send', 'linuxSendBound', sendInput);
+    const input = document.querySelector('#linux-terminal-input');
+    if (input && input.dataset.linuxKeyBound !== '1') {
+      input.dataset.linuxKeyBound = '1';
+      input.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendInput(); }
+      });
+    }
   }
 
   function setTerminalEnabled(enabled) {
@@ -94,6 +118,7 @@
   }
 
   async function refreshStatus() {
+    ensureUI();
     try {
       const status = await api('/api/linux/status'), system = status.system || {}, profile = status.profile || {};
       document.querySelector('#linux-agent-status').textContent = status.connected ? 'conectado' : (status.error || 'offline');
@@ -141,13 +166,33 @@
   function startPolling() { stopPolling(); if (!visible || !sessionId) return; pollOutput(); pollTimer = window.setInterval(pollOutput, 700); }
   function stopPolling() { if (pollTimer) window.clearInterval(pollTimer); pollTimer = null; }
   function show() {
+    ensureUI();
     if (!view || !nav) return; visible = true;
     document.querySelectorAll('.view').forEach(item => { item.classList.toggle('active', item === view); if (item !== view) item.style.removeProperty('display'); });
     view.hidden = false; view.classList.add('active'); view.style.setProperty('display', 'block', 'important');
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === nav));
     const title = document.querySelector('#page-title'); if (title) title.textContent = 'Meu Linux'; refreshStatus(); if (sessionId) startPolling();
   }
-  document.addEventListener('click', event => { if (!view || !visible) return; const clickedNav = event.target.closest?.('.nav'); if (clickedNav && clickedNav !== nav) { visible = false; view.style.removeProperty('display'); stopPolling(); } }, true);
 
-  api('/api/auth/me').then(() => ensureUI()).catch(() => {});
+  document.addEventListener('click', event => {
+    const clickedNav = event.target.closest?.('.nav[data-view="linux"], .nav[data-linux-view="1"]');
+    if (clickedNav) {
+      ensureUI();
+      window.setTimeout(show, 0);
+      return;
+    }
+    if (!view || !visible) return;
+    const otherNav = event.target.closest?.('.nav');
+    if (otherNav && otherNav !== nav) { visible = false; view.style.removeProperty('display'); stopPolling(); }
+  }, true);
+
+  const boot = () => {
+    ensureUI();
+    api('/api/auth/me').then(() => {
+      ensureUI();
+      if (nav?.classList.contains('active')) show();
+    }).catch(() => {});
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
+  else boot();
 })();
