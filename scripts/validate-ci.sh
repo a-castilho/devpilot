@@ -34,6 +34,8 @@ node --check app/static/mobile-project-card-compact.js
 node --check app/static/reports.js
 node --check app/static/project-provisioning.js
 node --check app/static/provider-models.js
+node --check app/static/super-admin-voice.js
+node --check app/static/super-admin-system-map.js
 node --check app/static/voice-project-start.js
 node --check app/static/voice-chatgpt-layout.js
 node --check app/static/voice-local-update.js
@@ -75,6 +77,10 @@ test -f .vercel-static/assets/mission-control.js
 test -f .vercel-static/assets/mission-control.css
 test -f .vercel-static/assets/build-game.js
 test -f .vercel-static/assets/build-game-subphases.js
+test -f .vercel-static/assets/super-admin-voice.js
+test -f .vercel-static/assets/super-admin-system-map.js
+test -f .vercel-static/assets/super-admin-system-map.css
 grep -q '/assets/mission-control.js' .vercel-static/index.html
+grep -q '/assets/super-admin-voice.js' .vercel-static/index.html
 
 "$PYTHON_CMD" -m pytest
