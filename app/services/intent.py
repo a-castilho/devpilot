@@ -13,6 +13,58 @@ LOCAL_UPDATE_PATTERNS = (
     r"^(?:atualizar|atualize|atualiza)\s+(?:o\s+)?linux(?:\s+local)?$",
 )
 
+DEPLOY_WORDS = (
+    "deploy",
+    "implante",
+    "implantar",
+    "publique",
+    "publicar",
+    "produção",
+    "production",
+)
+EXECUTION_WORDS = (
+    "corrija",
+    "corrigir",
+    "implemente",
+    "implementar",
+    "desenvolva",
+    "desenvolver",
+    "execute",
+    "executar",
+    "aplique",
+    "aplicar",
+    "ajuste",
+    "ajustar",
+    "conserte",
+    "consertar",
+    "rode",
+    "rodar",
+    "reinicie",
+    "reiniciar",
+)
+TEST_WORDS = (
+    "teste",
+    "testar",
+    "valide",
+    "validar",
+    "homologue",
+    "homologar",
+)
+ANALYSIS_WORDS = (
+    "analise",
+    "analisar",
+    "audite",
+    "auditar",
+    "revise",
+    "revisar",
+    "verifique",
+    "verificar",
+)
+
+
+def _contains_any(value: str, words: tuple[str, ...]) -> bool:
+    return any(word in value for word in words)
+
 
 def local_update_intent(transcript: str) -> dict | None:
     cleaned = " ".join(transcript.strip().split())
@@ -25,6 +77,7 @@ def local_update_intent(transcript: str) -> dict | None:
         "action": "update_local",
         "requires_authorization": False,
         "system_action": True,
+        "operational": True,
     }
 
 
@@ -43,6 +96,7 @@ def project_start_intent(transcript: str) -> dict | None:
             "project_slug": project_slug(name) if name else "",
             "action": "start_project",
             "requires_authorization": True,
+            "operational": True,
         }
     return None
 
@@ -61,6 +115,28 @@ def interpret_voice(transcript: str) -> dict:
         if match:
             project_hint = match.group(1)
             break
-    action = "analyze" if any(word in lowered for word in ("analise", "analisar", "audite")) else "develop"
+
+    if _contains_any(lowered, DEPLOY_WORDS):
+        action = "deploy"
+        operational = True
+    elif _contains_any(lowered, EXECUTION_WORDS):
+        action = "develop"
+        operational = True
+    elif _contains_any(lowered, TEST_WORDS):
+        action = "test"
+        operational = True
+    elif _contains_any(lowered, ANALYSIS_WORDS):
+        action = "analyze"
+        operational = True
+    else:
+        action = "develop"
+        operational = False
+
     title = cleaned[:100] + ("…" if len(cleaned) > 100 else "")
-    return {"title": title, "prompt": cleaned, "project_hint": project_hint, "action": action}
+    return {
+        "title": title,
+        "prompt": cleaned,
+        "project_hint": project_hint,
+        "action": action,
+        "operational": operational,
+    }
