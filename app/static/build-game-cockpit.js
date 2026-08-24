@@ -38,6 +38,44 @@
     return {project, progress, xp, current};
   }
 
+  function currentProject(view) {
+    const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
+    const projects = typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : [];
+    return projects.find(project => String(project?.id) === projectId) || null;
+  }
+
+  function automaticGoal(view) {
+    const project = currentProject(view);
+    const description = String(project?.description || '').trim();
+    if (description) return description;
+
+    const selectedName = view.querySelector('#build-game-project')?.selectedOptions?.[0]?.textContent?.trim();
+    const scoreName = view.querySelector('.build-game-score > div:nth-child(3) strong')?.textContent?.trim();
+    const projectName = String(project?.name || selectedName || scoreName || 'selecionado').trim();
+    return `Evoluir o projeto ${projectName} com uma entrega funcional, testada e verificável.`;
+  }
+
+  function ensurePlayableGoal(button) {
+    const view = button?.closest?.('#build-game-view') || document.querySelector('#build-game-view');
+    const input = view?.querySelector('#build-game-goal');
+    if (!view || !input || String(input.value || '').trim()) return false;
+
+    input.value = automaticGoal(view);
+    input.dispatchEvent(new Event('input', {bubbles: true}));
+    input.dispatchEvent(new Event('change', {bubbles: true}));
+    toastMessage('Objetivo definido automaticamente. Iniciando a fase…');
+    return true;
+  }
+
+  function installGoalGuard() {
+    if (document.documentElement.dataset.buildGameGoalGuard === '1') return;
+    document.documentElement.dataset.buildGameGoalGuard = '1';
+    document.addEventListener('click', event => {
+      const button = event.target?.closest?.('#build-game-view [data-play-phase]');
+      if (button) ensurePlayableGoal(button);
+    }, true);
+  }
+
   function setVoiceProjectContext() {
     const projectId = gameProjectId();
     if (!projectId) return false;
@@ -191,6 +229,12 @@
     if (!shell) return;
     view.classList.add('build-game-cockpit-view');
 
+    const goalInput = view.querySelector('#build-game-goal');
+    if (goalInput) {
+      goalInput.placeholder = 'Opcional — se vazio, o DevPilot define automaticamente.';
+      goalInput.setAttribute('aria-label', 'Objetivo da partida; opcional, será definido automaticamente se vazio');
+    }
+
     const existing = shell.querySelector('[data-build-game-cockpit]');
     if (existing) return;
 
@@ -213,6 +257,7 @@
 
   function boot() {
     ensureStyle();
+    installGoalGuard();
     sync();
     const main = document.querySelector('main') || document.body;
     if (!main || main.dataset.buildGameCockpitObserved === '1') return;
