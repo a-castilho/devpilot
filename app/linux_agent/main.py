@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.linux_agent import __version__
 from app.linux_agent.auth import AgentAuthError, canonical_target, verify_request
+from app.linux_agent.ollama_runtime import OllamaRuntimeError, ensure_ollama
 from app.linux_agent.runtime import SessionManager, SessionNotFound
 
 
@@ -155,6 +156,14 @@ def health():
 @app.get("/v1/system", dependencies=[Depends(require_signed_request)])
 def system_snapshot():
     return manager.system_snapshot()
+
+
+@app.post("/v1/ollama/ensure", dependencies=[Depends(require_signed_request)])
+def ensure_ollama_runtime():
+    try:
+        return ensure_ollama(manager.data_dir)
+    except OllamaRuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
 
 
 @app.get("/v1/terminal/sessions", dependencies=[Depends(require_signed_request)])
