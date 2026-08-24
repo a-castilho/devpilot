@@ -31,4 +31,5 @@ def test_voice_and_text_expose_shared_project_context():
     assert "window.devpilotChatProjectContext" in source
     assert "getProjectId: () => activeProjectId() || null" in source
     assert "setProjectId: (projectId)" in source
-    assert "O projeto selecionado no chat é enviado automaticamente" in source
+    assert "detail: {project_id: value || null}" in source
+    assert "O DevPilot usará este contexto automaticamente." in source
