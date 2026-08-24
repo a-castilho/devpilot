@@ -7,6 +7,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
+from app.delivery_cloud_bridge import install_delivery_cloud_bridge
 from app.models import Project
 from app.services.audit import record
 
@@ -159,12 +160,13 @@ def _run_delivery_with_public_url_recovery(
 
 
 def install_delivery_url_recovery() -> None:
-    """Recover a real test URL when the project's own CI/CD already published it.
+    """Recover a real test URL and reuse clouds configured by Super Admin.
 
-    Managed Neon/Render/Vercel credentials remain the primary delivery path. When they are
-    absent or a managed deploy is still pending, DevPilot can read successful GitHub deploy
-    statuses and verify the public Vercel/Render URL before returning the game reward.
+    Managed Neon/Render/Vercel credentials remain the primary delivery path. The bridge makes
+    that path consume the canonical credentials from Super Admin > Clouds. If managed deploy is
+    still pending, DevPilot can also recover an already-published Vercel/Render URL.
     """
+    install_delivery_cloud_bridge()
     current = delivery.run_delivery
     if getattr(current, "_devpilot_public_url_recovery", False):
         return
