@@ -183,6 +183,7 @@ class AuditEvent(Base):
     __tablename__ = "audit_events"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uid)
     workspace_id: Mapped[str] = mapped_column(ForeignKey("workspaces.id"), index=True)
+    owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str | None] = mapped_column(String(36), index=True)
     task_id: Mapped[str | None] = mapped_column(String(36), index=True)
     actor: Mapped[str] = mapped_column(String(120))
