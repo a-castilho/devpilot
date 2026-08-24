@@ -15,23 +15,24 @@
   #tasks-view .table-wrap tbody{display:block;width:100%}
   #tasks-view .table-wrap thead{display:none}
   #tasks-view .table-wrap tbody{display:grid;gap:12px}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row){display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid rgba(106,143,179,.22);border-radius:14px;background:rgba(8,20,33,.62);overflow:hidden}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row){display:grid;grid-template-columns:repeat(5,minmax(0,1fr));border:1px solid rgba(106,143,179,.22);border-radius:14px;background:rgba(8,20,33,.62);overflow:hidden}
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td{min-width:0;padding:11px 12px;border:0;white-space:normal;word-break:normal;overflow-wrap:anywhere}
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:first-child{grid-column:1/-1;padding:14px 12px;border-bottom:1px solid rgba(106,143,179,.18);font-weight:750}
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(n+2)::before{display:block;margin-bottom:4px;color:#91a4bd;font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(2)::before{content:'Origem'}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(3)::before{content:'Status'}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(4)::before{content:'Prioridade'}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(5)::before{content:'Ação'}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(5){display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(5)::before{flex:0 0 100%}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(3)::before{content:'Tipo'}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(4)::before{content:'Status'}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(5)::before{content:'Prioridade'}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(6)::before{content:'Ação'}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(6){display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(6)::before{flex:0 0 100%}
   #tasks-view .task-instructions-row{display:block;margin:-12px 0 0;border:1px solid rgba(106,143,179,.22);border-top:0;border-radius:0 0 14px 14px;background:rgba(8,20,33,.45)}
   #tasks-view .task-instructions-row>td{display:block!important;min-width:0!important;width:100%;padding:10px 12px;white-space:normal;overflow-wrap:anywhere}
 }
 
 @media(max-width:820px){
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row){grid-template-columns:repeat(2,minmax(0,1fr))}
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(5){grid-column:1/-1}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(6){grid-column:1/-1}
 }
 
 @media(max-width:520px){
@@ -39,5 +40,5 @@
   #tasks-view .task-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row){grid-template-columns:1fr}
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:first-child,
-  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(5){grid-column:1}
+  #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(6){grid-column:1}
 }

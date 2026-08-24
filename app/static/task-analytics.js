@@ -11,7 +11,23 @@
   }, {});
   const taskType = task => {
     if (task.type) return clean(task.type);
-    const text = (String(task.title || '') + ' ' + String(task.prompt || '')).toLocaleLowerCase('pt-BR');
+    const source = String(task.source || '').toLowerCase();
+    const title = String(task.title || '');
+    const prompt = String(task.prompt || '');
+    const lowerPrompt = prompt.toLocaleLowerCase('pt-BR');
+
+    if (
+      source === 'analysis' ||
+      source === 'analysis-action' ||
+      lowerPrompt.includes('[analysis-action]') ||
+      lowerPrompt.includes('[analysis-run:')
+    ) return 'Ação';
+
+    const mode = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
+    if (mode === 'analysis-read-only' || mode === 'review') return 'Análise';
+    if (mode === 'develop' || mode === 'fix') return 'Execução';
+
+    const text = (title + ' ' + prompt).toLocaleLowerCase('pt-BR');
     return /an[aá]lis|audit|diagn[oó]st|revis/.test(text) ? 'Análise' : 'Execução';
   };
   const bars = values => {
@@ -63,7 +79,13 @@
     const tasks = analyticsTasks();
     const statusValues = countBy(tasks, task => ptStatus(task.status));
     const typeValues = countBy(tasks, taskType);
-    const sourceValues = countBy(tasks, task => ({voice:'Voz',dashboard:'Painel',api:'API'}[String(task.source || '').toLowerCase()] || clean(task.source) || 'Outra'));
+    const sourceValues = countBy(tasks, task => ({
+      voice:'Voz',
+      dashboard:'Painel',
+      api:'API',
+      analysis:'Análise automática',
+      'analysis-action':'Análise automática'
+    })[String(task.source || '').toLowerCase()] || clean(task.source) || 'Outra');
     const completed = tasks.filter(task => normalizeStatus(task.status) === 'completed').length;
     const active = tasks.filter(task => ['awaiting_approval','queued','running','review','blocked'].includes(normalizeStatus(task.status))).length;
     const avgPriority = tasks.length ? Math.round(tasks.reduce((sum,task) => sum + Number(task.priority || 0), 0) / tasks.length) : 0;
@@ -82,7 +104,7 @@
       '</div>'+
       '<div class="task-charts-grid">'+
         '<article class="task-chart"><h3>Tarefas por status</h3>'+bars(statusValues)+'</article>'+
-        '<article class="task-chart"><h3>Análise × execução</h3>'+bars(typeValues)+'</article>'+
+        '<article class="task-chart"><h3>Tipos de tarefa</h3>'+bars(typeValues)+'</article>'+
         '<article class="task-chart"><h3>Origem das tarefas</h3>'+bars(sourceValues)+'</article>'+
         '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">'+priority.map(([label,value]) => '<div class="task-priority-item"><i></i><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></article>'+
       '</div>';

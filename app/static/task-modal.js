@@ -65,13 +65,23 @@
     window.setTimeout(refreshMode, 0);
   });
 
-  // Desenvolvimento: deixa explícito se cada item é análise ou execução.
-  // O modo já é gravado no prompt por este módulo; tarefas antigas recebem
-  // uma classificação compatível pelas instruções somente-leitura existentes.
+  // Desenvolvimento: deixa explícito se cada item é análise, ação ou execução.
+  // Ações originadas por análise são marcadas antes de qualquer heurística para
+  // impedir que o texto do diagnóstico faça a ação voltar a ser "Análise".
   const taskTableBody = document.querySelector('#tasks-table');
 
   function taskKind(task) {
     const prompt = String(task?.prompt || '');
+    const source = String(task?.source || '').toLowerCase();
+    const lowerPrompt = prompt.toLowerCase();
+
+    if (
+      source === 'analysis' ||
+      source === 'analysis-action' ||
+      lowerPrompt.includes('[analysis-action]') ||
+      lowerPrompt.includes('[analysis-run:')
+    ) return 'action';
+
     const marker = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
 
     if (marker === 'analysis-read-only' || marker === 'review') return 'analysis';
@@ -102,6 +112,7 @@
       .task-kind-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
       .task-kind-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
       .task-kind-badge.analysis{color:#63e6be}
+      .task-kind-badge.action{color:#ffd166}
       .task-kind-badge.execution{color:#74c0fc}
     `;
     document.head.appendChild(style);
@@ -145,7 +156,7 @@
       if (!task || row.children.length < 2) return;
 
       const kind = taskKind(task);
-      const label = kind === 'analysis' ? 'Análise' : 'Execução';
+      const label = kind === 'analysis' ? 'Análise' : kind === 'action' ? 'Ação' : 'Execução';
       let cell = row.querySelector('.task-kind-cell');
 
       if (!cell) {

@@ -18,6 +18,9 @@ from app.services.token_usage import extract_codex_usage, record_usage, task_use
 enable_executor_image_support(executor_service)
 execute_task = executor_service.execute_task
 
+_ANALYSIS_MODES = {"analysis-read-only", "review"}
+_ACTION_MARKER = "[analysis-action]"
+
 
 def _failure_text(result: dict | None, error: Exception | None) -> str:
     if error is not None:
@@ -123,6 +126,140 @@ def _final_task_status(run_status: str, needs_authorization: bool) -> TaskStatus
     if needs_authorization:
         return TaskStatus.blocked
     return TaskStatus.failed
+
+
+def _task_mode(task: Task) -> str:
+    prompt = str(task.prompt or "")
+    prefix = "[DEVPILOT_MODE="
+    start = prompt.upper().find(prefix)
+    if start < 0:
+        return ""
+    start += len(prefix)
+    end = prompt.find("]", start)
+    return prompt[start:end].strip().lower() if end > start else ""
+
+
+def _is_analysis_task(task: Task) -> bool:
+    prompt = str(task.prompt or "")
+    normalized_prompt = prompt.lower()
+    source = str(task.source or "").lower()
+
+    # Actions created from an analysis must never be analysed again.
+    if source in {"analysis", "analysis-action"}:
+        return False
+    if _ACTION_MARKER in normalized_prompt or "[analysis-run:" in normalized_prompt:
+        return False
+
+    mode = _task_mode(task)
+    if mode:
+        return mode in _ANALYSIS_MODES
+
+    legacy = f"{task.title or ''}\n{prompt}".lower()
+    return any(
+        signal in legacy
+        for signal in (
+            "análise técnica de ",
+            "analise tecnica de ",
+            "auditoria somente leitura",
+            "somente leitura do projeto",
+            "não modifique arquivos",
+            "nao modifique arquivos",
+        )
+    )
+
+
+def _analysis_report(result: dict | None, run: Run) -> str:
+    payload = result if isinstance(result, dict) else {}
+    for key in ("client_report", "summary", "stdout"):
+        value = str(payload.get(key) or "").strip()
+        if value:
+            return value[:100_000]
+    return str(run.summary or "Análise concluída sem relatório textual.").strip()[:100_000]
+
+
+def _analysis_action_priority(report: str) -> int:
+    normalized = str(report or "").lower()
+    if any(
+        signal in normalized
+        for signal in ("crítico", "critico", "bloqueio", "segurança", "seguranca", "credencial")
+    ):
+        return 90
+    if any(signal in normalized for signal in ("alto", "importante", "risco")):
+        return 80
+    return 70
+
+
+def _analysis_action_title(project: Project) -> str:
+    return f"Ação recomendada · {project.name}"[:240]
+
+
+def _analysis_action_prompt(run: Run, report: str) -> str:
+    marker = f"[analysis-run:{run.id}]"
+    return (
+        f"{_ACTION_MARKER}\n"
+        f"{marker}\n"
+        "Execute as correções e melhorias recomendadas no diagnóstico abaixo. "
+        "Não faça uma nova análise: transforme os achados em implementação verificável. "
+        "Priorize riscos críticos, preserve compatibilidade, execute testes relevantes e "
+        "registre claramente o que foi alterado.\n\n"
+        "DIAGNÓSTICO DE ORIGEM:\n"
+        f"{report}"
+    )[:100_000]
+
+
+def _ensure_analysis_action(
+    db,
+    *,
+    project: Project,
+    task: Task,
+    run: Run,
+    result: dict | None,
+) -> Task | None:
+    if run.status != "success" or not _is_analysis_task(task):
+        return None
+
+    marker = f"[analysis-run:{run.id}]"
+    existing = db.scalar(
+        select(Task)
+        .where(
+            Task.workspace_id == task.workspace_id,
+            Task.project_id == task.project_id,
+            Task.prompt.contains(marker),
+        )
+        .limit(1)
+    )
+    if existing:
+        return existing
+
+    report = _analysis_report(result, run)
+    action_task = Task(
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        title=_analysis_action_title(project),
+        prompt=_analysis_action_prompt(run, report),
+        source="analysis",
+        status=TaskStatus.awaiting_approval,
+        requires_approval=True,
+        priority=_analysis_action_priority(report),
+    )
+    db.add(action_task)
+    db.flush()
+    record(
+        db,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        task_id=action_task.id,
+        actor="worker",
+        action="analysis.action_created",
+        outcome="awaiting_approval",
+        details={
+            "analysis_task_id": task.id,
+            "analysis_run_id": run.id,
+            "priority": action_task.priority,
+            "automatic": True,
+        },
+    )
+    return action_task
 
 
 def process_one() -> bool:
@@ -278,6 +415,13 @@ def process_one() -> bool:
 
         outcome = run.status
         run.finished_at = datetime.now(timezone.utc)
+        generated_action = _ensure_analysis_action(
+            db,
+            project=project,
+            task=task,
+            run=run,
+            result=result,
+        )
         record(
             db,
             workspace_id=task.workspace_id,
@@ -286,7 +430,11 @@ def process_one() -> bool:
             actor="worker",
             action="task.executed",
             outcome=outcome,
-            details={"run_id": run.id, "attempt": run.attempt},
+            details={
+                "run_id": run.id,
+                "attempt": run.attempt,
+                "generated_action_task_id": generated_action.id if generated_action else None,
+            },
         )
         db.commit()
         return True
