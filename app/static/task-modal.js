@@ -203,3 +203,14 @@
     scheduleEnhancement();
   }
 })();
+
+/* Load the game-only weapon vocabulary after the generic task modal is ready. */
+(() => {
+  const selector = 'script[data-game-weapons-loader]';
+  if (document.querySelector(selector)) return;
+  const script = document.createElement('script');
+  script.src = '/assets/game-weapons.js?v=20260824-1';
+  script.defer = true;
+  script.dataset.gameWeaponsLoader = '1';
+  document.head.appendChild(script);
+})();
