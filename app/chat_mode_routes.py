@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import Task, TaskStatus
 from app.security import require_access
 from app.services.ai_costs import budget_block_reason
+from app.services.ai_routing import economic_ai_route
 from app.services.audit import record
 from app.services.intent import interpret_voice
 from app.services.token_usage import (
@@ -154,6 +155,7 @@ def _stage_build_task(
             "profile": CHAT_PROFILES["build"],
             "intent_action": intent.get("action", "develop"),
             "requires_approval": True,
+            "execution_route": "codex_after_approval",
         },
     )
     return task, True
@@ -281,6 +283,11 @@ async def devpilot_chat(
     primary = provider_order[0]
     fallback_used = bool(budget_reason) or provider != primary
     notice = _fallback_notice(provider, primary) if fallback_used else ""
+    routing = economic_ai_route(
+        mode=payload.mode,
+        provider=provider,
+        budget_forced_local=bool(budget_reason),
+    )
 
     execution = {
         "allowed": False,
@@ -335,6 +342,9 @@ async def devpilot_chat(
             "history_items": len(payload.history),
             "task_id": execution["task_id"],
             "requires_approval": execution["requires_approval"],
+            "routing_strategy": routing["strategy"],
+            "conversation_route": routing["conversation_route"],
+            "execution_route": routing["execution_route"],
         },
     )
     db.commit()
@@ -352,6 +362,7 @@ async def devpilot_chat(
         "mode": payload.mode,
         "profile": CHAT_PROFILES[payload.mode],
         "execution": execution,
+        "routing": routing,
         "provider": provider,
         "model": selected_model,
         "fallback_used": fallback_used,
