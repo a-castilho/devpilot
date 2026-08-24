@@ -297,3 +297,274 @@
   syncNavigation();
   resolveRole();
 })();
+
+/*
+ * Tema Preto: referência visual GitHub Mobile.
+ * O seletor de tons existente grava `data-workspace-tone="black"` no <html>.
+ * Este override é carregado por último para transformar a opção preta em um
+ * tema realmente neutro, sem gradientes azulados, com superfícies e navegação
+ * equivalentes ao padrão visual escuro do GitHub.
+ */
+(() => {
+  const STYLE_ID = 'devpilot-github-black-theme';
+  if (document.getElementById(STYLE_ID)) return;
+
+  const style = document.createElement('style');
+  style.id = STYLE_ID;
+  style.textContent = `
+    html[data-workspace-tone="black"] {
+      color-scheme: dark;
+      --bg: #0d1117;
+      --surface: #161b22;
+      --surface2: #21262d;
+      --line: #30363d;
+      --text: #f0f6fc;
+      --muted: #8b949e;
+      --cyan: #58a6ff;
+      --blue: #1f6feb;
+      --amber: #d29922;
+      --red: #f85149;
+      --shadow: 0 8px 24px rgba(1, 4, 9, .72);
+      --workspace-glow: transparent;
+      --workspace-sidebar: #161b22;
+    }
+
+    html[data-workspace-tone="black"],
+    html[data-workspace-tone="black"] body {
+      background: #0d1117 !important;
+      color: #f0f6fc;
+    }
+
+    html[data-workspace-tone="black"] body {
+      background-image: none !important;
+    }
+
+    html[data-workspace-tone="black"] main {
+      background: #0d1117;
+    }
+
+    html[data-workspace-tone="black"] .sidebar {
+      background: #161b22 !important;
+      border-color: #30363d !important;
+      box-shadow: none !important;
+      backdrop-filter: none !important;
+    }
+
+    html[data-workspace-tone="black"] .brand,
+    html[data-workspace-tone="black"] h1,
+    html[data-workspace-tone="black"] h2,
+    html[data-workspace-tone="black"] h3,
+    html[data-workspace-tone="black"] strong {
+      color: #f0f6fc;
+    }
+
+    html[data-workspace-tone="black"] .brand small,
+    html[data-workspace-tone="black"] .hint,
+    html[data-workspace-tone="black"] .empty,
+    html[data-workspace-tone="black"] small,
+    html[data-workspace-tone="black"] p {
+      color: #8b949e;
+    }
+
+    html[data-workspace-tone="black"] .nav,
+    html[data-workspace-tone="black"] .nav-group-toggle {
+      color: #8b949e;
+      background: transparent;
+      border-color: transparent;
+    }
+
+    html[data-workspace-tone="black"] .nav:hover,
+    html[data-workspace-tone="black"] .nav.active,
+    html[data-workspace-tone="black"] .nav-group-toggle:hover,
+    html[data-workspace-tone="black"] .nav-group-toggle.active {
+      color: #f0f6fc;
+      background: #21262d !important;
+    }
+
+    html[data-workspace-tone="black"] .sidebar-search input,
+    html[data-workspace-tone="black"] input,
+    html[data-workspace-tone="black"] textarea,
+    html[data-workspace-tone="black"] select {
+      background: #0d1117 !important;
+      color: #f0f6fc !important;
+      border-color: #30363d !important;
+      box-shadow: none !important;
+    }
+
+    html[data-workspace-tone="black"] input:focus,
+    html[data-workspace-tone="black"] textarea:focus,
+    html[data-workspace-tone="black"] select:focus {
+      border-color: #58a6ff !important;
+      box-shadow: 0 0 0 3px rgba(56, 139, 253, .18) !important;
+    }
+
+    html[data-workspace-tone="black"] .metric,
+    html[data-workspace-tone="black"] .panel,
+    html[data-workspace-tone="black"] .project-card,
+    html[data-workspace-tone="black"] .builder-card,
+    html[data-workspace-tone="black"] .consultant-promo,
+    html[data-workspace-tone="black"] .reports-hero,
+    html[data-workspace-tone="black"] .report-list,
+    html[data-workspace-tone="black"] .report-reader,
+    html[data-workspace-tone="black"] .system-card,
+    html[data-workspace-tone="black"] dialog,
+    html[data-workspace-tone="black"] [class*="analysis-"][class*="card"] {
+      background: #161b22 !important;
+      background-image: none !important;
+      border-color: #30363d !important;
+      box-shadow: none !important;
+    }
+
+    html[data-workspace-tone="black"] .hero {
+      background: #161b22 !important;
+      background-image: none !important;
+      border-color: #30363d !important;
+      box-shadow: none !important;
+    }
+
+    html[data-workspace-tone="black"] .primary {
+      background: #1f6feb !important;
+      background-image: none !important;
+      color: #fff !important;
+      border: 1px solid rgba(240, 246, 252, .1) !important;
+      box-shadow: none !important;
+    }
+
+    html[data-workspace-tone="black"] .primary:hover {
+      background: #388bfd !important;
+    }
+
+    html[data-workspace-tone="black"] .ghost,
+    html[data-workspace-tone="black"] .voice,
+    html[data-workspace-tone="black"] .workspace-tone-toggle {
+      background: #21262d !important;
+      color: #f0f6fc !important;
+      border-color: #30363d !important;
+      box-shadow: none !important;
+    }
+
+    html[data-workspace-tone="black"] .link,
+    html[data-workspace-tone="black"] .eyebrow,
+    html[data-workspace-tone="black"] .hero h2 em {
+      color: #58a6ff !important;
+    }
+
+    html[data-workspace-tone="black"] .workspace-tone-menu {
+      background: #161b22 !important;
+      border-color: #30363d !important;
+      box-shadow: 0 8px 24px rgba(1, 4, 9, .72) !important;
+    }
+
+    html[data-workspace-tone="black"] .workspace-tone-option[data-tone="black"] {
+      background: #0d1117 !important;
+    }
+
+    html[data-workspace-tone="black"] .workspace-tone-option[aria-pressed="true"] {
+      border-color: #58a6ff !important;
+      box-shadow: 0 0 0 3px rgba(56, 139, 253, .2) !important;
+    }
+
+    html[data-workspace-tone="black"] .status {
+      border: 1px solid #30363d;
+      background: #21262d;
+      color: #c9d1d9;
+    }
+
+    html[data-workspace-tone="black"] .status.completed,
+    html[data-workspace-tone="black"] .status.review {
+      color: #3fb950;
+      background: rgba(46, 160, 67, .15);
+      border-color: rgba(46, 160, 67, .4);
+    }
+
+    html[data-workspace-tone="black"] .status.failed {
+      color: #ff7b72;
+      background: rgba(248, 81, 73, .12);
+      border-color: rgba(248, 81, 73, .4);
+    }
+
+    html[data-workspace-tone="black"] .status.awaiting_approval {
+      color: #e3b341;
+      background: rgba(187, 128, 9, .15);
+      border-color: rgba(187, 128, 9, .4);
+    }
+
+    html[data-workspace-tone="black"] table,
+    html[data-workspace-tone="black"] th,
+    html[data-workspace-tone="black"] td,
+    html[data-workspace-tone="black"] .list-row,
+    html[data-workspace-tone="black"] .audit,
+    html[data-workspace-tone="black"] .insight {
+      border-color: #30363d !important;
+    }
+
+    html[data-workspace-tone="black"] code,
+    html[data-workspace-tone="black"] pre {
+      background: #0d1117 !important;
+      color: #c9d1d9 !important;
+      border-color: #30363d !important;
+    }
+
+    html[data-workspace-tone="black"] .toast {
+      background: #21262d !important;
+      color: #f0f6fc !important;
+      border-color: #30363d !important;
+      box-shadow: 0 8px 24px rgba(1, 4, 9, .72) !important;
+    }
+
+    html[data-workspace-tone="black"] * {
+      scrollbar-color: #484f58 #0d1117;
+    }
+
+    html[data-workspace-tone="black"] *::-webkit-scrollbar-track {
+      background: #0d1117 !important;
+    }
+
+    html[data-workspace-tone="black"] *::-webkit-scrollbar-thumb {
+      background: #484f58 !important;
+      border-color: #0d1117 !important;
+    }
+
+    @media (max-width: 900px) {
+      html[data-workspace-tone="black"] .sidebar {
+        background: #161b22 !important;
+        border-top: 1px solid #30363d !important;
+      }
+
+      html[data-workspace-tone="black"] .sidebar nav {
+        background: transparent !important;
+      }
+
+      html[data-workspace-tone="black"] .nav.active {
+        color: #58a6ff !important;
+        background: rgba(56, 139, 253, .18) !important;
+      }
+
+      html[data-workspace-tone="black"] .mobile-nav-arrow {
+        background: #21262d !important;
+        color: #8b949e !important;
+        border-color: #30363d !important;
+      }
+
+      html[data-workspace-tone="black"] .workspace-tone-picker {
+        filter: none;
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  const syncThemeColor = () => {
+    if (document.documentElement.dataset.workspaceTone !== 'black') return;
+    let meta = document.querySelector('meta[name="theme-color"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'theme-color';
+      document.head.appendChild(meta);
+    }
+    meta.content = '#0d1117';
+  };
+
+  const observer = new MutationObserver(syncThemeColor);
+  observer.observe(document.documentElement, {attributes: true, attributeFilter: ['data-workspace-tone']});
+  syncThemeColor();
+})();
