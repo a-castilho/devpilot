@@ -46,6 +46,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+  runtime-image:
+    name: DevPilot runtime image
+    if: github.event_name != 'pull_request'
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Build Docker image
         run: docker build -t devpilot:ci .
 
