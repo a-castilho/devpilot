@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ProviderCredential
+from app.models import ProviderCredential, Task
 from app.security import Principal, Role, session_principal
 from app.services.audit import record
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
@@ -20,6 +21,12 @@ router = APIRouter(prefix="/api/linux", tags=["linux"])
 
 _GITHUB_CLOUD_PROVIDER = "cloud:github"
 _CLOUD_CREDENTIAL_LABEL = "cloud-admin"
+_GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
+_GAME_PHASE_RE = re.compile(r"^FASE:\s*(\d+)/6\s*$", re.IGNORECASE | re.MULTILINE)
+_GAME_PHASE_XP = {1: 100, 2: 120, 3: 140, 4: 160, 5: 180, 6: 200}
+_TERMINAL_BONUS_PHASES = {1, 2, 3}
+_TERMINAL_BONUS_XP = sum(_GAME_PHASE_XP[phase] for phase in _TERMINAL_BONUS_PHASES)
+_TERMINAL_BONUS_ROLES = {Role.OWNER, Role.ADMIN, Role.ANALYST}
 
 
 class TerminalCreate(BaseModel):
@@ -71,6 +78,97 @@ def audit(
         action=action,
         details=details,
     )
+
+
+def _task_phase(task: object) -> int | None:
+    prompt = str(getattr(task, "prompt", "") or "")
+    if _GAME_MARKER not in prompt:
+        return None
+    match = _GAME_PHASE_RE.search(prompt)
+    if not match:
+        return None
+    phase = int(match.group(1))
+    return phase if phase in _GAME_PHASE_XP else None
+
+
+def _task_completed(task: object) -> bool:
+    status = getattr(task, "status", "")
+    value = getattr(status, "value", status)
+    return str(value or "").strip().lower() == "completed"
+
+
+def _linux_bonus_from_tasks(tasks: list[object], role: Role) -> dict:
+    if role is Role.SUPER_ADMIN:
+        return {
+            "eligible": True,
+            "unlocked": True,
+            "source": "super-admin",
+            "required_phase": 0,
+            "required_phases": [],
+            "required_xp": 0,
+            "earned_xp": 0,
+            "completed_phases": [],
+            "scope": "all-devpilot-linux-sessions",
+            "message": "Super Admin possui acesso a todas as sessões Linux gerenciadas pelo DevPilot.",
+        }
+
+    eligible = role in _TERMINAL_BONUS_ROLES
+    completed_phases = {
+        phase
+        for task in tasks
+        if _task_completed(task) and (phase := _task_phase(task)) is not None
+    }
+    earned_xp = sum(_GAME_PHASE_XP[phase] for phase in sorted(completed_phases))
+    unlocked = eligible and _TERMINAL_BONUS_PHASES.issubset(completed_phases)
+
+    if not eligible:
+        message = (
+            "O perfil VIEWER é somente leitura e não recebe terminal executável."
+            if role is Role.VIEWER
+            else "Este perfil não está habilitado para executar terminal Linux."
+        )
+    elif unlocked:
+        message = "Bônus do jogo liberado: Terminal Linux em workspace isolado."
+    else:
+        message = (
+            "Conclua as fases 1, 2 e 3 do Jogo de construção "
+            f"para liberar o Terminal Linux ({_TERMINAL_BONUS_XP} XP)."
+        )
+
+    return {
+        "eligible": eligible,
+        "unlocked": unlocked,
+        "source": "build-game",
+        "required_phase": max(_TERMINAL_BONUS_PHASES),
+        "required_phases": sorted(_TERMINAL_BONUS_PHASES),
+        "required_xp": _TERMINAL_BONUS_XP,
+        "earned_xp": earned_xp,
+        "completed_phases": sorted(completed_phases),
+        "scope": "own-isolated-workspace",
+        "message": message,
+    }
+
+
+def _terminal_bonus_status(db: Session, principal: Principal) -> dict:
+    if principal.role is Role.SUPER_ADMIN:
+        return _linux_bonus_from_tasks([], principal.role)
+    tasks = list(
+        db.scalars(
+            select(Task).where(
+                Task.workspace_id == principal.workspace_id,
+                Task.owner_user_id == principal.user_id,
+                Task.prompt.contains(_GAME_MARKER),
+            )
+        ).all()
+    )
+    return _linux_bonus_from_tasks(tasks, principal.role)
+
+
+def require_terminal_bonus(db: Session, principal: Principal) -> dict:
+    bonus = _terminal_bonus_status(db, principal)
+    if not bonus["unlocked"]:
+        raise HTTPException(status_code=403, detail=bonus["message"])
+    return bonus
 
 
 def _github_cloud_credential(
@@ -144,7 +242,12 @@ def _can_access_session(principal: Principal, session: dict) -> bool:
     return principal.role is Role.SUPER_ADMIN or session.get("actor") == principal.actor
 
 
-def require_owned_session(principal: Principal, session_id: str) -> dict:
+def require_owned_session(
+    db: Session,
+    principal: Principal,
+    session_id: str,
+) -> dict:
+    require_terminal_bonus(db, principal)
     for session in _all_sessions():
         if session.get("id") == session_id:
             if not _can_access_session(principal, session):
@@ -160,6 +263,7 @@ def linux_status(
 ):
     super_admin = principal.role is Role.SUPER_ADMIN
     github_cloud = _github_cloud_credential(db, principal)
+    terminal_bonus = _terminal_bonus_status(db, principal)
     profile = {
         "user_id": principal.user_id,
         "workspace_id": principal.workspace_id,
@@ -169,6 +273,8 @@ def linux_status(
         "linux_user": None,
         "linux_user_ready": False,
         "git_cloud": _github_cloud_status(github_cloud) if super_admin else None,
+        "terminal_bonus": terminal_bonus,
+        "admin_scope": "all-devpilot-linux-sessions" if super_admin else None,
     }
     try:
         health = LinuxAgentClient().health()
@@ -206,9 +312,18 @@ def linux_status(
 
 
 @router.get("/terminal/sessions")
-def terminal_sessions(principal: Principal = Depends(current_user)):
+def terminal_sessions(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(current_user),
+):
+    require_terminal_bonus(db, principal)
     items = [session for session in _all_sessions() if _can_access_session(principal, session)]
-    return {"items": items}
+    return {
+        "items": items,
+        "scope": "all-devpilot-linux-sessions"
+        if principal.role is Role.SUPER_ADMIN
+        else "own-isolated-workspace",
+    }
 
 
 @router.post("/terminal/sessions", status_code=201)
@@ -217,6 +332,7 @@ def create_terminal_session(
     db: Session = Depends(get_db),
     principal: Principal = Depends(current_user),
 ):
+    terminal_bonus = require_terminal_bonus(db, principal)
     if payload.cwd and principal.role is not Role.SUPER_ADMIN:
         raise HTTPException(
             status_code=403,
@@ -249,22 +365,31 @@ def create_terminal_session(
             "pid": session.get("pid"),
             "linux_user": session.get("linux_user"),
             "workspace_key": None if principal.role is Role.SUPER_ADMIN else workspace_key(principal),
-            "mode": "dedicated-linux-user" if principal.role is Role.SUPER_ADMIN else "isolated-user-workspace",
+            "mode": "dedicated-linux-user"
+            if principal.role is Role.SUPER_ADMIN
+            else "isolated-user-workspace",
             "git_provider": session.get("git_provider"),
             "git_cloud_integrated": bool(git_auth),
+            "terminal_bonus_source": terminal_bonus.get("source"),
+            "terminal_bonus_scope": terminal_bonus.get("scope"),
         },
     )
     db.commit()
-    return session
+    return {
+        **session,
+        "access_scope": terminal_bonus["scope"],
+        "game_bonus": terminal_bonus,
+    }
 
 
 @router.get("/terminal/sessions/{session_id}/output")
 def terminal_output(
     session_id: str,
     after: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
     principal: Principal = Depends(current_user),
 ):
-    require_owned_session(principal, session_id)
+    require_owned_session(db, principal, session_id)
     return agent_call("GET", f"/v1/terminal/sessions/{session_id}/output?after={after}")
 
 
@@ -275,7 +400,7 @@ def terminal_input(
     db: Session = Depends(get_db),
     principal: Principal = Depends(current_user),
 ):
-    require_owned_session(principal, session_id)
+    target_session = require_owned_session(db, principal, session_id)
     result = agent_call(
         "POST",
         f"/v1/terminal/sessions/{session_id}/input",
@@ -289,6 +414,8 @@ def terminal_input(
             "session_id": session_id,
             "bytes": len(payload.data.encode("utf-8")),
             "sha256": hashlib.sha256(payload.data.encode("utf-8")).hexdigest(),
+            "super_admin_cross_session": principal.role is Role.SUPER_ADMIN,
+            "target_actor": target_session.get("actor"),
         },
     )
     db.commit()
@@ -299,9 +426,10 @@ def terminal_input(
 def terminal_resize(
     session_id: str,
     payload: TerminalResize,
+    db: Session = Depends(get_db),
     principal: Principal = Depends(current_user),
 ):
-    require_owned_session(principal, session_id)
+    require_owned_session(db, principal, session_id)
     return agent_call(
         "POST",
         f"/v1/terminal/sessions/{session_id}/resize",
@@ -315,7 +443,7 @@ def close_terminal_session(
     db: Session = Depends(get_db),
     principal: Principal = Depends(current_user),
 ):
-    require_owned_session(principal, session_id)
+    target_session = require_owned_session(db, principal, session_id)
     result = agent_call("DELETE", f"/v1/terminal/sessions/{session_id}")
     audit(
         db,
@@ -324,6 +452,8 @@ def close_terminal_session(
         details={
             "session_id": session_id,
             "exit_code": result.get("exit_code"),
+            "super_admin_cross_session": principal.role is Role.SUPER_ADMIN,
+            "target_actor": target_session.get("actor"),
         },
     )
     db.commit()
