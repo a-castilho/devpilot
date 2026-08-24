@@ -15,6 +15,7 @@ from app.career_routes import router as career_router
 from app.chat_mode_routes import router as chat_mode_router
 from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
+from app.delivery_url_recovery import install_delivery_url_recovery
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
 from app.host_action_routes import router as host_action_router
@@ -42,6 +43,7 @@ from app.services.ollama_voice_bridge import install_voice_ollama_bridge
 from app.services.schema import ensure_runtime_schema
 
 
+install_delivery_url_recovery()
 install_voice_ollama_bridge()
 
 STATIC = Path(__file__).parent / "static"
