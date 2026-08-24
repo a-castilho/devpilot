@@ -136,12 +136,13 @@ def record(
         }
         event_hash = str(attestation["event_hash"])
     else:
-        stored_details[LINUX_AUDIT_KEY] = {
-            "schema_version": 2,
-            "status": "unavailable",
-            "error": attestation_error or "linux_attestation_unavailable",
-            "run_id": "",
-        }
+        if attestation_error != "linux_agent_not_configured":
+            stored_details[LINUX_AUDIT_KEY] = {
+                "schema_version": 2,
+                "status": "unavailable",
+                "error": attestation_error or "linux_attestation_unavailable",
+                "run_id": "",
+            }
         serialized_fallback = _serialize(stored_details)
         event_hash = _legacy_hash(
             previous_hash=previous_hash,
@@ -234,8 +235,10 @@ def verify_chain(events: Iterable[AuditEvent]) -> dict[str, Any]:
 
         expected_previous = event.event_hash
 
+    chain_valid = not invalid
     return {
-        "valid": not invalid,
+        "valid": chain_valid,
+        "fully_linux_signed": chain_valid and unsigned == 0,
         "events_checked": checked,
         "linux_signed_events": signed,
         "legacy_or_unsigned_events": unsigned,
