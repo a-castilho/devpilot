@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.quest_routes import router as quest_router
+from app.quest_ui_routes import router as quest_ui_router
 from app.security import require_access
 
 
@@ -26,3 +27,4 @@ def project_report():
 
 
 router.include_router(quest_router)
+router.include_router(quest_ui_router)
