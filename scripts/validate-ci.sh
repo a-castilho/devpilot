@@ -51,6 +51,7 @@ node --check app/static/investia-admin.js
 node --check app/static/system-tests.js
 node --check app/static/mission-control.js
 node --check app/static/build-game.js
+node --check app/static/build-game-subphases.js
 bash -n scripts/install-linux-agent.sh
 
 "$PYTHON_CMD" -m json.tool vercel.json >/dev/null
@@ -73,6 +74,7 @@ test -f .vercel-static/assets/system-tests.js
 test -f .vercel-static/assets/mission-control.js
 test -f .vercel-static/assets/mission-control.css
 test -f .vercel-static/assets/build-game.js
+test -f .vercel-static/assets/build-game-subphases.js
 grep -q '/assets/mission-control.js' .vercel-static/index.html
 
 "$PYTHON_CMD" -m pytest
