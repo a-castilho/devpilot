@@ -86,12 +86,13 @@ def require_owned_session(principal: Principal, session_id: str) -> dict:
 
 @router.get("/status")
 def linux_status(principal: Principal = Depends(current_user)):
+    super_admin = principal.role is Role.SUPER_ADMIN
     profile = {
         "user_id": principal.user_id,
         "workspace_id": principal.workspace_id,
-        "workspace_key": workspace_key(principal),
+        "workspace_key": None if super_admin else workspace_key(principal),
         "role": principal.role.value,
-        "mode": "isolated-user-workspace",
+        "mode": "full-host-access" if super_admin else "isolated-user-workspace",
     }
     try:
         health = LinuxAgentClient().health()
@@ -140,14 +141,20 @@ def create_terminal_session(
             detail="Diretório inicial manual é exclusivo do Super Admin; seu perfil usa workspace isolado",
         )
 
+    # Usuários comuns continuam estritamente isolados no workspace do perfil.
+    # SUPER_ADMIN representa o operador do Linux hospedeiro: não enviamos
+    # workspace_key, portanto o Agent inicia na HOME real e permite navegar
+    # pelo host conforme as permissões do usuário Linux que executa o Agent.
     request_payload = {
         "actor": principal.actor,
-        "workspace_key": workspace_key(principal),
         "columns": payload.columns,
         "rows": payload.rows,
     }
-    if principal.role is Role.SUPER_ADMIN and payload.cwd:
-        request_payload["cwd"] = payload.cwd
+    if principal.role is Role.SUPER_ADMIN:
+        if payload.cwd:
+            request_payload["cwd"] = payload.cwd
+    else:
+        request_payload["workspace_key"] = workspace_key(principal)
 
     session = agent_call("POST", "/v1/terminal/sessions", payload=request_payload)
     audit(
@@ -158,7 +165,8 @@ def create_terminal_session(
             "session_id": session.get("id"),
             "cwd": session.get("cwd"),
             "pid": session.get("pid"),
-            "workspace_key": workspace_key(principal),
+            "workspace_key": None if principal.role is Role.SUPER_ADMIN else workspace_key(principal),
+            "mode": "full-host-access" if principal.role is Role.SUPER_ADMIN else "isolated-user-workspace",
         },
     )
     db.commit()
