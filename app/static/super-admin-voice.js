@@ -35,22 +35,39 @@
       <div id="voice-admin-content" aria-live="polite"><div class="empty">Carregando diagnóstico…</div></div>`;
   }
 
-  function ensureSection(main) {
+  function bindSectionControls(section) {
+    const refresh = section?.querySelector('#voice-admin-refresh');
+    if (refresh && refresh.dataset.voiceAdminBound !== 'true') {
+      refresh.addEventListener('click', load);
+      refresh.dataset.voiceAdminBound = 'true';
+    }
+  }
+
+  function ensureSection(main = document.querySelector('main')) {
+    if (!main) return null;
     let section = document.querySelector('#voice-admin-view');
     if (!section) {
       section = document.createElement('section');
       section.className = 'view voice-admin-view';
       section.id = 'voice-admin-view';
       main.appendChild(section);
+    } else if (!section.isConnected || section.parentElement !== main) {
+      main.appendChild(section);
     }
     section.classList.add('view', 'voice-admin-view');
     if (!section.querySelector('#voice-admin-content') || !section.querySelector('.voice-admin-hero')) {
       section.innerHTML = shellMarkup();
     }
+    bindSectionControls(section);
     return section;
   }
 
-  function activate(button, section) {
+  function activate(button) {
+    const section = ensureSection();
+    if (!section) {
+      window.toast?.('Não foi possível abrir a Administração de voz. Atualize a página.');
+      return;
+    }
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
     const title = document.querySelector('#page-title');
@@ -79,22 +96,17 @@
     if (!button.textContent.trim()) button.innerHTML = '<span class="voice-admin-nav-dot"></span> Admin Voz';
 
     const section = ensureSection(main);
+    if (!section) return;
 
     if (button.dataset.voiceAdminBound !== 'true') {
-      button.addEventListener('click', () => activate(button, section));
+      button.addEventListener('click', () => activate(button));
       button.dataset.voiceAdminBound = 'true';
-    }
-
-    const refresh = section.querySelector('#voice-admin-refresh');
-    if (refresh && refresh.dataset.voiceAdminBound !== 'true') {
-      refresh.addEventListener('click', load);
-      refresh.dataset.voiceAdminBound = 'true';
     }
 
     // Repair a partially mounted shell immediately. This covers cases where the
     // navigation item was already active but the view was never inserted.
     if (button.classList.contains('active') || section.classList.contains('active')) {
-      activate(button, section);
+      activate(button);
     }
   }
 
