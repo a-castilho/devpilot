@@ -20,9 +20,17 @@
   `;
   document.head.appendChild(style);
 
+  const sidebarNav = document.querySelector('.sidebar nav');
+  const main = document.querySelector('main');
+  if (!sidebarNav || !main) return;
+
   const nav = document.createElement('button');
-  nav.className = 'nav'; nav.dataset.profileView = '1'; nav.textContent = 'Perfil';
-  document.querySelector('.sidebar nav')?.appendChild(nav);
+  nav.className = 'nav';
+  nav.type = 'button';
+  nav.dataset.view = 'profile';
+  nav.dataset.profileView = '1';
+  nav.textContent = 'Perfil';
+  sidebarNav.appendChild(nav);
 
   const section = document.createElement('section');
   section.className = 'view'; section.id = 'profile-view';
@@ -42,9 +50,22 @@
         <button class="primary" type="submit">Salvar perfil</button>
       </form>
     </div>`;
-  document.querySelector('main')?.appendChild(section);
+  main.appendChild(section);
 
   let headerUser = null;
+
+  function ensureProfileMounted() {
+    const currentMain = document.querySelector('main');
+    const currentNav = document.querySelector('.sidebar nav');
+    if (!section.isConnected && currentMain) currentMain.appendChild(section);
+    if (!nav.isConnected && currentNav) currentNav.appendChild(nav);
+    return section.isConnected;
+  }
+
+  function profileForm() {
+    ensureProfileMounted();
+    return section.querySelector('#profile-form');
+  }
 
   function ensureHeaderUser() {
     if (!token()) return null;
@@ -68,11 +89,15 @@
     if (!chip) return;
     chip.hidden = false;
     const displayName = user.full_name || user.email || 'Administrador';
-    document.querySelector('#header-user-name').textContent = displayName;
-    document.querySelector('#header-user-role').textContent = roleLabel(user.role);
-    const avatar = document.querySelector('#header-user-avatar');
-    if (user.avatar_url) avatar.innerHTML = `<img src="${esc(user.avatar_url)}" alt="Avatar de ${esc(displayName)}">`;
-    else avatar.textContent = initials(displayName);
+    const headerName = chip.querySelector('#header-user-name');
+    const headerRole = chip.querySelector('#header-user-role');
+    const avatar = chip.querySelector('#header-user-avatar');
+    if (headerName) headerName.textContent = displayName;
+    if (headerRole) headerRole.textContent = roleLabel(user.role);
+    if (avatar) {
+      if (user.avatar_url) avatar.innerHTML = `<img src="${esc(user.avatar_url)}" alt="Avatar de ${esc(displayName)}">`;
+      else avatar.textContent = initials(displayName);
+    }
     chip.setAttribute('aria-label', `${displayName}, perfil ${roleLabel(user.role)}. Abrir perfil.`);
   }
 
@@ -84,7 +109,11 @@
   }
 
   function showProfile() {
-    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'profile-view'));
+    if (!ensureProfileMounted()) {
+      window.toast?.('Não foi possível abrir o Perfil. Atualize a página.');
+      return;
+    }
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v === section));
     document.querySelectorAll('.nav').forEach(v => v.classList.toggle('active', v === nav));
     const title = document.querySelector('#page-title'); if (title) title.textContent = 'Perfil';
     loadProfile();
@@ -94,16 +123,27 @@
     try {
       const user = await request('/api/auth/me');
       renderHeaderUser(user);
-      const form = document.querySelector('#profile-form');
-      ['full_name','phone','job_title','bio','avatar_url','locale','timezone'].forEach(k => { if (form.elements[k]) form.elements[k].value = user[k] || ''; });
-      document.querySelector('#profile-name').textContent = user.full_name || user.email || 'Administrador';
-      document.querySelector('#profile-role').textContent = roleLabel(user.role);
-      document.querySelector('#profile-email').textContent = user.email || 'Acesso bootstrap';
-      document.querySelector('#profile-active').textContent = user.active ? 'Conta ativa' : 'Conta inativa';
-      const avatar = document.querySelector('#profile-avatar');
-      if (user.avatar_url) avatar.innerHTML = `<img src="${esc(user.avatar_url)}" alt="Avatar">`;
-      else avatar.textContent = initials(user.full_name || user.email || 'DP');
-      form.querySelector('button[type="submit"]').disabled = Boolean(user.bootstrap);
+      const form = profileForm();
+      if (!form) throw new Error('Tela de perfil indisponível. Atualize o DevPilot.');
+      ['full_name','phone','job_title','bio','avatar_url','locale','timezone'].forEach(k => {
+        const field = form.elements.namedItem(k);
+        if (field) field.value = user[k] || '';
+      });
+      const name = section.querySelector('#profile-name');
+      const role = section.querySelector('#profile-role');
+      const email = section.querySelector('#profile-email');
+      const active = section.querySelector('#profile-active');
+      const avatar = section.querySelector('#profile-avatar');
+      if (name) name.textContent = user.full_name || user.email || 'Administrador';
+      if (role) role.textContent = roleLabel(user.role);
+      if (email) email.textContent = user.email || 'Acesso bootstrap';
+      if (active) active.textContent = user.active ? 'Conta ativa' : 'Conta inativa';
+      if (avatar) {
+        if (user.avatar_url) avatar.innerHTML = `<img src="${esc(user.avatar_url)}" alt="Avatar">`;
+        else avatar.textContent = initials(user.full_name || user.email || 'DP');
+      }
+      const submit = form.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = Boolean(user.bootstrap);
     } catch (error) {
       if (silent && headerUser) headerUser.hidden = true;
       if (!silent) window.toast ? window.toast(error.message) : console.error(error);
@@ -111,7 +151,7 @@
   }
 
   nav.addEventListener('click', showProfile);
-  document.querySelector('#profile-form')?.addEventListener('submit', async event => {
+  profileForm()?.addEventListener('submit', async event => {
     event.preventDefault();
     const f = new FormData(event.currentTarget);
     const payload = Object.fromEntries(['full_name','phone','job_title','bio','avatar_url','locale','timezone'].map(k => [k, String(f.get(k)||'').trim() || null]));

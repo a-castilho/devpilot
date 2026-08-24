@@ -25,3 +25,12 @@ def test_regular_route_keeps_desktop_shell():
 
     assert '<body class="mobile-route">' not in rendered
     assert "/assets/mobile-route.css?v=" not in rendered
+
+
+def test_spa_does_not_duplicate_versioned_runtime_scripts():
+    response = spa("")
+    rendered = response.body.decode("utf-8")
+
+    assert rendered.count("/assets/project-provisioning.js?v=") == 1
+    assert rendered.count("/assets/example-project.js?v=") == 1
+    assert rendered.count("/assets/profile.js?v=") == 1

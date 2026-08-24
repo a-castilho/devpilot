@@ -62,6 +62,14 @@ def _version_frontend_scripts(html: str) -> str:
     return _SCRIPT_SRC_RE.sub(replace, html)
 
 
+def _has_frontend_script(html: str, name: str) -> bool:
+    pattern = re.compile(
+        rf'<script\s+[^>]*src="/assets/{re.escape(name)}(?:\?[^"<>]*)?"[^>]*></script>',
+        re.IGNORECASE,
+    )
+    return bool(pattern.search(html))
+
+
 def _normalize_index_head(html: str) -> str:
     start = html.find("<head>")
     end = html.find("</head>", start)
@@ -228,8 +236,11 @@ def spa(path: str):
         '<script src="/assets/mission-control.js" defer></script>',
     ]
     for script in scripts:
-        if script not in html:
-            html = html.replace("</body>", f"  {script}\n</body>")
+        match = _SCRIPT_SRC_RE.search(script)
+        name = match.group("name") if match else ""
+        if name and _has_frontend_script(html, name):
+            continue
+        html = html.replace("</body>", f"  {script}\n</body>")
 
     html = _inject_stylesheet(html, "super-admin-voice.css")
     html = _inject_mobile_scroll_unlock(html)
