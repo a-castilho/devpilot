@@ -32,7 +32,7 @@ from app.reports import router as reports_router
 from app.telemetry import router as telemetry_router
 from app.telemetry_replay import router as telemetry_replay_router
 from app.version import __version__
-from app.voice_conversation_routes import router as voice_conversation_router
+from app.voice_all_provider_routes import router as voice_conversation_router
 from app.voice_speech_routes import router as voice_speech_router
 from app.voice_transcription_routes import router as voice_transcription_router
 from app.db import Base, engine
