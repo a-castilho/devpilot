@@ -61,8 +61,18 @@
     if (card) card.hidden = true;
   };
 
+  const resetConversationMode = () => {
+    const card = conversationModeCard();
+    if (!card) return;
+    setConversationModeState(
+      'ready',
+      'Toque no microfone para conversar com o DevPilot ou digite uma mensagem.',
+    );
+    card.hidden = true;
+  };
+
   const focusTextComposer = () => {
-    hideConversationMode();
+    resetConversationMode();
     transcript?.focus?.();
     statusNode.textContent = 'Modo texto ativo. Digite sua mensagem para o DevPilot.';
   };
@@ -198,6 +208,11 @@
     if (!isInsecureLan() || !isLikelyMobileDevice()) return;
     const value = String(statusNode.textContent || '').toLowerCase();
 
+    if (/voz desligada|modo texto ativo|pronto\. digite|conversa por voz foi desligada|comando enviado.*desligada/.test(value)) {
+      resetConversationMode();
+      return;
+    }
+
     if (/ouvindo|microfone ativo|abrindo o microfone/.test(value)) {
       setConversationModeState('active', 'Microfone ativo. Pode falar com o DevPilot.');
       return;
@@ -212,11 +227,14 @@
   });
   statusObserver.observe(statusNode, {childList: true, subtree: true, characterData: true});
 
+  modal.addEventListener('close', resetConversationMode);
+
   const modalOpenObserver = new MutationObserver(() => {
     if (!modal.open) return;
     ensureMobileLayoutFix();
     if (isInsecureLan() && isLikelyMobileDevice()) {
       ensureConversationModeCard();
+      resetConversationMode();
       statusNode.textContent = 'Modo conversar disponível. Toque no microfone para começar.';
     }
   });
