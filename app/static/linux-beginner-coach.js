@@ -14,6 +14,14 @@
     document.head.appendChild(script);
   }
 
+  if (!document.querySelector('script[data-linux-update-command]')) {
+    const script = document.createElement('script');
+    script.src = '/assets/linux-update-command.js?v=20260824-1';
+    script.async = false;
+    script.dataset.linuxUpdateCommand = '1';
+    document.head.appendChild(script);
+  }
+
   const waitForLinux = () => {
     const view = document.querySelector('#linux-view');
     if (!view || !view.querySelector('.linux-shell')) {
