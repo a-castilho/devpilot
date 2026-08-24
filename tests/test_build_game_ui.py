@@ -92,3 +92,15 @@ def test_build_game_cockpit_skin_is_loaded_and_bridges_devpilot_voice():
     assert "devpilot:build-game-voice-link" in source
     assert "build-game-cockpit-window" in styles
     assert "prefers-reduced-motion:no-preference" in styles
+
+
+def test_restricted_voice_diagnostic_is_not_reported_as_online():
+    source = BUILD_GAME_COCKPIT_JS.read_text(encoding="utf-8")
+
+    assert "if (response.status === 403)" in source
+    assert "updateVoiceState(view, 'warn', message)" in source
+    assert "ok: null" in source
+    assert "diagnostic_restricted: true" in source
+    assert "voice_client_ready: voiceClientReady" in source
+    assert "voiceClientReady ? 'online' : 'warn'" not in source
+    assert "DevPilotVoz disponível'" not in source
