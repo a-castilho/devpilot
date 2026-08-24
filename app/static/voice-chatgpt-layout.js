@@ -6,12 +6,26 @@
   const stage = panel?.querySelector('.voice-chatgpt-stage');
   const statusNode = panel?.querySelector('#voice-status');
   const projectSelect = panel?.querySelector('#voice-project');
-  const modeSelect = panel?.querySelector('#voice-output-mode');
+  const outputModeSelect = panel?.querySelector('#voice-output-mode');
+
   const ACTIVE_PROJECT_STORAGE_KEY = 'devpilot-chat-active-project-id';
+  const CHAT_MODE_STORAGE_KEY = 'devpilot-chat-mode';
+  const CHAT_MODES = {
+    planning: {
+      label: 'Planejamento',
+      profile: 'DevPilot Planejador',
+      description: 'Somente análise e plano. Nenhuma execução é criada.',
+    },
+    build: {
+      label: 'Construir',
+      profile: 'DevPilot Construtor',
+      description: 'Prepara uma tarefa real, auditada e aguardando aprovação.',
+    },
+  };
 
   if (!modal || !panel || !transcript || !sendButton || !stage || !statusNode) return;
-  if (panel.dataset.voiceChatgptLayout === '5') return;
-  panel.dataset.voiceChatgptLayout = '5';
+  if (panel.dataset.voiceChatgptLayout === '6') return;
+  panel.dataset.voiceChatgptLayout = '6';
   panel.classList.add('voice-ui-polished');
 
   if (!document.querySelector('link[data-voice-ui-polish]')) {
@@ -33,6 +47,25 @@
   const legacyPreview = stage.querySelector('#voice-chat-preview');
   if (legacyPreview) legacyPreview.hidden = true;
 
+  const modeSwitch = document.createElement('div');
+  modeSwitch.className = 'voice-chat-mode-switch';
+  modeSwitch.setAttribute('role', 'group');
+  modeSwitch.setAttribute('aria-label', 'Modo do chat DevPilot');
+  modeSwitch.innerHTML = `
+    <button type="button" class="voice-chat-mode-button" data-chat-mode="planning" aria-pressed="false">
+      <span>Planejamento</span>
+      <small>analisar e planejar</small>
+    </button>
+    <button type="button" class="voice-chat-mode-button" data-chat-mode="build" aria-pressed="false">
+      <span>Construir</span>
+      <small>preparar execução</small>
+    </button>
+  `;
+
+  const profileBanner = document.createElement('div');
+  profileBanner.className = 'voice-chat-profile-banner';
+  profileBanner.setAttribute('aria-live', 'polite');
+
   const conversation = document.createElement('section');
   conversation.id = 'voice-visible-conversation';
   conversation.className = 'voice-visible-conversation';
@@ -41,14 +74,28 @@
   conversation.innerHTML = '<div class="voice-visible-empty">Converse com o DevPilot por texto ou voz.</div>';
 
   const statusWrapper = stage.querySelector('.voice-chatgpt-status');
-  if (statusWrapper) stage.insertBefore(conversation, statusWrapper);
-  else stage.appendChild(conversation);
+  if (statusWrapper) {
+    stage.insertBefore(modeSwitch, statusWrapper);
+    stage.insertBefore(profileBanner, statusWrapper);
+    stage.insertBefore(conversation, statusWrapper);
+  } else {
+    stage.append(modeSwitch, profileBanner, conversation);
+  }
 
   if (!document.querySelector('style[data-voice-visible-conversation]')) {
     const style = document.createElement('style');
     style.dataset.voiceVisibleConversation = '1';
     style.textContent = `
       #voice-chat-preview{display:none!important}
+      .voice-chat-mode-switch{width:min(100%,720px);display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px auto 4px;padding:4px;border:1px solid rgba(148,163,184,.18);border-radius:16px;background:rgba(15,23,42,.54)}
+      .voice-chat-mode-button{min-width:0;border:1px solid transparent;border-radius:12px;background:transparent;color:#aab8c2;padding:9px 12px;display:grid;gap:2px;text-align:left;cursor:pointer;transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
+      .voice-chat-mode-button:hover{transform:translateY(-1px);color:#edf7f7;background:rgba(148,163,184,.08)}
+      .voice-chat-mode-button span{font-weight:750;font-size:.88rem;line-height:1.1}
+      .voice-chat-mode-button small{font-size:.68rem;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .voice-chat-mode-button[data-active="1"][data-chat-mode="planning"]{color:#e8f5ff;border-color:rgba(96,165,250,.5);background:rgba(59,130,246,.18)}
+      .voice-chat-mode-button[data-active="1"][data-chat-mode="build"]{color:#ebfff7;border-color:rgba(52,211,153,.5);background:rgba(16,185,129,.18)}
+      .voice-chat-profile-banner{width:min(100%,720px);margin:0 auto 2px;padding:7px 11px;border-radius:10px;color:#a7b5bd;background:rgba(15,23,42,.38);font-size:.74rem;line-height:1.35}
+      .voice-chat-profile-banner strong{color:#e7f7f5}
       .voice-visible-conversation{width:min(100%,720px);display:flex;flex-direction:column;gap:10px;max-height:min(44vh,420px);overflow:auto;padding:8px 4px 10px;scrollbar-width:thin;overscroll-behavior:contain}
       .voice-visible-empty{align-self:center;color:#91a0aa;font-size:.9rem;padding:10px 14px;text-align:center}
       .voice-visible-turn{max-width:88%;display:grid;gap:4px;padding:10px 13px;border-radius:16px;line-height:1.42;word-break:break-word;white-space:pre-wrap}
@@ -61,7 +108,7 @@
       .voice-visible-thinking i{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.45;animation:voiceThinking 1s infinite ease-in-out}
       .voice-visible-thinking i:nth-child(2){animation-delay:.14s}.voice-visible-thinking i:nth-child(3){animation-delay:.28s}
       @keyframes voiceThinking{0%,70%,100%{transform:translateY(0);opacity:.35}35%{transform:translateY(-4px);opacity:1}}
-      @media(max-width:640px){.voice-visible-conversation{max-height:36vh;padding-inline:2px}.voice-visible-turn{max-width:92%;font-size:.94rem}}
+      @media(max-width:640px){.voice-chat-mode-switch{gap:5px}.voice-chat-mode-button{padding:8px}.voice-chat-mode-button small{font-size:.62rem}.voice-visible-conversation{max-height:36vh;padding-inline:2px}.voice-visible-turn{max-width:92%;font-size:.94rem}}
     `;
     document.head.appendChild(style);
   }
@@ -83,6 +130,9 @@
 
   const normalize = (value) => String(value || '').trim().replace(/\s+/g, ' ');
   const normalizeProjectId = (value) => String(value ?? '').trim();
+  const normalizeMode = (value) => Object.prototype.hasOwnProperty.call(CHAT_MODES, value) ? value : 'planning';
+
+  const activeChatMode = () => normalizeMode(localStorage.getItem(CHAT_MODE_STORAGE_KEY) || 'planning');
 
   const scrollConversation = () => {
     conversation.scrollTop = conversation.scrollHeight;
@@ -170,7 +220,20 @@
 
   const activeProjectId = () => restoreActiveProject();
 
-  const resetConversationForProject = (projectId) => {
+  const modeSummary = () => {
+    const mode = activeChatMode();
+    const config = CHAT_MODES[mode];
+    profileBanner.innerHTML = `<strong>${config.profile}</strong> · ${config.description}`;
+    modeSwitch.querySelectorAll('[data-chat-mode]').forEach((button) => {
+      const active = button.dataset.chatMode === mode;
+      button.dataset.active = active ? '1' : '0';
+      button.setAttribute('aria-pressed', active ? 'true' : 'false');
+    });
+    panel.dataset.chatMode = mode;
+    return config;
+  };
+
+  const resetConversation = (message) => {
     requestSequence += 1;
     requestInFlight = false;
     history = [];
@@ -181,12 +244,39 @@
     } catch (_) {
       // Best effort only.
     }
-
-    const label = projectLabel(projectId);
-    statusNode.textContent = projectId
-      ? `Projeto ativo: ${label || projectId}. O DevPilot usará este contexto automaticamente.`
-      : 'Conversa geral ativa, sem projeto específico.';
+    statusNode.textContent = message;
   };
+
+  const resetConversationForProject = (projectId) => {
+    const label = projectLabel(projectId);
+    const config = modeSummary();
+    resetConversation(projectId
+      ? `Projeto ativo: ${label || projectId}. ${config.profile} está selecionado.`
+      : `Conversa geral ativa. ${config.profile} está selecionado.`);
+  };
+
+  const setChatMode = (nextMode) => {
+    const next = normalizeMode(nextMode);
+    const previous = activeChatMode();
+    localStorage.setItem(CHAT_MODE_STORAGE_KEY, next);
+    const config = modeSummary();
+    if (previous !== next) {
+      resetConversation(`${config.label} ativo. ${config.description}`);
+      window.dispatchEvent(new CustomEvent('devpilot:chat-mode-changed', {
+        detail: {mode: next, profile: config.profile},
+      }));
+    }
+    return next;
+  };
+
+  modeSwitch.querySelectorAll('[data-chat-mode]').forEach((button) => {
+    button.addEventListener('click', () => setChatMode(button.dataset.chatMode));
+  });
+
+  if (!localStorage.getItem(CHAT_MODE_STORAGE_KEY)) {
+    localStorage.setItem(CHAT_MODE_STORAGE_KEY, 'planning');
+  }
+  modeSummary();
 
   if (projectSelect) {
     projectSelect.addEventListener('change', () => {
@@ -216,20 +306,26 @@
     },
   };
 
+  window.devpilotChatMode = {
+    getMode: () => activeChatMode(),
+    getProfile: () => CHAT_MODES[activeChatMode()].profile,
+    setMode: (mode) => setChatMode(mode),
+  };
+
   const speakReply = (text) => {
     if (!('speechSynthesis' in window) || !window.SpeechSynthesisUtterance) return;
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = 'pt-BR';
-      const mode = modeSelect?.value || 'human';
-      if (mode === 'male') {
+      const voiceMode = outputModeSelect?.value || 'human';
+      if (voiceMode === 'male') {
         utterance.pitch = 0.82;
         utterance.rate = 0.96;
-      } else if (mode === 'female') {
+      } else if (voiceMode === 'female') {
         utterance.pitch = 1.12;
         utterance.rate = 1;
-      } else if (mode === 'machine') {
+      } else if (voiceMode === 'machine') {
         utterance.pitch = 0.62;
         utterance.rate = 0.86;
       } else {
@@ -254,20 +350,32 @@
 
     requestInFlight = true;
     const sequence = ++requestSequence;
-    appendTurn('user', text);
-    const thinking = showThinking();
-    statusNode.textContent = 'DevPilot está pensando…';
-
-    const requestHistory = history.slice(-12);
+    const mode = activeChatMode();
+    const modeConfig = CHAT_MODES[mode];
     const projectId = activeProjectId();
 
+    if (mode === 'build' && !projectId) {
+      requestInFlight = false;
+      const message = 'Selecione um projeto antes de usar Construir.';
+      appendTurn('assistant', message, true);
+      statusNode.textContent = message;
+      return;
+    }
+
+    appendTurn('user', text);
+    const thinking = showThinking();
+    statusNode.textContent = `${modeConfig.profile} está pensando…`;
+
+    const requestHistory = history.slice(-12);
+
     try {
-      const data = await api('/voice/chat', {
+      const data = await api('/chat', {
         method: 'POST',
         body: JSON.stringify({
           transcript: text,
           project_id: projectId || null,
           history: requestHistory,
+          mode,
         }),
       });
       if (sequence !== requestSequence) return;
@@ -279,9 +387,18 @@
       history.push({role: 'user', text}, {role: 'assistant', text: reply});
       history = history.slice(-12);
       appendTurn('assistant', reply);
-      statusNode.textContent = data?.fallback_used
-        ? 'DevPilot respondeu usando o provedor de fallback.'
-        : 'DevPilot respondeu.';
+
+      const taskId = data?.execution?.task_id;
+      if (mode === 'build' && taskId) {
+        statusNode.textContent = `Construção preparada. Tarefa ${taskId} aguardando aprovação.`;
+        window.dispatchEvent(new CustomEvent('devpilot:build-task-staged', {
+          detail: {task_id: taskId, project_id: projectId, status: data?.execution?.status},
+        }));
+      } else if (data?.fallback_used) {
+        statusNode.textContent = `${data?.profile || modeConfig.profile} respondeu usando fallback.`;
+      } else {
+        statusNode.textContent = `${data?.profile || modeConfig.profile} respondeu.`;
+      }
       speakReply(reply);
     } catch (error) {
       if (sequence !== requestSequence) return;
@@ -296,9 +413,9 @@
     }
   }
 
-  // Voz e texto compartilham a mesma sessão e o mesmo projeto ativo. O projeto
-  // selecionado no chat é enviado automaticamente; o usuário não precisa
-  // repetir nome, repositório ou branch em cada comando.
+  // Voz e texto compartilham a mesma sessão, projeto e modo. Cada mensagem
+  // transporta explicitamente planning/build para que o backend aplique o
+  // perfil correto e impeça execução quando Planejamento estiver ativo.
   window.devpilotVoiceConversationSubmit = submitVisibleConversation;
 
   modal.addEventListener('close', () => {
@@ -318,6 +435,7 @@
   const modalProjectObserver = new MutationObserver(() => {
     if (!modal.open) return;
     restoreActiveProject();
+    modeSummary();
   });
   modalProjectObserver.observe(modal, {attributes: true, attributeFilter: ['open']});
 })();

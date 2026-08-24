@@ -12,6 +12,7 @@ from app.api import router
 from app.audit_routes import router as audit_router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
+from app.chat_mode_routes import router as chat_mode_router
 from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
 from app.deploy_routes import router as deploy_router
@@ -122,6 +123,7 @@ app.include_router(users_router)
 app.include_router(router)
 app.include_router(audit_router)
 app.include_router(career_router)
+app.include_router(chat_mode_router)
 app.include_router(host_action_router)
 app.include_router(investia_admin_router)
 app.include_router(investia_public_router)
