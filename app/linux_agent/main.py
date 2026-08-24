@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 import time
 from collections import OrderedDict
@@ -90,6 +91,7 @@ async def require_signed_request(
 
 class TerminalCreate(BaseModel):
     actor: str = Field(min_length=1, max_length=200)
+    workspace_key: str | None = Field(default=None, min_length=16, max_length=64)
     cwd: str | None = Field(default=None, max_length=4096)
     columns: int = Field(default=120, ge=20, le=400)
     rows: int = Field(default=34, ge=5, le=200)
@@ -102,6 +104,28 @@ class TerminalInput(BaseModel):
 class TerminalResize(BaseModel):
     columns: int = Field(ge=20, le=400)
     rows: int = Field(ge=5, le=200)
+
+
+def user_workspace_dir(workspace_key: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{16,64}", workspace_key):
+        raise ValueError("Identificador de workspace Linux inválido")
+    root = (manager.data_dir / "workspaces").resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    try:
+        root.chmod(0o700)
+    except OSError:
+        pass
+    target = (root / workspace_key).resolve()
+    if root not in target.parents:
+        raise ValueError("Workspace Linux inválido")
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        target.chmod(0o700)
+    except OSError:
+        pass
+    projects = target / "projects"
+    projects.mkdir(exist_ok=True)
+    return target
 
 
 @asynccontextmanager
@@ -141,9 +165,18 @@ def list_terminal_sessions():
 @app.post("/v1/terminal/sessions", status_code=201, dependencies=[Depends(require_signed_request)])
 def create_terminal_session(payload: TerminalCreate):
     try:
+        cwd = payload.cwd
+        if payload.workspace_key:
+            isolated_root = user_workspace_dir(payload.workspace_key)
+            if cwd:
+                requested = Path(cwd).expanduser().resolve()
+                if requested != isolated_root and isolated_root not in requested.parents:
+                    raise ValueError("Diretório fora do workspace Linux do usuário")
+            else:
+                cwd = str(isolated_root)
         return manager.create(
             actor=payload.actor,
-            cwd=payload.cwd,
+            cwd=cwd,
             columns=payload.columns,
             rows=payload.rows,
         )
