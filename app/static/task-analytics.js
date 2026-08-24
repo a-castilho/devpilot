@@ -212,3 +212,13 @@
   wrappedApi.__buildGameReviewCompat = true;
   api = wrappedApi;
 })();
+
+/* Load spaceship weapon telemetry for Build Game. */
+(() => {
+  if (document.querySelector('script[data-build-game-weapons-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-weapons.js?v=20260824-1';
+  script.async = false;
+  script.dataset.buildGameWeaponsLoader = 'true';
+  document.head.appendChild(script);
+})();
