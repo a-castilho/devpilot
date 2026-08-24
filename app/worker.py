@@ -117,6 +117,7 @@ def _block_for_budget(db, *, task: Task, run: Run, user_id: str | None, reason: 
 
 
 def _final_task_status(run_status: str, needs_authorization: bool) -> TaskStatus:
+    """Map execution outcome to the terminal task state used by the dashboard."""
     if run_status == "success":
         return TaskStatus.completed
     if needs_authorization:
