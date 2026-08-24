@@ -7,7 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
-from app.models import ProviderCredential
+from app.config import get_settings
+from app.models import ProviderCredential, Workspace
 from app.services.vault import Vault
 
 
@@ -17,26 +18,28 @@ _ORIGINAL_CONNECTION = delivery.connection
 _ORIGINAL_REQUEST_JSON = delivery.request_json
 
 
+def _cloud_admin_row(
+    db: Session,
+    workspace_id: str,
+    provider: str,
+) -> ProviderCredential | None:
+    return db.scalar(
+        select(ProviderCredential).where(
+            ProviderCredential.workspace_id == workspace_id,
+            ProviderCredential.provider == f"{_CLOUD_ADMIN_PREFIX}{provider.strip().lower()}",
+            ProviderCredential.label == _CLOUD_ADMIN_LABEL,
+        )
+    )
+
+
 def cloud_admin_connection(
     db: Session,
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    """Read the credential already managed by Super Admin > Clouds.
-
-    Cloud Admin stores the secret directly and keeps the provider scope in the
-    credential metadata. Product delivery historically used a different storage
-    key and JSON payload, which made configured clouds appear missing.
-    """
-    item = db.scalar(
-        select(ProviderCredential).where(
-            ProviderCredential.workspace_id == workspace_id,
-            ProviderCredential.provider == f"{_CLOUD_ADMIN_PREFIX}{provider.strip().lower()}",
-            ProviderCredential.label == _CLOUD_ADMIN_LABEL,
-            ProviderCredential.enabled.is_(True),
-        )
-    )
-    if not item:
+    """Read a credential managed by Super Admin > Clouds without exposing it to the browser."""
+    item = _cloud_admin_row(db, workspace_id, provider)
+    if not item or not item.enabled:
         return None
 
     try:
@@ -55,15 +58,53 @@ def cloud_admin_connection(
     return token, str(metadata.get("scope") or "").strip()
 
 
+def managed_trial_connection(
+    db: Session,
+    workspace_id: str,
+    provider: str,
+) -> tuple[str, str] | None:
+    """Use DevPilot's platform credential for an unconfigured trial workspace.
+
+    Trial users never receive the token. The credential remains encrypted in the
+    platform workspace and is consumed only by the backend. A workspace that has
+    its own Cloud Admin row is considered self-managed, even when that row is
+    intentionally disabled, so an explicit customer configuration is never
+    silently replaced by DevPilot's credential.
+    """
+    settings = get_settings()
+    normalized = provider.strip().lower()
+    if not settings.managed_trial_clouds_enabled:
+        return None
+    if normalized not in settings.managed_trial_providers:
+        return None
+    if _cloud_admin_row(db, workspace_id, normalized) is not None:
+        return None
+
+    platform = db.scalar(
+        select(Workspace).where(Workspace.slug == settings.managed_trial_workspace_slug)
+    )
+    if not platform or platform.id == workspace_id:
+        return None
+    return cloud_admin_connection(db, platform.id, normalized)
+
+
 def _connection_with_cloud_admin(
     db: Session,
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
+    # 1. A purchased/self-managed installation or workspace always wins.
     current = cloud_admin_connection(db, workspace_id, provider)
     if current is not None:
         return current
-    return _ORIGINAL_CONNECTION(db, workspace_id, provider)
+
+    # 2. Preserve the legacy local credential format while older installations migrate.
+    legacy = _ORIGINAL_CONNECTION(db, workspace_id, provider)
+    if legacy is not None:
+        return legacy
+
+    # 3. Trial workspaces get the frictionless DevPilot-managed experience.
+    return managed_trial_connection(db, workspace_id, provider)
 
 
 def _request_json_with_cloud_scope(
@@ -94,7 +135,7 @@ def _request_json_with_cloud_scope(
 
 
 def install_delivery_cloud_bridge() -> None:
-    """Make product delivery consume the canonical Cloud Admin credentials."""
+    """Make product delivery consume self-managed or DevPilot-managed cloud credentials."""
     if not getattr(delivery.connection, "_devpilot_cloud_admin_bridge", False):
         setattr(_connection_with_cloud_admin, "_devpilot_cloud_admin_bridge", True)
         delivery.connection = _connection_with_cloud_admin
