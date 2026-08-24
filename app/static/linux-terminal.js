@@ -85,7 +85,6 @@
   let sessionId = null;
   let lastSequence = 0;
   let pollTimer = null;
-  let visible = false;
   let sending = false;
 
   const cleanOutput = value => String(value || '')
@@ -209,7 +208,10 @@
 
   async function createSession() {
     ensureUI();
-    if (sessionId) return true;
+    if (sessionId) {
+      startPolling();
+      return true;
+    }
     try {
       const session = await api('/api/linux/terminal/sessions', {
         method: 'POST',
@@ -255,6 +257,8 @@
         method: 'POST',
         body: JSON.stringify({data: `${raw}\n`}),
       });
+      startPolling();
+      window.setTimeout(pollOutput, 60);
       return true;
     } catch (error) {
       setText('#linux-hint', error.message);
@@ -282,7 +286,7 @@
   }
 
   async function pollOutput() {
-    if (!visible || !sessionId) return;
+    if (!sessionId) return;
     try {
       const data = await api(`/api/linux/terminal/sessions/${sessionId}/output?after=${lastSequence}`);
       for (const chunk of data.chunks || []) {
@@ -302,8 +306,7 @@
   }
 
   function startPolling() {
-    stopPolling();
-    if (!visible || !sessionId) return;
+    if (!sessionId || pollTimer) return;
     pollOutput();
     pollTimer = window.setInterval(pollOutput, 700);
   }
@@ -316,7 +319,6 @@
   function show() {
     ensureUI();
     if (!view || !nav) return;
-    visible = true;
     document.querySelectorAll('.view').forEach(item => item.classList.toggle('active', item === view));
     view.hidden = false;
     view.classList.add('active');
@@ -330,17 +332,16 @@
 
   document.addEventListener('click', event => {
     const linuxNav = event.target.closest?.('.nav[data-view="linux"], .nav[data-linux-view="1"]');
-    if (linuxNav) {
-      window.setTimeout(show, 0);
-      return;
-    }
-    if (!visible) return;
-    const otherNav = event.target.closest?.('.nav');
-    if (otherNav) {
-      visible = false;
-      stopPolling();
-    }
+    if (linuxNav) window.setTimeout(show, 0);
   }, true);
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      stopPolling();
+    } else if (sessionId) {
+      startPolling();
+    }
+  });
 
   const boot = () => api('/api/auth/me').then(() => ensureUI()).catch(() => {});
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
