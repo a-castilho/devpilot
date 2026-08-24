@@ -44,3 +44,13 @@ def test_game_preserves_history_and_supports_new_missions():
     assert "Começar uma nova partida? O histórico atual será preservado nas tarefas." in source
     assert ".devpilot/build-game.md" in source
     assert "XP" in source
+
+
+def test_legacy_review_does_not_freeze_game_progression():
+    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+
+    assert "old workers could leave successful game tasks in review forever" in loader
+    assert "[DEVPILOT_BUILD_GAME_V1]" in loader
+    assert "legacyReview" in loader
+    assert "task?.requires_approval !== true" in loader
+    assert "return {...task, status:'completed'}" in loader
