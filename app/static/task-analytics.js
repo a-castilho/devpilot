@@ -175,6 +175,16 @@
   document.head.appendChild(script);
 })();
 
+/* Load the victory reward that releases a verified test URL. */
+(() => {
+  if (document.querySelector('script[data-build-game-url-bonus-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-url-bonus.js?v=20260824-1';
+  script.async = false;
+  script.dataset.buildGameUrlBonusLoader = 'true';
+  document.head.appendChild(script);
+})();
+
 /* Compatibility guard: old workers could leave successful game tasks in review forever. */
 (() => {
   if (typeof api !== 'function' || api.__buildGameReviewCompat) return;
