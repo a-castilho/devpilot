@@ -8,13 +8,16 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_insecure_lan_guard_preserves_voice_fallback_and_offers_loopback():
+def test_insecure_lan_guard_preserves_voice_fallback_and_conversation_mode():
     guard = read("app/static/voice-insecure-lan-guard.js")
 
     assert "return originalStart.call(startButton, event);" in guard
-    assert "preventDefault" not in guard
-    assert "stopPropagation" not in guard
-    assert "voice-open-loopback" in guard
+    assert "const startConversationMode = (event) => {" in guard
+    assert "event?.preventDefault?.();" in guard
+    assert "event?.stopPropagation?.();" in guard
+    assert "voice-conversation-mode" in guard
+    assert "Conversar agora" in guard
+    assert "hasNativeSpeechRecognition" in guard
     assert "127.0.0.1" in guard
-    assert "insecure-lan-fallback" in guard
+    assert "mobileAudioInput" not in guard
     assert "captureUnavailable = 'insecure-http'" not in guard
