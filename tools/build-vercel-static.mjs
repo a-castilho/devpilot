@@ -45,6 +45,11 @@ const scripts = [
   'mission-control.js',
 ];
 
+const stylesheets = [
+  'mobile-scroll-unlock.css',
+  'super-admin-voice.css',
+];
+
 function revision(path) {
   const content = readFileSync(path);
   return createHash('sha256').update(content).digest('hex').slice(0, 12);
@@ -70,17 +75,18 @@ for (const name of scripts) {
   }
 }
 
-const mobileCss = 'mobile-scroll-unlock.css';
-const mobileCssPath = join(source, mobileCss);
-try {
-  statSync(mobileCssPath);
-} catch {
-  throw new Error(`Vercel build requires missing frontend asset: ${mobileCss}`);
-}
+for (const name of stylesheets) {
+  const assetPath = join(source, name);
+  try {
+    statSync(assetPath);
+  } catch {
+    throw new Error(`Vercel build requires missing frontend asset: ${name}`);
+  }
 
-if (!html.includes(mobileCss)) {
-  const tag = `<link rel="stylesheet" href="/assets/${mobileCss}?v=${revision(mobileCssPath)}">`;
-  html = html.replace('</head>', `  ${tag}\n</head>`);
+  if (!html.includes(`/assets/${name}`)) {
+    const tag = `<link rel="stylesheet" href="/assets/${name}?v=${revision(assetPath)}">`;
+    html = html.replace('</head>', `  ${tag}\n</head>`);
+  }
 }
 
 writeFileSync(join(output, 'index.html'), html);
