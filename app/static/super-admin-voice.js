@@ -143,9 +143,27 @@
     }
   }
 
+  function loadSystemMapAssets() {
+    if (!document.querySelector('link[data-super-admin-system-map]')) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = '/assets/super-admin-system-map.css';
+      link.dataset.superAdminSystemMap = '1';
+      document.head.appendChild(link);
+    }
+    if (!document.querySelector('script[data-super-admin-system-map]')) {
+      const script = document.createElement('script');
+      script.src = '/assets/super-admin-system-map.js';
+      script.defer = true;
+      script.dataset.superAdminSystemMap = '1';
+      document.head.appendChild(script);
+    }
+  }
+
   async function boot() {
     if (!token() || !(await isSuperAdmin())) return;
     installShell();
+    loadSystemMapAssets();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
