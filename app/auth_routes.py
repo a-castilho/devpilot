@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException
+from ipaddress import ip_address
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.db import get_db
 from app.models import User, UserProfile, Workspace
 from app.schemas import (
@@ -67,21 +70,52 @@ def _public_user(user: User, profile: UserProfile) -> CurrentUserResponse:
     )
 
 
+def _is_loopback_request(request: Request) -> bool:
+    if request.client is None or not request.client.host:
+        return False
+    host = request.client.host.split("%", 1)[0]
+    try:
+        return ip_address(host).is_loopback
+    except ValueError:
+        return host.lower() == "localhost"
+
+
+def _local_bootstrap_available(request: Request) -> bool:
+    """Allow tokenless first-admin setup only on the local development machine.
+
+    This never applies in production and never applies to LAN/remote clients. The first-user
+    check in ``bootstrap_user`` still guarantees the flow can create only one initial admin.
+    """
+    env = get_settings().env.strip().lower()
+    return env not in {"production", "prod"} and _is_loopback_request(request)
+
+
 @router.get("/status", response_model=AuthStatusResponse)
-def status(db: Session = Depends(get_db)):
+def status(request: Request, db: Session = Depends(get_db)):
     users = db.scalar(select(func.count(User.id))) or 0
-    return AuthStatusResponse(bootstrap_required=users == 0)
+    bootstrap_required = users == 0
+    return AuthStatusResponse(
+        bootstrap_required=bootstrap_required,
+        local_bootstrap_available=bootstrap_required and _local_bootstrap_available(request),
+    )
 
 
 @router.post("/bootstrap", response_model=AccessTokenResponse, status_code=201)
 def bootstrap_user(
     payload: BootstrapUserRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    _: str = Depends(require_bootstrap_access),
+    authorization: str | None = Header(default=None),
 ):
     existing = db.scalar(select(func.count(User.id))) or 0
     if existing:
         raise HTTPException(status_code=409, detail="Primeiro usuário já configurado")
+
+    # Local development is intentionally frictionless for the machine owner. Remote/LAN
+    # setup still requires the one-time bootstrap credential so another device cannot claim
+    # SUPER_ADMIN just because the database is empty.
+    if not _local_bootstrap_available(request):
+        require_bootstrap_access(authorization)
 
     ws = default_workspace(db)
     user = User(
