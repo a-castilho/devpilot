@@ -99,13 +99,24 @@
 
       if (response.status === 403) {
         const voiceClientReady = Boolean(document.querySelector('#voice-modal') && document.querySelector('#voice-dock'));
-        updateVoiceState(
-          view,
-          voiceClientReady ? 'online' : 'warn',
-          voiceClientReady ? 'Interface de voz pronta · diagnóstico restrito ao Super Admin' : 'Interface DevPilotVoz não encontrada',
-        );
-        if (announce) toastMessage(voiceClientReady ? 'DevPilotVoz disponível' : 'DevPilotVoz indisponível');
-        return voiceClientReady;
+        const message = voiceClientReady
+          ? 'Interface pronta · ligação não verificada (diagnóstico exclusivo do Super Admin)'
+          : 'Interface DevPilotVoz não encontrada';
+        updateVoiceState(view, 'warn', message);
+        document.dispatchEvent(new CustomEvent('devpilot:build-game-voice-link', {
+          detail: {
+            ok: null,
+            project_id: gameProjectId(),
+            diagnostic_restricted: true,
+            voice_client_ready: voiceClientReady,
+          },
+        }));
+        if (announce) {
+          toastMessage(voiceClientReady
+            ? 'Interface DevPilotVoz pronta; diagnóstico de ligação não autorizado para este perfil'
+            : 'Interface DevPilotVoz indisponível');
+        }
+        return false;
       }
 
       const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`;
@@ -136,7 +147,11 @@
 
     dock.click();
     window.setTimeout(() => setVoiceProjectContext(), 0);
-    updateVoiceState(view, 'online', projectLinked ? 'Canal aberto · projeto sincronizado' : 'Canal aberto');
+    updateVoiceState(
+      view,
+      'checking',
+      projectLinked ? 'Canal aberto · projeto sincronizado · aguardando comando' : 'Canal aberto · aguardando comando',
+    );
   }
 
   function cockpitMarkup(snapshot) {
