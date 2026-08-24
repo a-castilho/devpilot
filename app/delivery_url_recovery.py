@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from app.services.audit import record
 _RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning"}
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+_REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _ORIGINAL_RUN_DELIVERY = delivery.run_delivery
 
 
@@ -29,6 +30,45 @@ def _safe_public_url(value: object) -> str:
     if parsed.scheme != "https" or not host.endswith(_ALLOWED_PUBLIC_SUFFIXES):
         return ""
     return candidate
+
+
+def _github_status_urls(repo_full_name: str, branch: str) -> list[str]:
+    if not _REPO_FULL_NAME_RE.fullmatch(repo_full_name):
+        return []
+    ref = quote(branch or "main", safe="")
+    try:
+        with httpx.Client(timeout=7.0, follow_redirects=True) as client:
+            response = client.get(
+                f"https://api.github.com/repos/{repo_full_name}/commits/{ref}/status",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    "User-Agent": "DevPilot/1.0",
+                },
+            )
+    except httpx.HTTPError:
+        return []
+    if response.status_code != 200:
+        return []
+    try:
+        payload = response.json()
+    except ValueError:
+        return []
+    statuses = payload.get("statuses") if isinstance(payload, dict) else None
+    if not isinstance(statuses, list):
+        return []
+
+    urls: list[str] = []
+    for item in statuses:
+        if not isinstance(item, dict) or str(item.get("state") or "").lower() != "success":
+            continue
+        context = str(item.get("context") or "").lower()
+        if "deploy" not in context and "vercel" not in context and "render" not in context:
+            continue
+        value = _safe_public_url(item.get("target_url"))
+        if value and value not in urls:
+            urls.append(value)
+    return urls
 
 
 def _candidate_urls(db: Session, project: Project, state: dict) -> list[str]:
@@ -47,6 +87,10 @@ def _candidate_urls(db: Session, project: Project, state: dict) -> list[str]:
                 candidates.append(value)
 
     repo_full_name = delivery.repository_full_name(db, project)
+    for value in _github_status_urls(repo_full_name, project.default_branch or "main"):
+        if value not in candidates:
+            candidates.append(value)
+
     repo_name = repo_full_name.rsplit("/", 1)[-1].removesuffix(".git").strip()
     if repo_name and _REPO_NAME_RE.fullmatch(repo_name):
         value = f"https://{repo_name.lower()}.vercel.app"
@@ -115,11 +159,11 @@ def _run_delivery_with_public_url_recovery(
 
 
 def install_delivery_url_recovery() -> None:
-    """Allow the game reward to recover an already-published URL without cloud secrets.
+    """Recover a real test URL when the project's own CI/CD already published it.
 
-    DevPilot still uses its managed Neon/Render/Vercel credentials when configured. If those
-    credentials are missing, a public deployment created by the project's own CI/CD can be
-    detected safely by its canonical Vercel repository URL and returned as the game reward.
+    Managed Neon/Render/Vercel credentials remain the primary delivery path. When they are
+    absent or a managed deploy is still pending, DevPilot can read successful GitHub deploy
+    statuses and verify the public Vercel/Render URL before returning the game reward.
     """
     current = delivery.run_delivery
     if getattr(current, "_devpilot_public_url_recovery", False):
