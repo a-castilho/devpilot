@@ -54,6 +54,7 @@ node --check app/static/system-tests.js
 node --check app/static/mission-control.js
 node --check app/static/build-game.js
 node --check app/static/build-game-subphases.js
+node --check app/static/build-game-url-bonus.js
 bash -n scripts/install-linux-agent.sh
 
 "$PYTHON_CMD" -m json.tool vercel.json >/dev/null
@@ -77,6 +78,7 @@ test -f .vercel-static/assets/mission-control.js
 test -f .vercel-static/assets/mission-control.css
 test -f .vercel-static/assets/build-game.js
 test -f .vercel-static/assets/build-game-subphases.js
+test -f .vercel-static/assets/build-game-url-bonus.js
 test -f .vercel-static/assets/super-admin-voice.js
 test -f .vercel-static/assets/super-admin-system-map.js
 test -f .vercel-static/assets/super-admin-system-map.css
