@@ -3,7 +3,8 @@
 
   const ROLE = 'SUPER_ADMIN';
   const POLL_MS = 2500;
-  let since = new Date().toISOString();
+  const connectedSince = new Date().toISOString();
+  const seenBroadcasts = new Set();
   let timer = null;
   let polling = false;
 
@@ -65,11 +66,13 @@
 
   function showBroadcast(item) {
     if (!item?.id || !item.message) return;
+    const id = String(item.id);
+    if (seenBroadcasts.has(id)) return;
+    seenBroadcasts.add(id);
     const stack = ensureStack();
-    if (stack.querySelector(`[data-broadcast-id="${CSS.escape(String(item.id))}"]`)) return;
     const banner = document.createElement('article');
     banner.className = 'admin-broadcast-banner';
-    banner.dataset.broadcastId = String(item.id);
+    banner.dataset.broadcastId = id;
     banner.dataset.level = String(item.level || 'info');
     const date = new Date(item.created_at);
     const when = Number.isNaN(date.getTime()) ? '' : date.toLocaleTimeString('pt-BR', {hour:'2-digit', minute:'2-digit'});
@@ -89,10 +92,9 @@
     if (polling || !token()) return;
     polling = true;
     try {
-      const data = await request(`/api/admin/broadcast?since=${encodeURIComponent(since)}`);
+      const data = await request(`/api/admin/broadcast?since=${encodeURIComponent(connectedSince)}`);
       const items = Array.isArray(data.items) ? data.items : [];
       items.forEach(showBroadcast);
-      if (data.server_time) since = new Date(data.server_time).toISOString();
     } catch (error) {
       if (!/401|token|access/i.test(String(error?.message || ''))) console.debug('broadcast poll:', error?.message || error);
     } finally {
@@ -152,8 +154,9 @@
       event.preventDefault();
       const form = event.currentTarget;
       const submit = form.querySelector('button[type="submit"]');
-      const message = String(new FormData(form).get('message') || '').trim();
-      const level = String(new FormData(form).get('level') || 'info');
+      const formData = new FormData(form);
+      const message = String(formData.get('message') || '').trim();
+      const level = String(formData.get('level') || 'info');
       if (!message) return;
       submit.disabled = true;
       submit.textContent = 'Enviando…';
