@@ -26,10 +26,21 @@ class Settings(BaseSettings):
     linux_agent_socket: str = ""
     linux_agent_secret: str = ""
     linux_agent_timeout_seconds: float = 5.0
+    managed_trial_clouds_enabled: bool = True
+    managed_trial_workspace_slug: str = "default"
+    managed_trial_cloud_providers: str = "neon,render,vercel"
 
     @property
     def git_hosts(self) -> set[str]:
         return {item.strip().lower() for item in self.allowed_git_hosts.split(",") if item.strip()}
+
+    @property
+    def managed_trial_providers(self) -> set[str]:
+        return {
+            item.strip().lower()
+            for item in self.managed_trial_cloud_providers.split(",")
+            if item.strip()
+        }
 
     def prepare(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
