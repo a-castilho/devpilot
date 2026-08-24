@@ -52,6 +52,20 @@ def github_repository_payload(name="novo-projeto"):
     }
 
 
+def github_name_collision_payload():
+    return {
+        "message": "Repository creation failed.",
+        "errors": [
+            {
+                "resource": "Repository",
+                "field": "name",
+                "code": "custom",
+                "message": "name already exists on this account",
+            }
+        ],
+    }
+
+
 def prepare(monkeypatch, responses):
     FakeClient.responses = list(responses)
     FakeClient.requests = []
@@ -92,7 +106,7 @@ def test_repository_name_collision_is_resolved_without_user_action(monkeypatch):
     prepare(
         monkeypatch,
         [
-            FakeResponse(422, {"message": "name already exists"}),
+            FakeResponse(422, github_name_collision_payload()),
             FakeResponse(201, github_repository_payload("novo-projeto-2")),
         ],
     )
@@ -116,8 +130,8 @@ def test_second_collision_uses_next_available_suffix(monkeypatch):
     prepare(
         monkeypatch,
         [
-            FakeResponse(422),
-            FakeResponse(422),
+            FakeResponse(422, github_name_collision_payload()),
+            FakeResponse(422, github_name_collision_payload()),
             FakeResponse(201, github_repository_payload("novo-projeto-3")),
         ],
     )
@@ -132,6 +146,38 @@ def test_second_collision_uses_next_available_suffix(monkeypatch):
         "novo-projeto-3",
     ]
     assert result["name"] == "novo-projeto-3"
+
+
+def test_non_collision_validation_error_is_not_retried_or_misreported(monkeypatch):
+    prepare(
+        monkeypatch,
+        [
+            FakeResponse(
+                422,
+                {
+                    "message": "Repository creation failed.",
+                    "errors": [
+                        {
+                            "resource": "Repository",
+                            "code": "custom",
+                            "message": "Custom property environment is required",
+                        }
+                    ],
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(GitHubProvisioningError) as error:
+        create_github_repository(
+            "a-castilho", "novo-projeto", "", "secret-token"
+        )
+
+    assert error.value.status_code == 422
+    assert len(FakeClient.requests) == 1
+    assert "Custom property environment is required" in str(error.value)
+    assert "regra de validação" in str(error.value)
+    assert "reservar um nome" not in str(error.value)
 
 
 def test_create_github_repository_requires_authorized_credential():
