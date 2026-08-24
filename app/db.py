@@ -56,7 +56,7 @@ def _principal_is_super_admin(session: Session) -> bool:
 
 @event.listens_for(Session, "do_orm_execute")
 def _scope_account_reads(execute_state) -> None:
-    """Apply row-level ownership to all authenticated Project/Task ORM reads.
+    """Apply row-level ownership to authenticated account data.
 
     Internal workers do not carry ``principal_user_id`` and therefore remain able to
     process the global queue. SUPER_ADMIN is intentionally unscoped and sees all rows.
@@ -72,7 +72,7 @@ def _scope_account_reads(execute_state) -> None:
         return
 
     # Imported lazily to avoid a db.py <-> models.py import cycle.
-    from app.models import Project, Task
+    from app.models import AuditEvent, Project, Task
 
     execute_state.statement = execute_state.statement.options(
         with_loader_criteria(
@@ -85,6 +85,11 @@ def _scope_account_reads(execute_state) -> None:
             lambda model: model.owner_user_id == user_id,
             include_aliases=True,
         ),
+        with_loader_criteria(
+            AuditEvent,
+            lambda model: model.owner_user_id == user_id,
+            include_aliases=True,
+        ),
     )
 
 
@@ -94,7 +99,8 @@ def _bind_account_ownership(session: Session, _flush_context, _instances) -> Non
 
     A background/system-created task inherits ownership from its project so worker
     processing does not accidentally create an unowned task that disappears for the
-    project owner.
+    project owner. Audit ownership is resolved by ``services.audit.record`` because
+    worker audit events may need to inherit from a task without an authenticated user.
     """
     from app.models import Project, Task
 
