@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.linux_agent import __version__
 from app.linux_agent.auth import AgentAuthError, canonical_target, verify_request
+from app.linux_agent.ollama_runtime import OllamaRuntimeError, chat_ollama, ensure_ollama
 from app.linux_agent.runtime import SessionManager, SessionNotFound
 
 
@@ -106,6 +107,12 @@ class TerminalResize(BaseModel):
     rows: int = Field(ge=5, le=200)
 
 
+class OllamaChatRequest(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+    instructions: str = Field(min_length=1, max_length=12_000)
+    input_text: str = Field(min_length=1, max_length=30_000)
+
+
 def user_workspace_dir(workspace_key: str) -> Path:
     if not re.fullmatch(r"[a-f0-9]{16,64}", workspace_key):
         raise ValueError("Identificador de workspace Linux inválido")
@@ -155,6 +162,26 @@ def health():
 @app.get("/v1/system", dependencies=[Depends(require_signed_request)])
 def system_snapshot():
     return manager.system_snapshot()
+
+
+@app.post("/v1/ollama/ensure", dependencies=[Depends(require_signed_request)])
+def ensure_ollama_runtime():
+    try:
+        return ensure_ollama(manager.data_dir)
+    except OllamaRuntimeError as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+@app.post("/v1/ollama/chat", dependencies=[Depends(require_signed_request)])
+def ollama_chat(payload: OllamaChatRequest):
+    try:
+        return chat_ollama(
+            model=payload.model,
+            instructions=payload.instructions,
+            input_text=payload.input_text,
+        )
+    except OllamaRuntimeError as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
 @app.get("/v1/terminal/sessions", dependencies=[Depends(require_signed_request)])
