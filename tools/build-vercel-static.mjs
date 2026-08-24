@@ -15,6 +15,7 @@ const scripts = [
   'profile.js',
   'auth-ui.js',
   'users.js',
+  'admin-broadcast.js',
   'provider-models.js',
   'super-admin-voice.js',
   'project-provisioning.js',
