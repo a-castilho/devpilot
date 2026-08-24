@@ -6,12 +6,12 @@
   const sendButton = document.querySelector('#voice-chat-send');
   const voicePanel = modal?.querySelector('.voice-modal');
 
-  if (!startButton || !statusNode || !modal || startButton.dataset.insecureLanGuard === '4') return;
+  if (!startButton || !statusNode || !modal || startButton.dataset.insecureLanGuard === '5') return;
 
   const originalStart = startButton.onclick;
   if (typeof originalStart !== 'function') return;
 
-  startButton.dataset.insecureLanGuard = '4';
+  startButton.dataset.insecureLanGuard = '5';
 
   const isLoopback = () => ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname);
   const isInsecureLan = () => !window.isSecureContext && !isLoopback();
@@ -56,11 +56,6 @@
     if (body && text) body.textContent = text;
   };
 
-  const hideConversationMode = () => {
-    const card = conversationModeCard();
-    if (card) card.hidden = true;
-  };
-
   const resetConversationMode = () => {
     const card = conversationModeCard();
     if (!card) return;
@@ -71,10 +66,62 @@
     card.hidden = true;
   };
 
+  const isVoiceSessionActive = () => Boolean(
+    startButton.getAttribute('aria-pressed') === 'true'
+      || voicePanel?.classList.contains('voice-session-active'),
+  );
+
+  const isBlockedStatus = (value) => /bloquead|não permite|https|não foi possível abrir o microfone/.test(value);
+
+  const syncConversationModeState = () => {
+    if (!isInsecureLan() || !isLikelyMobileDevice()) return;
+    const card = conversationModeCard();
+    if (!card) return;
+
+    const value = String(statusNode.textContent || '').toLowerCase();
+    const active = isVoiceSessionActive();
+
+    if (!active) {
+      if (isBlockedStatus(value)) {
+        card.hidden = false;
+        setConversationModeState(
+          'blocked',
+          'O Android bloqueou o microfone neste endereço HTTP. Para voz contínua, abra o DevPilot por HTTPS.',
+        );
+        return;
+      }
+      resetConversationMode();
+      return;
+    }
+
+    card.hidden = false;
+
+    if (/ouvindo|microfone ativo|abrindo o microfone/.test(value)) {
+      setConversationModeState('active', 'Microfone ativo. Pode falar com o DevPilot.');
+      return;
+    }
+
+    if (/ligando|solicitando|ativando captura|reconhecimento nativo indisponível/.test(value)) {
+      setConversationModeState('starting', 'Ligando o microfone. Aguarde até aparecer “Ouvindo…”.');
+      return;
+    }
+
+    if (isBlockedStatus(value)) {
+      setConversationModeState(
+        'blocked',
+        'O Android bloqueou o microfone neste endereço HTTP. Para voz contínua, abra o DevPilot por HTTPS.',
+      );
+    }
+  };
+
   const focusTextComposer = () => {
+    if (typeof window.devpilotVoiceStop === 'function' && isVoiceSessionActive()) {
+      window.devpilotVoiceStop('Modo texto ativo. Digite sua mensagem para o DevPilot.');
+    } else {
+      statusNode.textContent = 'Modo texto ativo. Digite sua mensagem para o DevPilot.';
+    }
     resetConversationMode();
     transcript?.focus?.();
-    statusNode.textContent = 'Modo texto ativo. Digite sua mensagem para o DevPilot.';
   };
 
   const showConversationMode = () => {
@@ -117,11 +164,13 @@
 
     try {
       const result = originalStart.call(startButton, event);
+      syncConversationModeState();
       if (result?.catch) {
         result.catch((error) => {
           const message = error?.message || 'Não foi possível iniciar o modo conversar.';
           statusNode.textContent = message;
           setConversationModeState('blocked', message);
+          syncConversationModeState();
           if (typeof toast === 'function') toast(message);
         });
       }
@@ -129,6 +178,7 @@
       const message = error?.message || 'Não foi possível iniciar o modo conversar.';
       statusNode.textContent = message;
       setConversationModeState('blocked', message);
+      syncConversationModeState();
       if (typeof toast === 'function') toast(message);
     }
   };
@@ -204,28 +254,14 @@
     return originalStart.call(startButton, event);
   };
 
-  const statusObserver = new MutationObserver(() => {
-    if (!isInsecureLan() || !isLikelyMobileDevice()) return;
-    const value = String(statusNode.textContent || '').toLowerCase();
-
-    if (/voz desligada|modo texto ativo|pronto\. digite|conversa por voz foi desligada|comando enviado.*desligada/.test(value)) {
-      resetConversationMode();
-      return;
-    }
-
-    if (/ouvindo|microfone ativo|abrindo o microfone/.test(value)) {
-      setConversationModeState('active', 'Microfone ativo. Pode falar com o DevPilot.');
-      return;
-    }
-
-    if (/bloquead|não permite|https|não foi possível abrir o microfone/.test(value)) {
-      setConversationModeState(
-        'blocked',
-        'O Android bloqueou o microfone neste endereço HTTP. Para voz contínua, abra o DevPilot por HTTPS.',
-      );
-    }
-  });
+  const statusObserver = new MutationObserver(syncConversationModeState);
   statusObserver.observe(statusNode, {childList: true, subtree: true, characterData: true});
+
+  const voiceStateObserver = new MutationObserver(syncConversationModeState);
+  voiceStateObserver.observe(startButton, {attributes: true, attributeFilter: ['aria-pressed']});
+  if (voicePanel) {
+    voiceStateObserver.observe(voicePanel, {attributes: true, attributeFilter: ['class']});
+  }
 
   modal.addEventListener('close', resetConversationMode);
 
@@ -236,6 +272,7 @@
       ensureConversationModeCard();
       resetConversationMode();
       statusNode.textContent = 'Modo conversar disponível. Toque no microfone para começar.';
+      syncConversationModeState();
     }
   });
   modalOpenObserver.observe(modal, {attributes: true, attributeFilter: ['open']});
