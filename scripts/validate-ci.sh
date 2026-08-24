@@ -36,6 +36,7 @@ node --check app/static/project-provisioning.js
 node --check app/static/provider-models.js
 node --check app/static/super-admin-voice.js
 node --check app/static/super-admin-system-map.js
+node --check app/static/admin-broadcast.js
 node --check app/static/voice-project-start.js
 node --check app/static/voice-chatgpt-layout.js
 node --check app/static/voice-local-update.js
@@ -82,6 +83,7 @@ test -f .vercel-static/assets/build-game-url-bonus.js
 test -f .vercel-static/assets/super-admin-voice.js
 test -f .vercel-static/assets/super-admin-system-map.js
 test -f .vercel-static/assets/super-admin-system-map.css
+test -f .vercel-static/assets/admin-broadcast.js
 grep -q '/assets/mission-control.js' .vercel-static/index.html
 grep -q '/assets/super-admin-voice.js' .vercel-static/index.html
 
