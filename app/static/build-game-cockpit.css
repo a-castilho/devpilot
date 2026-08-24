@@ -1,0 +1,179 @@
+/* DevPilot Build Game — cockpit interior skin. Pure CSS, no canvas/video, low-RAM friendly. */
+#build-game-view.build-game-cockpit-view{
+  --cockpit-glow:#5cf6d2;
+  --cockpit-blue:#61cfff;
+  --cockpit-panel:#07101b;
+  --cockpit-line:rgba(103,240,217,.25);
+  position:relative;
+  isolation:isolate;
+}
+#build-game-view.build-game-cockpit-view::before{
+  content:"";
+  position:fixed;
+  inset:0 0 0 var(--sidebar-w,0px);
+  pointer-events:none;
+  z-index:-1;
+  background:
+    linear-gradient(rgba(4,10,18,.42),rgba(4,10,18,.82)),
+    repeating-linear-gradient(90deg,transparent 0 58px,rgba(89,222,205,.025) 59px 60px),
+    repeating-linear-gradient(0deg,transparent 0 58px,rgba(89,222,205,.02) 59px 60px);
+}
+.build-game-cockpit{
+  position:relative;
+  overflow:hidden;
+  border:1px solid rgba(101,229,215,.3);
+  border-radius:24px;
+  background:linear-gradient(180deg,#050a12,#07111e 48%,#04080f);
+  box-shadow:0 24px 55px rgba(0,0,0,.32),inset 0 0 0 1px rgba(255,255,255,.025);
+}
+.build-game-cockpit-window{
+  position:relative;
+  min-height:220px;
+  overflow:hidden;
+  border-bottom:1px solid var(--cockpit-line);
+  background:
+    radial-gradient(circle at 13% 18%,rgba(255,255,255,.95) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 72% 26%,rgba(255,255,255,.75) 0 1px,transparent 1.4px),
+    radial-gradient(circle at 45% 64%,rgba(113,219,255,.7) 0 1px,transparent 1.6px),
+    radial-gradient(circle at 84% 74%,rgba(255,255,255,.58) 0 1px,transparent 1.5px),
+    radial-gradient(circle at 30% 42%,rgba(116,255,220,.48) 0 1px,transparent 1.6px),
+    radial-gradient(ellipse at 50% 105%,rgba(27,118,148,.25),transparent 58%),
+    linear-gradient(180deg,#02050b 0%,#06101d 58%,#081826 100%);
+}
+.build-game-cockpit-window::before,
+.build-game-cockpit-window::after{
+  content:"";
+  position:absolute;
+  top:-12%;
+  bottom:-16%;
+  width:24%;
+  z-index:2;
+  pointer-events:none;
+  background:linear-gradient(90deg,#03070d 0%,#0a1722 70%,rgba(45,91,104,.18));
+  border:1px solid rgba(119,231,218,.12);
+  box-shadow:inset 0 0 25px rgba(0,0,0,.7);
+}
+.build-game-cockpit-window::before{left:-9%;transform:skewX(16deg)}
+.build-game-cockpit-window::after{right:-9%;transform:skewX(-16deg) scaleX(-1)}
+.build-game-cockpit-crosshair{
+  position:absolute;
+  left:50%;
+  top:54%;
+  width:88px;
+  height:44px;
+  transform:translate(-50%,-50%);
+  opacity:.58;
+  border-left:1px solid rgba(102,235,215,.5);
+  border-right:1px solid rgba(102,235,215,.5);
+}
+.build-game-cockpit-crosshair::before,
+.build-game-cockpit-crosshair::after{
+  content:"";
+  position:absolute;
+  background:rgba(102,235,215,.5);
+}
+.build-game-cockpit-crosshair::before{left:12px;right:12px;top:50%;height:1px}
+.build-game-cockpit-crosshair::after{top:8px;bottom:8px;left:50%;width:1px}
+.build-game-cockpit-hud{
+  position:absolute;
+  inset:20px 18% auto;
+  z-index:3;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:8px 18px;
+  align-items:start;
+  color:#cffff4;
+  text-shadow:0 0 14px rgba(83,231,202,.28);
+}
+.build-game-cockpit-hud .cockpit-kicker{
+  font-size:.66rem;
+  font-weight:800;
+  letter-spacing:.13em;
+  color:#72ecd6;
+}
+.build-game-cockpit-hud strong{
+  display:block;
+  margin-top:5px;
+  font-size:clamp(1rem,2.2vw,1.55rem);
+  letter-spacing:.03em;
+}
+.build-game-cockpit-hud small{display:block;margin-top:5px;color:#82aab6;font-size:.72rem}
+.cockpit-hud-progress{
+  min-width:120px;
+  padding:8px 10px;
+  border:1px solid rgba(101,230,210,.24);
+  border-radius:10px;
+  background:rgba(2,10,15,.48);
+  text-align:right;
+}
+.cockpit-hud-progress b{display:block;font-size:1.15rem;color:#dcfff9}
+.cockpit-hud-progress span{font-size:.62rem;color:#75c9c0;letter-spacing:.08em}
+.build-game-cockpit-console{
+  position:relative;
+  z-index:4;
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr)) minmax(280px,1.35fr);
+  gap:9px;
+  padding:12px;
+  background:linear-gradient(180deg,#091521,#050b12);
+}
+.cockpit-gauge,.cockpit-comms{
+  min-height:82px;
+  padding:11px 12px;
+  border:1px solid rgba(111,219,209,.16);
+  border-radius:12px;
+  background:linear-gradient(150deg,rgba(16,37,49,.76),rgba(4,10,17,.96));
+  box-shadow:inset 0 0 18px rgba(0,0,0,.2);
+}
+.cockpit-gauge span,.cockpit-comms .cockpit-comms-label{
+  display:block;
+  font-size:.61rem;
+  font-weight:800;
+  letter-spacing:.1em;
+  color:#65bdb8;
+  text-transform:uppercase;
+}
+.cockpit-gauge strong{display:block;margin-top:7px;color:#d9fff7;font-size:.9rem}
+.cockpit-gauge small{display:block;margin-top:4px;color:#78929d;font-size:.66rem}
+.cockpit-comms{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:center}
+.cockpit-comms-state{display:flex;align-items:center;gap:7px;margin-top:7px;color:#cde9e6;font-size:.75rem}
+.cockpit-comms-light{width:8px;height:8px;border-radius:50%;background:#7d8b91;box-shadow:0 0 0 3px rgba(125,139,145,.08)}
+.cockpit-comms[data-state="checking"] .cockpit-comms-light{background:#f5c45d;box-shadow:0 0 12px rgba(245,196,93,.45)}
+.cockpit-comms[data-state="online"] .cockpit-comms-light{background:#65f0c0;box-shadow:0 0 13px rgba(101,240,192,.55)}
+.cockpit-comms[data-state="warn"] .cockpit-comms-light{background:#ff9f62;box-shadow:0 0 13px rgba(255,159,98,.42)}
+.cockpit-comms-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+.cockpit-comms-actions button{min-height:34px;padding:7px 10px;font-size:.7rem;white-space:nowrap}
+#build-game-view.build-game-cockpit-view .build-game-hero{
+  border-radius:18px;
+  border-color:rgba(100,236,216,.25);
+  background:linear-gradient(145deg,rgba(7,21,31,.97),rgba(3,10,18,.98));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+}
+#build-game-view.build-game-cockpit-view .build-game-score>div,
+#build-game-view.build-game-cockpit-view .build-game-phase,
+#build-game-view.build-game-cockpit-view .panel{
+  background:linear-gradient(145deg,rgba(7,18,29,.88),rgba(3,9,16,.92));
+  border-color:rgba(93,222,208,.17);
+}
+#build-game-view.build-game-cockpit-view .build-game-phase.current{
+  border-color:rgba(90,238,218,.54);
+  box-shadow:0 0 0 1px rgba(90,238,218,.07),inset 3px 0 0 rgba(90,238,218,.62),0 12px 30px rgba(0,0,0,.18);
+}
+@media(max-width:900px){
+  .build-game-cockpit-console{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .cockpit-comms{grid-column:1/-1}
+}
+@media(max-width:640px){
+  .build-game-cockpit-window{min-height:180px}
+  .build-game-cockpit-hud{inset:16px 13% auto;grid-template-columns:1fr}
+  .cockpit-hud-progress{justify-self:start;text-align:left;min-width:105px}
+  .build-game-cockpit-console{grid-template-columns:1fr 1fr;padding:8px}
+  .cockpit-gauge:nth-child(3){grid-column:1/-1}
+  .cockpit-comms{grid-template-columns:1fr}
+  .cockpit-comms-actions{justify-content:stretch}
+  .cockpit-comms-actions button{flex:1}
+}
+@media(prefers-reduced-motion:no-preference){
+  .build-game-cockpit-crosshair{animation:cockpitScan 5s ease-in-out infinite}
+  @keyframes cockpitScan{0%,100%{opacity:.42;transform:translate(-50%,-50%) scale(.98)}50%{opacity:.68;transform:translate(-50%,-50%) scale(1.03)}}
+}
