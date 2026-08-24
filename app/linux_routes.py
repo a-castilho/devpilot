@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.security import Principal, Role, require_roles
+from app.security import Principal, Role, session_principal
 from app.services.audit import record
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
 
@@ -30,10 +30,15 @@ class TerminalResize(BaseModel):
     rows: int = Field(ge=5, le=200)
 
 
-def super_admin(
-    principal: Principal = Depends(require_roles(Role.SUPER_ADMIN)),
-) -> Principal:
+def current_user(principal: Principal = Depends(session_principal)) -> Principal:
+    if not principal.user_id or not principal.workspace_id:
+        raise HTTPException(status_code=401, detail="Sessão de usuário inválida")
     return principal
+
+
+def workspace_key(principal: Principal) -> str:
+    raw = f"{principal.workspace_id}:{principal.user_id}".encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()[:32]
 
 
 def agent_call(method: str, path: str, *, payload: dict | None = None) -> dict:
@@ -61,8 +66,33 @@ def audit(
     )
 
 
+def _all_sessions() -> list[dict]:
+    data = agent_call("GET", "/v1/terminal/sessions")
+    return list(data.get("items") or [])
+
+
+def _can_access_session(principal: Principal, session: dict) -> bool:
+    return principal.role is Role.SUPER_ADMIN or session.get("actor") == principal.actor
+
+
+def require_owned_session(principal: Principal, session_id: str) -> dict:
+    for session in _all_sessions():
+        if session.get("id") == session_id:
+            if not _can_access_session(principal, session):
+                raise HTTPException(status_code=403, detail="Sessão Linux pertence a outro usuário")
+            return session
+    raise HTTPException(status_code=404, detail="Sessão Linux não encontrada")
+
+
 @router.get("/status")
-def linux_status(principal: Principal = Depends(super_admin)):
+def linux_status(principal: Principal = Depends(current_user)):
+    profile = {
+        "user_id": principal.user_id,
+        "workspace_id": principal.workspace_id,
+        "workspace_key": workspace_key(principal),
+        "role": principal.role.value,
+        "mode": "isolated-user-workspace",
+    }
     try:
         health = LinuxAgentClient().health()
     except LinuxAgentError as error:
@@ -71,6 +101,7 @@ def linux_status(principal: Principal = Depends(super_admin)):
             "error": str(error),
             "agent": None,
             "system": None,
+            "profile": profile,
         }
 
     if health.get("status") != "ok":
@@ -79,6 +110,7 @@ def linux_status(principal: Principal = Depends(super_admin)):
             "error": "Linux Agent requer configuração",
             "agent": health,
             "system": None,
+            "profile": profile,
         }
 
     return {
@@ -86,30 +118,38 @@ def linux_status(principal: Principal = Depends(super_admin)):
         "error": None,
         "agent": health,
         "system": agent_call("GET", "/v1/system"),
+        "profile": profile,
     }
 
 
 @router.get("/terminal/sessions")
-def terminal_sessions(principal: Principal = Depends(super_admin)):
-    return agent_call("GET", "/v1/terminal/sessions")
+def terminal_sessions(principal: Principal = Depends(current_user)):
+    items = [session for session in _all_sessions() if _can_access_session(principal, session)]
+    return {"items": items}
 
 
 @router.post("/terminal/sessions", status_code=201)
 def create_terminal_session(
     payload: TerminalCreate,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(super_admin),
+    principal: Principal = Depends(current_user),
 ):
-    session = agent_call(
-        "POST",
-        "/v1/terminal/sessions",
-        payload={
-            "actor": principal.actor,
-            "cwd": payload.cwd,
-            "columns": payload.columns,
-            "rows": payload.rows,
-        },
-    )
+    if payload.cwd and principal.role is not Role.SUPER_ADMIN:
+        raise HTTPException(
+            status_code=403,
+            detail="Diretório inicial manual é exclusivo do Super Admin; seu perfil usa workspace isolado",
+        )
+
+    request_payload = {
+        "actor": principal.actor,
+        "workspace_key": workspace_key(principal),
+        "columns": payload.columns,
+        "rows": payload.rows,
+    }
+    if principal.role is Role.SUPER_ADMIN and payload.cwd:
+        request_payload["cwd"] = payload.cwd
+
+    session = agent_call("POST", "/v1/terminal/sessions", payload=request_payload)
     audit(
         db,
         principal,
@@ -118,6 +158,7 @@ def create_terminal_session(
             "session_id": session.get("id"),
             "cwd": session.get("cwd"),
             "pid": session.get("pid"),
+            "workspace_key": workspace_key(principal),
         },
     )
     db.commit()
@@ -128,12 +169,10 @@ def create_terminal_session(
 def terminal_output(
     session_id: str,
     after: int = Query(default=0, ge=0),
-    principal: Principal = Depends(super_admin),
+    principal: Principal = Depends(current_user),
 ):
-    return agent_call(
-        "GET",
-        f"/v1/terminal/sessions/{session_id}/output?after={after}",
-    )
+    require_owned_session(principal, session_id)
+    return agent_call("GET", f"/v1/terminal/sessions/{session_id}/output?after={after}")
 
 
 @router.post("/terminal/sessions/{session_id}/input")
@@ -141,8 +180,9 @@ def terminal_input(
     session_id: str,
     payload: TerminalInput,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(super_admin),
+    principal: Principal = Depends(current_user),
 ):
+    require_owned_session(principal, session_id)
     result = agent_call(
         "POST",
         f"/v1/terminal/sessions/{session_id}/input",
@@ -166,8 +206,9 @@ def terminal_input(
 def terminal_resize(
     session_id: str,
     payload: TerminalResize,
-    principal: Principal = Depends(super_admin),
+    principal: Principal = Depends(current_user),
 ):
+    require_owned_session(principal, session_id)
     return agent_call(
         "POST",
         f"/v1/terminal/sessions/{session_id}/resize",
@@ -179,8 +220,9 @@ def terminal_resize(
 def close_terminal_session(
     session_id: str,
     db: Session = Depends(get_db),
-    principal: Principal = Depends(super_admin),
+    principal: Principal = Depends(current_user),
 ):
+    require_owned_session(principal, session_id)
     result = agent_call("DELETE", f"/v1/terminal/sessions/{session_id}")
     audit(
         db,
