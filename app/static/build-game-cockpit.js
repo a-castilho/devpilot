@@ -5,9 +5,15 @@
   const STYLE_ID = 'build-game-cockpit-style';
   const STYLE_URL = '/assets/build-game-cockpit.css?v=20260824-1';
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
+  const GAME_MISSION_KEY = 'devpilot-build-game-mission';
   const VOICE_PROJECT_KEY = 'devpilot-chat-active-project-id';
   const VOICE_DIAGNOSTIC_URL = '/api/super-admin/voice';
+  const LINUX_INFRA_MARKER = '[DEVPILOT_GAME_LINUX_INFRA_V1]';
+  const LINUX_INFRA_COST = 50;
+  const ACTIVE_TASK_STATUSES = new Set(['awaiting_approval', 'queued', 'running', 'review', 'blocked']);
+  const REFUND_TASK_STATUSES = new Set(['failed', 'cancelled']);
   let voiceTestSequence = 0;
+  let linuxRefreshSequence = 0;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -19,6 +25,8 @@
 
   const token = () => localStorage.getItem('devpilot-token') || '';
   const gameProjectId = () => String(localStorage.getItem(GAME_PROJECT_KEY) || '').trim();
+  const gameMissionId = () => String(localStorage.getItem(GAME_MISSION_KEY) || '').trim();
+  const normalizeStatus = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -117,7 +125,6 @@
       });
       const data = await response.json().catch(() => ({}));
       if (sequence !== voiceTestSequence || !view.isConnected) return false;
-
       if (response.ok) {
         const chain = Array.isArray(data.chain) ? data.chain : [];
         const configured = chain.filter(item => item && item.configured).length;
@@ -192,6 +199,147 @@
     );
   }
 
+  async function gameApi(path, options = {}) {
+    if (typeof api === 'function') return api(path, options);
+    const response = await fetch(`/api${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token() ? {Authorization: `Bearer ${token()}`} : {}),
+        ...(options.headers || {}),
+      },
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`);
+    return data;
+  }
+
+  function linuxEarned(view) {
+    const xpText = view.querySelector('.build-game-score > div:nth-child(2) strong')?.textContent || '0';
+    const xp = Number(String(xpText).match(/\d+/)?.[0] || 0);
+    return Math.floor(xp / 10);
+  }
+
+  function isLinuxInfraTask(task) {
+    const prompt = String(task?.prompt || '');
+    const mission = gameMissionId();
+    return prompt.includes(LINUX_INFRA_MARKER) && (!mission || prompt.includes(`PARTIDA: ${mission}`));
+  }
+
+  function linuxEconomy(view, tasks) {
+    const earned = linuxEarned(view);
+    const requests = (Array.isArray(tasks) ? tasks : []).filter(isLinuxInfraTask)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+    const latest = requests[0] || null;
+    const latestStatus = normalizeStatus(latest?.status);
+    const reserved = latest && !REFUND_TASK_STATUSES.has(latestStatus);
+    const balance = Math.max(0, earned - (reserved ? LINUX_INFRA_COST : 0));
+    const active = Boolean(latest && ACTIVE_TASK_STATUSES.has(latestStatus));
+    const ready = latestStatus === 'completed';
+    return {earned, balance, latest, latestStatus, active, ready};
+  }
+
+  function linuxWalletMarkup(economy) {
+    let stateLabel = `Custa ${LINUX_INFRA_COST} Linux`;
+    let buttonLabel = `Ativar infra dedicada · ${LINUX_INFRA_COST} Linux`;
+    let disabled = economy.balance < LINUX_INFRA_COST;
+    if (economy.active) {
+      stateLabel = 'Provisionamento em andamento';
+      buttonLabel = 'Infra Linux sendo preparada';
+      disabled = true;
+    } else if (economy.ready) {
+      stateLabel = 'Infra dedicada ativa';
+      buttonLabel = 'Infra Linux ativa';
+      disabled = true;
+    } else if (economy.latest && REFUND_TASK_STATUSES.has(economy.latestStatus)) {
+      stateLabel = 'Tentativa anterior falhou · Linux devolvido';
+    }
+
+    return `<article class="panel build-game-linux-wallet" data-linux-wallet style="border-color:rgba(104,240,187,.28);background:linear-gradient(145deg,rgba(6,28,25,.9),rgba(3,11,18,.96))">
+      <div class="panel-title" style="gap:12px;align-items:center">
+        <div><span class="eyebrow">MOEDA DE INFRAESTRUTURA</span><h3 style="margin:.2rem 0">🐧 Linux · ${economy.balance}</h3></div>
+        <strong style="font-size:.82rem">${esc(stateLabel)}</strong>
+      </div>
+      <p style="margin:.35rem 0 .8rem;color:var(--muted,#9eacc2)">Cada 10 XP concluídos valem 1 Linux. Use Linux para obter uma sandbox dedicada da partida, isolada do host e vinculada somente ao seu projeto.</p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="primary" type="button" data-linux-infra-buy ${disabled ? 'disabled' : ''}>${esc(buttonLabel)}</button>
+        <small style="color:var(--muted,#9eacc2)">Ganho: ${economy.earned} · Saldo: ${economy.balance} · Sem acesso privilegiado ao host</small>
+      </div>
+    </article>`;
+  }
+
+  async function fetchProjectTasks(projectId) {
+    if (!projectId) return [];
+    const tasks = await gameApi(`/tasks?project_id=${encodeURIComponent(projectId)}&limit=500`);
+    return Array.isArray(tasks) ? tasks : [];
+  }
+
+  async function activateLinuxInfra(view, button) {
+    const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
+    const mission = gameMissionId();
+    if (!projectId || !mission) return toastMessage('Inicie uma partida antes de ativar a Infra Linux');
+
+    button.disabled = true;
+    const original = button.textContent;
+    button.textContent = 'Validando saldo…';
+    try {
+      const tasks = await fetchProjectTasks(projectId);
+      const economy = linuxEconomy(view, tasks);
+      if (economy.active || economy.ready) return toastMessage('Esta partida já possui uma Infra Linux dedicada');
+      if (economy.balance < LINUX_INFRA_COST) return toastMessage(`Saldo insuficiente: são necessários ${LINUX_INFRA_COST} Linux`);
+
+      const project = currentProject(view);
+      const prompt = `${LINUX_INFRA_MARKER}\n[DEVPILOT_MODE=develop]\nPARTIDA: ${mission}\nPROJETO: ${projectId}\nCUSTO_LINUX: ${LINUX_INFRA_COST}\n\nOBJETIVO:\nProvisionar uma infraestrutura Linux dedicada para esta partida e vinculada exclusivamente ao jogador/projeto selecionado.\n\nREQUISITOS OBRIGATÓRIOS:\n- Use somente provedores, contas e credenciais cloud já autorizados e gerenciados pelo DevPilot; nunca exponha tokens no frontend, logs ou resultado.\n- Crie sandbox/container/VM isolada por tenant e projeto, sem --privileged, sem montar docker.sock e sem acesso administrativo ao host do DevPilot.\n- A identidade do jogador deve ser propagada pelo backend; não confie em user_id fornecido pelo navegador.\n- Aplique limites de CPU, memória, disco, processos e tempo de vida. Prefira rootless/unprivileged e imagem Linux mínima mantida.\n- O terminal da sandbox deve ser acessível apenas após autenticação do DevPilot e autorização do proprietário; SUPER_ADMIN pode auditar/administrar, mas outros usuários não podem acessar.\n- Restrinja rede e portas ao necessário para jogar/testar o projeto. Não exponha SSH ou serviços diretamente à Internet sem camada autenticada.\n- Registre auditoria de criação, início, parada, acesso e destruição da sandbox, sem registrar segredos.\n- O provisionamento deve ser idempotente para a chave partida+projeto; não crie infraestrutura duplicada ao repetir a tarefa.\n- Não crie recurso pago fora dos limites/quota já configurados. Se não houver capacidade segura/autorizada, finalize como bloqueado/falha com motivo explícito.\n- Ao concluir, devolva no resultado o identificador da sandbox, status, limites aplicados e URL/rota autenticada de acesso quando existir.\n\nCRITÉRIO DE VITÓRIA:\nA Infra Linux está pronta somente quando o ambiente isolado foi realmente provisionado, o acesso do jogador foi validado e não existe caminho de privilégio para o host.`;
+
+      await gameApi('/tasks', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: projectId,
+          title: `[Jogo] Infra Linux dedicada · ${project?.name || projectId}`,
+          prompt,
+          source: 'dashboard',
+          priority: 90,
+          requires_approval: false,
+        }),
+      });
+      toastMessage(`${LINUX_INFRA_COST} Linux reservados · provisionamento iniciado`);
+      document.dispatchEvent(new CustomEvent('devpilot:build-game-linux-infra', {
+        detail: {project_id: projectId, mission_id: mission, cost: LINUX_INFRA_COST},
+      }));
+      await refreshLinuxEconomy(view);
+    } catch (error) {
+      toastMessage(error?.message || 'Falha ao ativar Infra Linux');
+    } finally {
+      if (button.isConnected) {
+        button.disabled = false;
+        button.textContent = original;
+      }
+    }
+  }
+
+  async function refreshLinuxEconomy(view) {
+    const sequence = ++linuxRefreshSequence;
+    const shell = view.querySelector('.build-game-shell');
+    if (!shell) return;
+    try {
+      const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
+      const tasks = await fetchProjectTasks(projectId);
+      if (sequence !== linuxRefreshSequence || !view.isConnected) return;
+      const economy = linuxEconomy(view, tasks);
+      const host = document.createElement('div');
+      host.innerHTML = linuxWalletMarkup(economy).trim();
+      const wallet = host.firstElementChild;
+      if (!wallet) return;
+      shell.querySelector('[data-linux-wallet]')?.remove();
+      const cockpit = shell.querySelector('[data-build-game-cockpit]');
+      if (cockpit) cockpit.insertAdjacentElement('afterend', wallet);
+      else shell.prepend(wallet);
+      wallet.querySelector('[data-linux-infra-buy]')?.addEventListener('click', event => activateLinuxInfra(view, event.currentTarget));
+    } catch (error) {
+      if (sequence === linuxRefreshSequence) toastMessage(`Moeda Linux indisponível: ${error?.message || 'falha ao carregar'}`);
+    }
+  }
+
   function cockpitMarkup(snapshot) {
     return `
       <section class="build-game-cockpit" data-build-game-cockpit aria-label="Skin visão de dentro da nave">
@@ -236,7 +384,10 @@
     }
 
     const existing = shell.querySelector('[data-build-game-cockpit]');
-    if (existing) return;
+    if (existing) {
+      void refreshLinuxEconomy(view);
+      return;
+    }
 
     const host = document.createElement('div');
     host.innerHTML = cockpitMarkup(gameSnapshot(view)).trim();
@@ -247,6 +398,7 @@
     cockpit.querySelector('[data-cockpit-test-voice]')?.addEventListener('click', () => testVoiceLink(view, true));
     cockpit.querySelector('[data-cockpit-open-voice]')?.addEventListener('click', () => openVoice(view));
     testVoiceLink(view, false);
+    void refreshLinuxEconomy(view);
   }
 
   function sync() {
