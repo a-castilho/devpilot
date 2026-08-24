@@ -223,6 +223,7 @@ def spa(path: str):
         '<script src="/assets/linux-terminal.js" defer></script>',
         '<script src="/assets/linux-beginner-coach.js" defer></script>',
         '<script src="/assets/audit-integrity.js" defer></script>',
+        '<script src="/assets/mission-control.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:

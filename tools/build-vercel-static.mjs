@@ -41,6 +41,7 @@ const scripts = [
   'cloud-admin.js',
   'linux-terminal.js',
   'audit-integrity.js',
+  'mission-control.js',
 ];
 
 function revision(path) {
