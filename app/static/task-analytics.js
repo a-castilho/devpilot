@@ -162,3 +162,13 @@
   script.dataset.systemTestsLoader = 'true';
   document.head.appendChild(script);
 })();
+
+/* Load the progressive DevPilot build game. */
+(() => {
+  if (document.querySelector('script[data-build-game-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game.js?v=20260824-1';
+  script.async = false;
+  script.dataset.buildGameLoader = 'true';
+  document.head.appendChild(script);
+})();
