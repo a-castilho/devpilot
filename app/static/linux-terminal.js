@@ -21,6 +21,7 @@
 
   const style = document.createElement('style');
   style.textContent = `
+    #linux-view.active{display:block!important;min-width:0}
     .linux-shell{display:grid;gap:14px}.linux-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
     .linux-stat{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface2,#101b2b);min-width:0}
     .linux-stat small{display:block;color:var(--muted);margin-bottom:6px}.linux-stat strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -53,43 +54,51 @@
   }
 
   function ensureUI() {
-    if (view) return;
+    if (view && nav) return;
 
-    nav = document.createElement('button');
-    nav.className = 'nav';
+    nav = document.querySelector('.sidebar nav .nav[data-linux-view="1"]');
+    if (!nav) {
+      nav = document.createElement('button');
+      nav.className = 'nav';
+      nav.dataset.linuxView = '1';
+      nav.textContent = 'Linux';
+      document.querySelector('.sidebar nav')?.appendChild(nav);
+    }
+    nav.dataset.view = 'linux';
     nav.dataset.linuxView = '1';
-    nav.textContent = 'Linux';
-    document.querySelector('.sidebar nav')?.appendChild(nav);
 
-    view = document.createElement('section');
-    view.className = 'view';
-    view.id = 'linux-view';
-    view.innerHTML = `
-      <div class="section-head"><p>Integração direta do DevPilot com o Linux local. Recurso exclusivo do Super Admin.</p></div>
-      <div class="linux-shell">
-        <div class="linux-status-grid">
-          <article class="linux-stat"><small>Agent</small><strong id="linux-agent-status">Consultando…</strong></article>
-          <article class="linux-stat"><small>Host</small><strong id="linux-hostname">—</strong></article>
-          <article class="linux-stat"><small>Memória</small><strong id="linux-memory">—</strong></article>
-          <article class="linux-stat"><small>Load 1m</small><strong id="linux-load">—</strong></article>
-        </div>
-        <div class="linux-warning">Terminal Livre: os comandos são executados com as permissões do usuário Linux que iniciou o Agent. A API e a interface exigem SUPER_ADMIN e as chamadas ao Agent são assinadas.</div>
-        <article class="linux-terminal-card">
-          <div class="linux-terminal-toolbar">
-            <button class="primary" id="linux-terminal-start" type="button">Abrir sessão</button>
-            <button class="ghost" id="linux-terminal-stop" type="button" disabled>Encerrar</button>
-            <button class="ghost" id="linux-terminal-clear" type="button">Limpar tela</button>
-            <span class="linux-spacer"></span>
-            <span class="linux-terminal-state" id="linux-terminal-state">sem sessão</span>
+    view = document.querySelector('#linux-view');
+    if (!view) {
+      view = document.createElement('section');
+      view.className = 'view';
+      view.id = 'linux-view';
+      view.innerHTML = `
+        <div class="section-head"><p>Integração direta do DevPilot com o Linux local. Recurso exclusivo do Super Admin.</p></div>
+        <div class="linux-shell">
+          <div class="linux-status-grid">
+            <article class="linux-stat"><small>Agent</small><strong id="linux-agent-status">Consultando…</strong></article>
+            <article class="linux-stat"><small>Host</small><strong id="linux-hostname">—</strong></article>
+            <article class="linux-stat"><small>Memória</small><strong id="linux-memory">—</strong></article>
+            <article class="linux-stat"><small>Load 1m</small><strong id="linux-load">—</strong></article>
           </div>
-          <pre class="linux-terminal-output" id="linux-terminal-output" aria-live="polite"></pre>
-          <div class="linux-terminal-entry">
-            <textarea id="linux-terminal-input" spellcheck="false" placeholder="Digite um comando Linux. Enter envia; Shift+Enter quebra linha." disabled></textarea>
-            <button class="primary" id="linux-terminal-send" type="button" disabled>Enviar</button>
-          </div>
-        </article>
-      </div>`;
-    document.querySelector('main')?.appendChild(view);
+          <div class="linux-warning">Terminal Livre: os comandos são executados com as permissões do usuário Linux que iniciou o Agent. A API e a interface exigem SUPER_ADMIN e as chamadas ao Agent são assinadas.</div>
+          <article class="linux-terminal-card">
+            <div class="linux-terminal-toolbar">
+              <button class="primary" id="linux-terminal-start" type="button">Abrir sessão</button>
+              <button class="ghost" id="linux-terminal-stop" type="button" disabled>Encerrar</button>
+              <button class="ghost" id="linux-terminal-clear" type="button">Limpar tela</button>
+              <span class="linux-spacer"></span>
+              <span class="linux-terminal-state" id="linux-terminal-state">sem sessão</span>
+            </div>
+            <pre class="linux-terminal-output" id="linux-terminal-output" aria-live="polite"></pre>
+            <div class="linux-terminal-entry">
+              <textarea id="linux-terminal-input" spellcheck="false" placeholder="Digite um comando Linux. Enter envia; Shift+Enter quebra linha." disabled></textarea>
+              <button class="primary" id="linux-terminal-send" type="button" disabled>Enviar</button>
+            </div>
+          </article>
+        </div>`;
+      document.querySelector('main')?.appendChild(view);
+    }
 
     nav.addEventListener('click', show);
     document.querySelector('#linux-terminal-start')?.addEventListener('click', createSession);
@@ -138,7 +147,8 @@
       document.querySelector('#linux-load').textContent =
         system.load && system.load['1m'] != null ? Number(system.load['1m']).toFixed(2) : '—';
     } catch (error) {
-      document.querySelector('#linux-agent-status').textContent = error.message;
+      const status = document.querySelector('#linux-agent-status');
+      if (status) status.textContent = error.message;
     }
   }
 
@@ -229,9 +239,15 @@
   }
 
   function show() {
-    if (!view) return;
+    if (!view || !nav) return;
     visible = true;
-    document.querySelectorAll('.view').forEach(item => item.classList.toggle('active', item === view));
+    document.querySelectorAll('.view').forEach(item => {
+      item.classList.toggle('active', item === view);
+      if (item !== view) item.style.removeProperty('display');
+    });
+    view.hidden = false;
+    view.classList.add('active');
+    view.style.setProperty('display', 'block', 'important');
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === nav));
     const title = document.querySelector('#page-title');
     if (title) title.textContent = 'Linux';
@@ -241,8 +257,10 @@
 
   document.addEventListener('click', event => {
     if (!view || !visible) return;
-    if (event.target !== nav && event.target.closest?.('.nav') && event.target !== nav) {
+    const clickedNav = event.target.closest?.('.nav');
+    if (clickedNav && clickedNav !== nav) {
       visible = false;
+      view.style.removeProperty('display');
       stopPolling();
     }
   }, true);
