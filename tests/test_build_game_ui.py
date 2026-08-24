@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 BUILD_GAME_JS = Path("app/static/build-game.js")
+BUILD_GAME_NEW_SESSION_JS = Path("app/static/build-game-new-session.js")
 BUILD_GAME_URL_BONUS_JS = Path("app/static/build-game-url-bonus.js")
 BUILD_GAME_COCKPIT_JS = Path("app/static/build-game-cockpit.js")
 BUILD_GAME_COCKPIT_CSS = Path("app/static/build-game-cockpit.css")
@@ -12,7 +13,7 @@ TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
 def test_build_game_is_loaded_from_dashboard():
     loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
 
-    assert "/assets/build-game.js?v=20260824-1" in loader
+    assert "/assets/build-game.js?v=20260824-2" in loader
     assert "data-build-game-loader" in loader
 
 
@@ -50,11 +51,28 @@ def test_game_preserves_history_and_supports_new_missions():
     assert "XP" in source
 
 
+def test_new_game_resets_full_visible_state_and_refreshes_fresh_mission():
+    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    source = BUILD_GAME_NEW_SESSION_JS.read_text(encoding="utf-8")
+
+    assert "/assets/build-game-new-session.js?v=20260824-2" in loader
+    assert "data-build-game-new-session-loader" in loader
+    assert "previousMissionId = missionId()" in source
+    assert "0/6 fases" in source
+    assert "0/${TOTAL_XP} XP" in source
+    assert "build-game-victory" in source
+    assert "build-game-url-bonus" in source
+    assert "build-game-subphases" in source
+    assert "A partida começa quando você jogar a primeira fase." in source
+    assert "devpilot:build-game-new-session" in source
+    assert "await window.loadBuildGame()" in source
+
+
 def test_completed_game_requires_real_verified_url_before_mission_completion():
     loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
     bonus = BUILD_GAME_URL_BONUS_JS.read_text(encoding="utf-8")
 
-    assert "/assets/build-game-url-bonus.js?v=20260824-1" in loader
+    assert "/assets/build-game-url-bonus.js?v=20260824-2" in loader
     assert "data-build-game-url-bonus-loader" in loader
     assert "#build-game-view .build-game-victory" in bonus
     assert "CHEFE FINAL VENCIDO · ENTREGA PENDENTE" in bonus
