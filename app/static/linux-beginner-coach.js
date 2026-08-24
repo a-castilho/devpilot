@@ -1,4 +1,11 @@
 (() => {
+  if (!document.querySelector('script[data-linux-git-cloud]')) {
+    const script = document.createElement('script');
+    script.src = '/assets/linux-git-cloud.js';
+    script.dataset.linuxGitCloud = '1';
+    document.head.appendChild(script);
+  }
+
   const waitForLinux = () => {
     const view = document.querySelector('#linux-view');
     if (!view || !view.querySelector('.linux-shell')) {
