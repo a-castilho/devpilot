@@ -253,42 +253,39 @@
     } catch (_) { return null; }
   }
 
-  async function createCorrection(card) {
-    if (!context.runId || card.dataset.creating === '1') return;
-    const slider = card.querySelector('.analysis-correction-slider');
-    const label = card.querySelector('.analysis-correction-label');
-    const status = card.querySelector('.analysis-correction-status');
-    const thumb = card.querySelector('.analysis-correction-thumb');
-    card.dataset.creating = '1'; thumb.disabled = true; label.textContent = 'Criando tarefa…'; status.textContent = 'Validando diagnóstico e evitando duplicidade…';
-    try {
-      const dialog = document.querySelector('#task-log-modal');
-      const data = await api(`/task-runs/${encodeURIComponent(context.runId)}`);
-      const task = await resolveTask(context.taskId || data.task_id);
-      if (!task?.project_id) throw new Error('Projeto da análise não encontrado');
-      const report = reportTextFrom(data, dialog);
-      const marker = `[analysis-run:${data.id}]`;
-      const tasks = await api(`/tasks?project_id=${encodeURIComponent(task.project_id)}&limit=500`);
-      const existing = tasks.find(item => String(item.prompt || '').includes(marker));
-      if (existing) {
-        slider.classList.add('created'); label.textContent = 'Tarefa já criada'; status.textContent = `Tarefa existente: ${existing.title}`; status.className = 'analysis-correction-status success'; card.dataset.creating = '0'; return;
-      }
-      const project = (typeof state !== 'undefined' ? state.projects?.find(item => String(item.id) === String(task.project_id)) : null);
-      const projectName = project?.name || String(task.title || 'projeto').replace(/^Análise técnica de\s+/i, '');
-      const payload = {
-        project_id: task.project_id,
-        title: `Correção baseada na análise · ${projectName}`.slice(0,240),
-        prompt: `${marker}\nImplemente as correções recomendadas pela análise técnica abaixo. Priorize riscos críticos, preserve compatibilidade, execute testes relevantes e registre claramente o que foi alterado. Não repita a análise; transforme o diagnóstico em implementação verificável.\n\nDIAGNÓSTICO:\n${report}`.slice(0,100000),
-        source: 'dashboard', priority: correctionPriority(report), requires_approval: true,
-      };
-      const created = await api('/tasks', {method:'POST', body:JSON.stringify(payload)});
-      slider.classList.add('created');
-      const max = Math.max(0, slider.clientWidth - thumb.offsetWidth - 10); setProgress(slider, max);
-      label.textContent = 'Tarefa criada'; status.textContent = `${created.title} · aguardando aprovação`; status.className = 'analysis-correction-status success';
-      if (typeof toast === 'function') toast('Tarefa de correção criada a partir da análise');
-      if (typeof load === 'function') setTimeout(() => load(), 250);
-    } catch (error) {
-      slider.classList.add('error'); label.textContent = 'Falhou · tente novamente'; status.textContent = error?.message || 'Falha ao criar tarefa'; status.className = 'analysis-correction-status error'; thumb.disabled = false; card.dataset.creating = '0';
-    }
+  function isAnalysisActionTask(task) {
+    const prompt = String(task?.prompt || '');
+    const text = `${task?.title || ''}\n${prompt}`.toLowerCase();
+    const source = String(task?.source || '').toLowerCase();
+    const actionSignals = [
+      'correção baseada na análise', 'correcao baseada na analise',
+      'ação recomendada', 'acao recomendada',
+      'execute as correções', 'execute as correcoes',
+      'não faça uma nova análise', 'nao faca uma nova analise'
+    ];
+    return source === 'analysis' || source === 'analysis-action'
+      || prompt.toLowerCase().includes('[analysis-action]')
+      || prompt.toLowerCase().includes('[analysis-run:')
+      || prompt.toLowerCase().includes('[devpilot_stage=execute]')
+      || prompt.toLowerCase().includes('[devpilot_stage=correct]')
+      || actionSignals.some(signal => text.includes(signal));
+  }
+
+  function isVerificationAnalysis(task) {
+    const prompt = String(task?.prompt || '').toLowerCase();
+    return String(task?.source || '').toLowerCase() === 'execution-verification'
+      || prompt.includes('[post-execution-verification]')
+      || prompt.includes('[devpilot_stage=verify]');
+  }
+
+  function isAnalysisTask(task) {
+    if (!task || isAnalysisActionTask(task)) return false;
+    if (isVerificationAnalysis(task)) return true;
+    const prompt = String(task.prompt || '');
+    const mode = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
+    if (mode) return mode === 'analysis-read-only' || mode === 'review';
+    const legacy = `${task.title || ''}\n${prompt}`.toLowerCase();
+    return ['análise técnica de ', 'analise tecnica de ', 'auditoria somente leitura', 'somente leitura do projeto', 'não modifique arquivos', 'nao modifique arquivos'].some(signal => legacy.includes(signal));
   }
 
   function setProgress(slider, px) {
@@ -300,7 +297,85 @@
 
   function resetSlider(card) {
     const slider = card.querySelector('.analysis-correction-slider'); const label = card.querySelector('.analysis-correction-label'); const thumb = card.querySelector('.analysis-correction-thumb'); const status = card.querySelector('.analysis-correction-status');
-    slider.classList.remove('error'); label.textContent = 'Deslize para corrigir'; status.textContent = 'A tarefa será criada conforme as recomendações identificadas.'; status.className = 'analysis-correction-status'; thumb.disabled = false; card.dataset.creating = '0'; setProgress(slider, 0);
+    const title = card.querySelector('.analysis-correction-head h3'); const description = card.querySelector('.analysis-correction-head p');
+    if (title) title.textContent = 'Gerar tarefa a partir desta análise';
+    if (description) description.textContent = 'Cria uma tarefa de correção com base no diagnóstico acima.';
+    slider.classList.remove('created', 'error'); label.textContent = 'Deslize para corrigir'; status.textContent = 'A tarefa será criada conforme as recomendações identificadas.'; status.className = 'analysis-correction-status'; thumb.disabled = false; card.dataset.creating = '0'; setProgress(slider, 0);
+  }
+
+  function lockCorrection(card, existing) {
+    const slider = card.querySelector('.analysis-correction-slider'); const label = card.querySelector('.analysis-correction-label'); const thumb = card.querySelector('.analysis-correction-thumb'); const status = card.querySelector('.analysis-correction-status');
+    const title = card.querySelector('.analysis-correction-head h3'); const description = card.querySelector('.analysis-correction-head p');
+    const completed = String(existing?.status || '').toLowerCase() === 'completed';
+    if (title) title.textContent = completed ? 'Correção concluída' : 'Correção já criada';
+    if (description) description.textContent = completed
+      ? 'Esta análise já foi corrigida. Uma nova correção não será gerada.'
+      : 'Esta análise já possui uma tarefa de correção e não pode gerar outra.';
+    slider.classList.remove('error'); slider.classList.add('created');
+    label.textContent = completed ? 'Concluída' : 'Tarefa já criada';
+    status.textContent = completed
+      ? 'Correção concluída. Não é possível gerar outra correção para esta análise.'
+      : `Já existe uma correção para esta análise: ${existing?.title || 'tarefa registrada'}.`;
+    status.className = 'analysis-correction-status success';
+    thumb.disabled = true; card.dataset.creating = '0';
+    const max = Math.max(0, slider.clientWidth - thumb.offsetWidth - 10); setProgress(slider, max);
+  }
+
+  async function syncCorrectionAvailability(card, data, task) {
+    resetSlider(card);
+    const successful = String(data?.status || '').toLowerCase() === 'success';
+    if (!successful || !isAnalysisTask(task) || !task?.project_id) {
+      card.hidden = true;
+      return;
+    }
+    card.hidden = false;
+    const marker = `[analysis-run:${data.id}]`;
+    const tasks = await api(`/tasks?project_id=${encodeURIComponent(task.project_id)}&limit=500`);
+    const existing = tasks.find(item => String(item.prompt || '').includes(marker));
+    if (existing) lockCorrection(card, existing);
+  }
+
+  async function createCorrection(card) {
+    if (!context.runId || card.dataset.creating === '1') return;
+    const slider = card.querySelector('.analysis-correction-slider');
+    const label = card.querySelector('.analysis-correction-label');
+    const status = card.querySelector('.analysis-correction-status');
+    const thumb = card.querySelector('.analysis-correction-thumb');
+    card.dataset.creating = '1'; thumb.disabled = true; label.textContent = 'Criando tarefa…'; status.textContent = 'Validando diagnóstico e evitando duplicidade…';
+    try {
+      const dialog = document.querySelector('#task-log-modal');
+      const data = await api(`/task-runs/${encodeURIComponent(context.runId)}`);
+      const task = await resolveTask(context.taskId || data.task_id);
+      if (String(data.status || '').toLowerCase() !== 'success' || !isAnalysisTask(task)) {
+        card.hidden = true;
+        card.dataset.creating = '0';
+        return;
+      }
+      if (!task?.project_id) throw new Error('Projeto da análise não encontrado');
+      const report = reportTextFrom(data, dialog);
+      const marker = `[analysis-run:${data.id}]`;
+      const tasks = await api(`/tasks?project_id=${encodeURIComponent(task.project_id)}&limit=500`);
+      const existing = tasks.find(item => String(item.prompt || '').includes(marker));
+      if (existing) {
+        lockCorrection(card, existing);
+        return;
+      }
+      const project = (typeof state !== 'undefined' ? state.projects?.find(item => String(item.id) === String(task.project_id)) : null);
+      const projectName = project?.name || String(task.title || 'projeto').replace(/^Análise técnica de\s+/i, '');
+      const payload = {
+        project_id: task.project_id,
+        title: `Correção baseada na análise · ${projectName}`.slice(0,240),
+        prompt: `${marker}\nImplemente as correções recomendadas pela análise técnica abaixo. Priorize riscos críticos, preserve compatibilidade, execute testes relevantes e registre claramente o que foi alterado. Não repita a análise; transforme o diagnóstico em implementação verificável.\n\nDIAGNÓSTICO:\n${report}`.slice(0,100000),
+        source: 'dashboard', priority: correctionPriority(report), requires_approval: true,
+      };
+      const created = await api('/tasks', {method:'POST', body:JSON.stringify(payload)});
+      lockCorrection(card, created);
+      status.textContent = `${created.title} · aguardando aprovação`;
+      if (typeof toast === 'function') toast('Tarefa de correção criada a partir da análise');
+      if (typeof load === 'function') setTimeout(() => load(), 250);
+    } catch (error) {
+      slider.classList.add('error'); label.textContent = 'Falhou · tente novamente'; status.textContent = error?.message || 'Falha ao criar tarefa'; status.className = 'analysis-correction-status error'; thumb.disabled = false; card.dataset.creating = '0';
+    }
   }
 
   function bindCorrectionSlider(card) {
@@ -322,13 +397,16 @@
     context.enhancing = true;
     try {
       const data = await api(`/task-runs/${encodeURIComponent(context.runId)}`);
+      const task = await resolveTask(context.taskId || data.task_id);
       const report = reportTextFrom(data, dialog);
       renderCommand(dialog, data); renderProposal(dialog, report);
       const correction = dialog.querySelector('.analysis-correction-card');
-      if (correction) { correction.hidden = String(data.status || '').toLowerCase() !== 'success'; resetSlider(correction); }
-      const eyebrow = dialog.querySelector('#task-client-card > .eyebrow'); if (eyebrow) eyebrow.textContent = 'ANÁLISE DE IA · GERADA E REVISADA';
+      if (correction) await syncCorrectionAvailability(correction, data, task);
+      const eyebrow = dialog.querySelector('#task-client-card > .eyebrow');
+      if (eyebrow && isAnalysisTask(task)) eyebrow.textContent = 'ANÁLISE DE IA · GERADA E REVISADA';
     } catch (_) {
       const proposal = dialog.querySelector('.analysis-proposal-content'); if (proposal) proposal.textContent = 'Proposta indisponível até que a análise seja carregada.';
+      const correction = dialog.querySelector('.analysis-correction-card'); if (correction) correction.hidden = true;
     } finally { context.enhancing = false; }
   }
 
