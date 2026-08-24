@@ -64,8 +64,21 @@ def test_high_risk_task_requires_approval():
     assert "deploy" in decision.reasons
 
 
+def test_spoken_deploy_synonym_requires_approval():
+    decision = evaluate_task("Implante a versão atual", requested_approval=False)
+    assert decision.requires_approval is True
+    assert "implante" in decision.reasons
+
+
+def test_regular_fix_can_enter_execution_queue_without_manual_approval():
+    decision = evaluate_task("Corrija o layout mobile", requested_approval=False)
+    assert decision.requires_approval is False
+    assert decision.reasons == ()
+
+
 def test_voice_intent_preserves_transcript_and_project_hint():
     result = interpret_voice("No regulaai analise falhas de segurança")
     assert result["project_hint"] == "regulaai"
     assert result["action"] == "analyze"
+    assert result["operational"] is True
     assert result["prompt"] == "No regulaai analise falhas de segurança"
