@@ -52,6 +52,7 @@ jobs:
           node --check app/static/token-usage.js
           node --check app/static/token-usage-mobile-fix.js
           node --check app/static/investia-admin.js
+          node --check app/static/system-tests.js
           bash -n scripts/install-linux-agent.sh
 
       - name: Validate Vercel static frontend
@@ -69,6 +70,7 @@ jobs:
           test -f .vercel-static/assets/linux-terminal.js
           test -f .vercel-static/assets/token-usage.js
           test -f .vercel-static/assets/token-usage-mobile-fix.js
+          test -f .vercel-static/assets/system-tests.js
 
       - name: Run tests
         run: pytest
