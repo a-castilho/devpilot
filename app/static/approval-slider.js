@@ -1,6 +1,7 @@
 (() => {
   const TABLE_ID = 'tasks-table';
   const COMPLETE_AT = 0.88;
+  const PREVIEW_DIALOG_ID = 'approval-correction-preview';
 
   function injectStyles() {
     if (document.getElementById('approval-slider-styles')) return;
@@ -116,17 +117,72 @@
         border-color:#ff6577;
         box-shadow:0 0 0 3px rgba(255,101,119,.08)
       }
-      .task-actions:has(.approval-slider){width:100%;max-width:260px;min-width:0;overflow:hidden}
+      .task-actions:has(.approval-slider){width:100%;max-width:260px;min-width:0;overflow:visible}
+      .approval-preview-button{
+        width:100%;
+        max-width:260px;
+        min-height:40px;
+        margin:0 0 9px;
+        padding:9px 12px;
+        border:1px solid #35536f;
+        border-radius:11px;
+        background:#0b1b2b;
+        color:#c9d8e8;
+        font:inherit;
+        font-size:10px;
+        font-weight:850;
+        letter-spacing:.045em;
+        text-transform:uppercase;
+        cursor:pointer;
+        transition:border-color .18s ease,color .18s ease,background .18s ease
+      }
+      .approval-preview-button:hover,.approval-preview-button:focus-visible{
+        border-color:#43d7c5;
+        color:#6debdc;
+        background:#0e2635;
+        outline:none
+      }
+      #${PREVIEW_DIALOG_ID}{
+        width:min(720px,calc(100vw - 24px));
+        max-width:calc(100vw - 24px);
+        max-height:min(88vh,760px);
+        padding:0;
+        border:1px solid #29445f;
+        border-radius:18px;
+        background:#07111c;
+        color:#edf6ff;
+        box-shadow:0 24px 80px rgba(0,0,0,.72)
+      }
+      #${PREVIEW_DIALOG_ID}::backdrop{background:rgba(0,0,0,.76);backdrop-filter:blur(3px)}
+      .approval-preview-panel{display:grid;grid-template-rows:auto minmax(0,1fr) auto;max-height:min(88vh,760px);min-width:0}
+      .approval-preview-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 18px 14px;border-bottom:1px solid #20364b}
+      .approval-preview-eyebrow{display:block;margin-bottom:6px;color:#6fe9d9;font-size:10px;font-weight:900;letter-spacing:.09em;text-transform:uppercase}
+      .approval-preview-head h3{margin:0;color:#f3f8ff;font-size:18px;line-height:1.3;overflow-wrap:anywhere}
+      .approval-preview-close{width:40px;height:40px;flex:0 0 40px;padding:0;border:1px solid #31485f;border-radius:11px;background:#0c1a28;color:#dce8f5;font-size:22px;cursor:pointer}
+      .approval-preview-body{min-width:0;overflow:auto;padding:16px 18px 20px}
+      .approval-preview-section{padding:13px 14px;border:1px solid #203a51;border-radius:12px;background:#091725}
+      .approval-preview-section+.approval-preview-section{margin-top:12px}
+      .approval-preview-section strong{display:block;margin-bottom:7px;color:#8fa6be;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}
+      .approval-preview-section pre{margin:0;color:#e7f0fa;font:inherit;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+      .approval-preview-empty{margin:0;color:#91a4b8;font-size:13px;line-height:1.5}
+      .approval-preview-note{margin:12px 2px 0;color:#758ba2;font-size:10px;line-height:1.45}
+      .approval-preview-footer{display:flex;justify-content:flex-end;padding:13px 18px;border-top:1px solid #20364b}
+      .approval-preview-footer button{min-height:40px;padding:9px 15px;border:1px solid #31536e;border-radius:10px;background:#102337;color:#dceafa;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
       @media(max-width:1100px) and (min-width:821px){
-        .approval-slider{max-width:180px;height:44px}
+        .approval-slider,.approval-preview-button{max-width:180px}
+        .approval-slider{height:44px}
         .approval-slider .approve{width:34px!important;min-width:34px!important;max-width:34px!important;height:34px!important;min-height:34px!important}
         .approval-slider-label{inset:0 6px 0 44px;font-size:8px;letter-spacing:.02em}
+        .approval-preview-button{font-size:8px}
       }
       @media(max-width:820px){
-        .approval-slider{width:100%;max-width:100%;height:58px}
+        .approval-slider,.approval-preview-button{width:100%;max-width:100%}
         .task-actions:has(.approval-slider){max-width:100%}
+        .approval-slider{height:58px}
         .approval-slider .approve{width:48px!important;min-width:48px!important;max-width:48px!important;height:48px!important;min-height:48px!important}
         .approval-slider-label{inset:0 12px 0 66px;font-size:11px}
+        .approval-preview-button{min-height:46px;margin-bottom:10px;font-size:11px}
+        .approval-preview-head{padding:16px 14px 12px}.approval-preview-body{padding:14px}.approval-preview-footer{padding:12px 14px}
       }
     `;
     document.head.appendChild(style);
@@ -182,6 +238,108 @@
       if (typeof window.toast === 'function') window.toast(error?.message || 'Falha ao aprovar tarefa');
       setTimeout(() => reset(slider), 1300);
     }
+  }
+
+  function previewDialog() {
+    let dialog = document.getElementById(PREVIEW_DIALOG_ID);
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = PREVIEW_DIALOG_ID;
+    dialog.innerHTML = `
+      <div class="approval-preview-panel">
+        <header class="approval-preview-head">
+          <div><span class="approval-preview-eyebrow">ANTES DE APROVAR</span><h3 id="approval-preview-title">Correção proposta</h3></div>
+          <button type="button" class="approval-preview-close" aria-label="Fechar">×</button>
+        </header>
+        <div class="approval-preview-body" id="approval-preview-body"></div>
+        <footer class="approval-preview-footer"><button type="button" class="approval-preview-ok">Fechar</button></footer>
+      </div>`;
+    document.body.appendChild(dialog);
+    const close = () => dialog.close();
+    dialog.querySelector('.approval-preview-close').addEventListener('click', close);
+    dialog.querySelector('.approval-preview-ok').addEventListener('click', close);
+    dialog.addEventListener('click', event => { if (event.target === dialog) close(); });
+    return dialog;
+  }
+
+  async function resolveTask(id) {
+    if (!id) return null;
+    try {
+      if (typeof state !== 'undefined' && Array.isArray(state.tasks)) {
+        const local = state.tasks.find(item => String(item.id) === String(id));
+        if (local) return local;
+      }
+    } catch (_) {}
+    try {
+      if (typeof window.api !== 'function') return null;
+      const tasks = await window.api('/tasks?limit=500');
+      return Array.isArray(tasks) ? tasks.find(item => String(item.id) === String(id)) || null : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function splitCorrectionPrompt(prompt) {
+    const raw = String(prompt || '').trim();
+    if (!raw) return {instructions:'', diagnosis:''};
+    const cleaned = raw.replace(/^\[analysis-run:[^\]]+\]\s*/i, '').trim();
+    const marker = /\n\s*DIAGN[ÓO]STICO:\s*\n/i;
+    const match = cleaned.match(marker);
+    if (!match || match.index == null) return {instructions:cleaned, diagnosis:''};
+    return {
+      instructions: cleaned.slice(0, match.index).trim(),
+      diagnosis: cleaned.slice(match.index + match[0].length).trim(),
+    };
+  }
+
+  async function showCorrectionPreview(button) {
+    const id = button.dataset.id;
+    const dialog = previewDialog();
+    const title = dialog.querySelector('#approval-preview-title');
+    const body = dialog.querySelector('#approval-preview-body');
+    title.textContent = 'Carregando correção…';
+    body.innerHTML = '<p class="approval-preview-empty">Buscando a descrição real da tarefa.</p>';
+    if (!dialog.open) dialog.showModal();
+
+    const task = await resolveTask(id);
+    if (!task) {
+      title.textContent = 'Correção indisponível';
+      body.innerHTML = '<p class="approval-preview-empty">Não foi possível carregar esta tarefa. Nenhuma correção foi inventada.</p>';
+      return;
+    }
+
+    const parts = splitCorrectionPrompt(task.prompt);
+    title.textContent = task.title || 'Correção proposta';
+    const sections = [];
+    if (parts.instructions) sections.push(`<section class="approval-preview-section"><strong>O que será feito</strong><pre></pre></section>`);
+    if (parts.diagnosis) sections.push(`<section class="approval-preview-section"><strong>Diagnóstico que orienta a correção</strong><pre></pre></section>`);
+    body.innerHTML = sections.join('') || '<p class="approval-preview-empty">Esta tarefa não possui descrição de correção registrada. Revise a origem antes de aprovar.</p>';
+    const pres = body.querySelectorAll('pre');
+    let index = 0;
+    if (parts.instructions && pres[index]) pres[index++].textContent = parts.instructions;
+    if (parts.diagnosis && pres[index]) pres[index].textContent = parts.diagnosis;
+    if (sections.length) {
+      const note = document.createElement('p');
+      note.className = 'approval-preview-note';
+      note.textContent = 'Conteúdo exibido a partir da tarefa registrada. A aprovação abaixo autoriza a execução desta correção.';
+      body.appendChild(note);
+    }
+  }
+
+  function addPreviewButton(slider, approveButton) {
+    if (!slider || !approveButton || slider.parentNode?.querySelector?.(`.approval-preview-button[data-id="${approveButton.dataset.id}"]`)) return;
+    const preview = document.createElement('button');
+    preview.type = 'button';
+    preview.className = 'approval-preview-button';
+    preview.dataset.id = approveButton.dataset.id || '';
+    preview.textContent = 'Ver qual correção será feita';
+    preview.setAttribute('aria-label', 'Ver detalhes da correção antes de aprovar');
+    preview.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      showCorrectionPreview(preview);
+    });
+    slider.parentNode.insertBefore(preview, slider);
   }
 
   function bind(slider) {
@@ -254,25 +412,27 @@
     if (!table) return;
 
     table.querySelectorAll('button.approve').forEach(button => {
-      if (button.closest('.approval-slider')) return;
+      let slider = button.closest('.approval-slider');
+      if (!slider) {
+        slider = document.createElement('div');
+        slider.className = 'approval-slider';
+        slider.setAttribute('role', 'slider');
+        slider.setAttribute('aria-label', 'Confirmação de aprovação');
+        slider.setAttribute('aria-valuemin', '0');
+        slider.setAttribute('aria-valuemax', '100');
+        slider.setAttribute('aria-valuenow', '0');
 
-      const slider = document.createElement('div');
-      slider.className = 'approval-slider';
-      slider.setAttribute('role', 'slider');
-      slider.setAttribute('aria-label', 'Confirmação de aprovação');
-      slider.setAttribute('aria-valuemin', '0');
-      slider.setAttribute('aria-valuemax', '100');
-      slider.setAttribute('aria-valuenow', '0');
+        const fill = document.createElement('span');
+        fill.className = 'approval-slider-fill';
+        const label = document.createElement('span');
+        label.className = 'approval-slider-label';
+        label.textContent = 'Deslize para aprovar';
 
-      const fill = document.createElement('span');
-      fill.className = 'approval-slider-fill';
-      const label = document.createElement('span');
-      label.className = 'approval-slider-label';
-      label.textContent = 'Deslize para aprovar';
-
-      button.parentNode.insertBefore(slider, button);
-      slider.append(fill, label, button);
-      bind(slider);
+        button.parentNode.insertBefore(slider, button);
+        slider.append(fill, label, button);
+        bind(slider);
+      }
+      addPreviewButton(slider, button);
     });
   }
 
