@@ -9,6 +9,7 @@ data/
 runtime/
 *.db
 *.log
+.devpilot/
 
 # Backups locais
 .env.backup-*
