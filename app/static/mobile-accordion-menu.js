@@ -370,3 +370,12 @@
 
   rebuild();
 })();
+
+(() => {
+  if (document.querySelector('script[data-project-ships-loader="1"]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/project-ships.js?v=20260824-1';
+  script.async = false;
+  script.dataset.projectShipsLoader = '1';
+  document.head.appendChild(script);
+})();
