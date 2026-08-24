@@ -7,6 +7,10 @@ from app.config import get_settings
 
 HIGH_RISK_WORDS = {
     "deploy",
+    "implante",
+    "implantar",
+    "publicar",
+    "publique",
     "produção",
     "production",
     "merge",
@@ -18,6 +22,11 @@ HIGH_RISK_WORDS = {
     "migração",
     "dependency",
     "dependência",
+    "sudo",
+    "shutdown",
+    "reboot",
+    "chmod",
+    "chown",
 }
 
 REPOSITORY_SHORTHAND = re.compile(
