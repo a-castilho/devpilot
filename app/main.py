@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 import app.models  # noqa: F401
 from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
+from app.audit_routes import router as audit_router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
 from app.cloud_admin_routes import router as cloud_admin_router
@@ -119,6 +120,7 @@ app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(router)
+app.include_router(audit_router)
 app.include_router(career_router)
 app.include_router(host_action_router)
 app.include_router(investia_admin_router)
@@ -220,6 +222,7 @@ def spa(path: str):
         '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
         '<script src="/assets/linux-terminal.js" defer></script>',
         '<script src="/assets/linux-beginner-coach.js" defer></script>',
+        '<script src="/assets/audit-integrity.js" defer></script>',
     ]
     for script in scripts:
         if script not in html:

@@ -42,6 +42,7 @@ node --check app/static/tasks-lazy-load.js
 node --check app/static/telemetry-replay-capture.js
 node --check app/static/telemetry-replay.js
 node --check app/static/linux-terminal.js
+node --check app/static/audit-integrity.js
 node --check app/static/token-usage.js
 node --check app/static/token-usage-mobile-fix.js
 node --check app/static/investia-admin.js
@@ -60,6 +61,7 @@ test -f .vercel-static/assets/analysis-failure-actions.js
 test -f .vercel-static/assets/repeatai-pattern-graphs.js
 test -f .vercel-static/assets/mobile-project-card-compact.js
 test -f .vercel-static/assets/linux-terminal.js
+test -f .vercel-static/assets/audit-integrity.js
 test -f .vercel-static/assets/token-usage.js
 test -f .vercel-static/assets/token-usage-mobile-fix.js
 test -f .vercel-static/assets/system-tests.js

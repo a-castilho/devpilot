@@ -40,6 +40,7 @@ const scripts = [
   'tws-example.js',
   'cloud-admin.js',
   'linux-terminal.js',
+  'audit-integrity.js',
 ];
 
 function revision(path) {
