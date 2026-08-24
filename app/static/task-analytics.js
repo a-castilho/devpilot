@@ -16,6 +16,30 @@
     const prompt = String(task.prompt || '');
     const lowerPrompt = prompt.toLocaleLowerCase('pt-BR');
     const text = (title + ' ' + prompt).toLocaleLowerCase('pt-BR');
+    const mode = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
+
+    if (lowerPrompt.includes('[devpilot_stage=correct]') || mode === 'fix') return 'Correção';
+
+    if (
+      source === 'execution-verification' ||
+      lowerPrompt.includes('[post-execution-verification]') ||
+      lowerPrompt.includes('[devpilot_stage=verify]')
+    ) return 'Validação';
+
+    if (mode === 'review') return 'Revisão';
+    if (mode === 'analysis-read-only') return 'Análise';
+    if (mode === 'develop') return 'Desenvolvimento';
+
+    if (
+      lowerPrompt.includes('[devpilot_build_game_v1]') ||
+      /^\s*\[jogo\]/i.test(title)
+    ) return 'Jogo';
+
+    if (
+      lowerPrompt.includes('[devpilot_stage=deploy]') ||
+      /(^|\s)deploy(ment|ar|ado|ando)?(\s|$)/i.test(title)
+    ) return 'Deploy';
+
     const actionSignals = [
       'correção baseada na análise',
       'correcao baseada na analise',
@@ -33,21 +57,21 @@
       lowerPrompt.includes('[analysis-action]') ||
       lowerPrompt.includes('[analysis-run:') ||
       lowerPrompt.includes('[devpilot_stage=execute]') ||
-      lowerPrompt.includes('[devpilot_stage=correct]') ||
       actionSignals.some(signal => text.includes(signal))
     ) return 'Execução';
 
-    if (
-      source === 'execution-verification' ||
-      lowerPrompt.includes('[post-execution-verification]') ||
-      lowerPrompt.includes('[devpilot_stage=verify]')
-    ) return 'Análise';
+    const readOnlySignals = [
+      'somente leitura',
+      'não modifique arquivos',
+      'nao modifique arquivos',
+      'não implemente',
+      'nao implemente',
+      'análise técnica',
+      'analise tecnica',
+      'auditoria somente leitura'
+    ];
 
-    const mode = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
-    if (mode === 'analysis-read-only' || mode === 'review') return 'Análise';
-    if (mode === 'develop' || mode === 'fix') return 'Execução';
-
-    return /an[aá]lis|audit|diagn[oó]st|revis/.test(text) ? 'Análise' : 'Execução';
+    return readOnlySignals.some(signal => text.includes(signal)) ? 'Análise' : 'Outro';
   };
   const bars = values => {
     const entries = Object.entries(values).sort((a,b) => b[1] - a[1]);
@@ -116,7 +140,7 @@
       '</div>'+
       '<div class="task-charts-grid">'+
         '<article class="task-chart"><h3>Tarefas por status</h3>'+bars(statusValues)+'</article>'+
-        '<article class="task-chart"><h3>Análise × execução</h3>'+bars(typeValues)+'</article>'+
+        '<article class="task-chart"><h3>Tipos de tarefa</h3>'+bars(typeValues)+'</article>'+
         '<article class="task-chart"><h3>Origem das tarefas</h3>'+bars(sourceValues)+'</article>'+
         '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">'+priority.map(([label,value]) => '<div class="task-priority-item"><i></i><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></article>'+
       '</div>';
