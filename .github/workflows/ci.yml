@@ -50,6 +50,7 @@ jobs:
           node --check app/static/telemetry-replay.js
           node --check app/static/linux-terminal.js
           node --check app/static/token-usage.js
+          node --check app/static/token-usage-mobile-fix.js
           node --check app/static/investia-admin.js
           bash -n scripts/install-linux-agent.sh
 
@@ -67,6 +68,7 @@ jobs:
           test -f .vercel-static/assets/mobile-project-card-compact.js
           test -f .vercel-static/assets/linux-terminal.js
           test -f .vercel-static/assets/token-usage.js
+          test -f .vercel-static/assets/token-usage-mobile-fix.js
 
       - name: Run tests
         run: pytest
