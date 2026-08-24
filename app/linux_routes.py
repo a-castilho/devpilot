@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import hashlib
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.models import ProviderCredential
 from app.security import Principal, Role, session_principal
 from app.services.audit import record
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
+from app.services.vault import Vault
 
 
 router = APIRouter(prefix="/api/linux", tags=["linux"])
+
+_GITHUB_CLOUD_PROVIDER = "cloud:github"
+_CLOUD_CREDENTIAL_LABEL = "cloud-admin"
 
 
 class TerminalCreate(BaseModel):
@@ -66,6 +73,68 @@ def audit(
     )
 
 
+def _github_cloud_credential(
+    db: Session,
+    principal: Principal,
+) -> ProviderCredential | None:
+    if principal.role is not Role.SUPER_ADMIN:
+        return None
+    return db.scalar(
+        select(ProviderCredential).where(
+            ProviderCredential.workspace_id == principal.workspace_id,
+            ProviderCredential.provider == _GITHUB_CLOUD_PROVIDER,
+            ProviderCredential.label == _CLOUD_CREDENTIAL_LABEL,
+        )
+    )
+
+
+def _github_cloud_scope(item: ProviderCredential | None) -> str:
+    if not item:
+        return ""
+    try:
+        metadata = json.loads(item.models or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ""
+    return str(metadata.get("scope") or "") if isinstance(metadata, dict) else ""
+
+
+def _github_cloud_status(item: ProviderCredential | None) -> dict:
+    configured = item is not None
+    enabled = bool(item.enabled) if item else False
+    return {
+        "provider": "github",
+        "host": "github.com",
+        "configured": configured,
+        "enabled": enabled,
+        "ready": configured and enabled,
+        "scope": _github_cloud_scope(item),
+        "source": "clouds",
+    }
+
+
+def _github_terminal_auth(item: ProviderCredential | None) -> dict | None:
+    if not item or not item.enabled:
+        return None
+    try:
+        token = Vault().decrypt(item.encrypted_secret).strip()
+    except ValueError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="A credencial GitHub cadastrada em Clouds não pôde ser carregada",
+        ) from error
+    if len(token) < 8:
+        raise HTTPException(
+            status_code=503,
+            detail="A credencial GitHub cadastrada em Clouds é inválida",
+        )
+    return {
+        "provider": "github",
+        "host": "github.com",
+        "token": token,
+        "scope": _github_cloud_scope(item),
+    }
+
+
 def _all_sessions() -> list[dict]:
     data = agent_call("GET", "/v1/terminal/sessions")
     return list(data.get("items") or [])
@@ -85,8 +154,12 @@ def require_owned_session(principal: Principal, session_id: str) -> dict:
 
 
 @router.get("/status")
-def linux_status(principal: Principal = Depends(current_user)):
+def linux_status(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(current_user),
+):
     super_admin = principal.role is Role.SUPER_ADMIN
+    github_cloud = _github_cloud_credential(db, principal)
     profile = {
         "user_id": principal.user_id,
         "workspace_id": principal.workspace_id,
@@ -95,6 +168,7 @@ def linux_status(principal: Principal = Depends(current_user)):
         "mode": "dedicated-linux-user" if super_admin else "isolated-user-workspace",
         "linux_user": None,
         "linux_user_ready": False,
+        "git_cloud": _github_cloud_status(github_cloud) if super_admin else None,
     }
     try:
         health = LinuxAgentClient().health()
@@ -149,19 +223,18 @@ def create_terminal_session(
             detail="Diretório inicial manual é exclusivo do Super Admin; seu perfil usa workspace isolado",
         )
 
-    # Usuários comuns continuam estritamente isolados no workspace do perfil.
-    # SUPER_ADMIN abre uma sessão direta, mas o Linux Agent nunca reutiliza o
-    # usuário interativo que executa o DevPilot: ele exige o usuário dedicado
-    # configurado (por padrão `devpilot`) e falha fechado se esse isolamento
-    # ainda não tiver sido provisionado.
     request_payload = {
         "actor": principal.actor,
         "columns": payload.columns,
         "rows": payload.rows,
     }
+    git_auth = None
     if principal.role is Role.SUPER_ADMIN:
         if payload.cwd:
             request_payload["cwd"] = payload.cwd
+        git_auth = _github_terminal_auth(_github_cloud_credential(db, principal))
+        if git_auth:
+            request_payload["git_auth"] = git_auth
     else:
         request_payload["workspace_key"] = workspace_key(principal)
 
@@ -177,6 +250,8 @@ def create_terminal_session(
             "linux_user": session.get("linux_user"),
             "workspace_key": None if principal.role is Role.SUPER_ADMIN else workspace_key(principal),
             "mode": "dedicated-linux-user" if principal.role is Role.SUPER_ADMIN else "isolated-user-workspace",
+            "git_provider": session.get("git_provider"),
+            "git_cloud_integrated": bool(git_auth),
         },
     )
     db.commit()
