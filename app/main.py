@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.delivery_url_recovery import install_delivery_url_recovery
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
+from app.frontend_ui_routes import router as frontend_ui_router
 from app.host_action_routes import router as host_action_router
 from app.investia_admin_routes import router as investia_admin_router
 from app.investia_public_routes import router as investia_public_router
@@ -58,9 +59,6 @@ _SCRIPT_TAG_RE = re.compile(
 )
 _PREAUTH_SCRIPT_NAMES = {"acs-loader.js", "auth-ui.js"}
 
-# O navegador deve ficar interativo antes de iniciar dezenas de módulos opcionais.
-# O núcleo abaixo é pequeno e suficiente para Visão geral, Perfil, Usuários e
-# Desenvolvimento paginado. O restante é carregado progressivamente em idle time.
 _CORE_AUTHENTICATED_SCRIPTS = [
     "app.js",
     "tasks-lazy-load.js",
@@ -157,7 +155,6 @@ def _normalize_index_head(html: str) -> str:
     end = html.find("</head>", start)
     if start < 0 or end < 0:
         return html
-
     head = html[start:end]
     head = head.replace("\\r\\n", "\n").replace("\\n", "\n")
     return f"{html[:start]}{head}{html[end:]}"
@@ -187,12 +184,9 @@ def _mark_mobile_route(html: str) -> str:
 
 
 def _strip_boot_runtime_scripts(html: str) -> str:
-    """Remove a antiga rajada de scripts; o loader autenticado passa a ser o dono do boot."""
-
     def replace(match: re.Match[str]) -> str:
         name = match.group("name")
         return match.group(0) if name in _PREAUTH_SCRIPT_NAMES else ""
-
     return _SCRIPT_TAG_RE.sub(replace, html)
 
 
@@ -232,17 +226,13 @@ def _authenticated_script_loader() -> str:
   const boot = window.__devpilotBoot = window.__devpilotBoot || {{
     phase: 'waiting', current: null, loaded: [], failed: [], timings: {{}}, startedAt: Date.now()
   }};
-
   const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
   const tokenExists = () => Boolean(token());
   const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
   const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
   const whenIdle = () => new Promise(resolve => {{
-    if ('requestIdleCallback' in window) {{
-      window.requestIdleCallback(() => resolve(), {{timeout: 2200}});
-    }} else {{
-      window.setTimeout(resolve, 180);
-    }}
+    if ('requestIdleCallback' in window) window.requestIdleCallback(() => resolve(), {{timeout: 2200}});
+    else window.setTimeout(resolve, 180);
   }});
 
   const validateSession = async () => {{
@@ -252,8 +242,7 @@ def _authenticated_script_loader() -> str:
     }}
     try {{
       const response = await fetch('/api/auth/me', {{
-        headers: {{Authorization: `Bearer ${{token()}}`}},
-        cache: 'no-store',
+        headers: {{Authorization: `Bearer ${{token()}}`}}, cache: 'no-store'
       }});
       if (response.ok) return true;
       if ([401, 403, 404].includes(response.status)) localStorage.removeItem('devpilot-token');
@@ -278,7 +267,6 @@ def _authenticated_script_loader() -> str:
       resolve(true);
       return;
     }}
-
     const started = performance.now();
     boot.current = src;
     const script = document.createElement('script');
@@ -343,11 +331,8 @@ def _authenticated_script_loader() -> str:
     if (coreReady) void loadDeferred();
   }};
 
-  if (document.readyState === 'loading') {{
-    document.addEventListener('DOMContentLoaded', start, {{once: true}});
-  }} else {{
-    void start();
-  }}
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {{once: true}});
+  else void start();
 }})();
 </script>"""
 
@@ -356,12 +341,10 @@ def _authenticated_script_loader() -> str:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema(engine)
-
     embedded_worker: EmbeddedWorker | None = None
     if get_settings().embedded_worker:
         embedded_worker = EmbeddedWorker()
         embedded_worker.start()
-
     try:
         yield
     finally:
@@ -372,6 +355,7 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(frontend_ui_router)
 app.include_router(router)
 app.include_router(audit_router)
 app.include_router(career_router)
@@ -395,10 +379,7 @@ app.include_router(telemetry_router)
 app.include_router(telemetry_replay_router)
 app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
-app.include_router(
-    voice_transcription_router,
-    dependencies=[Depends(require_ai_budget_access)],
-)
+app.include_router(voice_transcription_router, dependencies=[Depends(require_ai_budget_access)])
 app.include_router(token_usage_router)
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
