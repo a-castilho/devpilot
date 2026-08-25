@@ -24,6 +24,14 @@ O gate não deve ser removido para fazer um build passar; a implementação deve
 
 Uma alteração só é considerada pronta com os gates verdes. A branch `main` deve usar Pull Request e exigir `DevPilot policy` e `DevPilot quality` antes do merge. Mudanças normais de produto não devem entrar por push direto.
 
+## Continuidade do GitHub Actions
+
+Os workflows críticos não podem depender obrigatoriamente de minutos de runner hospedado. Todos usam `vars.DEVPILOT_RUNNER || 'ubuntu-latest'`: quando a variável não existe, continuam no runner padrão do GitHub; quando `DEVPILOT_RUNNER` aponta para um runner próprio, CI, documentação, relatório e deploy usam esse runner sem enfraquecer os gates.
+
+Runner próprio é permitido somente para repositório privado e deve usar uma label dedicada. O caminho padrão de instalação é `bash scripts/setup-github-self-hosted-runner.sh`. O script valida autenticação do `gh`, recusa repositório público, baixa o runner oficial, verifica checksum quando o release fornece digest, registra sem imprimir o token, configura `DEVPILOT_RUNNER` e confirma que o runner ficou online.
+
+Quando os minutos hospedados voltarem a estar disponíveis, remover a variável `DEVPILOT_RUNNER` retorna automaticamente os workflows para `ubuntu-latest`. Nunca remover `DevPilot policy` ou `DevPilot quality` como contorno para falta de minutos.
+
 ## Runtime local
 
 `scripts/devpilot-local-safe.sh` é o caminho padrão para atualização e restart local. O runtime deve identificar porta, PID, commit e health. Uma porta ocupada por processo desconhecido deve interromper a operação em vez de iniciar outra cópia ou mascarar a versão em teste.
