@@ -2,13 +2,11 @@
   'use strict';
 
   const TOKEN_KEY = 'devpilot-token';
-  const EXPLICIT_LOGIN_KEY = 'devpilot-explicit-login';
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
 
   let bootstrapRequired = false;
   let localBootstrapAvailable = false;
-  let taskNavigationInFlight = false;
   let resolveAuthReady;
 
   window.__devpilotAuthReady = new Promise(resolve => {
@@ -17,34 +15,60 @@
 
   const completeAuth = value => {
     if (typeof resolveAuthReady !== 'function') return;
-    const resolver = resolveAuthReady;
+    const resolve = resolveAuthReady;
     resolveAuthReady = null;
-    resolver(Boolean(value));
-  };
-
-  const installLogout = () => {
-    const header = document.querySelector('.header-actions');
-    if (!header || document.querySelector('#logout')) return;
-    const logout = document.createElement('button');
-    logout.id = 'logout';
-    logout.className = 'ghost';
-    logout.textContent = 'Sair';
-    logout.onclick = () => {
-      localStorage.removeItem(TOKEN_KEY);
-      sessionStorage.removeItem(EXPLICIT_LOGIN_KEY);
-      location.reload();
-    };
-    header.prepend(logout);
+    resolve(Boolean(value));
   };
 
   const showModal = () => {
     if (!modal.open) modal.showModal();
   };
 
-  const renderLoginForm = () => {
+  const installLogout = () => {
+    const header = document.querySelector('.header-actions');
+    if (!header || document.querySelector('#logout')) return;
+    const button = document.createElement('button');
+    button.id = 'logout';
+    button.className = 'ghost';
+    button.type = 'button';
+    button.textContent = 'Sair';
+    button.addEventListener('click', () => {
+      localStorage.removeItem(TOKEN_KEY);
+      location.reload();
+    });
+    header.prepend(button);
+  };
+
+  async function readStatus() {
+    try {
+      const response = await fetch('/api/auth/status', {cache: 'no-store'});
+      const data = await response.json();
+      bootstrapRequired = Boolean(data.bootstrap_required);
+      localBootstrapAvailable = Boolean(data.local_bootstrap_available);
+    } catch (_) {
+      bootstrapRequired = false;
+      localBootstrapAvailable = false;
+    }
+  }
+
+  async function validateToken(token) {
+    if (!token) return false;
+    try {
+      const response = await fetch('/api/auth/me', {
+        headers: {Authorization: `Bearer ${token}`},
+        cache: 'no-store',
+      });
+      if (response.ok) return true;
+      if ([401, 403, 404].includes(response.status)) localStorage.removeItem(TOKEN_KEY);
+    } catch (_) {}
+    return false;
+  }
+
+  function renderLoginForm() {
     modal.innerHTML = `
       <form class="modal" id="auth-form">
-        <span class="eyebrow">ACESSO</span><h2>Entrar no DevPilot</h2>
+        <span class="eyebrow">ACESSO</span>
+        <h2>Entrar no DevPilot</h2>
         <p id="auth-help">Use seu e-mail e senha.</p>
         <label>E-mail<input id="auth-email" type="email" autocomplete="username" required></label>
         <label>Senha<input id="auth-password" type="password" autocomplete="current-password" minlength="8" required></label>
@@ -57,6 +81,17 @@
     const errorBox = document.querySelector('#auth-error');
     const submit = document.querySelector('#auth-submit');
     const bootstrapRow = document.querySelector('#auth-bootstrap-row');
+    const help = document.querySelector('#auth-help');
+
+    if (bootstrapRow) bootstrapRow.style.display = bootstrapRequired && !localBootstrapAvailable ? 'grid' : 'none';
+    if (help) {
+      help.textContent = bootstrapRequired
+        ? (localBootstrapAvailable
+          ? 'Primeiro acesso neste Linux: informe e-mail e senha.'
+          : 'Primeiro acesso remoto: informe também o token de bootstrap.')
+        : 'Use seu e-mail e senha.';
+    }
+    if (submit) submit.textContent = bootstrapRequired ? 'Criar Super Admin e entrar' : 'Entrar';
 
     form?.addEventListener('submit', async event => {
       event.preventDefault();
@@ -76,7 +111,7 @@
         if (!localBootstrapAvailable) {
           const bootstrapToken = document.querySelector('#auth-bootstrap')?.value.trim() || '';
           if (!bootstrapToken) {
-            errorBox.textContent = 'Informe o token de bootstrap ou faça o primeiro acesso diretamente no Linux.';
+            errorBox.textContent = 'Informe o token de bootstrap.';
             submit.disabled = false;
             return;
           }
@@ -92,45 +127,26 @@
           cache: 'no-store',
         });
         const data = await response.json().catch(() => ({}));
-        if (!response.ok) {
+        if (!response.ok || !data.access_token) {
           throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
         }
+
+        // Não recarregue a página. O scheduler autenticado já está aguardando
+        // __devpilotAuthReady e pode iniciar o núcleo diretamente nesta página.
         localStorage.setItem(TOKEN_KEY, data.access_token);
-        sessionStorage.setItem(EXPLICIT_LOGIN_KEY, '1');
-        location.reload();
+        installLogout();
+        if (modal.open) modal.close();
+        completeAuth(true);
       } catch (error) {
         errorBox.textContent = error.message || 'Falha na autenticação';
         submit.disabled = false;
       }
     });
 
-    if (bootstrapRow) bootstrapRow.style.display = bootstrapRequired && !localBootstrapAvailable ? 'grid' : 'none';
-    const help = document.querySelector('#auth-help');
-    if (help) {
-      help.textContent = bootstrapRequired
-        ? (localBootstrapAvailable
-          ? 'Primeiro acesso neste Linux: informe e-mail e senha. O DevPilot criará o Super Admin sem exigir token manual.'
-          : 'Primeiro acesso remoto: conclua no próprio Linux ou informe o token de bootstrap.')
-        : 'Use seu e-mail e senha.';
-    }
-    if (submit) submit.textContent = bootstrapRequired ? 'Criar Super Admin e entrar' : 'Entrar';
     showModal();
-  };
+  }
 
-  const validateToken = async token => {
-    if (!token) return false;
-    try {
-      const response = await fetch('/api/auth/me', {
-        headers: {Authorization: `Bearer ${token}`},
-        cache: 'no-store',
-      });
-      if (response.ok) return true;
-      if ([401, 403, 404].includes(response.status)) localStorage.removeItem(TOKEN_KEY);
-    } catch (_) {}
-    return false;
-  };
-
-  const renderResumeSession = token => {
+  function renderResumeSession(token) {
     modal.innerHTML = `
       <div class="modal" id="auth-resume">
         <span class="eyebrow">SESSÃO SALVA</span>
@@ -155,83 +171,18 @@
       if (!valid) {
         if (errorBox) errorBox.textContent = 'A sessão não é mais válida. Entre novamente.';
         localStorage.removeItem(TOKEN_KEY);
-        window.setTimeout(renderLoginForm, 150);
+        window.setTimeout(renderLoginForm, 120);
         return;
       }
       installLogout();
-      modal.close();
+      if (modal.open) modal.close();
       completeAuth(true);
     });
 
     other?.addEventListener('click', () => {
       localStorage.removeItem(TOKEN_KEY);
-      sessionStorage.removeItem(EXPLICIT_LOGIN_KEY);
       renderLoginForm();
     });
-  };
-
-  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
-
-  async function waitForTaskRuntime() {
-    for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (typeof loadAllTasks === 'function' && typeof renderTasks === 'function' && typeof showView === 'function') return true;
-      await sleep(50);
-    }
-    return false;
-  }
-
-  async function ensureTaskLimiter() {
-    if (!(await waitForTaskRuntime())) return false;
-    if (document.querySelector('script[data-devpilot-task-limiter="1"]')) return true;
-
-    const existing = [...document.scripts].find(script => {
-      if (!script.src) return false;
-      try { return new URL(script.src, location.href).pathname === '/assets/tasks-lazy-load.js'; }
-      catch (_) { return false; }
-    });
-    if (existing) return true;
-
-    return new Promise(resolve => {
-      const script = document.createElement('script');
-      script.src = `/assets/tasks-lazy-load.js?v=safe-task-navigation-${Date.now()}`;
-      script.async = false;
-      script.dataset.devpilotTaskLimiter = '1';
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  }
-
-  document.addEventListener('click', event => {
-    const nav = event.target.closest?.('.nav[data-view="tasks"]');
-    if (!nav || taskNavigationInFlight) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    taskNavigationInFlight = true;
-
-    void (async () => {
-      try {
-        const limited = await ensureTaskLimiter();
-        if (!limited) {
-          console.error('[DevPilot] Não foi possível instalar o limitador da lista de tarefas.');
-          return;
-        }
-        if (typeof window.__devpilotLoadFeature === 'function') await window.__devpilotLoadFeature('tasks');
-        if (typeof showView === 'function') showView('tasks');
-      } finally {
-        taskNavigationInFlight = false;
-      }
-    })();
-  }, true);
-
-  async function readStatus() {
-    try {
-      const response = await fetch('/api/auth/status', {cache: 'no-store'});
-      const data = await response.json();
-      bootstrapRequired = Boolean(data.bootstrap_required);
-      localBootstrapAvailable = Boolean(data.local_bootstrap_available);
-    } catch (_) {}
   }
 
   const boot = async () => {
@@ -239,26 +190,8 @@
     const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
     if (!token) {
       renderLoginForm();
-      completeAuth(false);
       return;
     }
-
-    const explicitLogin = sessionStorage.getItem(EXPLICIT_LOGIN_KEY) === '1';
-    if (explicitLogin) {
-      sessionStorage.removeItem(EXPLICIT_LOGIN_KEY);
-      const valid = await validateToken(token);
-      if (valid) {
-        installLogout();
-        if (modal.open) modal.close();
-        completeAuth(true);
-        return;
-      }
-      localStorage.removeItem(TOKEN_KEY);
-      renderLoginForm();
-      completeAuth(false);
-      return;
-    }
-
     renderResumeSession(token);
   };
 
