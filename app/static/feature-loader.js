@@ -1,7 +1,6 @@
 (() => {
   'use strict';
 
-  const TOKEN_KEY = 'devpilot-token';
   const loadedFiles = new Set();
   const featureState = new Map();
 
@@ -86,7 +85,7 @@
 
     return new Promise(resolve => {
       const script = document.createElement('script');
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-3`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-4`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.onload = () => {
@@ -254,14 +253,22 @@
     });
   }, true);
 
+  let placeholdersInitialized = false;
   function initializePlaceholders() {
+    if (placeholdersInitialized) return;
+    placeholdersInitialized = true;
     addPlaceholder('profile', 'Perfil');
     addPlaceholder('users', 'Usuários');
     addPlaceholder('game', 'Modo Jogo');
     addPlaceholder('admin', 'Super Admin', {superAdmin: true});
   }
 
-  if (document.readyState === 'loading') {
+  // Não altera o menu enquanto o modal de autenticação está ativo. O loader
+  // pode ser baixado no core, mas seu primeiro trabalho de DOM só acontece
+  // depois que o dashboard foi revelado.
+  if (document.documentElement.classList.contains('devpilot-auth-pending')) {
+    document.addEventListener('devpilot:dashboard-revealed', initializePlaceholders, {once: true});
+  } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializePlaceholders, {once: true});
   } else {
     initializePlaceholders();
