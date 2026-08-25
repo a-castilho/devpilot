@@ -25,6 +25,7 @@ from app.linux_routes import router as linux_router
 from app.local_test_routes import router as local_test_router
 from app.ollama_provider_routes import router as ollama_provider_router
 from app.product_delivery_routes import router as product_delivery_router
+from app.project_connect_routes import router as project_connect_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
 from app.super_admin_voice_routes import router as super_admin_voice_router
@@ -143,6 +144,7 @@ app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
+app.include_router(project_connect_router)
 app.include_router(project_provisioning_router)
 app.include_router(product_delivery_router)
 app.include_router(provider_models_router)
