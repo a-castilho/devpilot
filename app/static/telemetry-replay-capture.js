@@ -1,26 +1,93 @@
 (()=>{
   const GRID=20;
   const MIN_INTERVAL_MS=120;
+  const ACTIVE_SYNC_MS=2500;
+  const IDLE_SYNC_MS=5000;
+  const HIDDEN_SYNC_MS=15000;
   let sessionId='';
   let queue=[];
   let lastCell='';
   let lastAt=0;
   let syncing=false;
   let flushing=false;
+  let attached=false;
+  let syncTimer=null;
+  let flushTimer=null;
+  let destroyed=false;
 
   const token=()=>localStorage.getItem('devpilot-token')||'';
   const authHeaders=()=>({'Authorization':`Bearer ${token()}`,'Content-Type':'application/json'});
 
+  function attachPointer(){
+    if(attached||!sessionId)return;
+    attached=true;
+    document.addEventListener('pointermove',onPointerMove,{capture:true,passive:true});
+  }
+
+  function detachPointer(){
+    if(!attached)return;
+    attached=false;
+    document.removeEventListener('pointermove',onPointerMove,true);
+  }
+
+  function stopFlushTimer(){
+    if(!flushTimer)return;
+    clearInterval(flushTimer);
+    flushTimer=null;
+  }
+
+  function startFlushTimer(){
+    if(flushTimer||!sessionId)return;
+    flushTimer=setInterval(()=>void flush(),900);
+  }
+
+  function applySession(next){
+    const normalized=String(next||'');
+    if(normalized===sessionId){
+      if(sessionId){attachPointer();startFlushTimer()}
+      else{detachPointer();stopFlushTimer()}
+      return;
+    }
+    sessionId=normalized;
+    queue=[];
+    lastCell='';
+    lastAt=0;
+    if(sessionId){attachPointer();startFlushTimer()}
+    else{detachPointer();stopFlushTimer()}
+  }
+
+  function nextSyncDelay(){
+    if(document.hidden)return HIDDEN_SYNC_MS;
+    return sessionId?ACTIVE_SYNC_MS:IDLE_SYNC_MS;
+  }
+
+  function scheduleSync(delay=nextSyncDelay()){
+    if(destroyed)return;
+    clearTimeout(syncTimer);
+    syncTimer=setTimeout(()=>void syncSession(),Math.max(300,delay));
+  }
+
   async function syncSession(){
-    if(syncing||!token())return;
+    if(destroyed)return;
+    if(syncing){scheduleSync();return}
+    if(!token()){
+      applySession('');
+      scheduleSync();
+      return;
+    }
     syncing=true;
     try{
       const response=await fetch('/api/telemetry/sessions/active',{cache:'no-store',headers:authHeaders()});
-      if(!response.ok)return;
-      const data=await response.json();
-      const next=data?.active?.id||'';
-      if(next!==sessionId){sessionId=next;queue=[];lastCell='';}
-    }catch(_error){}finally{syncing=false}
+      if(response.ok){
+        const data=await response.json();
+        applySession(data?.active?.id||'');
+      }else if(response.status===401||response.status===403){
+        applySession('');
+      }
+    }catch(_error){}finally{
+      syncing=false;
+      scheduleSync();
+    }
   }
 
   async function flush(){
@@ -32,7 +99,7 @@
         method:'POST',headers:authHeaders(),body:JSON.stringify({events:batch})
       });
       if(!response.ok&&response.status!==409)queue.unshift(...batch);
-      if(response.status===409){sessionId='';queue=[];lastCell='';}
+      if(response.status===409)applySession('');
     }catch(_error){queue.unshift(...batch)}finally{
       if(queue.length>500)queue=queue.slice(-500);
       flushing=false;
@@ -54,9 +121,16 @@
     if(queue.length>=40)void flush();
   }
 
-  document.addEventListener('pointermove',onPointerMove,{capture:true,passive:true});
-  setInterval(()=>void syncSession(),1800);
-  setInterval(()=>void flush(),900);
+  document.addEventListener('visibilitychange',()=>{
+    if(destroyed)return;
+    scheduleSync(document.hidden?HIDDEN_SYNC_MS:300);
+  });
   window.addEventListener('pagehide',()=>void flush(),{capture:true});
-  void syncSession();
+  window.addEventListener('beforeunload',()=>{
+    destroyed=true;
+    clearTimeout(syncTimer);
+    stopFlushTimer();
+    detachPointer();
+  });
+  scheduleSync(0);
 })();
