@@ -5,6 +5,9 @@ const state = {
   projects: [],
   tasks: [],
   tasksLoadedAll: false,
+  dashboardLoading: null,
+  projectsLoading: null,
+  organizationsLoading: null,
   tasksLoading: null,
 };
 
@@ -31,7 +34,7 @@ function errorDetail(data) {
 async function api(path, options = {}) {
   const headers = {Authorization: `Bearer ${state.token}`, ...options.headers};
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  const response = await fetch(`/api${path}`, {...options, headers});
+  const response = await fetch(`/api${path}`, {...options, headers, cache: options.cache || 'no-store'});
   if (response.status === 401) {
     localStorage.removeItem('devpilot-token');
     $('#auth-modal')?.showModal?.();
@@ -58,11 +61,18 @@ function applyRoleVisibility() {
   if (modal && !allowed && modal.open) modal.close();
 }
 
-function showView(name) {
-  if (name === 'organizations' && !isSuperAdmin()) {
-    toast('Acesso exclusivo do Super Admin');
-    return;
-  }
+function status(value) {
+  return `<span class="status ${esc(value)}">${esc(String(value || '').replaceAll('_', ' '))}</span>`;
+}
+
+function decorateStatuses(root = document) {
+  root.querySelectorAll?.('.status').forEach(element => {
+    if (element.dataset.devpilotDecorated === '1') return;
+    element.dataset.devpilotDecorated = '1';
+  });
+}
+
+function setActiveView(name) {
   $$('.view').forEach(view => view.classList.toggle('active', view.id === `${name}-view`));
   $$('.nav').forEach(nav => nav.classList.toggle('active', nav.dataset.view === name));
   const title = $('#page-title');
@@ -72,49 +82,108 @@ function showView(name) {
       tasks: 'Desenvolvimento', providers: 'Modelos de IA', reports: 'Relatórios', audit: 'Auditoria',
     }[name] || title.textContent;
   }
-  if (name === 'organizations') renderOrganizations();
-  if (name === 'tasks') {
-    renderTasks();
-    void loadAllTasks();
+}
+
+function showView(name) {
+  if (name === 'organizations' && !isSuperAdmin()) {
+    toast('Acesso exclusivo do Super Admin');
+    return;
   }
+  setActiveView(name);
+  if (name === 'projects') void loadProjects();
+  if (name === 'organizations') void loadOrganizations();
+  if (name === 'tasks') void loadAllTasks();
   if (name === 'providers') void loadProviders();
   if (name === 'audit') void loadAudit();
 }
 
-function status(value) {
-  return `<span class="status ${esc(value)}">${esc(String(value).replaceAll('_', ' '))}</span>`;
+async function loadDashboard() {
+  if (!state.token) return false;
+  if (state.dashboardLoading) return state.dashboardLoading;
+
+  state.dashboardLoading = (async () => {
+    try {
+      // Pós-login deliberadamente pequeno: nenhum projeto completo, organização,
+      // AGENTS.md ou codex_config é baixado aqui.
+      state.currentUser = await api('/auth/me');
+      applyRoleVisibility();
+      const [overview, recentTasks] = await Promise.all([
+        api('/overview'),
+        api('/ui/tasks?limit=5'),
+      ]);
+      state.tasks = Array.isArray(recentTasks) ? recentTasks : [];
+      state.tasksLoadedAll = false;
+      renderOverview(overview || {});
+      if ($('#tasks-view')?.classList.contains('active')) renderTasks();
+      return true;
+    } catch (error) {
+      if (state.token) toast(error.message || 'Falha ao carregar a visão geral');
+      return false;
+    } finally {
+      state.dashboardLoading = null;
+    }
+  })();
+
+  return state.dashboardLoading;
+}
+
+async function loadProjects() {
+  if (state.projectsLoading) return state.projectsLoading;
+  const target = $('#projects-list');
+  if (target && !state.projects.length) target.innerHTML = '<div class="empty">Carregando projetos…</div>';
+
+  state.projectsLoading = (async () => {
+    try {
+      const projects = await api('/ui/projects?limit=50');
+      state.projects = Array.isArray(projects) ? projects : [];
+      renderProjects();
+      fillProjects();
+      return state.projects;
+    } catch (error) {
+      if (target) target.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+      toast(error.message);
+      return [];
+    } finally {
+      state.projectsLoading = null;
+    }
+  })();
+
+  return state.projectsLoading;
+}
+
+async function loadOrganizations() {
+  if (!isSuperAdmin()) return [];
+  if (state.organizationsLoading) return state.organizationsLoading;
+  const target = $('#organizations-list');
+  if (target && !state.organizations.length) target.innerHTML = '<div class="empty">Carregando organizações…</div>';
+
+  state.organizationsLoading = (async () => {
+    try {
+      const organizations = await api('/organizations');
+      state.organizations = Array.isArray(organizations) ? organizations : [];
+      renderOrganizations();
+      fillOrganizations();
+      return state.organizations;
+    } catch (error) {
+      if (target) target.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+      toast(error.message);
+      return [];
+    } finally {
+      state.organizationsLoading = null;
+    }
+  })();
+
+  return state.organizationsLoading;
 }
 
 async function load() {
-  if (!state.token) return;
-  try {
-    state.currentUser = await api('/auth/me');
-    applyRoleVisibility();
-    const [overview, projects, tasks] = await Promise.all([
-      api('/overview'),
-      api('/projects'),
-      api('/tasks?limit=5'),
-    ]);
-    state.organizations = isSuperAdmin() ? await api('/organizations') : [];
-    state.projects = Array.isArray(projects) ? projects : [];
-    state.tasks = Array.isArray(tasks) ? tasks : [];
-    state.tasksLoadedAll = false;
-    renderOverview(overview || {});
-    renderOrganizations();
-    renderProjects();
-    renderTasks();
-    if ($('#tasks-view')?.classList.contains('active')) void loadAllTasks();
-    fillProjects();
-    fillOrganizations();
-  } catch (error) {
-    if (state.token) toast(error.message || 'Falha ao carregar o DevPilot');
-  }
-}
-
-function taskInstructions(task) {
-  const prompt = String(task?.prompt || '').trim();
-  if (!prompt) return '';
-  return `<details class="task-instructions"><summary>Ver instruções da análise</summary><div class="task-instructions-content"><span class="eyebrow">INSTRUÇÕES CAPTURADAS</span><p>${esc(prompt)}</p></div></details>`;
+  await loadDashboard();
+  const active = $('.view.active')?.id?.replace(/-view$/, '') || 'overview';
+  if (active === 'projects') await loadProjects();
+  else if (active === 'organizations') await loadOrganizations();
+  else if (active === 'tasks') await loadAllTasks(true);
+  else if (active === 'providers') await loadProviders();
+  else if (active === 'audit') await loadAudit();
 }
 
 function renderOverview(overview) {
@@ -125,11 +194,13 @@ function renderOverview(overview) {
       ['Em andamento', overview.active], ['Concluídas', overview.completed],
     ].map(([name, value]) => `<div class="metric"><span>${name}</span><strong>${value ?? 0}</strong></div>`).join('');
   }
+
   const recent = $('#recent-tasks');
   if (recent) {
     recent.innerHTML = state.tasks.slice(0, 5).map(task => `
-      <div class="recent-task"><div class="list-row"><div><strong>${esc(task.title)}</strong><p>${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source)}</p></div>${status(task.status)}</div>${taskInstructions(task)}</div>
+      <div class="recent-task"><div class="list-row"><div><strong>${esc(task.title)}</strong><p>${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source)}</p></div>${status(task.status)}</div></div>
     `).join('') || '<div class="empty">Nenhuma tarefa ainda.</div>';
+    decorateStatuses(recent);
   }
 }
 
@@ -147,8 +218,8 @@ function renderOrganizations() {
   target.innerHTML = state.organizations.map(org => `
     <article class="project-card"><span class="eyebrow">GITHUB · ${esc(org.sync_status).toUpperCase()}</span><h3>${esc(org.name)}</h3><p>@${esc(org.external_login)} · ${org.repository_count} repositórios · ${org.project_count} projetos</p><code>${org.has_credentials ? 'credencial de leitura protegida' : 'sem credencial · somente dados públicos'}</code>${org.last_sync_error ? `<p>${esc(org.last_sync_error)}</p>` : ''}<div class="list-row"><small>${org.last_synced_at ? `Sync ${new Date(org.last_synced_at).toLocaleString('pt-BR')}` : 'Ainda não sincronizado'}</small><button class="link sync-org" data-id="${org.id}">Sincronizar</button></div></article>
   `).join('') || '<div class="empty">Cadastre a primeira organização GitHub.</div>';
-  $$('.sync-org').forEach(button => {
-    button.onclick = () => syncOrganization(button.dataset.id, button);
+  $$('.sync-org', target).forEach(button => {
+    button.onclick = () => void syncOrganization(button.dataset.id, button);
   });
 }
 
@@ -156,20 +227,21 @@ function renderProjects() {
   const target = $('#projects-list');
   if (!target) return;
   target.innerHTML = state.projects.map(project => `
-    <article class="project-card"><span class="eyebrow">${esc(project.status).toUpperCase()}</span><h3>${esc(project.name)}</h3><p>${esc(project.description || 'Sem descrição')}${project.organization_id && isSuperAdmin() ? ` · ${esc(organizationName(project.organization_id))}` : ''}</p><code>${esc(project.repository_url)}</code><div class="list-row"><small>Branch ${esc(project.default_branch)}</small><div><button class="link analyze" data-id="${project.id}">Analisar</button><button class="link" data-project-task="${project.id}">Nova tarefa</button></div></div></article>
+    <article class="project-card"><span class="eyebrow">${esc(project.status).toUpperCase()}</span><h3>${esc(project.name)}</h3><p>${esc(project.description || 'Sem descrição')}${project.organization_id && isSuperAdmin() && organizationName(project.organization_id) ? ` · ${esc(organizationName(project.organization_id))}` : ''}</p><code>${esc(project.repository_url)}</code><div class="list-row"><small>Branch ${esc(project.default_branch)}</small><div><button class="link analyze" data-id="${project.id}">Analisar</button><button class="link" data-project-task="${project.id}">Nova tarefa</button></div></div></article>
   `).join('') || '<div class="empty">Conecte seu primeiro repositório.</div>';
-  $$('[data-project-task]').forEach(button => {
-    button.onclick = () => {
+
+  $$('[data-project-task]', target).forEach(button => {
+    button.onclick = async () => {
       fillProjects(button.dataset.projectTask);
       $('#task-modal')?.showModal?.();
     };
   });
-  $$('.analyze').forEach(button => {
+  $$('.analyze', target).forEach(button => {
     button.onclick = async () => {
       try {
         await api(`/projects/${button.dataset.id}/analyze`, {method: 'POST'});
         toast('Análise técnica enfileirada');
-        await load();
+        await loadDashboard();
       } catch (error) {
         toast(error.message);
       }
@@ -177,37 +249,75 @@ function renderProjects() {
   });
 }
 
-async function loadAllTasks() {
-  if (state.tasksLoadedAll) return;
+async function loadAllTasks(force = false) {
   if (state.tasksLoading) return state.tasksLoading;
-  state.tasksLoading = api('/tasks?limit=20')
-    .then(tasks => {
+  if (state.tasksLoadedAll && !force) return state.tasks;
+
+  state.tasksLoading = (async () => {
+    try {
+      const tasks = await api('/ui/tasks?limit=20');
       state.tasks = Array.isArray(tasks) ? tasks : [];
       state.tasksLoadedAll = state.tasks.length < 20;
       renderTasks();
-    })
-    .catch(error => toast(error.message))
-    .finally(() => { state.tasksLoading = null; });
+      return state.tasks;
+    } catch (error) {
+      toast(error.message);
+      return [];
+    } finally {
+      state.tasksLoading = null;
+    }
+  })();
+
   return state.tasksLoading;
+}
+
+async function loadTaskInstructions(taskId, container, button) {
+  if (!taskId || !container || container.dataset.loaded === '1') return;
+  button.disabled = true;
+  button.textContent = 'Carregando…';
+  try {
+    const task = await api(`/ui/tasks/${encodeURIComponent(taskId)}`);
+    const pre = document.createElement('pre');
+    pre.className = 'task-instructions-content';
+    pre.style.whiteSpace = 'pre-wrap';
+    pre.style.overflowWrap = 'anywhere';
+    pre.textContent = String(task.prompt || 'Sem instruções registradas.');
+    container.replaceChildren(pre);
+    container.dataset.loaded = '1';
+  } catch (error) {
+    button.disabled = false;
+    button.textContent = 'Tentar novamente';
+    toast(error.message);
+  }
 }
 
 function renderTasks() {
   const table = $('#tasks-table');
   if (!table) return;
   table.innerHTML = state.tasks.map(task => `
-    <tr class="task-main-row"><td><strong>${esc(task.title)}</strong><br><small>${new Date(task.created_at).toLocaleString('pt-BR')}</small></td><td>${esc(task.source)}</td><td>${status(task.status)}</td><td>${task.priority}</td><td>${task.status === 'awaiting_approval' ? `<button class="primary approve" data-id="${task.id}">Aprovar</button>` : '—'}</td></tr><tr class="task-instructions-row"><td colspan="5">${taskInstructions(task) || '<span class="task-instructions-empty">Sem instruções registradas.</span>'}</td></tr>
+    <tr class="task-main-row"><td><strong>${esc(task.title)}</strong><br><small>${new Date(task.created_at).toLocaleString('pt-BR')}</small></td><td>${esc(task.source)}</td><td>${status(task.status)}</td><td>${task.priority}</td><td>${task.status === 'awaiting_approval' ? `<button class="primary approve" data-id="${task.id}">Aprovar</button>` : '—'}</td></tr>
+    <tr class="task-instructions-row"><td colspan="5"><div data-task-instructions="${task.id}"><button class="link task-instructions-load" type="button" data-id="${task.id}">Ver instruções da análise</button></div></td></tr>
   `).join('') || '<tr><td colspan="5" class="empty">Nenhuma tarefa registrada.</td></tr>';
-  $$('.approve').forEach(button => {
+
+  $$('.approve', table).forEach(button => {
     button.onclick = async () => {
       try {
         await api(`/tasks/${button.dataset.id}/approve`, {method: 'POST'});
         toast('Tarefa aprovada e enfileirada');
-        await load();
+        await loadAllTasks(true);
+        await loadDashboard();
       } catch (error) {
         toast(error.message);
       }
     };
   });
+  $$('.task-instructions-load', table).forEach(button => {
+    button.onclick = () => {
+      const container = table.querySelector(`[data-task-instructions="${CSS.escape(button.dataset.id)}"]`);
+      void loadTaskInstructions(button.dataset.id, container, button);
+    };
+  });
+  decorateStatuses(table);
   if (typeof window.renderTaskAnalytics === 'function') window.renderTaskAnalytics();
 }
 
@@ -215,8 +325,8 @@ function fillProjects(selected = '') {
   const options = state.projects.map(project => `<option value="${project.id}" ${String(project.id) === String(selected) ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
   const taskProject = $('#task-project');
   const voiceProject = $('#voice-project');
-  if (taskProject) taskProject.innerHTML = options;
-  if (voiceProject) voiceProject.innerHTML = options;
+  if (taskProject) taskProject.innerHTML = options || '<option value="">Nenhum projeto carregado</option>';
+  if (voiceProject) voiceProject.innerHTML = options || '<option value="">Nenhum projeto carregado</option>';
 }
 
 function fillOrganizations(selected = '') {
@@ -237,10 +347,12 @@ async function syncOrganization(id, button) {
   try {
     const result = await api(`/organizations/${id}/sync`, {method: 'POST', body: JSON.stringify({import_projects: true})});
     toast(`Sync concluído: ${result.repositories} repositórios, ${result.imported_projects} projetos importados`);
-    await load();
+    state.organizations = [];
+    state.projects = [];
+    await loadOrganizations();
+    await loadDashboard();
   } catch (error) {
     toast(error.message);
-    await load();
   } finally {
     if (button) {
       button.disabled = false;
@@ -266,7 +378,7 @@ async function loadAudit() {
   const target = $('#audit-list');
   if (!target) return;
   try {
-    const data = await api('/audit');
+    const data = await api('/audit?limit=50');
     target.innerHTML = (Array.isArray(data) ? data : []).map(item => `
       <div class="audit"><i></i><div><strong>${esc(item.action)}</strong><br><small>${esc(item.actor)} · ${esc(item.outcome)} · hash ${esc(String(item.event_hash || '').slice(0, 10))}</small></div><time>${new Date(item.created_at).toLocaleString('pt-BR')}</time></div>
     `).join('') || '<div class="empty">A trilha de auditoria começará na primeira ação.</div>';
@@ -279,12 +391,16 @@ function bindCoreControls() {
   $$('[data-view]').forEach(button => {
     button.onclick = () => showView(button.dataset.view);
   });
+
   $$('[data-open]').forEach(button => {
-    button.onclick = () => {
+    button.onclick = async () => {
       if (button.dataset.open === 'organization-modal' && !isSuperAdmin()) return toast('Acesso exclusivo do Super Admin');
+      if (button.dataset.open === 'task-modal' && !state.projects.length) await loadProjects();
+      if (button.dataset.open === 'organization-modal' && isSuperAdmin() && !state.organizations.length) await loadOrganizations();
       $(`#${button.dataset.open}`)?.showModal?.();
     };
   });
+
   $$('dialog .close').forEach(button => {
     button.onclick = () => button.closest('dialog')?.close?.();
   });
@@ -305,7 +421,6 @@ function bindCoreControls() {
       event.target.closest('dialog')?.close?.();
       event.target.reset();
       toast('Organização conectada. Sincronizando repositórios…');
-      await load();
       await syncOrganization(organization.id);
     } catch (error) {
       toast(error.message);
@@ -327,7 +442,9 @@ function bindCoreControls() {
       event.target.closest('dialog')?.close?.();
       event.target.reset();
       toast('Projeto conectado');
-      await load();
+      state.projects = [];
+      await loadProjects();
+      await loadDashboard();
     } catch (error) {
       toast(error.message);
     }
@@ -346,7 +463,8 @@ function bindCoreControls() {
       event.target.closest('dialog')?.close?.();
       event.target.reset();
       toast('Tarefa registrada');
-      await load();
+      await loadDashboard();
+      if ($('#tasks-view')?.classList.contains('active')) await loadAllTasks(true);
     } catch (error) {
       toast(error.message);
     }
@@ -371,11 +489,14 @@ function bindCoreControls() {
     }
   };
 
-  const openVoice = () => $('#voice-modal')?.showModal?.();
+  const openVoice = async () => {
+    if (!state.projects.length) await loadProjects();
+    $('#voice-modal')?.showModal?.();
+  };
   const voiceHero = $('#voice-hero');
   const voiceDock = $('#voice-dock');
-  if (voiceHero) voiceHero.onclick = openVoice;
-  if (voiceDock) voiceDock.onclick = openVoice;
+  if (voiceHero) voiceHero.onclick = () => void openVoice();
+  if (voiceDock) voiceDock.onclick = () => void openVoice();
 
   let recognition;
   const voiceStart = $('#voice-start');
@@ -412,7 +533,7 @@ function bindCoreControls() {
       if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
         speechSynthesis.speak(new SpeechSynthesisUtterance('Comando registrado. Revise e aprove antes da execução.'));
       }
-      await load();
+      await loadDashboard();
     } catch (error) {
       toast(error.message);
     }
@@ -420,10 +541,10 @@ function bindCoreControls() {
 }
 
 bindCoreControls();
-if (state.token) void load();
+if (state.token) void loadDashboard();
 else $('#auth-modal')?.showModal?.();
 
-/* Navegação mobile sem MutationObserver autorreferente. */
+/* Navegação mobile sem observers de atributos. */
 (() => {
   const sidebar = document.querySelector('.sidebar');
   const nav = sidebar?.querySelector('nav');
@@ -434,7 +555,6 @@ else $('#auth-modal')?.showModal?.();
     button.type = 'button';
     button.className = `mobile-nav-arrow mobile-nav-arrow-${direction}`;
     button.setAttribute('aria-label', label);
-    button.setAttribute('title', label);
     button.textContent = symbol;
     return button;
   };
@@ -444,123 +564,27 @@ else $('#auth-modal')?.showModal?.();
   sidebar.insertBefore(previous, nav);
   sidebar.insertBefore(next, nav.nextSibling);
 
-  const visibleItems = () => [...nav.querySelectorAll('.nav')].filter(item => {
-    if (item.hidden) return false;
-    const style = window.getComputedStyle(item);
-    return style.display !== 'none' && style.visibility !== 'hidden';
-  });
-
-  const centerItem = item => {
-    if (!item) return;
-    const left = item.offsetLeft - Math.max(0, (nav.clientWidth - item.offsetWidth) / 2);
-    nav.scrollTo({left: Math.max(0, left), behavior: 'auto'});
-  };
-
+  const visibleItems = () => [...nav.querySelectorAll('.nav')].filter(item => !item.hidden && getComputedStyle(item).display !== 'none');
   const sync = () => {
     const items = visibleItems();
-    if (!items.length) {
-      previous.disabled = true;
-      next.disabled = true;
-      return;
-    }
     let index = items.findIndex(item => item.classList.contains('active'));
     if (index < 0) index = 0;
     previous.disabled = index <= 0;
-    next.disabled = index >= items.length - 1;
-    centerItem(items[index]);
+    next.disabled = !items.length || index >= items.length - 1;
   };
-
   const move = direction => {
     const items = visibleItems();
-    if (!items.length) return;
     let index = items.findIndex(item => item.classList.contains('active'));
     if (index < 0) index = 0;
-    const targetIndex = Math.max(0, Math.min(items.length - 1, index + direction));
-    const target = items[targetIndex];
-    if (!target || targetIndex === index) return;
-    target.click();
-    window.requestAnimationFrame(sync);
+    const target = items[Math.max(0, Math.min(items.length - 1, index + direction))];
+    if (target && target !== items[index]) target.click();
+    requestAnimationFrame(sync);
   };
 
   previous.addEventListener('click', () => move(-1));
   next.addEventListener('click', () => move(1));
-  nav.addEventListener('click', () => window.requestAnimationFrame(sync));
+  nav.addEventListener('click', () => requestAnimationFrame(sync));
   window.addEventListener('resize', sync, {passive: true});
-  document.addEventListener('devpilot:feature-ready', () => window.requestAnimationFrame(sync));
+  document.addEventListener('devpilot:feature-ready', () => requestAnimationFrame(sync));
   sync();
-})();
-
-/* Indicadores de estado: observa somente nós adicionados; não observa atributos. */
-(() => {
-  const STYLE_ID = 'devpilot-state-loaders';
-  const activeStates = new Set(['running','processing','in_progress','in progress','analyzing','analysing','executing','syncing','loading','queued','pending','starting','deploying']);
-  const waitingStates = new Set(['blocked','awaiting_approval','awaiting approval','paused','waiting']);
-  const successStates = new Set(['completed','complete','success','succeeded','done','review','approved','active','ativo']);
-  const errorStates = new Set(['failed','failure','error','cancelled','canceled','rejected']);
-  const normalize = value => String(value || '').trim().toLowerCase().replace(/[-]+/g, '_').replace(/\s+/g, ' ');
-
-  function installStyles() {
-    if (document.getElementById(STYLE_ID)) return;
-    const style = document.createElement('style');
-    style.id = STYLE_ID;
-    style.textContent = `
-      .status{align-items:center;gap:7px;min-height:24px;line-height:1;letter-spacing:.02em;transition:border-color .2s ease,background .2s ease,color .2s ease,box-shadow .2s ease}
-      .state-loader{position:relative;display:inline-grid;place-items:center;flex:0 0 12px;width:12px;height:12px;border-radius:50%;color:currentColor}
-      .state-loader::before,.state-loader::after{content:'';position:absolute;inset:0;border-radius:inherit}
-      .status.state-active{color:#65ead4;background:#1aa7901f;box-shadow:inset 0 0 0 1px #36d7c02b}
-      .status.state-active .state-loader::before{border:2px solid currentColor;opacity:.2}
-      .status.state-active .state-loader::after{border:2px solid transparent;border-top-color:currentColor;border-right-color:currentColor;animation:devpilot-state-spin .8s linear infinite;box-shadow:0 0 9px currentColor}
-      .status.state-waiting{color:#ffc86f;background:#ffbb551b;box-shadow:inset 0 0 0 1px #ffbb5524}
-      .status.state-waiting .state-loader::before{inset:2px;background:currentColor;box-shadow:0 0 8px currentColor;animation:devpilot-state-pulse 1.35s ease-in-out infinite}
-      .status.state-success{color:#65ead4;background:#21a6961f}
-      .status.state-success .state-loader::before{content:'✓';inset:auto;position:static;font-size:11px;font-weight:950;line-height:1}
-      .status.state-error{color:#ff8796;background:#ff657719}
-      .status.state-error .state-loader::before{content:'×';inset:auto;position:static;font-size:14px;font-weight:950;line-height:1}
-      .status.state-neutral .state-loader::before{inset:3px;background:currentColor;opacity:.72}
-      @keyframes devpilot-state-spin{to{transform:rotate(360deg)}}
-      @keyframes devpilot-state-pulse{0%,100%{transform:scale(.7);opacity:.45}50%{transform:scale(1);opacity:1}}
-      @media (prefers-reduced-motion:reduce){.status .state-loader::before,.status .state-loader::after{animation:none!important}}
-    `;
-    document.head.appendChild(style);
-  }
-
-  function classify(raw) {
-    const value = normalize(raw);
-    if (activeStates.has(value) || activeStates.has(value.replaceAll(' ', '_'))) return 'active';
-    if (waitingStates.has(value) || waitingStates.has(value.replaceAll(' ', '_'))) return 'waiting';
-    if (successStates.has(value) || successStates.has(value.replaceAll(' ', '_'))) return 'success';
-    if (errorStates.has(value) || errorStates.has(value.replaceAll(' ', '_'))) return 'error';
-    return 'neutral';
-  }
-
-  function decorate(element) {
-    if (!(element instanceof HTMLElement) || !element.classList.contains('status')) return;
-    const existing = element.querySelector(':scope > .state-loader');
-    const raw = element.dataset.stateValue || element.textContent.trim();
-    const kind = classify(raw);
-    element.dataset.stateValue = raw;
-    element.classList.remove('state-active','state-waiting','state-success','state-error','state-neutral');
-    element.classList.add(`state-${kind}`);
-    element.setAttribute('aria-label', `Estado: ${raw.replaceAll('_', ' ')}`);
-    if (!existing) {
-      const loader = document.createElement('span');
-      loader.className = 'state-loader';
-      loader.setAttribute('aria-hidden', 'true');
-      element.prepend(loader);
-    }
-  }
-
-  function scan(root = document) {
-    if (root instanceof HTMLElement && root.matches('.status')) decorate(root);
-    root.querySelectorAll?.('.status').forEach(decorate);
-  }
-
-  installStyles();
-  scan();
-  const observer = new MutationObserver(records => {
-    records.forEach(record => record.addedNodes.forEach(node => {
-      if (node.nodeType === Node.ELEMENT_NODE) scan(node);
-    }));
-  });
-  observer.observe(document.body, {childList: true, subtree: true});
 })();
