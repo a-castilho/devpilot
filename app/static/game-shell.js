@@ -99,10 +99,10 @@
     events.emit('state', state);
   }
 
-  function enterGame(view) {
+  function enterGame(view = document.getElementById(VIEW_ID)) {
     const root = ensureRoot();
     const slot = root.querySelector('[data-game-slot]');
-    if (!slot || !view) return;
+    if (!slot || !view) return false;
 
     if (!originalParent) {
       originalParent = view.parentNode;
@@ -114,6 +114,7 @@
     view.classList.add('devpilot-game-view-mounted');
     updateHud(view);
     events.emit('entered', {mission_id: localStorage.getItem('devpilot-build-game-mission') || null});
+    return true;
   }
 
   function restoreView(view) {
@@ -130,15 +131,26 @@
     document.body.classList.remove('devpilot-game-mode');
     view?.classList.remove('devpilot-game-view-mounted');
     events.emit('exited');
+    return true;
   }
 
   function sync() {
     const view = document.getElementById(VIEW_ID);
     if (!view) return false;
-    if (view.classList.contains('active')) enterGame(view);
-    else if (document.body.classList.contains('devpilot-game-mode')) exitGame();
+    if (view.classList.contains('active')) return enterGame(view);
+    if (document.body.classList.contains('devpilot-game-mode')) exitGame();
     return true;
   }
+
+  window.DevPilotGameShell = Object.freeze({
+    enter: enterGame,
+    exit: exitGame,
+    sync,
+    snapshot: () => {
+      const view = document.getElementById(VIEW_ID);
+      return view ? snapshot(view) : null;
+    },
+  });
 
   function watchView(view) {
     if (!view || viewObserver) return;
