@@ -13,14 +13,38 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  DEVPILOT_POLICY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
 jobs:
+  policy:
+    name: DevPilot policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout full history for policy diff
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Enforce engineering standard
+        run: python scripts/check-engineering-standards.py --changed
+
   quality:
     name: DevPilot quality
+    needs: policy
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
