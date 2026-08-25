@@ -46,6 +46,7 @@
       'mission-control.js',
     ],
     game: [
+      'game-workflow-adapter.js',
       'build-game.js',
       'build-game-subphases.js',
       'build-game-new-session.js',
@@ -149,7 +150,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-7`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-8`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
