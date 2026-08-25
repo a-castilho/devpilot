@@ -189,7 +189,7 @@ def system_map_dashboard(db: Session = Depends(get_db)):
             "status": "online",
             "value": "API",
             "detail": "Ponto central de entrada, roteamento e políticas de acesso.",
-            "target_view": null,
+            "target_view": None,
         },
         {
             "id": "auth",
@@ -199,7 +199,7 @@ def system_map_dashboard(db: Session = Depends(get_db)):
             "status": "online",
             "value": f"{users_active}/{users_total}",
             "detail": f"{users_active} usuário(s) ativo(s) de {users_total}; SUPER_ADMIN possui visão global.",
-            "target_view": null,
+            "target_view": None,
         },
         {
             "id": "projects",
@@ -239,7 +239,7 @@ def system_map_dashboard(db: Session = Depends(get_db)):
             "status": "online",
             "value": db_backend,
             "detail": f"Persistência ativa via {db_backend}; credenciais não são expostas neste painel.",
-            "target_view": null,
+            "target_view": None,
         },
         {
             "id": "audit",
@@ -279,7 +279,7 @@ def system_map_dashboard(db: Session = Depends(get_db)):
             "status": "configured" if settings.linux_agent_url else "idle",
             "value": "host",
             "detail": "Canal configurado para ações no Linux; o painel não presume conectividade sem uma execução comprovada.",
-            "target_view": null,
+            "target_view": None,
         },
     ]
 
