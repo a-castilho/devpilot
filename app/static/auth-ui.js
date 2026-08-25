@@ -2,6 +2,7 @@
   'use strict';
 
   const TOKEN_KEY = 'devpilot-token';
+  const FRESH_LOGIN_KEY = 'devpilot-fresh-login';
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
 
@@ -34,6 +35,7 @@
     button.textContent = 'Sair';
     button.addEventListener('click', () => {
       localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(FRESH_LOGIN_KEY);
       location.reload();
     });
     header.prepend(button);
@@ -131,12 +133,11 @@
           throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
         }
 
-        // Não recarregue a página. O scheduler autenticado já está aguardando
-        // __devpilotAuthReady e pode iniciar o núcleo diretamente nesta página.
+        // O loader progressivo já pode ter terminado em waiting-login antes do POST.
+        // Reinicie uma única vez com o token disponível desde o começo do boot.
         localStorage.setItem(TOKEN_KEY, data.access_token);
-        installLogout();
-        if (modal.open) modal.close();
-        completeAuth(true);
+        sessionStorage.setItem(FRESH_LOGIN_KEY, '1');
+        location.reload();
       } catch (error) {
         errorBox.textContent = error.message || 'Falha na autenticação';
         submit.disabled = false;
@@ -181,15 +182,34 @@
 
     other?.addEventListener('click', () => {
       localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(FRESH_LOGIN_KEY);
       renderLoginForm();
     });
+  }
+
+  async function resumeFreshLogin(token) {
+    sessionStorage.removeItem(FRESH_LOGIN_KEY);
+    const valid = await validateToken(token);
+    if (!valid) {
+      localStorage.removeItem(TOKEN_KEY);
+      renderLoginForm();
+      return;
+    }
+    installLogout();
+    if (modal.open) modal.close();
+    completeAuth(true);
   }
 
   const boot = async () => {
     await readStatus();
     const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
     if (!token) {
+      sessionStorage.removeItem(FRESH_LOGIN_KEY);
       renderLoginForm();
+      return;
+    }
+    if (sessionStorage.getItem(FRESH_LOGIN_KEY) === '1') {
+      await resumeFreshLogin(token);
       return;
     }
     renderResumeSession(token);
