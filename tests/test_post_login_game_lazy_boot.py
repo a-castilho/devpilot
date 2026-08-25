@@ -20,17 +20,20 @@ def test_game_extras_are_owned_only_by_explicit_feature_loader():
     assert "build-game-weapons.js" not in analytics
 
     # O único dono do carregamento do jogo é o feature loader explícito.
+    # Módulos aditivos são permitidos, desde que o núcleo mínimo continue presente
+    # e todos os assets referenciados existam.
     assert "FEATURE_BUNDLES" in loader
     game_bundle = re.search(r"game:\s*\[(.*?)\]", loader, re.DOTALL)
     assert game_bundle is not None
     assets = re.findall(r"'([^']+\.js)'", game_bundle.group(1))
-    assert assets == [
+    required = {
         "build-game.js",
         "build-game-subphases.js",
         "build-game-new-session.js",
         "build-game-url-bonus.js",
         "build-game-weapons.js",
-    ]
+    }
+    assert required.issubset(set(assets))
     for asset in assets:
         assert (STATIC / asset).is_file(), f"bundle do jogo referencia asset inexistente: {asset}"
 

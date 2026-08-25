@@ -62,13 +62,16 @@ def test_context_returns_the_authorized_mobile_checklist():
     assert "Rotação/reload não perde o estado da missão" in result["manual_checklist"]
 
 
-def test_frontend_is_wired_into_spa_and_has_no_shell_command_input():
+def test_frontend_is_lazy_wired_and_has_no_shell_command_input():
     main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")
+    loader = (ROOT / "app" / "static" / "feature-loader.js").read_text(encoding="utf-8")
     frontend = (ROOT / "app" / "static" / "super-admin-local-test.js").read_text(encoding="utf-8")
     backend = (ROOT / "app" / "local_test_routes.py").read_text(encoding="utf-8")
 
     assert "local_test_router" in main
-    assert "/assets/super-admin-local-test.js" in main
+    assert "'super-admin-local-test.js'" in loader
+    assert "admin: [" in loader
+    assert "/assets/super-admin-local-test.js" not in main
     assert "Acesso exclusivo do Super Admin" in frontend
     assert "Executar teste agora" in frontend
     assert "subprocess" not in backend

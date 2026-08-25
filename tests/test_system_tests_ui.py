@@ -1,8 +1,10 @@
+import re
 from pathlib import Path
 
 
 SYSTEM_TESTS_JS = Path("app/static/system-tests.js")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
+FEATURE_LOADER = Path("app/static/feature-loader.js")
 
 
 def test_system_tests_workspace_supports_project_scoped_actions():
@@ -34,7 +36,14 @@ def test_system_test_run_mode_is_non_destructive():
     assert "não invente resultado" in source
 
 
-def test_system_tests_asset_is_loaded():
-    source = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+def test_system_tests_asset_is_owned_by_explicit_tasks_bundle():
+    analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    loader = FEATURE_LOADER.read_text(encoding="utf-8")
 
-    assert "/assets/system-tests.js?v=20260824-1" in source
+    assert "/assets/system-tests.js" not in analytics
+    tasks_bundle = re.search(r"tasks:\s*\[(.*?)\]", loader, re.DOTALL)
+    assert tasks_bundle is not None
+    assets = re.findall(r"'([^']+\.js)'", tasks_bundle.group(1))
+    assert "task-analytics.js" in assets
+    assert "system-tests.js" in assets
+    assert "['.nav[data-view=\"tasks\"]', 'tasks']" in loader

@@ -1,15 +1,23 @@
+import re
 from pathlib import Path
 
 from app.main import spa
 
 
 HOTFIX = Path("app/static/token-usage-mobile-fix.js")
+FEATURE_LOADER = Path("app/static/feature-loader.js")
 
 
-def test_token_usage_mobile_fix_is_loaded_with_cache_busting():
+def test_token_usage_mobile_fix_is_owned_by_admin_bundle_not_spa_boot():
     rendered = spa("mobile").body.decode("utf-8")
+    loader = FEATURE_LOADER.read_text(encoding="utf-8")
 
-    assert "/assets/token-usage-mobile-fix.js?v=" in rendered
+    assert "/assets/token-usage-mobile-fix.js?v=" not in rendered
+    admin_bundle = re.search(r"admin:\s*\[(.*?)\]", loader, re.DOTALL)
+    assert admin_bundle is not None
+    assets = re.findall(r"'([^']+\.js)'", admin_bundle.group(1))
+    assert "token-usage.js" in assets
+    assert "token-usage-mobile-fix.js" in assets
 
 
 def test_budget_zero_values_are_validated_before_request():

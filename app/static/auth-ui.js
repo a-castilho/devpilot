@@ -7,6 +7,7 @@
 
   const root = document.documentElement;
   const SAFE_STYLE_ID = 'devpilot-auth-compositor-safe';
+  const FETCH_TIMEOUT_MS = 3000;
   let bootstrapRequired = false;
   let localBootstrapAvailable = false;
   let resolveAuthReady;
@@ -113,15 +114,12 @@
     };
 
     document.addEventListener('devpilot:authenticated-core-ready', finish, {once: true});
-
-    // Caso o evento tenha ocorrido entre a validação e a instalação do listener.
     queueMicrotask(() => {
       if (window.__devpilotBoot?.phase === 'ready') finish();
     });
 
     completeAuth(true);
 
-    // Falha de asset não pode deixar um modal aparentemente congelado para sempre.
     window.setTimeout(() => {
       if (!root.classList.contains('devpilot-auth-pending')) return;
       if (window.__devpilotBoot?.phase === 'failed') {
@@ -131,9 +129,19 @@
     }, 8000);
   }
 
+  async function fetchWithTimeout(url, options = {}, timeout = FETCH_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeout);
+    try {
+      return await fetch(url, {...options, signal: controller.signal});
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
   async function readStatus() {
     try {
-      const response = await fetch('/api/auth/status', {cache: 'no-store'});
+      const response = await fetchWithTimeout('/api/auth/status', {cache: 'no-store'});
       const data = await response.json();
       bootstrapRequired = Boolean(data.bootstrap_required);
       localBootstrapAvailable = Boolean(data.local_bootstrap_available);
@@ -146,7 +154,7 @@
   async function validateToken(token) {
     if (!token) return false;
     try {
-      const response = await fetch('/api/auth/me', {
+      const response = await fetchWithTimeout('/api/auth/me', {
         headers: {Authorization: `Bearer ${token}`},
         cache: 'no-store',
       });
@@ -179,13 +187,7 @@
 
     if (errorBox && message) errorBox.textContent = message;
     if (bootstrapRow) bootstrapRow.style.display = bootstrapRequired && !localBootstrapAvailable ? 'grid' : 'none';
-    if (help) {
-      help.textContent = bootstrapRequired
-        ? (localBootstrapAvailable
-          ? 'Primeiro acesso neste Linux: informe e-mail e senha.'
-          : 'Primeiro acesso remoto: informe também o token de bootstrap.')
-        : 'Use seu e-mail e senha.';
-    }
+    if (help) help.textContent = bootstrapRequired ? (localBootstrapAvailable ? 'Primeiro acesso neste Linux: informe e-mail e senha.' : 'Primeiro acesso remoto: informe também o token de bootstrap.') : 'Use seu e-mail e senha.';
     if (submit) submit.textContent = bootstrapRequired ? 'Criar Super Admin e entrar' : 'Entrar';
 
     form?.addEventListener('submit', async event => {
@@ -217,22 +219,16 @@
       }
 
       try {
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(payload),
-          cache: 'no-store',
-        });
+        const response = await fetchWithTimeout(endpoint, {
+          method: 'POST', headers, body: JSON.stringify(payload), cache: 'no-store',
+        }, 8000);
         const data = await response.json().catch(() => ({}));
-        if (!response.ok || !data.access_token) {
-          throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
-        }
-
+        if (!response.ok || !data.access_token) throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
         localStorage.setItem(TOKEN_KEY, data.access_token);
         document.dispatchEvent(new CustomEvent('devpilot:login-complete'));
         handoffAuthenticatedRuntime(errorBox);
       } catch (error) {
-        errorBox.textContent = error.message || 'Falha na autenticação';
+        errorBox.textContent = error?.name === 'AbortError' ? 'O servidor demorou para responder. Tente novamente.' : (error.message || 'Falha na autenticação');
         submit.disabled = false;
         submit.textContent = bootstrapRequired ? 'Criar Super Admin e entrar' : 'Entrar';
       }
@@ -280,7 +276,18 @@
   }
 
   const boot = async () => {
+    // Nunca deixe o mobile em uma tela preta esperando indefinidamente o status.
+    const fallback = window.setTimeout(() => {
+      if (!modal.open && root.classList.contains('devpilot-auth-pending')) {
+        const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
+        if (token) renderResumeSession(token);
+        else renderLoginForm('Não foi possível consultar o status do servidor.');
+      }
+    }, FETCH_TIMEOUT_MS + 500);
+
     await readStatus();
+    window.clearTimeout(fallback);
+    if (modal.open) return;
     const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
     if (!token) {
       renderLoginForm();

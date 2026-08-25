@@ -3,11 +3,14 @@ from pathlib import Path
 from app.main import STATIC, spa
 
 
-def test_super_admin_voice_asset_is_loaded_by_spa():
+def test_super_admin_voice_asset_is_lazy_loaded_by_feature_loader():
     response = spa("voice-admin")
     rendered = response.body.decode("utf-8")
+    loader = Path(STATIC / "feature-loader.js").read_text(encoding="utf-8")
 
-    assert "/assets/super-admin-voice.js?v=" in rendered
+    assert "/assets/super-admin-voice.js?v=" not in rendered
+    assert "'super-admin-voice.js'" in loader
+    assert "voice: [" in loader
     assert "/assets/super-admin-voice.css?v=" in rendered
 
 
