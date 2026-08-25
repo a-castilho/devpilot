@@ -2,7 +2,6 @@
   'use strict';
 
   const TOKEN_KEY = 'devpilot-token';
-  const FRESH_LOGIN_KEY = 'devpilot-fresh-login';
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
 
@@ -25,6 +24,10 @@
     if (!modal.open) modal.showModal();
   };
 
+  const closeModal = () => {
+    if (modal.open) modal.close();
+  };
+
   const installLogout = () => {
     const header = document.querySelector('.header-actions');
     if (!header || document.querySelector('#logout')) return;
@@ -35,7 +38,6 @@
     button.textContent = 'Sair';
     button.addEventListener('click', () => {
       localStorage.removeItem(TOKEN_KEY);
-      sessionStorage.removeItem(FRESH_LOGIN_KEY);
       location.reload();
     });
     header.prepend(button);
@@ -66,7 +68,7 @@
     return false;
   }
 
-  function renderLoginForm() {
+  function renderLoginForm(message = '') {
     modal.innerHTML = `
       <form class="modal" id="auth-form">
         <span class="eyebrow">ACESSO</span>
@@ -85,6 +87,7 @@
     const bootstrapRow = document.querySelector('#auth-bootstrap-row');
     const help = document.querySelector('#auth-help');
 
+    if (errorBox && message) errorBox.textContent = message;
     if (bootstrapRow) bootstrapRow.style.display = bootstrapRequired && !localBootstrapAvailable ? 'grid' : 'none';
     if (help) {
       help.textContent = bootstrapRequired
@@ -133,11 +136,11 @@
           throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
         }
 
-        // O loader progressivo já pode ter terminado em waiting-login antes do POST.
-        // Reinicie uma única vez com o token disponível desde o começo do boot.
         localStorage.setItem(TOKEN_KEY, data.access_token);
-        sessionStorage.setItem(FRESH_LOGIN_KEY, '1');
-        location.reload();
+        installLogout();
+        closeModal();
+        document.dispatchEvent(new CustomEvent('devpilot:login-complete'));
+        completeAuth(true);
       } catch (error) {
         errorBox.textContent = error.message || 'Falha na autenticação';
         submit.disabled = false;
@@ -170,46 +173,26 @@
       resume.textContent = 'Validando…';
       const valid = await validateToken(token);
       if (!valid) {
-        if (errorBox) errorBox.textContent = 'A sessão não é mais válida. Entre novamente.';
         localStorage.removeItem(TOKEN_KEY);
-        window.setTimeout(renderLoginForm, 120);
+        renderLoginForm('A sessão não é mais válida. Entre novamente.');
         return;
       }
       installLogout();
-      if (modal.open) modal.close();
+      closeModal();
       completeAuth(true);
     });
 
     other?.addEventListener('click', () => {
       localStorage.removeItem(TOKEN_KEY);
-      sessionStorage.removeItem(FRESH_LOGIN_KEY);
       renderLoginForm();
     });
-  }
-
-  async function resumeFreshLogin(token) {
-    sessionStorage.removeItem(FRESH_LOGIN_KEY);
-    const valid = await validateToken(token);
-    if (!valid) {
-      localStorage.removeItem(TOKEN_KEY);
-      renderLoginForm();
-      return;
-    }
-    installLogout();
-    if (modal.open) modal.close();
-    completeAuth(true);
   }
 
   const boot = async () => {
     await readStatus();
     const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
     if (!token) {
-      sessionStorage.removeItem(FRESH_LOGIN_KEY);
       renderLoginForm();
-      return;
-    }
-    if (sessionStorage.getItem(FRESH_LOGIN_KEY) === '1') {
-      await resumeFreshLogin(token);
       return;
     }
     renderResumeSession(token);
