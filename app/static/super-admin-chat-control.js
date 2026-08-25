@@ -28,9 +28,8 @@
   });
 
   // O loader global de main.py aguarda control.ready antes de iniciar dezenas de
-  // módulos opcionais. Nesta versão o Promise fica pendente de propósito: a Visão
-  // geral permanece leve e cada área carrega somente o seu bundle quando o usuário
-  // realmente entra nela. Isso evita a segunda rajada de JS que congelava o Brave.
+  // módulos opcionais. A Promise permanece pendente de propósito. Cada área libera
+  // apenas o mínimo necessário e recursos pesados exigem intenção explícita.
   const FEATURE_BUNDLES = {
     organizations: ['organization-normalization-ui.js'],
     projects: [
@@ -40,11 +39,17 @@
       'mobile-project-card-compact.js',
     ],
     tasks: [
+      'tasks-lazy-load.js',
+    ],
+    'task-create': [
       'task-modal.js',
+      'task-image-upload.js',
+    ],
+    'task-advanced': [
       'task-analytics.js',
       'task-failures.js',
-      'task-image-upload.js',
-      'tasks-lazy-load.js',
+    ],
+    'task-analysis': [
       'approval-slider.js',
       'analysis-commercial-proposal.js',
       'analysis-failure-actions.js',
@@ -60,9 +65,9 @@
 
   const idle = () => new Promise(resolve => {
     if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(() => resolve(), {timeout: 1200});
+      window.requestIdleCallback(() => resolve(), {timeout: 1400});
     } else {
-      window.setTimeout(resolve, 80);
+      window.setTimeout(resolve, 100);
     }
   });
 
@@ -85,7 +90,7 @@
 
     const task = new Promise(resolve => {
       const script = document.createElement('script');
-      script.src = `/assets/${name}?v=20260825-safe-boot-v2`;
+      script.src = `/assets/${name}?v=20260825-development-safe-v3`;
       script.async = false;
       script.dataset.devpilotFeatureLazy = '1';
       script.onload = () => {
@@ -108,11 +113,45 @@
     for (const name of names) {
       await idle();
       await loadAsset(name);
-      await sleep(120);
+      await sleep(180);
     }
+    if (view === 'tasks') ensureTaskAdvancedControl();
+    return true;
   }
 
   window.__devpilotLoadFeature = loadBundle;
+
+  function ensureTaskAdvancedControl() {
+    const view = document.querySelector('#tasks-view');
+    if (!view || view.querySelector('[data-task-advanced-load]')) return;
+
+    const holder = document.createElement('div');
+    holder.className = 'task-safe-tools';
+    holder.innerHTML = `
+      <button type="button" class="ghost" data-task-advanced-load>
+        Carregar gráficos e diagnósticos
+      </button>
+      <small data-task-advanced-status>Carregamento opcional para manter a tela leve.</small>`;
+
+    const head = view.querySelector('.section-head');
+    if (head) head.appendChild(holder);
+    else view.prepend(holder);
+
+    const button = holder.querySelector('[data-task-advanced-load]');
+    const status = holder.querySelector('[data-task-advanced-status]');
+    button.addEventListener('click', async () => {
+      if (button.dataset.loaded === '1') return;
+      button.disabled = true;
+      button.textContent = 'Carregando recursos avançados…';
+      status.textContent = 'Carregando em etapas para não bloquear a interface.';
+      await loadBundle('task-advanced');
+      button.dataset.loaded = '1';
+      button.textContent = 'Gráficos e diagnósticos carregados';
+      status.textContent = 'Recursos avançados ativos nesta sessão.';
+      if (typeof renderTasks === 'function') renderTasks();
+      if (typeof window.renderTaskAnalytics === 'function') window.renderTaskAnalytics();
+    });
+  }
 
   function installFeatureLazyLoading() {
     if (document.documentElement.dataset.featureLazyInstalled === '1') return;
@@ -123,10 +162,22 @@
       if (nav) void loadBundle(String(nav.dataset.view || ''));
 
       const opener = event.target.closest?.('[data-open="task-modal"]');
-      if (opener) void loadBundle('tasks');
+      if (opener) void loadBundle('task-create');
 
       const projectBuilder = event.target.closest?.('[data-project-builder-open]');
       if (projectBuilder) void loadBundle('projects');
+
+      const taskLog = event.target.closest?.('.task-log-link');
+      if (taskLog && taskLog.dataset.analysisReady !== '1') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        taskLog.dataset.analysisReady = 'loading';
+        void (async () => {
+          await loadBundle('task-analysis');
+          taskLog.dataset.analysisReady = '1';
+          taskLog.click();
+        })();
+      }
     }, true);
   }
 
@@ -229,8 +280,10 @@
       .chat-control-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
       .chat-control-reason{width:100%;min-height:82px;resize:vertical}
       .chat-control-note{color:var(--muted);font-size:12px;line-height:1.5}
+      .task-safe-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px}
+      .task-safe-tools small{color:var(--muted);font-size:11px}
       html[data-devpilot-chat-enabled="false"] #voice-modal{display:none!important}
-      @media(max-width:760px){.chat-control-shell{grid-template-columns:1fr}}
+      @media(max-width:760px){.chat-control-shell{grid-template-columns:1fr}.task-safe-tools{align-items:stretch}.task-safe-tools button{width:100%}}
     `;
     document.head.appendChild(style);
   }
@@ -278,7 +331,7 @@
         <article class="chat-control-card">
           <span class="eyebrow">BOOT SEGURO</span>
           <h3>Recursos sob demanda</h3>
-          <p class="chat-control-note">A Visão geral carrega somente o núcleo. Projetos, tarefas, relatórios e provedores carregam seus módulos quando você abre a área, evitando congelamento depois do login.</p>
+          <p class="chat-control-note">A Visão geral carrega somente o núcleo. Desenvolvimento abre primeiro em modo leve; gráficos, diagnósticos e análise avançada só são ativados por ação explícita.</p>
           <p class="chat-control-note">Chat e voz continuam desligados quando o interruptor global estiver OFF.</p>
         </article>
       </div>`;
