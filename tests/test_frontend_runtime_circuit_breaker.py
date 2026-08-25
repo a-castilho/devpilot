@@ -19,6 +19,16 @@ def test_feature_loader_is_explicit_and_has_no_global_observer():
     assert "document.body.appendChild(script)" in runtime
 
 
+def test_feature_loader_does_no_menu_work_before_dashboard_reveal():
+    runtime = read("app/static/feature-loader.js")
+
+    assert "devpilot-auth-pending" in runtime
+    assert "devpilot:dashboard-revealed" in runtime
+    assert "initializePlaceholders" in runtime
+    tail = runtime.split("let placeholdersInitialized", 1)[1]
+    assert "document.addEventListener('devpilot:dashboard-revealed', initializePlaceholders" in tail
+
+
 def test_acs_loader_never_modifies_browser_primitives():
     loader = read("app/static/acs-loader.js")
 
