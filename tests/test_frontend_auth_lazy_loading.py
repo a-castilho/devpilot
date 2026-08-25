@@ -52,6 +52,8 @@ def test_authenticated_boot_inventory_is_grouped_and_deduplicated():
     assert "task-analytics.js" in _VIEW_AUTHENTICATED_SCRIPTS["tasks"]
     assert "build-game-cockpit.js" in _FEATURE_AUTHENTICATED_SCRIPTS["game"]
     assert "mission-control.js" in _FEATURE_AUTHENTICATED_SCRIPTS["game"]
+    assert "linux-terminal.js" in _INTERACTION_AUTHENTICATED_SCRIPTS
+    assert "linux-beginner-coach.js" in _INTERACTION_AUTHENTICATED_SCRIPTS
     assert "telemetry-capture.js" in _INTERACTION_AUTHENTICATED_SCRIPTS
     assert "mobile-accordion-menu.js" in _MOBILE_SHELL_AUTHENTICATED_SCRIPTS
 
