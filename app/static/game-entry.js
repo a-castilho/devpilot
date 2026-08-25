@@ -73,6 +73,7 @@
       const target = document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"]');
       if (!target) throw new Error('A navegação do Modo Jogo não ficou disponível.');
       target.click();
+      window.requestAnimationFrame(() => window.DevPilotGameShell?.sync?.());
       window.DevPilotResponses?.success?.('Modo Jogo pronto. Boa missão.');
     } catch (error) {
       window.DevPilotResponses?.error?.(error?.message || 'Falha ao abrir o Modo Jogo.');
