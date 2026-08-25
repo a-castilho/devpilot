@@ -47,9 +47,9 @@
   function gameState(taskStatus, phase) {
     const status = String(taskStatus || '').toLowerCase();
     if (status === 'completed') return 'MISSION_COMPLETE';
-    if (status === 'blocked') return 'SHIELD_BLOCKED';
+    if (status === 'blocked' || status === 'awaiting_approval') return 'SHIELD_BLOCKED';
     if (status === 'failed') return 'SHOT_FAILED';
-    if (status === 'queued' || status === 'awaiting_approval') return 'MISSION_READY';
+    if (status === 'queued') return 'MISSION_READY';
     if (status === 'running' || status === 'review') {
       if (phase === 'scan') return 'SCANNING';
       if (phase === 'fire') return 'FIRING';
