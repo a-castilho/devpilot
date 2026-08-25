@@ -90,15 +90,7 @@ _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "token-usage-mobile-fix.js",
     "provider-models.js",
     "provider-ollama.js",
-    "super-admin-voice.js",
     "product-delivery-ui.js",
-    "voice-project-start.js",
-    "voice-local-update.js",
-    "voice-microphone-permission.js",
-    "voice-playback.js",
-    "voice-enhanced-ui.js",
-    "voice-chatgpt-layout.js",
-    "voice-insecure-lan-guard.js",
     "task-failures.js",
     "task-image-upload.js",
     "tasks-lazy-load.js",
@@ -127,6 +119,20 @@ _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "game-linux-training.js",
     "audit-integrity.js",
     "mission-control.js",
+]
+
+# Chat/voice is deliberately cold at login. These modules create DOM observers,
+# microphone helpers and conversation state, so they are loaded only after the
+# user explicitly opens the DevPilot chat/voice surface.
+_ON_DEMAND_CHAT_SCRIPTS = [
+    "super-admin-voice.js",
+    "voice-project-start.js",
+    "voice-local-update.js",
+    "voice-microphone-permission.js",
+    "voice-playback.js",
+    "voice-enhanced-ui.js",
+    "voice-chatgpt-layout.js",
+    "voice-insecure-lan-guard.js",
 ]
 
 
@@ -226,13 +232,19 @@ def _authenticated_script_loader() -> str:
         _DEFERRED_AUTHENTICATED_SCRIPTS,
         set(_PREAUTH_SCRIPT_NAMES) | set(core_names),
     )
+    chat_names = _unique_script_names(
+        _ON_DEMAND_CHAT_SCRIPTS,
+        set(_PREAUTH_SCRIPT_NAMES) | set(core_names) | set(deferred_names),
+    )
     core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
     deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
+    chat_urls = json.dumps(_script_urls(chat_names), ensure_ascii=False)
     return f"""<script>
 (() => {{
   'use strict';
   const coreSources = {core_urls};
   const deferredSources = {deferred_urls};
+  const chatSources = {chat_urls};
   const boot = window.__devpilotBoot = window.__devpilotBoot || {{
     phase: 'waiting', loaded: [], failed: [], startedAt: Date.now()
   }};
@@ -298,7 +310,7 @@ def _authenticated_script_loader() -> str:
   }};
 
   const loadDeferred = async () => {{
-    // Let the overview become usable before optional game/voice/admin modules boot.
+    // Let the overview become usable before optional game/admin modules boot.
     await sleep(900);
     boot.phase = 'deferred';
     for (const src of deferredSources) {{
@@ -314,6 +326,32 @@ def _authenticated_script_loader() -> str:
     boot.finishedAt = Date.now();
     document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
   }};
+
+  const loadChat = async () => {{
+    if (!tokenExists()) return false;
+    if (boot.chatPromise) return boot.chatPromise;
+    boot.chatRequestedAt = Date.now();
+    boot.chatPromise = (async () => {{
+      for (const src of chatSources) {{
+        if (!tokenExists()) return false;
+        await loadScript(src);
+        await nextPaint();
+      }}
+      boot.chatReadyAt = Date.now();
+      document.dispatchEvent(new CustomEvent('devpilot:chat-ui-ready'));
+      return true;
+    }})();
+    return boot.chatPromise;
+  }};
+
+  window.devpilotLoadChat = loadChat;
+  document.addEventListener('click', event => {{
+    const trigger = event.target?.closest?.('#voice-hero, #voice-dock, [data-open="voice-modal"]');
+    if (trigger && tokenExists()) void loadChat();
+  }}, true);
+  document.addEventListener('devpilot:chat-open-requested', () => {{
+    if (tokenExists()) void loadChat();
+  }});
 
   const start = async () => {{
     if (!tokenExists() || boot.phase !== 'waiting') return;
