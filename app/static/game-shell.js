@@ -13,6 +13,8 @@
     exits: 0,
     refreshes: 0,
     classTransitions: 0,
+    baseLoads: 0,
+    dedupedLoads: 0,
   };
 
   let originalParent = null;
@@ -21,13 +23,16 @@
   let activeView = null;
   let loadBuildGameWrapped = false;
   let feedbackWired = false;
+  let baseLoadBuildGame = null;
+  let loadInFlight = null;
+  let loaderGuardTimer = null;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const link = document.createElement('link');
     link.id = STYLE_ID;
     link.rel = 'stylesheet';
-    link.href = '/assets/game-shell.css?v=20260825-2';
+    link.href = '/assets/game-shell.css?v=20260825-3';
     document.head.appendChild(link);
   }
 
@@ -179,33 +184,119 @@
       if (view.classList.contains('active')) enterGame(view);
       else if (document.body.classList.contains('devpilot-game-mode')) exitGame();
     });
-    // Intencionalmente NÃO observa childList/subtree. Renderizações internas do jogo
-    // não podem reentrar no shell nem disparar tempestade de eventos no mobile.
+    // Renderizações internas do jogo não podem reentrar no shell.
     viewObserver.observe(view, {attributes: true, attributeFilter: ['class']});
+  }
+
+  function captureBaseLoader() {
+    if (baseLoadBuildGame || typeof window.loadBuildGame !== 'function') return false;
+    baseLoadBuildGame = window.loadBuildGame;
+    window.__devpilotBaseLoadBuildGame = baseLoadBuildGame;
+    return true;
+  }
+
+  async function runBaseLoad(...args) {
+    captureBaseLoader();
+    const loader = baseLoadBuildGame || window.loadBuildGame;
+    if (typeof loader !== 'function') throw new Error('Motor base do jogo não ficou disponível.');
+    if (loadInFlight) {
+      METRICS.dedupedLoads += 1;
+      return loadInFlight;
+    }
+    METRICS.baseLoads += 1;
+    loadInFlight = Promise.resolve().then(() => loader(...args)).finally(() => {
+      loadInFlight = null;
+    });
+    return loadInFlight;
   }
 
   function wrapGameLoader() {
     if (loadBuildGameWrapped || typeof window.loadBuildGame !== 'function') return false;
+    captureBaseLoader();
     const original = window.loadBuildGame;
     if (original.__devpilotGameStableWrapper) {
       loadBuildGameWrapped = true;
       return true;
     }
     const wrapped = async (...args) => {
-      const result = await original(...args);
-      refresh();
-      return result;
+      if (loadInFlight) {
+        METRICS.dedupedLoads += 1;
+        return loadInFlight;
+      }
+      loadInFlight = Promise.resolve().then(() => original(...args)).then(result => {
+        refresh();
+        return result;
+      }).finally(() => {
+        loadInFlight = null;
+      });
+      return loadInFlight;
     };
     wrapped.__devpilotGameStableWrapper = true;
+    wrapped.__devpilotBaseLoader = baseLoadBuildGame;
     window.loadBuildGame = wrapped;
     loadBuildGameWrapped = true;
     return true;
   }
 
+  function guardLoaderDuringBundleBoot() {
+    if (captureBaseLoader()) wrapGameLoader();
+    if (loadBuildGameWrapped && loaderGuardTimer) {
+      window.clearInterval(loaderGuardTimer);
+      loaderGuardTimer = null;
+    }
+  }
+
+  function startLoaderGuard() {
+    if (loaderGuardTimer || loadBuildGameWrapped) return;
+    let attempts = 0;
+    loaderGuardTimer = window.setInterval(() => {
+      attempts += 1;
+      guardLoaderDuringBundleBoot();
+      if (attempts >= 250 && loaderGuardTimer) {
+        window.clearInterval(loaderGuardTimer);
+        loaderGuardTimer = null;
+      }
+    }, 8);
+  }
+
+  async function openBaseGameFromNavigation(button) {
+    if (!button || button.dataset.devpilotBaseOpening === '1') return;
+    button.dataset.devpilotBaseOpening = '1';
+    button.setAttribute('aria-busy', 'true');
+    try {
+      if (typeof showView !== 'function') throw new Error('Navegação principal indisponível.');
+      showView('build-game');
+      const title = document.querySelector('#page-title');
+      if (title) title.textContent = 'Jogo de construção';
+      const view = document.getElementById(VIEW_ID);
+      if (view) enterGame(view);
+      await runBaseLoad();
+      refresh(view);
+      document.dispatchEvent(new CustomEvent('devpilot:game:base-ready'));
+    } catch (error) {
+      console.error('[DevPilot Game] Falha ao abrir runtime base:', error);
+      window.DevPilotResponses?.error?.(error?.message || 'Falha ao abrir o Modo Jogo.');
+    } finally {
+      button.removeAttribute('aria-busy');
+      delete button.dataset.devpilotBaseOpening;
+    }
+  }
+
   function wireGameFeedback() {
     if (feedbackWired) return;
     feedbackWired = true;
+
+    // O primeiro acesso pelo menu usa somente o motor base. Os módulos avançados
+    // continuam carregados, mas não entram na cadeia de fetch/render inicial.
     document.addEventListener('click', event => {
+      const nav = event.target.closest?.('.sidebar nav .nav[data-view="build-game"], .sidebar nav .nav[data-view="game"]');
+      if (nav && typeof window.__devpilotBaseLoadBuildGame === 'function') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void openBaseGameFromNavigation(nav);
+        return;
+      }
+
       const phase = event.target.closest?.('#build-game-view [data-play-phase]');
       if (phase) {
         const label = phase.dataset.playPhase || '';
@@ -225,6 +316,7 @@
     exit: exitGame,
     sync,
     refresh,
+    loadBase: runBaseLoad,
     snapshot: () => {
       const view = activeView || document.getElementById(VIEW_ID);
       return view ? snapshot(view) : null;
@@ -234,7 +326,7 @@
 
   document.addEventListener('devpilot:feature-ready', event => {
     if (event.detail?.feature !== 'game') return;
-    wrapGameLoader();
+    guardLoaderDuringBundleBoot();
     sync();
   });
 
@@ -245,7 +337,8 @@
     ensureResponseManager();
     ensureRoot();
     wireGameFeedback();
-    wrapGameLoader();
+    startLoaderGuard();
+    guardLoaderDuringBundleBoot();
 
     const view = document.getElementById(VIEW_ID);
     if (view) {
