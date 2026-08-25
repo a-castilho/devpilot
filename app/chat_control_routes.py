@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -30,6 +30,17 @@ def chat_control(db: Session) -> PlatformControl | None:
 def chat_enabled(db: Session) -> bool:
     item = chat_control(db)
     return bool(item.enabled) if item is not None else DEFAULT_CHAT_ENABLED
+
+
+def require_chat_available(db: Session = Depends(get_db)) -> None:
+    item = chat_control(db)
+    if item is not None and item.enabled:
+        return
+    reason = item.reason if item is not None and item.reason else DEFAULT_CHAT_REASON
+    raise HTTPException(
+        status_code=503,
+        detail=f"Chat do DevPilot está desligado pelo Super Admin. {reason}".strip(),
+    )
 
 
 def serialize_chat_control(item: PlatformControl | None) -> dict:
