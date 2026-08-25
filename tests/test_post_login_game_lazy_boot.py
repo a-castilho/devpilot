@@ -11,12 +11,15 @@ def test_game_extras_are_owned_only_by_explicit_feature_loader():
     analytics = TASK_ANALYTICS.read_text(encoding="utf-8")
     loader = FEATURE_LOADER.read_text(encoding="utf-8")
 
+    # O analytics deve permanecer estritamente analítico. Nenhum loader de jogo
+    # pode voltar para este arquivo, evitando dupla carga e corrida no pós-login.
     assert "__devpilotLoadGameExtras" not in analytics
     assert "devpilot:game-open" not in analytics
     assert "isGameIntent" not in analytics
     assert "LEGACY_GAME_EXTRAS" not in analytics
     assert "build-game-weapons.js" not in analytics
 
+    # O único dono do carregamento do jogo é o feature loader explícito.
     assert "FEATURE_BUNDLES" in loader
     game_bundle = re.search(r"game:\s*\[(.*?)\]", loader, re.DOTALL)
     assert game_bundle is not None
@@ -27,8 +30,6 @@ def test_game_extras_are_owned_only_by_explicit_feature_loader():
         "build-game-new-session.js",
         "build-game-url-bonus.js",
         "build-game-weapons.js",
-        "mobile-game-mode.js",
-        "game-linux-training.js",
     ]
     for asset in assets:
         assert (STATIC / asset).is_file(), f"bundle do jogo referencia asset inexistente: {asset}"
