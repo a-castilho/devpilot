@@ -4,8 +4,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 AGENTS = ROOT / "AGENTS.md"
 CI = ROOT / ".github/workflows/ci.yml"
+WORKFLOWS = ROOT / ".github/workflows"
 VALIDATE = ROOT / "scripts/validate-ci.sh"
 LOCAL_SAFE = ROOT / "scripts/devpilot-local-safe.sh"
+SELF_HOSTED_SETUP = ROOT / "scripts/setup-github-self-hosted-runner.sh"
 POLICY = ROOT / "scripts/check-engineering-standards.py"
 STANDARD = ROOT / "docs/ENGINEERING_STANDARD.md"
 
@@ -58,3 +60,29 @@ def test_policy_rejects_hidden_loaders_and_new_global_observers():
     assert "DYNAMIC_SCRIPT_PATTERN" in source
     assert "MUTATION_OBSERVER_PATTERN" in source
     assert 'path == "app/static/feature-loader.js"' in source
+
+
+def test_workflows_have_runner_fallback_instead_of_hardcoded_hosted_runner():
+    critical = (
+        "ci.yml",
+        "compromisso-geral.yml",
+        "deploy-homolog.yml",
+        "issue-documentation.yml",
+        "project-report.yml",
+        "review-documentation.yml",
+        "vercel-cli-deploy.yml",
+    )
+    for name in critical:
+        workflow = (WORKFLOWS / name).read_text(encoding="utf-8")
+        assert "vars.DEVPILOT_RUNNER || 'ubuntu-latest'" in workflow, name
+        assert "runs-on: ubuntu-latest" not in workflow, name
+
+
+def test_self_hosted_runner_bootstrap_is_private_and_does_not_echo_token():
+    source = SELF_HOSTED_SETUP.read_text(encoding="utf-8")
+
+    assert '[[ "$visibility" == "PRIVATE" ]]' in source
+    assert "registration-token" in source
+    assert "gh variable set DEVPILOT_RUNNER" in source
+    assert "devpilot-ci" in source
+    assert "set -x" not in source
