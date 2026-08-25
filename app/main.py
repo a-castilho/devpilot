@@ -200,6 +200,22 @@ def _script_urls(names: list[str]) -> list[str]:
     ]
 
 
+def _safe_static_candidate(path: str) -> Path | None:
+    """Resolve a SPA path without allowing aliases outside STATIC or raw index.html."""
+    try:
+        static_root = STATIC.resolve(strict=True)
+        candidate = (STATIC / path).resolve(strict=True)
+        candidate.relative_to(static_root)
+    except (OSError, ValueError):
+        return None
+
+    # index.html is the authenticated SPA entry point. It must always pass through
+    # the shell-building path below, even when reached through a ../ alias or symlink.
+    if candidate == static_root / "index.html":
+        return None
+    return candidate if candidate.is_file() else None
+
+
 def _authenticated_script_loader() -> str:
     core_urls = json.dumps(_script_urls(_CORE_AUTHENTICATED_SCRIPTS), ensure_ascii=False)
 
@@ -345,6 +361,14 @@ app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
 app.include_router(voice_transcription_router, dependencies=[Depends(require_ai_budget_access)])
 app.include_router(token_usage_router)
+
+
+@app.get("/assets/index.html", include_in_schema=False)
+def assets_index_shell():
+    """Never expose the raw SPA index through the static mount."""
+    return spa("index.html")
+
+
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
@@ -363,8 +387,8 @@ def telemetry_page():
 
 @app.get("/{path:path}", include_in_schema=False)
 def spa(path: str):
-    candidate = STATIC / path
-    if path and candidate.is_file():
+    candidate = _safe_static_candidate(path) if path else None
+    if candidate is not None:
         headers = None
         if candidate.suffix.lower() in {".html", ".htm"}:
             headers = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
