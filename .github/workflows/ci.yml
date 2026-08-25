@@ -29,13 +29,29 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: Set up Python on GitHub-hosted runner
+        if: ${{ !vars.DEVPILOT_RUNNER }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
+      - name: Verify Python on self-hosted runner
+        if: ${{ vars.DEVPILOT_RUNNER }}
+        run: |
+          python3 - <<'PY'
+          import sys
+          if sys.version_info < (3, 12):
+              raise SystemExit(f"DevPilot requer Python 3.12+, encontrado {sys.version.split()[0]}")
+          print(sys.executable, sys.version.split()[0])
+          PY
+
       - name: Enforce engineering standard
-        run: python scripts/check-engineering-standards.py --changed
+        run: |
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then
+            python3 scripts/check-engineering-standards.py --changed
+          else
+            python scripts/check-engineering-standards.py --changed
+          fi
 
   quality:
     name: DevPilot quality
@@ -48,19 +64,33 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Python
+      - name: Set up Python on GitHub-hosted runner
+        if: ${{ !vars.DEVPILOT_RUNNER }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
+      - name: Verify Python on self-hosted runner
+        if: ${{ vars.DEVPILOT_RUNNER }}
+        run: |
+          python3 - <<'PY'
+          import sys
+          if sys.version_info < (3, 12):
+              raise SystemExit(f"DevPilot requer Python 3.12+, encontrado {sys.version.split()[0]}")
+          print(sys.executable, sys.version.split()[0])
+          PY
+
       - name: Install package and test dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e '.[test]'
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then PYTHON=python3; else PYTHON=python; fi
+          "$PYTHON" -m pip install --upgrade pip
+          "$PYTHON" -m pip install -e '.[test]'
 
       - name: Validate application
-        run: bash scripts/validate-ci.sh
+        run: |
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then export PYTHON_BIN="$(command -v python3)"; fi
+          bash scripts/validate-ci.sh
 
   runtime-image:
     name: DevPilot runtime image
