@@ -4,7 +4,7 @@ from app.models import Run
 
 
 def test_game_workflow_routes_are_registered():
-    paths = {route.path for route in app.routes}
+    paths = {path for route in app.routes if (path := getattr(route, "path", None))}
     assert "/api/game/missions/{task_id}" in paths
     assert "/api/game/missions/{task_id}/fire" in paths
 
