@@ -15,14 +15,13 @@ def test_dashboard_starts_with_only_five_task_summaries():
     assert "api('/tasks?limit=5')" not in dashboard
 
 
-def test_task_history_uses_lightweight_summary_endpoint():
+def test_task_history_is_owned_by_core_app_and_uses_lightweight_summary_endpoint():
     app = read("app/static/app.js")
-    script = read("app/static/tasks-lazy-load.js")
+    main = read("app/main.py")
 
     assert "api('/ui/tasks?limit=20')" in app
-    assert "api(`/ui/tasks?limit=${nextLimit}`)" in script
-    assert "api(`/tasks?limit=${nextLimit}`)" not in script
-    assert "Carregar mais ${PAGE_SIZE} tarefas" in script
+    assert "async function loadAllTasks" in app
+    assert '"tasks-lazy-load.js"' not in main
 
 
 def test_large_prompt_is_loaded_only_for_one_explicit_task():
@@ -35,6 +34,9 @@ def test_large_prompt_is_loaded_only_for_one_explicit_task():
     assert '"prompt": item.prompt' in routes
 
 
-def test_lazy_loader_is_loaded_by_spa_runtime():
-    main = read("app/main.py")
-    assert '"tasks-lazy-load.js"' in main
+def test_task_pagination_does_not_reintroduce_legacy_bulk_endpoint():
+    app = read("app/static/app.js")
+
+    assert "api('/tasks?limit=500')" not in app
+    assert "api('/tasks?limit=20')" not in app
+    assert "api('/ui/tasks?limit=20')" in app
