@@ -49,6 +49,7 @@
       'build-game-subphases.js',
       'build-game-new-session.js',
       'build-game-url-bonus.js',
+      'build-game-weapons.js',
       'mobile-game-mode.js',
       'game-linux-training.js',
     ],
@@ -85,7 +86,7 @@
 
     return new Promise(resolve => {
       const script = document.createElement('script');
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-4`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-3`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.onload = () => {
