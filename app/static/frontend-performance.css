@@ -1,0 +1,62 @@
+/* Frontend performance guard.
+ * Keep visual fidelity on capable desktops, but remove the most expensive
+ * compositor effects on the explicit /mobile shell and for reduced motion.
+ */
+body.mobile-route,
+body.mobile-route .shell,
+body.mobile-route main {
+  scroll-behavior: auto;
+}
+
+body.mobile-route .sidebar,
+body.mobile-route dialog::backdrop,
+body.mobile-route .mobile-accordion-backdrop,
+body.mobile-route .mobile-accordion-sheet,
+body.mobile-route .workspace-tone-menu {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+body.mobile-route .hero,
+body.mobile-route .panel,
+body.mobile-route .project-card,
+body.mobile-route .consultant-promo,
+body.mobile-route .reports-hero,
+body.mobile-route .report-list,
+body.mobile-route .report-reader {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .34) !important;
+}
+
+body.mobile-route .pulse-orb:not(.listening),
+body.mobile-route .project-ship-svg {
+  animation: none !important;
+}
+
+body.mobile-route .project-ship-svg {
+  filter: none !important;
+}
+
+body.mobile-route .view:not(.active) {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .sidebar,
+  dialog::backdrop,
+  .mobile-accordion-backdrop,
+  .mobile-accordion-sheet {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
