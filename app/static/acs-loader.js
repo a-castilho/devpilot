@@ -2,14 +2,9 @@
   if (document.getElementById('acs-homolog-loader')) return;
 
   /*
-   * Compatibilidade instalada ANTES de auth-ui/app.js/workspace-skins.js.
-   *
-   * 1) document.scripts é HTMLCollection em Chromium e não implementa forEach.
-   *    Alguns módulos antigos tratavam a coleção como Array e abortavam o boot.
-   * 2) auth-ui substitui o conteúdo do modal legado e remove #token/#save-token,
-   *    enquanto app.js ainda tenta registrar onclick nesses ids. Criamos âncoras
-   *    inertes fora do modal para que o runtime legado não quebre durante a
-   *    migração para o fluxo autenticado atual.
+   * Compatibilidade instalada ANTES de auth-ui/app.js.
+   * O pós-login precisa permanecer mínimo: qualquer módulo opcional executado
+   * automaticamente pode bloquear a thread principal em máquinas pequenas.
    */
   if (window.HTMLCollection && !HTMLCollection.prototype.forEach) {
     Object.defineProperty(HTMLCollection.prototype, 'forEach', {
@@ -41,18 +36,77 @@
     }
   };
 
+  /*
+   * Circuit breaker definitivo do boot autenticado.
+   *
+   * O scheduler legado continua conhecendo dezenas de arquivos. Em vez de deixar
+   * cada módulo decidir se deve ou não iniciar, aceitamos automaticamente apenas
+   * o núcleo comprovadamente necessário para a aplicação básica. Todo script com
+   * data-devpilot-progressive fora desta allowlist é marcado como suprimido e tem
+   * seu onload concluído de forma assíncrona para que o scheduler não fique preso.
+   *
+   * Cargas explícitas feitas por uma funcionalidade NÃO usam este marcador e não
+   * são bloqueadas. Portanto esta proteção não impede evolução sob demanda; ela
+   * apenas proíbe trabalho pesado durante login/boot.
+   */
+  const SAFE_AUTH_BOOT_SCRIPTS = new Set([
+    'app.js',
+    'profile.js',
+    'users.js',
+  ]);
+
+  const scriptName = node => {
+    if (!(node instanceof HTMLScriptElement) || !node.src) return '';
+    try {
+      return new URL(node.src, location.href).pathname.split('/').pop() || '';
+    } catch (_) {
+      return '';
+    }
+  };
+
+  const installAuthenticatedBootCircuitBreaker = () => {
+    const body = document.body;
+    if (!body || body.dataset.devpilotMinimalBoot === '1') return;
+    body.dataset.devpilotMinimalBoot = '1';
+
+    const nativeAppendChild = body.appendChild;
+    const appendNormally = node => nativeAppendChild.call(body, node);
+    window.__devpilotNativeBodyAppend = appendNormally;
+    window.__devpilotSafeAuthBootScripts = [...SAFE_AUTH_BOOT_SCRIPTS];
+
+    body.appendChild = function devpilotMinimalBootAppend(node) {
+      const automaticRuntimeScript = node instanceof HTMLScriptElement
+        && node.dataset.devpilotProgressive === '1';
+
+      if (!automaticRuntimeScript) return nativeAppendChild.call(this, node);
+
+      const name = scriptName(node);
+      if (SAFE_AUTH_BOOT_SCRIPTS.has(name)) return nativeAppendChild.call(this, node);
+
+      const boot = window.__devpilotBoot = window.__devpilotBoot || {};
+      boot.suppressed = Array.isArray(boot.suppressed) ? boot.suppressed : [];
+      if (name && !boot.suppressed.includes(name)) boot.suppressed.push(name);
+      node.dataset.devpilotSuppressed = '1';
+
+      queueMicrotask(() => {
+        try {
+          if (typeof node.onload === 'function') node.onload(new Event('load'));
+        } catch (error) {
+          console.error('[DevPilot] Falha ao concluir módulo suprimido', name, error);
+        }
+      });
+      return node;
+    };
+  };
+
+  installAuthenticatedBootCircuitBreaker();
+
   // auth-ui é defer e troca o conteúdo de #auth-modal antes do núcleo autenticado.
-  // DOMContentLoaded ocorre antes de app.js ser carregado pelo scheduler assíncrono.
   document.addEventListener('DOMContentLoaded', ensureLegacyAuthAnchors, {once: true});
 
   /*
-   * Proteção de runtime instalada antes de app.js/simplified-nav.js.
-   * O menu possuía observers de atributos que reagiam a alterações de class/hidden
-   * feitas pela própria sincronização do menu. Em Chromium/Brave isso pode manter
-   * uma fila contínua de microtasks e produzir "Page Unresponsive".
-   *
-   * Bloqueamos somente observers de ATRIBUTOS cujo alvo seja o <nav> principal.
-   * Observers de conteúdo usados por outros componentes continuam intactos.
+   * Proteção adicional contra observers autorreferentes do menu legado.
+   * Mantemos somente observers que não vigiam atributos do nav principal.
    */
   if (!window.__devpilotNativeMutationObserver && window.MutationObserver) {
     const NativeMutationObserver = window.MutationObserver;
@@ -80,7 +134,7 @@
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260825-safe4';
+    link.href = '/assets/acs-loader.css?v=20260825-minimalboot1';
     document.head.appendChild(link);
   }
 
@@ -130,8 +184,7 @@
     window.setTimeout(removeNow, 280);
   };
 
-  // O loader é somente visual. Ele jamais deve bloquear login, navegação ou
-  // aguardar a inicialização dos módulos pesados para desaparecer.
+  // O loader é somente visual e nunca pode bloquear entrada ou navegação.
   document.addEventListener('devpilot:authenticated-core-ready', dismiss, {once: true});
   window.setTimeout(dismiss, 700);
   window.setTimeout(removeNow, 1400);
