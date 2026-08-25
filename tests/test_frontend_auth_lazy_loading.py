@@ -9,6 +9,7 @@ from app.main import (
 )
 
 AUTH_UI = Path("app/static/auth-ui.js")
+APP_JS = Path("app/static/app.js")
 
 
 def test_pre_auth_html_keeps_only_auth_script():
@@ -68,11 +69,11 @@ def test_auth_ui_handles_expired_session_before_dashboard_boot():
     assert "if (!modal.open) modal.showModal()" in source
 
 
-def test_auth_ui_normalizes_legacy_approve_selector_to_collection():
-    source = AUTH_UI.read_text(encoding="utf-8")
-    assert "const nativeQuerySelector = document.querySelector.bind(document)" in source
-    assert "selector === '.approve'" in source
-    assert "document.querySelectorAll(selector)" in source
+def test_task_approve_selector_uses_collection_without_global_dom_patch():
+    app_source = APP_JS.read_text(encoding="utf-8")
+    auth_source = AUTH_UI.read_text(encoding="utf-8")
+    assert "$('.approve').forEach" in app_source
+    assert "document.querySelector = selector" not in auth_source
 
 
 def test_spa_keeps_app_js_behind_authenticated_loader():
@@ -84,3 +85,25 @@ def test_spa_keeps_app_js_behind_authenticated_loader():
     assert '"/assets/app.js?v=' in html
     assert "window.__devpilotAuthReady" in html
     assert "window.__devpilotBoot" in html
+
+
+def test_app_runtime_does_not_require_removed_legacy_login_button():
+    source = APP_JS.read_text(encoding="utf-8")
+    assert "const legacyTokenSubmit=$('#save-token')" in source
+    assert "if(legacyTokenSubmit)legacyTokenSubmit.onclick" in source
+    assert "$('#save-token').onclick" not in source
+
+
+def test_unauthorized_api_clears_stale_session_and_reopens_login():
+    source = APP_JS.read_text(encoding="utf-8")
+    assert "localStorage.removeItem('devpilot-token')" in source
+    assert "openAuthModal()" in source
+
+
+def test_direct_index_route_uses_safe_authenticated_shell():
+    response = spa("index.html")
+    html = response.body.decode("utf-8")
+    assert '<script src="/assets/auth-ui.js?v=' in html
+    assert '<script src="/assets/app.js?v=' not in html
+    assert '"/assets/app.js?v=' in html
+    assert "window.__devpilotAuthReady" in html
