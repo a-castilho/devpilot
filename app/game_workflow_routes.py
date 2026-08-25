@@ -95,7 +95,9 @@ def fire_mission(task_id: str, db: Session = Depends(get_db)):
     task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
     if not task:
         raise HTTPException(404, "Task not found")
-    if task.status not in {TaskStatus.queued, TaskStatus.failed, TaskStatus.blocked}:
+    if task.status == TaskStatus.blocked:
+        raise HTTPException(409, "Mission is shield-blocked and requires the normal authorization flow")
+    if task.status not in {TaskStatus.queued, TaskStatus.failed}:
         raise HTTPException(409, "Mission cannot be fired from its current state")
     previous = task.status
     task.status = TaskStatus.queued
