@@ -14,6 +14,7 @@ fail() { log "ERRO: $*" >&2; exit 1; }
 command -v gh >/dev/null 2>&1 || fail "GitHub CLI (gh) não encontrado."
 command -v curl >/dev/null 2>&1 || fail "curl não encontrado."
 command -v tar >/dev/null 2>&1 || fail "tar não encontrado."
+command -v python3 >/dev/null 2>&1 || fail "python3 não encontrado."
 
 gh auth status >/dev/null 2>&1 || fail "gh não está autenticado. Execute gh auth login primeiro."
 
@@ -41,16 +42,7 @@ if [[ ! -x "$RUNNER_DIR/config.sh" ]]; then
   log "Baixando GitHub Actions Runner ${tag} para ${runner_arch}..."
   curl -fL --retry 3 --connect-timeout 15 -o "$tmp" "$url"
 
-  digest="$(printf '%s' "$release_json" | python3 - "$asset" <<'PY'
-import json, sys
-asset_name = sys.argv[1]
-data = json.load(sys.stdin)
-for item in data.get("assets", []):
-    if item.get("name") == asset_name:
-        print(item.get("digest") or "")
-        break
-PY
-)"
+  digest="$(printf '%s' "$release_json" | python3 -c 'import json,sys; asset=sys.argv[1]; data=json.load(sys.stdin); print(next((item.get("digest") or "" for item in data.get("assets", []) if item.get("name") == asset), ""))' "$asset")"
   if [[ "$digest" == sha256:* ]] && command -v sha256sum >/dev/null 2>&1; then
     expected="${digest#sha256:}"
     actual="$(sha256sum "$tmp" | awk '{print $1}')"
@@ -107,7 +99,7 @@ for _ in {1..20}; do
     exit 0
   fi
   sleep 1
- done
+done
 
 log "Runner foi iniciado, mas ainda não apareceu online no GitHub."
 log "Verifique: tail -n 80 '$LOG_FILE'"
