@@ -8,13 +8,18 @@ BUILD_GAME_COCKPIT_JS = Path("app/static/build-game-cockpit.js")
 BUILD_GAME_COCKPIT_CSS = Path("app/static/build-game-cockpit.css")
 INDEX_HTML = Path("app/static/index.html")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
+FEATURE_LOADER_JS = Path("app/static/feature-loader.js")
 
 
-def test_build_game_is_loaded_from_dashboard():
-    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+def test_build_game_is_loaded_only_by_explicit_feature_bundle():
+    analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
 
-    assert "/assets/build-game.js?v=20260824-2" in loader
-    assert "data-build-game-loader" in loader
+    assert "/assets/build-game.js" not in analytics
+    assert "data-build-game-loader" not in analytics
+    assert "game: [" in loader
+    assert "'build-game.js'" in loader
+    assert "data-devpilot-feature-placeholder" in loader
 
 
 def test_build_game_uses_real_project_tasks_and_sequential_gates():
@@ -51,12 +56,12 @@ def test_game_preserves_history_and_supports_new_missions():
     assert "XP" in source
 
 
-def test_new_game_resets_full_visible_state_and_refreshes_fresh_mission():
-    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+def test_new_game_is_part_of_explicit_bundle_and_resets_visible_state():
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
     source = BUILD_GAME_NEW_SESSION_JS.read_text(encoding="utf-8")
 
-    assert "/assets/build-game-new-session.js?v=20260824-2" in loader
-    assert "data-build-game-new-session-loader" in loader
+    assert "'build-game-new-session.js'" in loader
+    assert loader.index("'build-game.js'") < loader.index("'build-game-new-session.js'")
     assert "previousMissionId = missionId()" in source
     assert "0/6 fases" in source
     assert "0/${TOTAL_XP} XP" in source
@@ -68,12 +73,12 @@ def test_new_game_resets_full_visible_state_and_refreshes_fresh_mission():
     assert "await window.loadBuildGame()" in source
 
 
-def test_completed_game_requires_real_verified_url_before_mission_completion():
-    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+def test_completed_game_uses_explicit_url_bonus_before_mission_completion():
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
     bonus = BUILD_GAME_URL_BONUS_JS.read_text(encoding="utf-8")
 
-    assert "/assets/build-game-url-bonus.js?v=20260824-2" in loader
-    assert "data-build-game-url-bonus-loader" in loader
+    assert "'build-game-url-bonus.js'" in loader
+    assert loader.index("'build-game.js'") < loader.index("'build-game-url-bonus.js'")
     assert "#build-game-view .build-game-victory" in bonus
     assert "CHEFE FINAL VENCIDO · ENTREGA PENDENTE" in bonus
     assert "A missão só será concluída quando uma URL pública real responder com sucesso." in bonus
@@ -88,13 +93,13 @@ def test_completed_game_requires_real_verified_url_before_mission_completion():
 
 
 def test_legacy_review_does_not_freeze_game_progression():
-    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
 
-    assert "old workers could leave successful game tasks in review forever" in loader
-    assert "[DEVPILOT_BUILD_GAME_V1]" in loader
-    assert "legacyReview" in loader
-    assert "task?.requires_approval !== true" in loader
-    assert "return {...task, status:'completed'}" in loader
+    assert "old workers could leave successful game tasks in review forever" in analytics
+    assert "[DEVPILOT_BUILD_GAME_V1]" in analytics
+    assert "legacyReview" in analytics
+    assert "task?.requires_approval !== true" in analytics
+    assert "return {...task, status:'completed'}" in analytics
 
 
 def test_build_game_cockpit_skin_is_loaded_and_bridges_devpilot_voice():
