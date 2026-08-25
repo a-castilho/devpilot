@@ -2,13 +2,19 @@ from pathlib import Path
 
 
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
+FEATURE_LOADER_JS = Path("app/static/feature-loader.js")
 WEAPONS_JS = Path("app/static/build-game-weapons.js")
 
 
-def test_weapons_workshop_is_loaded_by_dashboard():
-    source = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
-    assert "/assets/build-game-weapons.js?v=20260824-2" in source
-    assert "data-build-game-weapons-loader" in source
+def test_weapons_workshop_is_loaded_only_by_explicit_game_bundle():
+    analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
+
+    assert "build-game-weapons.js" not in analytics
+    assert "'build-game-weapons.js'" in loader
+    game_block = loader.split("game: [", 1)[1].split("],", 1)[0]
+    assert game_block.index("'build-game.js'") < game_block.index("'build-game-weapons.js'")
+    assert "addPlaceholder('game', 'Modo Jogo')" in loader
 
 
 def test_ship_cards_and_cockpit_have_weapons_entry_points():
