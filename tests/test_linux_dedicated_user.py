@@ -46,7 +46,7 @@ def test_install_script_provisions_locked_dedicated_account_and_narrow_launcher(
     assert 'sudo passwd -l "${TERMINAL_USER}"' in source
     assert "DEVPILOT_LINUX_TERMINAL_USER=${TERMINAL_USER}" in source
     assert "DEVPILOT_LINUX_TERMINAL_LAUNCHER=${TERMINAL_LAUNCHER}" in source
-    assert "NOPASSWD: %s" in source
+    assert "NOPASSWD:SETENV: %s" in source
     assert "/usr/local/libexec/devpilot-terminal-shell" in source
     assert "sudo usermod -aG sudo" not in source
     assert "sudo usermod -aG docker" not in source
