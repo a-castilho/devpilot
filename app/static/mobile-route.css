@@ -334,6 +334,36 @@ body.mobile-route #voice-modal .voice-enhanced-actions button {
   min-width: 0 !important;
 }
 
+/* Fallback legível enquanto o shell simples é carregado. Nunca deixe a
+ * navegação da rota /mobile reduzir os rótulos a ícones sem contexto. */
+body.mobile-route .sidebar:not(:has(.mobile-simple-nav)) nav .nav {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 3px !important;
+  flex: 0 0 72px !important;
+  width: 72px !important;
+  min-width: 72px !important;
+  max-width: 72px !important;
+  height: 54px !important;
+  padding: 4px 3px !important;
+  font-size: 9px !important;
+  line-height: 1.05 !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  color: #aebfd1 !important;
+}
+
+body.mobile-route .sidebar:not(:has(.mobile-simple-nav)) nav .nav::before {
+  font-size: 17px !important;
+  line-height: 1 !important;
+}
+
+body.mobile-route .sidebar:not(:has(.mobile-simple-nav)) nav .nav.active {
+  color: #efffff !important;
+}
+
 @media (max-width: 520px) {
   body.mobile-route main {
     padding: 14px 12px calc(98px + env(safe-area-inset-bottom)) !important;
@@ -360,5 +390,14 @@ body.mobile-route #voice-modal .voice-enhanced-actions button {
     min-width: 56px !important;
     max-width: 56px !important;
     height: 48px !important;
+  }
+
+  body.mobile-route .sidebar:not(:has(.mobile-simple-nav)) nav .nav {
+    flex-basis: 66px !important;
+    width: 66px !important;
+    min-width: 66px !important;
+    max-width: 66px !important;
+    height: 50px !important;
+    font-size: 8px !important;
   }
 }

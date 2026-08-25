@@ -15,7 +15,7 @@
       name: 'Mapa da missão',
       xp: 100,
       summary: 'Entender o sistema, definir vitória e deixar a base verificável.',
-      mission: `Leia AGENTS.md, documentação e o repositório antes de agir. Transforme o objetivo da partida em critérios de aceite objetivos e registre o plano em .devpilot/build-game.md. Detecte a stack, os comandos reais de instalação, build, lint e testes. Execute uma verificação de baseline. Se houver bloqueios que impeçam a missão, corrija somente o necessário e repita a verificação. Não invente resultado nem marque sucesso sem evidência executada.`
+      mission: `Leia AGENTS.md, documentação e o repositório antes de agir. Transforme o objetivo da partida em critérios de aceite objetivos e registre o plano em .devpilot/build-game.md. Detecte a stack, os comandos reais de instalação, build, lint e testes. Execute uma verificação de baseline. Se houver bloqueios que impeçam a missão, corrija somente o necessário e repita a verificação. A própria criação/atualização de .devpilot/build-game.md deve registrar o estado inicial e o próximo incremento concreto. Não invente resultado nem marque sucesso sem evidência executada.`
     },
     {
       id: 2,
@@ -23,7 +23,7 @@
       name: 'Primeiro circuito',
       xp: 120,
       summary: 'Construir a menor fatia funcional de ponta a ponta.',
-      mission: `Implemente a menor fatia vertical realmente utilizável que avance o objetivo da partida. Reutilize a arquitetura e padrões do projeto. Inclua ou atualize testes automáticos para o comportamento criado. Execute os testes relevantes e o smoke mínimo. Não altere requisitos só para fazer o teste passar; corrija a implementação quando houver falha.`
+      mission: `Implemente a menor fatia vertical realmente utilizável que avance o objetivo da partida. Esta fase NÃO pode terminar apenas com análise, relatório, URL, deploy já existente ou validação do estado atual: precisa haver mudança material no repositório que altere comportamento observável do sistema. Reutilize a arquitetura e padrões do projeto. Inclua ou atualize testes automáticos para o comportamento criado. Execute os testes relevantes e o smoke mínimo. Antes de concluir, mostre a evidência do delta com git status --short e git diff --stat (ou equivalente seguro) e descreva exatamente o que passou a funcionar que não funcionava antes. Se não houver delta funcional real, a fase deve permanecer incompleta ou falhar; não transforme ausência de implementação em sucesso. Não altere requisitos só para fazer o teste passar; corrija a implementação quando houver falha.`
     },
     {
       id: 3,
@@ -31,7 +31,7 @@
       name: 'Regras blindadas',
       xp: 140,
       summary: 'Fechar regras de negócio, limites de acesso e cenários negativos.',
-      mission: `Implemente as regras de negócio restantes para o objetivo da partida e valide fronteiras de autorização, autenticação, isolamento de dados e validação de entrada quando existirem no sistema. Crie testes positivos e negativos. Não exponha segredos, não use credenciais reais em fixtures e não introduza bypass para satisfazer testes.`
+      mission: `Implemente as regras de negócio restantes para o objetivo da partida e valide fronteiras de autorização, autenticação, isolamento de dados e validação de entrada quando existirem no sistema. Crie testes positivos e negativos. A fase precisa deixar um delta verificável no repositório e não pode ser concluída apenas por inspeção. Não exponha segredos, não use credenciais reais em fixtures e não introduza bypass para satisfazer testes.`
     },
     {
       id: 4,
@@ -39,7 +39,7 @@
       name: 'Interface jogável',
       xp: 160,
       summary: 'Deixar o fluxo principal claro, utilizável e resistente a erro.',
-      mission: `Finalize a experiência do fluxo principal relacionado ao objetivo: interface web/mobile ou contrato de API, conforme a stack real. Cubra carregamento, vazio, sucesso e erro; preserve acessibilidade e responsividade quando houver UI. Rode testes de interface/API existentes e adicione cobertura para o fluxo alterado. Não apresente dados fictícios como reais.`
+      mission: `Finalize a experiência do fluxo principal relacionado ao objetivo: interface web/mobile ou contrato de API, conforme a stack real. Cubra carregamento, vazio, sucesso e erro; preserve acessibilidade e responsividade quando houver UI. Rode testes de interface/API existentes e adicione cobertura para o fluxo alterado. A fase só termina se houver evolução observável do fluxo principal registrada no código. Não apresente dados fictícios como reais.`
     },
     {
       id: 5,
@@ -47,7 +47,7 @@
       name: 'Batalha de testes',
       xp: 180,
       summary: 'Enfrentar a suíte completa e corrigir falhas reais.',
-      mission: `Execute a suíte completa aplicável ao projeto: testes unitários, integração, sistema/smoke, lint, typecheck e build quando existirem. Corrija as falhas causadas ou expostas pela implementação desta partida e repita os comandos até obter evidência real. Não silencie testes, não remova asserts válidos, não use fallback que transforme falha em sucesso e não declare aprovação de comando que não foi executado.`
+      mission: `Execute a suíte completa aplicável ao projeto: testes unitários, integração, sistema/smoke, lint, typecheck e build quando existirem. Corrija as falhas causadas ou expostas pela implementação desta partida e repita os comandos até obter evidência real. Se a suíte já estiver verde, melhore cobertura ou feche uma lacuna verificável ligada ao objetivo, de modo que a fase ainda produza evolução real no repositório. Não silencie testes, não remova asserts válidos, não use fallback que transforme falha em sucesso e não declare aprovação de comando que não foi executado.`
     },
     {
       id: 6,
@@ -55,7 +55,7 @@
       name: 'Chefe final',
       xp: 200,
       summary: 'Validar prontidão de entrega e encerrar a missão com evidência.',
-      mission: `Faça a revisão final do objetivo da partida contra os critérios de aceite registrados em .devpilot/build-game.md. Execute build e smoke final; revise migrações, configuração, segurança, documentação e deploy quando aplicáveis. Corrija regressões encontradas e repita a validação. Atualize .devpilot/build-game.md com evidências finais e pendências reais. A missão só vence se os critérios de aceite estiverem atendidos e as verificações aplicáveis estiverem aprovadas.`
+      mission: `Faça a revisão final do objetivo da partida contra os critérios de aceite registrados em .devpilot/build-game.md. Execute build e smoke final; revise migrações, configuração, segurança, documentação e deploy quando aplicáveis. Corrija regressões encontradas e repita a validação. Atualize .devpilot/build-game.md com evidências finais e pendências reais. Uma URL pública é somente evidência de entrega; nunca substitui implementação ausente. A missão só vence se os critérios de aceite estiverem atendidos, houver evolução real acumulada no repositório e as verificações aplicáveis estiverem aprovadas.`
     }
   ];
 
@@ -192,7 +192,7 @@
       <section class="build-game-hero">
         <span class="eyebrow">DEV + TESTE · PROGRESSÃO REAL</span>
         <h2>Jogo de construção</h2>
-        <p>Construa um sistema por fases. Cada fase cria uma tarefa real no DevPilot, exige validação e só libera a próxima quando a execução anterior termina como concluída.</p>
+        <p>Construa um sistema por fases. Cada fase cria uma tarefa real no DevPilot, exige mudança verificável no repositório e só libera a próxima quando a execução anterior termina como concluída com evidência técnica.</p>
         <div class="build-game-config">
           <label>Projeto<select id="build-game-project">${projectOptions}</select></label>
           <label>Objetivo da partida<input id="build-game-goal" maxlength="500" value="${esc(goal)}" placeholder="Ex.: criar cadastro de clientes com login e testes"></label>
@@ -255,6 +255,13 @@ OBJETIVO: ${goal}
 MISSÃO DA FASE: ${phase.name}
 ${phase.mission}
 
+CONTRATO DE PROGRESSÃO REAL:
+- Toda fase precisa deixar um delta persistente e verificável no projeto. Análise, diagnóstico, explicação, URL, deploy existente ou simples reexecução de teste não contam sozinhos como evolução.
+- Registre o estado antes de alterar e, ao final, registre evidência do delta com git status --short e git diff --stat (ou equivalente seguro quando Git não estiver disponível).
+- Descreva no resultado o ANTES, a MUDANÇA IMPLEMENTADA e o DEPOIS observável pelo usuário ou pela API.
+- Se a missão da fase não produzir nenhuma mudança material no repositório, NÃO marque a tarefa como concluída. Corrija a implementação ou encerre como falha/bloqueio com a causa real.
+- URL pública é evidência de entrega, não prêmio que substitui código. Nunca conclua uma fase apenas porque uma URL responde.
+
 REGRAS DO JOGO:
 - Trabalhe somente no projeto selecionado e respeite AGENTS.md e as regras do repositório.
 - Antes de alterar, inspecione o estado atual e preserve mudanças válidas existentes.
@@ -265,7 +272,7 @@ REGRAS DO JOGO:
 - Não avance para outra fase nesta tarefa. A próxima fase será liberada pelo Jogo de construção somente após esta tarefa ficar concluída.
 
 CRITÉRIO DE VITÓRIA:
-A fase termina somente quando a entrega descrita acima existe no repositório e as verificações aplicáveis foram executadas sem falhas não resolvidas.`;
+A fase termina somente quando existe evolução real no repositório, a entrega descrita acima existe de fato, o delta foi evidenciado e as verificações aplicáveis foram executadas sem falhas não resolvidas.`;
 
   const playPhase = async (phaseId, button) => {
     const phase = phases.find(item => item.id === phaseId);
