@@ -1,4 +1,12 @@
 (() => {
+  if (!document.querySelector('script[data-mobile-action-buttons="1"]')) {
+    const actions = document.createElement('script');
+    actions.src = '/assets/mobile-action-buttons.js?v=20260825-1';
+    actions.defer = true;
+    actions.dataset.mobileActionButtons = '1';
+    document.head.appendChild(actions);
+  }
+
   if (window.DevPilotResponses) return;
 
   const stack = document.createElement('section');
@@ -41,6 +49,21 @@
     window.setTimeout(() => balloon.remove(), 190);
   }
 
+  function clearPendingActions() {
+    document.querySelectorAll('[data-response-pending="1"]').forEach(button => {
+      button.classList.remove('dp-action-pending');
+      button.removeAttribute('aria-busy');
+      delete button.dataset.responsePending;
+    });
+  }
+
+  function markPendingAction(button) {
+    if (!(button instanceof HTMLButtonElement)) return;
+    button.classList.add('dp-action-pending');
+    button.setAttribute('aria-busy', 'true');
+    button.dataset.responsePending = '1';
+  }
+
   function clearLoading() {
     stack.querySelectorAll('.dp-response-balloon[data-type="loading"]').forEach(remove);
   }
@@ -49,7 +72,10 @@
     const text = String(message || '').trim();
     if (!text) return null;
     const type = options.type || classify(text);
-    if (type !== 'loading') clearLoading();
+    if (type !== 'loading') {
+      clearLoading();
+      clearPendingActions();
+    }
 
     const id = `dp-response-${++sequence}`;
     const balloon = document.createElement('article');
@@ -69,6 +95,10 @@
 
     while (stack.children.length > 4) remove(stack.lastElementChild);
 
+    document.dispatchEvent(new CustomEvent('devpilot:response', {
+      detail: {id, type, message: text},
+    }));
+
     if (!options.persistent) {
       const duration = Number(options.duration || (type === 'error' ? 6500 : type === 'warning' ? 5200 : 4000));
       window.setTimeout(() => remove(balloon), duration);
@@ -83,14 +113,16 @@
       const balloon = document.getElementById(id);
       if (!balloon?.isConnected) return;
       remove(balloon);
+      clearPendingActions();
       notify('A operação está demorando mais que o esperado. Você pode continuar aguardando ou tentar novamente.', {type: 'warning'});
-    }, Number(options.timeout || 15000));
+    }, Number(options.timeout || 10000));
     return id;
   }
 
   window.DevPilotResponses = {
     notify,
     clearLoading,
+    clearPendingActions,
     loading,
     success: (message, options = {}) => notify(message, {...options, type: 'success'}),
     error: (message, options = {}) => notify(message, {...options, type: 'error'}),
@@ -102,7 +134,9 @@
     const form = event.target;
     if (!(form instanceof HTMLFormElement)) return;
     const message = formMessages[form.id];
-    if (message) loading(message);
+    if (!message) return;
+    markPendingAction(event.submitter);
+    loading(message, {timeout: 10000});
   }, true);
 
   const legacyToast = document.querySelector('#toast');
