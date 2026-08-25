@@ -2,19 +2,22 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-JS = ROOT / "app" / "static" / "mobile-accordion-menu.js"
+LOADER_JS = ROOT / "app" / "static" / "mobile-accordion-menu.js"
+RESPONSES_JS = ROOT / "app" / "static" / "response-manager.js"
 CSS = ROOT / "app" / "static" / "mobile-accordion-menu.css"
 INDEX = ROOT / "app" / "static" / "index.html"
 
 
 def test_response_manager_is_loaded_with_mobile_shell():
     html = INDEX.read_text(encoding="utf-8")
+    loader = LOADER_JS.read_text(encoding="utf-8")
     assert "mobile-accordion-menu.js" in html
     assert "mobile-accordion-menu.css" in html
+    assert "/assets/response-manager.js" in loader
 
 
 def test_response_manager_exposes_status_types_and_form_feedback():
-    js = JS.read_text(encoding="utf-8")
+    js = RESPONSES_JS.read_text(encoding="utf-8")
     assert "window.DevPilotResponses" in js
     for response_type in ("success", "error", "warning", "info", "loading"):
         assert response_type in js
@@ -31,7 +34,7 @@ def test_response_manager_exposes_status_types_and_form_feedback():
 
 
 def test_response_manager_is_accessible_and_bounded():
-    js = JS.read_text(encoding="utf-8")
+    js = RESPONSES_JS.read_text(encoding="utf-8")
     assert "aria-live" in js
     assert "role', type === 'error' || type === 'warning' ? 'alert' : 'status'" in js
     assert "while (stack.children.length > 4)" in js
@@ -42,5 +45,5 @@ def test_response_balloons_have_mobile_safe_area_rules():
     css = CSS.read_text(encoding="utf-8")
     assert ".dp-response-stack" in css
     assert "env(safe-area-inset-top)" in css
-    assert "@media (max-width: 900px)" in css
+    assert "@media(max-width:900px)" in css
     assert ".dp-response-balloon" in css
