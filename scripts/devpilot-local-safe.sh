@@ -152,6 +152,28 @@ stop_server() {
   rm -f "$PID_FILE"
 }
 
+rollback_runtime() {
+  local target_sha="$1"
+  log "Rollback automático para ${target_sha:0:7}..."
+  stop_server || true
+  git reset --hard "$target_sha"
+  if ! assert_port_is_safe; then
+    log "ROLLBACK FALHOU: porta ${PORT} ficou sob controle de processo desconhecido."
+    return 1
+  fi
+  if ! start_server; then
+    log "ROLLBACK FALHOU: não foi possível iniciar a revisão anterior."
+    return 1
+  fi
+  if wait_for_health 30; then
+    log "ROLLBACK OK: versão anterior restaurada e saudável."
+    runtime_report
+    return 0
+  fi
+  log "ROLLBACK FALHOU: revisão anterior não respondeu com health válido."
+  return 1
+}
+
 cd "$ROOT"
 
 if [[ ! -x .venv/bin/python ]]; then
@@ -208,8 +230,18 @@ if [[ "${DEVPILOT_SAFE_RUN_TESTS:-0}" == "1" ]]; then
 fi
 
 log "Preflight aprovado em ${AFTER_SHA:0:7}. Só agora o processo antigo será reiniciado."
-stop_server
-start_server
+if ! stop_server; then
+  log "ERRO: processo antigo não encerrou com segurança. A nova versão não será iniciada."
+  exit 1
+fi
+
+if ! start_server; then
+  log "ERRO: a nova versão não pôde ser iniciada."
+  if [[ "$AFTER_SHA" != "$BEFORE_SHA" ]]; then
+    rollback_runtime "$BEFORE_SHA" || true
+  fi
+  exit 1
+fi
 
 if wait_for_health 30; then
   log "OK: DevPilot saudável e identificado em $HEALTH_URL"
@@ -225,13 +257,7 @@ runtime_report
 tail -n 80 "$LOG_FILE" 2>/dev/null || true
 
 if [[ "$AFTER_SHA" != "$BEFORE_SHA" ]]; then
-  log "Rollback automático para ${BEFORE_SHA:0:7}..."
-  stop_server
-  git reset --hard "$BEFORE_SHA"
-  start_server
-  if wait_for_health 30; then
-    log "ROLLBACK OK: versão anterior restaurada e saudável."
-    runtime_report
+  if rollback_runtime "$BEFORE_SHA"; then
     exit 1
   fi
 fi
