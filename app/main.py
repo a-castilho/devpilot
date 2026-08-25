@@ -56,7 +56,7 @@ _SCRIPT_SRC_RE = re.compile(
     r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
 )
 _SCRIPT_TAG_RE = re.compile(
-    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?v=[^"]*)?"[^>]*></script>',
+    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
     re.IGNORECASE,
 )
 _PREAUTH_SCRIPT_NAMES = {"app.js", "auth-ui.js"}
@@ -141,10 +141,6 @@ _FEATURE_AUTHENTICATED_SCRIPTS = {
         "build-game-url-bonus.js",
         "build-game-weapons.js",
     ],
-    "linux": [
-        "linux-terminal.js",
-        "linux-beginner-coach.js",
-    ],
 }
 
 # These modules create secondary admin/navigation capabilities or background
@@ -159,6 +155,8 @@ _INTERACTION_AUTHENTICATED_SCRIPTS = [
     "investia-admin.js",
     "investia-homologation.js",
     "career-linkedin.js",
+    "linux-terminal.js",
+    "linux-beginner-coach.js",
     "telemetry-capture.js",
     "telemetry-replay-capture.js",
 ]
@@ -438,7 +436,6 @@ def _authenticated_script_loader() -> str:
     if (target.closest('[data-example-project]')) return 'example';
     if (target.closest('#voice-hero, #voice-dock, #voice-start, [data-voice-action]')) return 'voice';
     if (target.closest('.project-ship-play, [data-build-game], [data-game-mode], [data-open-game]')) return 'game';
-    if (target.closest('[data-linux-view]')) return 'linux';
     return '';
   }};
 
@@ -457,7 +454,7 @@ def _authenticated_script_loader() -> str:
     event.stopImmediatePropagation();
     const replayTarget = target.closest(
       '[data-example-project], #voice-hero, #voice-dock, #voice-start, [data-voice-action], ' +
-      '.project-ship-play, [data-build-game], [data-game-mode], [data-open-game], [data-linux-view]'
+      '.project-ship-play, [data-build-game], [data-game-mode], [data-open-game]'
     );
     void loadFeature(feature).then(() => replayTarget?.click());
   }}, true);
