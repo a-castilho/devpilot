@@ -2,6 +2,50 @@
   if (document.getElementById('acs-homolog-loader')) return;
 
   /*
+   * Compatibilidade instalada ANTES de auth-ui/app.js/workspace-skins.js.
+   *
+   * 1) document.scripts é HTMLCollection em Chromium e não implementa forEach.
+   *    Alguns módulos antigos tratavam a coleção como Array e abortavam o boot.
+   * 2) auth-ui substitui o conteúdo do modal legado e remove #token/#save-token,
+   *    enquanto app.js ainda tenta registrar onclick nesses ids. Criamos âncoras
+   *    inertes fora do modal para que o runtime legado não quebre durante a
+   *    migração para o fluxo autenticado atual.
+   */
+  if (window.HTMLCollection && !HTMLCollection.prototype.forEach) {
+    Object.defineProperty(HTMLCollection.prototype, 'forEach', {
+      configurable: true,
+      writable: true,
+      value: Array.prototype.forEach,
+    });
+  }
+
+  const ensureLegacyAuthAnchors = () => {
+    if (!document.getElementById('token')) {
+      const token = document.createElement('input');
+      token.id = 'token';
+      token.type = 'hidden';
+      token.hidden = true;
+      token.tabIndex = -1;
+      token.value = localStorage.getItem('devpilot-token') || '';
+      token.dataset.devpilotLegacyAuthAnchor = '1';
+      document.body.appendChild(token);
+    }
+    if (!document.getElementById('save-token')) {
+      const save = document.createElement('button');
+      save.id = 'save-token';
+      save.type = 'button';
+      save.hidden = true;
+      save.tabIndex = -1;
+      save.dataset.devpilotLegacyAuthAnchor = '1';
+      document.body.appendChild(save);
+    }
+  };
+
+  // auth-ui é defer e troca o conteúdo de #auth-modal antes do núcleo autenticado.
+  // DOMContentLoaded ocorre antes de app.js ser carregado pelo scheduler assíncrono.
+  document.addEventListener('DOMContentLoaded', ensureLegacyAuthAnchors, {once: true});
+
+  /*
    * Proteção de runtime instalada antes de app.js/simplified-nav.js.
    * O menu possuía observers de atributos que reagiam a alterações de class/hidden
    * feitas pela própria sincronização do menu. Em Chromium/Brave isso pode manter
@@ -36,7 +80,7 @@
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260825-safe3';
+    link.href = '/assets/acs-loader.css?v=20260825-safe4';
     document.head.appendChild(link);
   }
 
