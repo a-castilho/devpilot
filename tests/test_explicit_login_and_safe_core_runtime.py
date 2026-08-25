@@ -19,10 +19,12 @@ def test_persisted_session_requires_explicit_resume():
 
 def test_fresh_login_releases_runtime_without_page_reload():
     auth = read("app/static/auth-ui.js")
+    login_block = auth.split("form?.addEventListener('submit'", 1)[1].split("function renderResumeSession", 1)[0]
 
-    assert "localStorage.setItem(TOKEN_KEY, data.access_token)" in auth
-    assert "completeAuth(true)" in auth
-    assert "scheduler autenticado" in auth
+    assert "localStorage.setItem(TOKEN_KEY, data.access_token)" in login_block
+    assert "completeAuth(true)" in login_block
+    assert "devpilot:login-complete" in login_block
+    assert "location.reload()" not in login_block
     assert "sessionStorage.getItem" not in auth
     assert "sessionStorage.setItem" not in auth
 
