@@ -37,6 +37,16 @@ def test_acs_loader_never_locks_body_or_pointer_input():
     assert "window.setTimeout(removeNow, 1400)" in loader
 
 
+def test_sidebar_attribute_observers_are_blocked_before_core_runtime():
+    loader = read("app/static/acs-loader.js")
+
+    assert "__devpilotNativeMutationObserver" in loader
+    assert "isSidebarNav" in loader
+    assert "watchesAttributes" in loader
+    assert "__devpilotBlockedSidebarObservers" in loader
+    assert "return super.observe(target, options)" in loader
+
+
 def test_token_usage_polling_is_not_part_of_core_boot():
     main = read("app/main.py")
     core_block = main.split("_CORE_AUTHENTICATED_SCRIPTS = [", 1)[1].split("]", 1)[0]
