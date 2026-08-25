@@ -9,6 +9,7 @@ from app.main import (
 )
 
 AUTH_UI = Path("app/static/auth-ui.js")
+APP_JS = Path("app/static/app.js")
 
 
 def test_pre_auth_html_keeps_only_auth_script():
@@ -77,3 +78,18 @@ def test_spa_keeps_app_js_behind_authenticated_loader():
     assert '"/assets/app.js?v=' in html
     assert "window.__devpilotAuthReady" in html
     assert "window.__devpilotBoot" in html
+
+
+def test_app_runtime_does_not_require_removed_legacy_login_button():
+    source = APP_JS.read_text(encoding="utf-8")
+    assert "const legacyTokenSubmit=$('#save-token')" in source
+    assert "if(legacyTokenSubmit)legacyTokenSubmit.onclick" in source
+    assert "$('#save-token').onclick" not in source
+
+
+def test_direct_index_route_uses_the_safe_authenticated_shell():
+    response = spa("index.html")
+    html = response.body.decode("utf-8")
+    assert '<script src="/assets/auth-ui.js?v=' in html
+    assert '<script src="/assets/app.js?v=' not in html
+    assert '"/assets/app.js?v=' in html
