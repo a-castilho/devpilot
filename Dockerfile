@@ -49,10 +49,13 @@ RUN ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin
     && node --version \
     && codex --version
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir '.[postgres]'
+# setuptools resolves the dynamic version from app.version and discovers app*
+# while building the wheel. The source tree therefore must exist before pip
+# evaluates pyproject.toml; copying only pyproject.toml makes the image build
+# fail with ModuleNotFoundError: app.
+COPY pyproject.toml README.md AGENTS.md ./
 COPY app ./app
-COPY README.md AGENTS.md ./
+RUN pip install --no-cache-dir '.[postgres]'
 
 RUN useradd --create-home --uid 10001 devpilot \
     && mkdir -p /data/repositories \
