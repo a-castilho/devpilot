@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 
 # DevPilot telemetry hook.
-# Source this file in an interactive Bash shell. It does not replace shell history,
-# and it only sends commands while the server reports an active telemetry session.
+# Capture is opt-in and only installs when an explicit telemetry access token is
+# available. Bootstrap credentials are never used for normal telemetry routes.
+
+if [[ "${DEVPILOT_TERMINAL_CAPTURE:-0}" != "1" || -z "${DEVPILOT_TELEMETRY_TOKEN:-}" ]]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 if [[ -n "${_DEVPILOT_CAPTURE_HOOK_INSTALLED:-}" ]]; then
   return 0 2>/dev/null || exit 0
@@ -21,6 +25,10 @@ __devpilot_capture_prompt() {
   local last_status=$?
   local command_text
   local capture_pid
+
+  if [[ "${DEVPILOT_TERMINAL_CAPTURE:-0}" != "1" || -z "${DEVPILOT_TELEMETRY_TOKEN:-}" ]]; then
+    return "$last_status"
+  fi
 
   command_text="$(HISTTIMEFORMAT= history 1 2>/dev/null | sed -E 's/^[[:space:]]*[0-9]+[[:space:]]+//')"
   if [[ -z "$command_text" || "$command_text" == "$_DEVPILOT_CAPTURE_LAST_COMMAND" ]]; then
