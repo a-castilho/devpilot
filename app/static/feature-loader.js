@@ -10,6 +10,10 @@
     mobileShell: ['mobile-accordion-menu.js'],
     profile: ['profile.js'],
     users: ['users.js'],
+    providers: [
+      'provider-models.js',
+      'provider-ollama.js',
+    ],
     projectBuilder: [
       'project-provisioning.js',
       'project-builder.js',
@@ -158,7 +162,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-9`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-10`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -331,6 +335,7 @@
   const TRIGGERS = [
     ['[data-project-builder-open]', 'projectBuilder'],
     ['[data-example-project]', 'example'],
+    ['.nav[data-view="providers"]', 'providers'],
     ['.nav[data-view="reports"]', 'reports'],
     ['.nav[data-view="tasks"]', 'tasks'],
     ['#voice-hero, #voice-dock', 'voice'],
