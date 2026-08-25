@@ -1,24 +1,31 @@
 from pathlib import Path
 
+from app.main import _CORE_AUTHENTICATED_SCRIPTS, _DEFERRED_AUTHENTICATED_SCRIPTS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 LOADER = ROOT / "app/static/acs-loader.js"
 MAIN = ROOT / "app/main.py"
+FEATURES = ROOT / "app/static/feature-loader.js"
 
 
-def test_authenticated_boot_has_strict_runtime_allowlist():
-    source = LOADER.read_text(encoding="utf-8")
-    assert "SAFE_AUTH_BOOT_SCRIPTS" in source
-    assert "'app.js'" in source
-    assert "'profile.js'" in source
-    assert "'users.js'" in source
-    assert "node.dataset.devpilotProgressive === '1'" in source
-    assert "node.dataset.devpilotSuppressed = '1'" in source
+def test_authenticated_boot_is_exactly_app_plus_feature_loader():
+    assert _CORE_AUTHENTICATED_SCRIPTS == ["app.js", "feature-loader.js"]
 
 
-def test_heavy_and_css_mutating_modules_are_not_allowed_during_boot():
-    source = LOADER.read_text(encoding="utf-8")
-    allowlist = source.split("SAFE_AUTH_BOOT_SCRIPTS = new Set([", 1)[1].split("]);", 1)[0]
+def test_backend_has_no_automatic_deferred_scheduler():
+    source = MAIN.read_text(encoding="utf-8")
+    loader = source.split("def _authenticated_script_loader()", 1)[1].split("@asynccontextmanager", 1)[0]
+
+    assert "deferredSources" not in loader
+    assert "loadDeferred" not in loader
+    assert "requestIdleCallback" not in loader
+    assert "data-devpilot-progressive" not in loader
+    assert "data.devpilotProgressive" not in loader
+    assert "script.dataset.devpilotCore = '1'" in loader
+
+
+def test_legacy_optional_inventory_is_never_part_of_core():
     for name in (
         "tasks-lazy-load.js",
         "simplified-nav.js",
@@ -27,21 +34,28 @@ def test_heavy_and_css_mutating_modules_are_not_allowed_during_boot():
         "build-game.js",
         "mobile-game-mode.js",
         "telemetry-capture.js",
+        "token-usage.js",
     ):
-        assert name not in allowlist
+        assert name not in _CORE_AUTHENTICATED_SCRIPTS
+        assert name in _DEFERRED_AUTHENTICATED_SCRIPTS
 
 
-def test_scheduler_scripts_are_suppressed_without_deadlocking_loader():
+def test_acs_loader_is_visual_only():
     source = LOADER.read_text(encoding="utf-8")
-    assert "queueMicrotask" in source
-    assert "typeof node.onload === 'function'" in source
-    assert "boot.suppressed" in source
-    assert "window.__devpilotNativeBodyAppend" in source
+
+    assert "body.appendChild =" not in source
+    assert "MutationObserver" not in source
+    assert "HTMLCollection.prototype.forEach" not in source
+    assert "ensureLegacyAuthAnchors" not in source
+    assert "loader.style.pointerEvents = 'none'" in source
 
 
-def test_backend_may_keep_legacy_lists_but_browser_gate_is_authoritative():
-    main = MAIN.read_text(encoding="utf-8")
-    assert "_CORE_AUTHENTICATED_SCRIPTS" in main
-    assert "_DEFERRED_AUTHENTICATED_SCRIPTS" in main
-    source = LOADER.read_text(encoding="utf-8")
-    assert "automaticRuntimeScript" in source
+def test_optional_features_require_explicit_loader_actions():
+    source = FEATURES.read_text(encoding="utf-8")
+
+    assert "window.__devpilotLoadFeature = loadFeature" in source
+    assert "FEATURE_BUNDLES" in source
+    assert "document.addEventListener('click'" in source
+    assert "data-devpilot-feature-placeholder" in source
+    assert "requestIdleCallback" not in source
+    assert "MutationObserver" not in source
