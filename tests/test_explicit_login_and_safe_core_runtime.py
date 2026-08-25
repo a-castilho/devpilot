@@ -17,16 +17,29 @@ def test_persisted_session_requires_explicit_resume():
     assert "renderResumeSession(token)" in auth
 
 
-def test_fresh_login_releases_runtime_without_page_reload():
+def test_fresh_login_hands_off_without_page_reload():
     auth = read("app/static/auth-ui.js")
     login_block = auth.split("form?.addEventListener('submit'", 1)[1].split("function renderResumeSession", 1)[0]
 
     assert "localStorage.setItem(TOKEN_KEY, data.access_token)" in login_block
-    assert "completeAuth(true)" in login_block
+    assert "handoffAuthenticatedRuntime(errorBox)" in login_block
     assert "devpilot:login-complete" in login_block
     assert "location.reload()" not in login_block
+    assert "completeAuth(true)" in auth
     assert "sessionStorage.getItem" not in auth
     assert "sessionStorage.setItem" not in auth
+
+
+def test_login_disables_backdrop_compositor_until_core_is_ready():
+    auth = read("app/static/auth-ui.js")
+
+    assert "devpilot-auth-pending" in auth
+    assert "backdrop-filter: none !important" in auth
+    assert "-webkit-backdrop-filter: none !important" in auth
+    assert "visibility: hidden !important" in auth
+    assert "document.addEventListener('devpilot:authenticated-core-ready', finish" in auth
+    assert "revealDashboard()" in auth
+    assert "devpilot:dashboard-revealed" in auth
 
 
 def test_auth_does_not_override_document_query_selector():
