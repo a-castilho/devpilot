@@ -135,7 +135,14 @@
     return `${actor} · ${linuxUser}`;
   };
 
+  const adminOpenSessions = new Set();
+
   const renderAdminSessions = (host, sessions = []) => {
+    const activeIds = new Set(sessions.map(session => String(session.id || '')));
+    for (const sessionId of [...adminOpenSessions]) {
+      if (!activeIds.has(sessionId)) adminOpenSessions.delete(sessionId);
+    }
+
     if (!sessions.length) {
       host.innerHTML = '<div class="empty">Nenhuma sessão Linux ativa agora.</div>';
       return;
@@ -155,6 +162,11 @@
         </div>
         <pre class="linux-admin-output" data-linux-admin-output></pre>
       </article>`).join('');
+
+    host.querySelectorAll('[data-linux-admin-session]').forEach(article => {
+      const sessionId = String(article.dataset.linuxAdminSession || '');
+      if (sessionId && adminOpenSessions.has(sessionId)) void readSessionOutput(sessionId, article, false);
+    });
   };
 
   const refreshAdminSessions = async () => {
@@ -168,11 +180,12 @@
     }
   };
 
-  const readSessionOutput = async (sessionId, article) => {
+  const readSessionOutput = async (sessionId, article, showLoading = true) => {
     const output = article.querySelector('[data-linux-admin-output]');
     if (!output) return;
+    adminOpenSessions.add(String(sessionId));
     output.classList.add('open');
-    output.textContent = 'Carregando saída…';
+    if (showLoading) output.textContent = 'Carregando saída…';
     try {
       const data = await apiRequest(`/api/linux/terminal/sessions/${encodeURIComponent(sessionId)}/output?after=0`);
       output.textContent = cleanOutput((data.chunks || []).map(chunk => chunk.text || '').join('')) || 'Sem saída registrada.';
@@ -196,6 +209,7 @@
     } catch (error) {
       const output = article.querySelector('[data-linux-admin-output]');
       if (output) {
+        adminOpenSessions.add(String(sessionId));
         output.classList.add('open');
         output.textContent = error.message;
       }
@@ -204,6 +218,7 @@
 
   const closeAdminSession = async sessionId => {
     await apiRequest(`/api/linux/terminal/sessions/${encodeURIComponent(sessionId)}`, {method: 'DELETE'});
+    adminOpenSessions.delete(String(sessionId));
     await refreshAdminSessions();
   };
 
@@ -224,6 +239,7 @@
       } catch (error) {
         const output = article.querySelector('[data-linux-admin-output]');
         if (output) {
+          adminOpenSessions.add(String(sessionId));
           output.classList.add('open');
           output.textContent = error.message;
         }
