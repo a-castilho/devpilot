@@ -25,14 +25,21 @@ def test_game_extras_are_owned_only_by_explicit_feature_loader():
     assert game_bundle is not None
     assets = re.findall(r"'([^']+\.js)'", game_bundle.group(1))
     assert assets == [
+        "game-workflow-adapter.js",
         "build-game.js",
         "build-game-subphases.js",
+        "build-game-repair-mission.js",
         "build-game-new-session.js",
         "build-game-url-bonus.js",
         "build-game-weapons.js",
+        "game-workflow-ui.js",
     ]
     for asset in assets:
         assert (STATIC / asset).is_file(), f"bundle do jogo referencia asset inexistente: {asset}"
+
+    # Adapter deve existir antes da UI; bridge deve ser o último consumidor.
+    assert assets.index("game-workflow-adapter.js") < assets.index("build-game.js")
+    assert assets.index("game-workflow-ui.js") > assets.index("build-game-weapons.js")
 
     assert "addPlaceholder('game', 'Modo Jogo')" in loader
     assert "loadFeature(feature)" in loader
