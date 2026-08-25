@@ -43,10 +43,32 @@ def test_game_placeholder_never_stays_loading_after_success_or_failure():
     loader = FEATURE_LOADER.read_text(encoding="utf-8")
 
     assert "function restorePlaceholder(button, original)" in loader
+    assert "function restorePendingPlaceholders()" in loader
     assert "restorePlaceholder(button, original);" in loader
     assert "removePlaceholder(feature);" in loader
     assert "if (!ok) {" in loader
     assert "Tente novamente." in loader
+
+
+def test_navigation_away_cancels_stale_game_open_intent():
+    loader = FEATURE_LOADER.read_text(encoding="utf-8")
+
+    assert "let navigationEpoch = 0;" in loader
+    assert "const intentEpoch = navigationEpoch;" in loader
+    assert "navigationEpoch += 1;" in loader
+    assert "restorePendingPlaceholders();" in loader
+    assert "if (intentEpoch !== navigationEpoch)" in loader
+    assert "finishStalePlaceholderIntent(button, feature, ok, original);" in loader
+    assert "if (intentEpoch !== navigationEpoch || !trigger.isConnected) return;" in loader
+
+
+def test_feature_script_loading_has_timeout_and_retryable_failure():
+    loader = FEATURE_LOADER.read_text(encoding="utf-8")
+
+    assert "FEATURE_SCRIPT_TIMEOUT_MS" in loader
+    assert "Timeout ao carregar" in loader
+    assert "script.dataset.devpilotFeatureLoadState = 'failed';" in loader
+    assert "script.remove();" in loader
 
 
 def test_feature_loader_does_not_replay_partial_features():
