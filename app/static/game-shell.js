@@ -8,16 +8,26 @@
   const STYLE_ID = 'devpilot-game-shell-style';
   const ROOT_ID = 'devpilot-game-shell';
   const VIEW_ID = 'build-game-view';
+  const METRICS = window.__devpilotGameRuntime = window.__devpilotGameRuntime || {
+    enters: 0,
+    exits: 0,
+    refreshes: 0,
+    classTransitions: 0,
+  };
+
   let originalParent = null;
   let originalNextSibling = null;
   let viewObserver = null;
+  let activeView = null;
+  let loadBuildGameWrapped = false;
+  let feedbackWired = false;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const link = document.createElement('link');
     link.id = STYLE_ID;
     link.rel = 'stylesheet';
-    link.href = '/assets/game-shell.css?v=20260825-1';
+    link.href = '/assets/game-shell.css?v=20260825-2';
     document.head.appendChild(link);
   }
 
@@ -80,29 +90,38 @@
   }
 
   function snapshot(view) {
-    const cards = view.querySelectorAll('.build-game-score > div strong');
+    const cards = view?.querySelectorAll?.('.build-game-score > div strong') || [];
     const project = cards[2]?.textContent?.trim() || '—';
     const xp = cards[1]?.textContent?.trim() || '0 XP';
     const progress = cards[0]?.textContent?.trim() || '0/6 fases';
-    const phase = view.querySelector('.build-game-phase.current .build-game-phase-copy strong')?.textContent?.trim()
-      || (view.querySelector('.build-game-victory') ? 'Missão concluída' : 'Aguardando próxima fase');
+    const phase = view?.querySelector?.('.build-game-phase.current .build-game-phase-copy strong')?.textContent?.trim()
+      || (view?.querySelector?.('.build-game-victory') ? 'Missão concluída' : 'Aguardando próxima fase');
     return {project, xp, progress, phase};
   }
 
-  function updateHud(view) {
+  function refresh(view = activeView || document.getElementById(VIEW_ID)) {
+    if (!view || !document.body.classList.contains('devpilot-game-mode')) return false;
     const root = ensureRoot();
     const state = snapshot(view);
     root.querySelector('[data-game-hud-project]').textContent = state.project;
     root.querySelector('[data-game-hud-xp]').textContent = state.xp;
     root.querySelector('[data-game-hud-progress]').textContent = state.progress.replace(' fases', '');
     root.querySelector('[data-game-hud-phase]').textContent = state.phase;
+    METRICS.refreshes += 1;
     events.emit('state', state);
+    return true;
   }
 
   function enterGame(view = document.getElementById(VIEW_ID)) {
+    if (!view) return false;
     const root = ensureRoot();
     const slot = root.querySelector('[data-game-slot]');
-    if (!slot || !view) return false;
+    if (!slot) return false;
+
+    const alreadyActive = activeView === view
+      && document.body.classList.contains('devpilot-game-mode')
+      && root.hidden === false
+      && view.parentNode === slot;
 
     if (!originalParent) {
       originalParent = view.parentNode;
@@ -112,8 +131,13 @@
     root.hidden = false;
     document.body.classList.add('devpilot-game-mode');
     view.classList.add('devpilot-game-view-mounted');
-    updateHud(view);
-    events.emit('entered', {mission_id: localStorage.getItem('devpilot-build-game-mission') || null});
+    activeView = view;
+    refresh(view);
+
+    if (!alreadyActive) {
+      METRICS.enters += 1;
+      events.emit('entered', {mission_id: localStorage.getItem('devpilot-build-game-mission') || null});
+    }
     return true;
   }
 
@@ -125,12 +149,17 @@
 
   function exitGame() {
     const root = document.getElementById(ROOT_ID);
-    const view = document.getElementById(VIEW_ID);
+    const view = activeView || document.getElementById(VIEW_ID);
+    const wasActive = document.body.classList.contains('devpilot-game-mode');
     restoreView(view);
     if (root) root.hidden = true;
     document.body.classList.remove('devpilot-game-mode');
     view?.classList.remove('devpilot-game-view-mounted');
-    events.emit('exited');
+    activeView = null;
+    if (wasActive) {
+      METRICS.exits += 1;
+      events.emit('exited');
+    }
     return true;
   }
 
@@ -138,34 +167,44 @@
     const view = document.getElementById(VIEW_ID);
     if (!view) return false;
     if (view.classList.contains('active')) return enterGame(view);
-    if (document.body.classList.contains('devpilot-game-mode')) exitGame();
+    if (document.body.classList.contains('devpilot-game-mode')) return exitGame();
     return true;
   }
 
-  window.DevPilotGameShell = Object.freeze({
-    enter: enterGame,
-    exit: exitGame,
-    sync,
-    snapshot: () => {
-      const view = document.getElementById(VIEW_ID);
-      return view ? snapshot(view) : null;
-    },
-  });
-
   function watchView(view) {
     if (!view || viewObserver) return;
-    viewObserver = new MutationObserver(() => {
-      if (view.classList.contains('active')) {
-        enterGame(view);
-        updateHud(view);
-      } else if (document.body.classList.contains('devpilot-game-mode')) {
-        exitGame();
-      }
+    viewObserver = new MutationObserver(records => {
+      if (!records.some(record => record.type === 'attributes' && record.attributeName === 'class')) return;
+      METRICS.classTransitions += 1;
+      if (view.classList.contains('active')) enterGame(view);
+      else if (document.body.classList.contains('devpilot-game-mode')) exitGame();
     });
-    viewObserver.observe(view, {attributes: true, attributeFilter: ['class'], childList: true, subtree: true});
+    // Intencionalmente NÃO observa childList/subtree. Renderizações internas do jogo
+    // não podem reentrar no shell nem disparar tempestade de eventos no mobile.
+    viewObserver.observe(view, {attributes: true, attributeFilter: ['class']});
+  }
+
+  function wrapGameLoader() {
+    if (loadBuildGameWrapped || typeof window.loadBuildGame !== 'function') return false;
+    const original = window.loadBuildGame;
+    if (original.__devpilotGameStableWrapper) {
+      loadBuildGameWrapped = true;
+      return true;
+    }
+    const wrapped = async (...args) => {
+      const result = await original(...args);
+      refresh();
+      return result;
+    };
+    wrapped.__devpilotGameStableWrapper = true;
+    window.loadBuildGame = wrapped;
+    loadBuildGameWrapped = true;
+    return true;
   }
 
   function wireGameFeedback() {
+    if (feedbackWired) return;
+    feedbackWired = true;
     document.addEventListener('click', event => {
       const phase = event.target.closest?.('#build-game-view [data-play-phase]');
       if (phase) {
@@ -181,20 +220,48 @@
     }, true);
   }
 
+  window.DevPilotGameShell = Object.freeze({
+    enter: enterGame,
+    exit: exitGame,
+    sync,
+    refresh,
+    snapshot: () => {
+      const view = activeView || document.getElementById(VIEW_ID);
+      return view ? snapshot(view) : null;
+    },
+    metrics: () => ({...METRICS}),
+  });
+
+  document.addEventListener('devpilot:feature-ready', event => {
+    if (event.detail?.feature !== 'game') return;
+    wrapGameLoader();
+    sync();
+  });
+
+  document.addEventListener('devpilot:game:rendered', () => refresh());
+
   function boot() {
     ensureStyle();
     ensureResponseManager();
     ensureRoot();
     wireGameFeedback();
-    if (sync()) watchView(document.getElementById(VIEW_ID));
-    const observer = new MutationObserver(() => {
-      const view = document.getElementById(VIEW_ID);
-      if (!view) return;
+    wrapGameLoader();
+
+    const view = document.getElementById(VIEW_ID);
+    if (view) {
       watchView(view);
+      sync();
+      return;
+    }
+
+    const observer = new MutationObserver(() => {
+      const current = document.getElementById(VIEW_ID);
+      if (!current) return;
+      watchView(current);
       sync();
       observer.disconnect();
     });
-    observer.observe(document.body, {childList: true, subtree: true});
+    observer.observe(document.body, {childList: true});
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
