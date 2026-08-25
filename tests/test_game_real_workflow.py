@@ -21,6 +21,9 @@ def test_game_workflow_preserves_authorization_shield():
     assert "SHIELD_BLOCKED" in source
     assert "before.requires_authorization" in source
     assert "fluxo normal de autorização" in source
+    assert "status === 'blocked' || status === 'awaiting_approval'" in source
+    assert "status === 'queued') return 'MISSION_READY'" in source
+    assert "queued' || status === 'awaiting_approval'" not in source
 
 
 def test_game_workflow_adapter_is_lazy_loaded_with_game_bundle():
