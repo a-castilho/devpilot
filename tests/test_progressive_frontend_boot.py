@@ -30,10 +30,13 @@ def test_task_limiter_is_core_and_telemetry_is_deferred():
     assert "telemetry-replay-capture.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
 
 
-def test_auth_validates_session_before_runtime():
+def test_auth_requires_explicit_resume_before_runtime():
     source = Path(STATIC / "auth-ui.js").read_text(encoding="utf-8")
-    assert "window.__devpilotAuthReady = validateStoredSession()" in source
+    assert "window.__devpilotAuthReady = new Promise" in source
+    assert "Continuar sessão" in source
+    assert "renderResumeSession(token)" in source
     assert "fetch('/api/auth/me'" in source
+    assert "validateStoredSession()" not in source
 
 
 def test_workspace_skin_has_no_global_dom_observer():
