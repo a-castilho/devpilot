@@ -15,7 +15,6 @@ from app.services.audit import record
 
 _RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning"}
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
-_REPO_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _ORIGINAL_RUN_DELIVERY = delivery.run_delivery
 
@@ -74,11 +73,13 @@ def _github_status_urls(repo_full_name: str, branch: str) -> list[str]:
 
 
 def _candidate_urls(db: Session, project: Project, state: dict) -> list[str]:
-    candidates: list[str] = []
+    """Return only public URLs with project-specific delivery provenance.
 
-    current = _safe_public_url(state.get("url"))
-    if current:
-        candidates.append(current)
+    Never synthesize a deployment URL from the repository/project slug. A readable
+    ``<name>.vercel.app`` hostname can belong to a different Vercel project, so an
+    HTTP 2xx alone is not sufficient proof that the build-game mission owns it.
+    """
+    candidates: list[str] = []
 
     providers = state.get("providers") if isinstance(state.get("providers"), dict) else {}
     for provider in ("vercel", "render"):
@@ -93,13 +94,15 @@ def _candidate_urls(db: Session, project: Project, state: dict) -> list[str]:
         if value not in candidates:
             candidates.append(value)
 
-    repo_name = repo_full_name.rsplit("/", 1)[-1].removesuffix(".git").strip()
-    if repo_name and _REPO_NAME_RE.fullmatch(repo_name):
-        value = f"https://{repo_name.lower()}.vercel.app"
-        if value not in candidates:
-            candidates.append(value)
-
     return candidates
+
+
+def _trusted_state_url(db: Session, project: Project, state: dict) -> str:
+    """Return the current state URL only when another project-owned source confirms it."""
+    current = _safe_public_url(state.get("url"))
+    if not current:
+        return ""
+    return current if current in _candidate_urls(db, project, state) else ""
 
 
 def _probe_public_url(url: str) -> tuple[bool, int]:
@@ -197,7 +200,7 @@ def _run_delivery_with_public_url_recovery(
         return _recover_public_url(db, project, actor, state)
 
     if status == "ready":
-        url = _safe_public_url(state.get("url"))
+        url = _trusted_state_url(db, project, state)
         if url:
             ok, _ = _probe_public_url(url)
             if ok:
@@ -242,7 +245,8 @@ def install_delivery_url_recovery() -> None:
     Managed Neon/Render/Vercel credentials remain the primary delivery path. The bridge makes
     that path consume the canonical credentials from Super Admin > Clouds. If managed deploy is
     still pending, DevPilot can also recover an already-published Vercel/Render URL. A build-game
-    mission is only considered delivered after the public URL is reachable.
+    mission is only considered delivered after the public URL is reachable and tied to this
+    project's delivery metadata.
     """
     install_delivery_cloud_bridge()
     current = delivery.run_delivery
