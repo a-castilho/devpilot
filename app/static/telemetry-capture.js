@@ -116,6 +116,16 @@
     }finally{flushing=false}
   };
 
+  const startFlushTimer=()=>{
+    if(flushTimer||!recording||!activeSession?.id)return;
+    flushTimer=setInterval(()=>void flush(),1500);
+  };
+  const stopFlushTimer=()=>{
+    if(!flushTimer)return;
+    clearInterval(flushTimer);
+    flushTimer=null;
+  };
+
   const nextPollDelay=()=>{
     if(document.hidden)return HIDDEN_POLL_MS;
     return recording?ACTIVE_POLL_MS:IDLE_POLL_MS;
@@ -139,6 +149,7 @@
         activeSession=next;recording=true;
         if(changed)restore(next);
         attach();
+        startFlushTimer();
         if(queue.length)void flush();
         return;
       }
@@ -147,7 +158,10 @@
         // persistida em localStorage para diagnóstico em vez de sumir silenciosamente.
         await flush();
         recording=false;detach();activeSession=null;
+        stopFlushTimer();
         if(!queue.length)persist();
+      }else{
+        stopFlushTimer();
       }
     }finally{
       syncing=false;
@@ -162,7 +176,6 @@
   };
 
   mountEntryPoint();
-  flushTimer=setInterval(()=>void flush(),1500);
   scheduleSync(0);
   document.addEventListener('visibilitychange',onVisibilityChange);
   window.addEventListener('pagehide',preserve,{capture:true});
@@ -170,7 +183,7 @@
     destroyed=true;
     persist();
     clearTimeout(pollTimer);
-    clearInterval(flushTimer);
+    stopFlushTimer();
     document.removeEventListener('visibilitychange',onVisibilityChange);
     detach();
   });
