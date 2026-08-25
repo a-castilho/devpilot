@@ -1,12 +1,42 @@
 (() => {
   if (document.getElementById('acs-homolog-loader')) return;
 
+  /*
+   * Proteção de runtime instalada antes de app.js/simplified-nav.js.
+   * O menu possuía observers de atributos que reagiam a alterações de class/hidden
+   * feitas pela própria sincronização do menu. Em Chromium/Brave isso pode manter
+   * uma fila contínua de microtasks e produzir "Page Unresponsive".
+   *
+   * Bloqueamos somente observers de ATRIBUTOS cujo alvo seja o <nav> principal.
+   * Observers de conteúdo usados por outros componentes continuam intactos.
+   */
+  if (!window.__devpilotNativeMutationObserver && window.MutationObserver) {
+    const NativeMutationObserver = window.MutationObserver;
+    window.__devpilotNativeMutationObserver = NativeMutationObserver;
+
+    class DevPilotSafeMutationObserver extends NativeMutationObserver {
+      observe(target, options = {}) {
+        const isSidebarNav = target instanceof Element
+          && target.matches('.sidebar > nav, .sidebar nav');
+        const watchesAttributes = Boolean(options && options.attributes);
+
+        if (isSidebarNav && watchesAttributes) {
+          window.__devpilotBlockedSidebarObservers = Number(window.__devpilotBlockedSidebarObservers || 0) + 1;
+          return;
+        }
+        return super.observe(target, options);
+      }
+    }
+
+    window.MutationObserver = DevPilotSafeMutationObserver;
+  }
+
   const stylesheetId = 'acs-homolog-loader-css';
   if (!document.getElementById(stylesheetId)) {
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260825-safe2';
+    link.href = '/assets/acs-loader.css?v=20260825-safe3';
     document.head.appendChild(link);
   }
 
