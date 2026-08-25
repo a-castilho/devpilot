@@ -8,10 +8,68 @@
     document.head.appendChild(responses);
   }
 
+  function ensureMobileRouteOverrides() {
+    if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
+    const style = document.createElement('style');
+    style.dataset.mobileSimpleRouteOverrides = '1';
+    style.textContent = `
+      @media (max-width: 900px) {
+        body.mobile-route .sidebar {
+          display: flex !important;
+          grid-template-columns: none !important;
+          align-items: stretch !important;
+          height: calc(68px + env(safe-area-inset-bottom)) !important;
+          padding: 6px max(6px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)) !important;
+        }
+        body.mobile-route .sidebar > nav,
+        body.mobile-route .sidebar > .mobile-nav-arrow,
+        body.mobile-route .sidebar > :not(.mobile-simple-nav) {
+          display: none !important;
+        }
+        body.mobile-route .sidebar > .mobile-simple-nav {
+          display: grid !important;
+          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+          gap: 4px !important;
+          width: 100% !important;
+          height: 52px !important;
+          margin: 0 !important;
+        }
+        body.mobile-route .mobile-simple-item {
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: none !important;
+          height: 52px !important;
+          min-height: 52px !important;
+          padding: 3px 2px !important;
+          border-radius: 11px !important;
+          font-size: inherit !important;
+        }
+        body.mobile-route .mobile-simple-item > span {
+          display: block !important;
+          font-size: 19px !important;
+          line-height: 1 !important;
+        }
+        body.mobile-route .mobile-simple-item > small {
+          display: block !important;
+          font-size: 9px !important;
+          line-height: 1.1 !important;
+        }
+        body.mobile-route .mobile-simple-item[data-simple-menu-open] {
+          flex: initial !important;
+          width: 100% !important;
+          min-width: 0 !important;
+          max-width: none !important;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   let waitObserver = null;
 
   function mountMobileMenu() {
     ensureResponseManager();
+    ensureMobileRouteOverrides();
     if (window.innerWidth > 900) return false;
     if (document.querySelector('.mobile-simple-nav')) return true;
 
