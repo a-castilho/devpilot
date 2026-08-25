@@ -59,27 +59,10 @@ def cloud_admin_connection(
     return token, str(metadata.get("scope") or "").strip()
 
 
-def _trial_cloud_entitled(workspace: Workspace) -> bool:
-    """Return True only when the workspace explicitly has an active managed-cloud trial.
-
-    The entitlement is stored in ``Workspace.settings_json`` so platform credentials are
-    never granted merely because managed mode is enabled. Missing, malformed, expired,
-    suspended, paid, or otherwise non-trial workspaces fail closed.
-    """
-    raw = getattr(workspace, "settings_json", None)
-    if not raw:
-        return False
-    try:
-        settings = json.loads(raw) if isinstance(raw, str) else raw
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return False
-    if not isinstance(settings, dict):
-        return False
-
-    entitlement = settings.get("managed_trial_clouds")
+def _trial_cloud_entitled(workspace_id: str, entitlements: dict[str, dict[str, object]]) -> bool:
+    """Validate an explicit platform-managed trial entitlement, failing closed."""
+    entitlement = entitlements.get(str(workspace_id))
     if not isinstance(entitlement, dict):
-        return False
-    if entitlement.get("eligible") is not True:
         return False
     if str(entitlement.get("status") or "").strip().lower() != "active":
         return False
@@ -101,14 +84,7 @@ def managed_trial_connection(
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    """Use DevPilot's platform credential only for an explicitly entitled trial workspace.
-
-    Trial users never receive the token. The credential remains encrypted in the
-    platform workspace and is consumed only by the backend. A workspace that has
-    its own Cloud Admin row is considered self-managed, even when that row is
-    intentionally disabled, so an explicit customer configuration is never
-    silently replaced by DevPilot's credential.
-    """
+    """Use DevPilot's platform credential only for an explicitly entitled active trial."""
     settings = get_settings()
     normalized = provider.strip().lower()
     if not settings.managed_trial_clouds_enabled:
@@ -117,9 +93,7 @@ def managed_trial_connection(
         return None
     if _cloud_admin_row(db, workspace_id, normalized) is not None:
         return None
-
-    workspace = db.get(Workspace, workspace_id)
-    if not workspace or not _trial_cloud_entitled(workspace):
+    if not _trial_cloud_entitled(workspace_id, settings.managed_trial_entitlements):
         return None
 
     platform = db.scalar(
@@ -145,7 +119,7 @@ def _connection_with_cloud_admin(
     if legacy is not None:
         return legacy
 
-    # 3. Only explicitly entitled, active trial workspaces get platform credentials.
+    # 3. Platform credentials are restricted to explicitly entitled active trials.
     return managed_trial_connection(db, workspace_id, provider)
 
 
@@ -177,7 +151,7 @@ def _request_json_with_cloud_scope(
 
 
 def install_delivery_cloud_bridge() -> None:
-    """Make product delivery consume self-managed or explicitly entitled trial cloud credentials."""
+    """Make product delivery consume self-managed or entitled trial cloud credentials."""
     if not getattr(delivery.connection, "_devpilot_cloud_admin_bridge", False):
         setattr(_connection_with_cloud_admin, "_devpilot_cloud_admin_bridge", True)
         delivery.connection = _connection_with_cloud_admin
