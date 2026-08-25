@@ -25,8 +25,12 @@ def test_feature_loader_does_no_menu_work_before_dashboard_reveal():
     assert "devpilot-auth-pending" in runtime
     assert "devpilot:dashboard-revealed" in runtime
     assert "initializePlaceholders" in runtime
+    assert "initializeAuthenticatedUi" in runtime
     tail = runtime.split("let placeholdersInitialized", 1)[1]
-    assert "document.addEventListener('devpilot:dashboard-revealed', initializePlaceholders" in tail
+    assert "document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi" in tail
+    init_block = runtime.split("function initializeAuthenticatedUi()", 1)[1].split("if (document.documentElement.classList.contains", 1)[0]
+    assert "initializePlaceholders();" in init_block
+    assert "initializeMobileShell();" in init_block
 
 
 def test_acs_loader_never_modifies_browser_primitives():

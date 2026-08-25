@@ -7,6 +7,7 @@
   let navigationEpoch = 0;
 
   const FEATURE_BUNDLES = Object.freeze({
+    mobileShell: ['mobile-accordion-menu.js'],
     profile: ['profile.js'],
     users: ['users.js'],
     projectBuilder: [
@@ -16,6 +17,10 @@
       'mobile-project-card-compact.js',
     ],
     reports: ['reports.js'],
+    tasks: [
+      'task-analytics.js',
+      'system-tests.js',
+    ],
     example: [
       'example-project.js',
       'example-project-mobile-training.js',
@@ -46,16 +51,19 @@
       'mission-control.js',
     ],
     game: [
-      'game-workflow-adapter.js',
+      'game-shell.js',
       'build-game.js',
       'build-game-subphases.js',
+      'build-game-repair-mission.js',
       'build-game-new-session.js',
       'build-game-url-bonus.js',
       'build-game-weapons.js',
-      'mobile-game-mode.js',
-      'game-linux-training.js',
     ],
-    audit: ['audit-integrity.js'],
+    audit: [
+      'audit-integrity.js',
+      'telemetry-capture.js',
+      'telemetry-replay-capture.js',
+    ],
   });
 
   const scriptName = src => {
@@ -150,7 +158,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-8`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-9`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -324,6 +332,7 @@
     ['[data-project-builder-open]', 'projectBuilder'],
     ['[data-example-project]', 'example'],
     ['.nav[data-view="reports"]', 'reports'],
+    ['.nav[data-view="tasks"]', 'tasks'],
     ['#voice-hero, #voice-dock', 'voice'],
     ['.nav[data-view="audit"]', 'audit'],
   ];
@@ -395,11 +404,32 @@
     addPlaceholder('admin', 'Super Admin', {superAdmin: true});
   }
 
-  if (document.documentElement.classList.contains('devpilot-auth-pending')) {
-    document.addEventListener('devpilot:dashboard-revealed', initializePlaceholders, {once: true});
-  } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializePlaceholders, {once: true});
-  } else {
-    initializePlaceholders();
+  let mobileShellRequested = false;
+  function initializeMobileShell() {
+    if (mobileShellRequested || !window.matchMedia('(max-width: 900px)').matches) return;
+    mobileShellRequested = true;
+    void loadFeature('mobileShell').then(ok => {
+      if (!ok) {
+        mobileShellRequested = false;
+        console.error('[DevPilot] Menu mobile não pôde ser inicializado.');
+      }
+    });
   }
+
+  function initializeAuthenticatedUi() {
+    initializePlaceholders();
+    initializeMobileShell();
+  }
+
+  if (document.documentElement.classList.contains('devpilot-auth-pending')) {
+    document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
+  } else {
+    initializeAuthenticatedUi();
+  }
+
+  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => {
+    if (event.matches) initializeMobileShell();
+  });
 })();

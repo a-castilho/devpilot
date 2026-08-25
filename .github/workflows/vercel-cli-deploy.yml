@@ -1,6 +1,6 @@
 name: Deploy DevPilot to Vercel via CLI
 
-# Manual fallback while GitHub Actions included minutes are exhausted.
+# Manual fallback while GitHub-hosted Actions minutes are exhausted.
 # Required repository secret: VERCEL_TOKEN.
 
 on:
@@ -16,7 +16,7 @@ permissions:
 jobs:
   deploy:
     name: Production deploy
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
 
     steps:
       - name: Checkout

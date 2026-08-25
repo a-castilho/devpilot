@@ -47,6 +47,20 @@ def test_each_game_phase_creates_an_executable_devpilot_task():
     assert "não use fallback que transforme falha em sucesso" in source
 
 
+def test_game_requires_real_repository_progress_in_every_phase():
+    source = BUILD_GAME_JS.read_text(encoding="utf-8")
+
+    assert "CONTRATO DE PROGRESSÃO REAL" in source
+    assert "Toda fase precisa deixar um delta persistente e verificável no projeto" in source
+    assert "git status --short" in source
+    assert "git diff --stat" in source
+    assert "ANTES, a MUDANÇA IMPLEMENTADA e o DEPOIS" in source
+    assert "NÃO marque a tarefa como concluída" in source
+    assert "URL pública é evidência de entrega, não prêmio que substitui código" in source
+    assert "Esta fase NÃO pode terminar apenas com análise" in source
+    assert "Se não houver delta funcional real, a fase deve permanecer incompleta ou falhar" in source
+
+
 def test_game_preserves_history_and_supports_new_missions():
     source = BUILD_GAME_JS.read_text(encoding="utf-8")
 

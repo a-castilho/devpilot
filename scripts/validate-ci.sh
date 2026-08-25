@@ -24,8 +24,12 @@ print(f"Python: {sys.executable} ({sys.version.split()[0]})")
 PY
 
 "$PYTHON_CMD" -m compileall -q app
+"$PYTHON_CMD" scripts/check-engineering-standards.py --changed
 
 node --check app/static/app.js
+node --check app/static/auth-ui.js
+node --check app/static/acs-loader.js
+node --check app/static/feature-loader.js
 node --check app/static/task-modal.js
 node --check app/static/task-image-upload.js
 node --check app/static/analysis-failure-actions.js
@@ -56,6 +60,8 @@ node --check app/static/build-game.js
 node --check app/static/build-game-subphases.js
 node --check app/static/build-game-url-bonus.js
 bash -n scripts/install-linux-agent.sh
+bash -n scripts/devpilot-local-safe.sh
+bash -n scripts/setup-github-self-hosted-runner.sh
 
 "$PYTHON_CMD" -m json.tool vercel.json >/dev/null
 node --check tools/build-vercel-static.mjs
