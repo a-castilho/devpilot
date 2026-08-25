@@ -16,6 +16,15 @@ command -v curl >/dev/null 2>&1 || fail "curl não encontrado."
 command -v tar >/dev/null 2>&1 || fail "tar não encontrado."
 command -v python3 >/dev/null 2>&1 || fail "python3 não encontrado."
 
+python3 - <<'PY' || exit $?
+import sys
+if sys.version_info < (3, 12):
+    raise SystemExit(
+        f"Erro: o runner do DevPilot requer Python 3.12+, encontrado {sys.version.split()[0]} em {sys.executable}"
+    )
+print(f"[devpilot-runner] Python OK: {sys.executable} ({sys.version.split()[0]})")
+PY
+
 gh auth status >/dev/null 2>&1 || fail "gh não está autenticado. Execute gh auth login primeiro."
 
 visibility="$(gh repo view "$REPO" --json visibility --jq '.visibility' 2>/dev/null || true)"
