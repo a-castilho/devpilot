@@ -53,6 +53,7 @@
   main.appendChild(section);
 
   let headerUser = null;
+  let savingProfile = false;
 
   function ensureProfileMounted() {
     const currentMain = document.querySelector('main');
@@ -102,7 +103,11 @@
   }
 
   async function request(path, options={}) {
-    const response = await fetch(path, {...options, headers: {...headers(), ...(options.headers||{})}});
+    const response = await fetch(path, {
+      cache: 'no-store',
+      ...options,
+      headers: {...headers(), ...(options.headers||{})},
+    });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha ao carregar perfil');
     return data;
@@ -143,24 +148,66 @@
         else avatar.textContent = initials(user.full_name || user.email || 'DP');
       }
       const submit = form.querySelector('button[type="submit"]');
-      if (submit) submit.disabled = Boolean(user.bootstrap);
+      if (submit) submit.disabled = Boolean(user.bootstrap) || savingProfile;
+      return user;
     } catch (error) {
       if (silent && headerUser) headerUser.hidden = true;
       if (!silent) window.toast ? window.toast(error.message) : console.error(error);
+      return null;
     }
   }
 
-  nav.addEventListener('click', showProfile);
-  profileForm()?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const f = new FormData(event.currentTarget);
-    const payload = Object.fromEntries(['full_name','phone','job_title','bio','avatar_url','locale','timezone'].map(k => [k, String(f.get(k)||'').trim() || null]));
+  async function saveProfile(form) {
+    if (!form || savingProfile) return;
+    savingProfile = true;
+    const submit = form.querySelector('button[type="submit"]');
+    const previousText = submit?.textContent || 'Salvar perfil';
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Salvando…';
+    }
+
+    const f = new FormData(form);
+    const payload = Object.fromEntries(
+      ['full_name','phone','job_title','bio','avatar_url','locale','timezone']
+        .map(k => [k, String(f.get(k)||'').trim() || null]),
+    );
+
     try {
       await request('/api/auth/me', {method:'PATCH', body:JSON.stringify(payload)});
       if (window.toast) window.toast('Perfil atualizado');
       await loadProfile();
-    } catch (error) { if (window.toast) window.toast(error.message); }
+    } catch (error) {
+      if (window.toast) window.toast(error.message);
+      else console.error(error);
+    } finally {
+      savingProfile = false;
+      const currentForm = profileForm();
+      const currentSubmit = currentForm?.querySelector('button[type="submit"]');
+      if (currentSubmit) {
+        currentSubmit.disabled = false;
+        currentSubmit.textContent = previousText;
+      }
+    }
+  }
+
+  nav.addEventListener('click', showProfile);
+
+  // Delegação em nível de documento: scripts de navegação podem mover/remontar a
+  // tela de perfil. O submit continua capturado mesmo que a instância visual mude.
+  document.addEventListener('submit', event => {
+    const form = event.target instanceof HTMLFormElement ? event.target : null;
+    if (!form || form.id !== 'profile-form') return;
+    event.preventDefault();
+    saveProfile(form);
+  }, true);
+
+  // O botão global Atualizar também recarrega a tela de Perfil quando ela está ativa.
+  document.querySelector('#refresh')?.addEventListener('click', () => {
+    if (section.classList.contains('active')) loadProfile();
   });
+
+  window.devpilotRefreshProfile = loadProfile;
 
   if (token()) {
     ensureHeaderUser();
