@@ -52,6 +52,7 @@
     ],
     game: [
       'game-shell.js',
+      'game-workflow-adapter.js',
       'build-game.js',
       'build-game-subphases.js',
       'build-game-repair-mission.js',
