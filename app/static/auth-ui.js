@@ -3,17 +3,6 @@
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
 
-  // Compatibilidade para o renderer legado de tarefas em app.js: ele usa o helper
-  // de elemento unico para '.approve' e em seguida chama forEach. Para esse seletor
-  // especifico, devolvemos a colecao correspondente; todos os demais seletores
-  // preservam o comportamento nativo de querySelector.
-  const nativeQuerySelector = document.querySelector.bind(document);
-  document.querySelector = selector => (
-    selector === '.approve'
-      ? document.querySelectorAll(selector)
-      : nativeQuerySelector(selector)
-  );
-
   let bootstrapRequired = false;
   let localBootstrapAvailable = false;
 
