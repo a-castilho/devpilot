@@ -14,18 +14,20 @@ def test_spa_does_not_restore_deprecated_feature_policy():
     assert "feature-policy" not in response.headers
 
 
-def test_initial_html_does_not_execute_dashboard_bundle_directly():
+def test_initial_html_contains_only_preauth_scripts_plus_inline_boot():
     html = spa("").body.decode("utf-8")
     assert '<script src="/assets/acs-loader.js?v=' in html
     assert '<script src="/assets/auth-ui.js?v=' in html
     assert '<script src="/assets/app.js?v=' not in html
+    assert '<script src="/assets/feature-loader.js?v=' not in html
     assert 'window.__devpilotBoot' in html
-    assert 'requestIdleCallback' in html
+    assert 'requestIdleCallback' not in html
+    assert 'deferredSources' not in html
 
 
-def test_task_limiter_is_core_and_telemetry_is_deferred():
-    assert _CORE_AUTHENTICATED_SCRIPTS[0] == "app.js"
-    assert "tasks-lazy-load.js" in _CORE_AUTHENTICATED_SCRIPTS
+def test_authenticated_core_is_minimal_and_optional_inventory_remains_available():
+    assert _CORE_AUTHENTICATED_SCRIPTS == ["app.js", "feature-loader.js"]
+    assert "tasks-lazy-load.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
     assert "telemetry-capture.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
     assert "telemetry-replay-capture.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
 
@@ -36,9 +38,11 @@ def test_auth_requires_explicit_resume_before_runtime():
     assert "Continuar sessão" in source
     assert "renderResumeSession(token)" in source
     assert "fetch('/api/auth/me'" in source
-    assert "validateStoredSession()" not in source
+    assert "completeAuth(true)" in source
 
 
-def test_workspace_skin_has_no_global_dom_observer():
-    source = Path(STATIC / "workspace-skins.js").read_text(encoding="utf-8")
+def test_acs_loader_is_not_a_runtime_guard_anymore():
+    source = Path(STATIC / "acs-loader.js").read_text(encoding="utf-8")
     assert "MutationObserver" not in source
+    assert "body.appendChild =" not in source
+    assert "SAFE_AUTH_BOOT_SCRIPTS" not in source
