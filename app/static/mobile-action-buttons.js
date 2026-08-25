@@ -1,6 +1,14 @@
 (() => {
   'use strict';
 
+  if (!document.querySelector('link[data-mobile-action-buttons="1"]')) {
+    const stylesheet = document.createElement('link');
+    stylesheet.rel = 'stylesheet';
+    stylesheet.href = '/assets/mobile-action-buttons.css?v=20260825-1';
+    stylesheet.dataset.mobileActionButtons = '1';
+    document.head.appendChild(stylesheet);
+  }
+
   if (window.__devpilotMobileActionsReady) return;
   window.__devpilotMobileActionsReady = true;
 
@@ -42,7 +50,7 @@
 
   function announceImmediateAction(button) {
     if (!isMobile() || !button?.classList?.contains('dp-mobile-action')) return;
-    if (button.type === 'submit' || button.closest('form')?.contains(button) && button.hasAttribute('form')) return;
+    if (button.type === 'submit') return;
     if (button.getAttribute('aria-busy') === 'true') return;
 
     const label = cleanLabel(button);
