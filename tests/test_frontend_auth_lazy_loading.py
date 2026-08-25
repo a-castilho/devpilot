@@ -72,7 +72,8 @@ def test_auth_ui_handles_expired_session_before_dashboard_boot():
 def test_task_approve_selector_uses_collection_without_global_dom_patch():
     app_source = APP_JS.read_text(encoding="utf-8")
     auth_source = AUTH_UI.read_text(encoding="utf-8")
-    assert "$('.approve').forEach" in app_source
+    assert ";$$('.approve').forEach" in app_source
+    assert ";$('.approve').forEach" not in app_source
     assert "document.querySelector = selector" not in auth_source
 
 
