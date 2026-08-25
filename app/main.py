@@ -8,11 +8,13 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
+import app.platform_models  # noqa: F401
 from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.audit_routes import router as audit_router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
+from app.chat_control_routes import require_chat_available, router as chat_control_router
 from app.chat_mode_routes import router as chat_mode_router
 from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
@@ -64,6 +66,7 @@ _PREAUTH_SCRIPT_NAMES = {"app.js", "auth-ui.js"}
 # are useful on every screen. Everything else is progressively initialized while
 # the browser is idle instead of monopolizing the main thread after login.
 _CORE_AUTHENTICATED_SCRIPTS = [
+    "super-admin-chat-control.js",
     "profile.js",
     "users.js",
     "consolidated-ui.js",
@@ -128,6 +131,17 @@ _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "audit-integrity.js",
     "mission-control.js",
 ]
+
+_CHAT_AUTHENTICATED_SCRIPTS = {
+    "super-admin-voice.js",
+    "voice-project-start.js",
+    "voice-local-update.js",
+    "voice-microphone-permission.js",
+    "voice-playback.js",
+    "voice-enhanced-ui.js",
+    "voice-chatgpt-layout.js",
+    "voice-insecure-lan-guard.js",
+}
 
 
 def _asset_revision(name: str) -> str:
@@ -228,13 +242,18 @@ def _authenticated_script_loader() -> str:
     )
     core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
     deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
+    chat_urls = json.dumps(
+        _script_urls([name for name in deferred_names if name in _CHAT_AUTHENTICATED_SCRIPTS]),
+        ensure_ascii=False,
+    )
     return f"""<script>
 (() => {{
   'use strict';
   const coreSources = {core_urls};
   const deferredSources = {deferred_urls};
+  const chatSources = new Set({chat_urls});
   const boot = window.__devpilotBoot = window.__devpilotBoot || {{
-    phase: 'waiting', loaded: [], failed: [], startedAt: Date.now()
+    phase: 'waiting', loaded: [], failed: [], skipped: [], startedAt: Date.now()
   }};
 
   const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
@@ -300,9 +319,19 @@ def _authenticated_script_loader() -> str:
   const loadDeferred = async () => {{
     // Let the overview become usable before optional game/voice/admin modules boot.
     await sleep(900);
+    const chatControl = window.__devpilotChatControl;
+    if (chatControl?.ready) {{
+      try {{ await chatControl.ready; }} catch (_) {{}}
+    }}
+    const chatEnabled = Boolean(window.__devpilotChatControl?.enabled);
+    boot.chatEnabled = chatEnabled;
     boot.phase = 'deferred';
     for (const src of deferredSources) {{
       if (!tokenExists()) break;
+      if (!chatEnabled && chatSources.has(src)) {{
+        boot.skipped.push(src);
+        continue;
+      }}
       while (document.hidden && tokenExists()) await sleep(1200);
       await whenIdle();
       await loadScript(src);
@@ -354,7 +383,8 @@ app.include_router(users_router)
 app.include_router(router)
 app.include_router(audit_router)
 app.include_router(career_router)
-app.include_router(chat_mode_router)
+app.include_router(chat_control_router)
+app.include_router(chat_mode_router, dependencies=[Depends(require_chat_available)])
 app.include_router(host_action_router)
 app.include_router(investia_admin_router)
 app.include_router(investia_public_router)
@@ -373,7 +403,7 @@ app.include_router(deploy_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
 app.include_router(telemetry_replay_router)
-app.include_router(voice_conversation_router)
+app.include_router(voice_conversation_router, dependencies=[Depends(require_chat_available)])
 app.include_router(voice_speech_router)
 app.include_router(
     voice_transcription_router,
