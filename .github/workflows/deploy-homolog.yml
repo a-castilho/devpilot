@@ -31,22 +31,56 @@ jobs:
             echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve Render homolog target
+        id: render
+        env:
+          CONFIGURED_BASE_URL: ${{ vars.RENDER_HOMOLOG_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="${CONFIGURED_BASE_URL:-https://devpilot-homolog.onrender.com}"
+          BASE_URL="${BASE_URL%/}"
+          case "$BASE_URL" in
+            https://*) ;;
+            *)
+              echo "::error::RENDER_HOMOLOG_BASE_URL must be an https URL."
+              exit 1
+              ;;
+          esac
+          echo "base_url=${BASE_URL}" >> "$GITHUB_OUTPUT"
+          echo "Render homolog target: ${BASE_URL}"
+
       - name: Trigger Render deploy when hook is configured
         env:
           HOOK: ${{ secrets.RENDER_HOMOLOG_DEPLOY_HOOK }}
           SHA: ${{ steps.commit.outputs.sha }}
         shell: bash
         run: |
+          set -euo pipefail
           if [ -z "$HOOK" ]; then
-            echo "::notice::RENDER_HOMOLOG_DEPLOY_HOOK not configured; relying on Render autoDeployTrigger=commit."
+            echo "::notice::RENDER_HOMOLOG_DEPLOY_HOOK not configured; expecting the linked Render service/Blueprint to auto-deploy after CI checks pass."
             exit 0
           fi
           SEP='?'; [[ "$HOOK" == *'?'* ]] && SEP='&'
           curl --fail --show-error --silent --request POST "${HOOK}${SEP}ref=${SHA}"
 
+      - name: Verify Render service is provisioned
+        env:
+          BASE_URL: ${{ steps.render.outputs.base_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -L -sS -o /tmp/devpilot-render-preflight.txt -w '%{http_code}' --max-time 20 "${BASE_URL}/health" || true)
+          if [ "$code" = "404" ]; then
+            echo "::error::Render homolog target returned HTTP 404. The devpilot-homolog service/Blueprint is not provisioned at this URL, or its onrender.com subdomain is disabled. Connect render.yaml in Render (New > Blueprint) or configure RENDER_HOMOLOG_BASE_URL for the actual service URL before retrying."
+            cat /tmp/devpilot-render-preflight.txt 2>/dev/null || true
+            exit 1
+          fi
+          echo "Render preflight HTTP ${code}; endpoint exists or is still starting."
+
       - name: Wait for homologation health
         env:
-          BASE_URL: https://devpilot-homolog.onrender.com
+          BASE_URL: ${{ steps.render.outputs.base_url }}
         shell: bash
         run: |
           set -euo pipefail
@@ -58,6 +92,11 @@ jobs:
               cat /tmp/devpilot-health.json
               exit 0
             fi
+            if [ "$code" = "404" ]; then
+              echo "::error::Render homolog target became HTTP 404 while waiting; refusing to treat an unprovisioned/wrong service URL as a deploy in progress."
+              cat /tmp/devpilot-health.json 2>/dev/null || true
+              exit 1
+            fi
             echo "attempt=${attempt} status=${code}; retrying in 10s"
             sleep 10
           done
@@ -67,7 +106,7 @@ jobs:
 
       - name: Verify SPA root is published
         env:
-          BASE_URL: https://devpilot-homolog.onrender.com
+          BASE_URL: ${{ steps.render.outputs.base_url }}
         shell: bash
         run: |
           set -euo pipefail
@@ -88,7 +127,3 @@ jobs:
             exit 1
           fi
           echo "DevPilot SPA root is online."
-
-# manual verification trigger: 2026-08-24T13:02:00-03:00 — project provisioning fallback redeploy
-# manual verification trigger: 2026-08-24T17:27:00-03:00 — Ollama local-first chat + five project ships
-# manual verification trigger: 2026-08-24T17:31:00-03:00 — visual project telemetry and compact cards
