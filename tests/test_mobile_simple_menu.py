@@ -31,6 +31,18 @@ def test_mobile_menu_reuses_authoritative_navigation_and_permissions():
     assert "new MutationObserver(sync)" in js
 
 
+def test_mobile_menu_bootstraps_after_dom_and_waits_for_sidebar():
+    js = MENU_JS.read_text(encoding="utf-8")
+
+    assert "function mountMobileMenu()" in js
+    assert "function bootstrapMobileMenu()" in js
+    assert "document.readyState === 'loading'" in js
+    assert "DOMContentLoaded" in js
+    assert "waitObserver.observe(document.documentElement" in js
+    assert "if (!sidebar || !sourceNav) return false" in js
+    assert "if (document.querySelector('.mobile-simple-nav')) return true" in js
+
+
 def test_mobile_menu_is_simple_not_favorites_search_or_nested_accordion():
     js = MENU_JS.read_text(encoding="utf-8")
 
@@ -71,6 +83,7 @@ def test_response_manager_is_loaded_once_from_mobile_runtime():
     responses = RESPONSE_JS.read_text(encoding="utf-8")
 
     assert "/assets/response-manager.js?v=20260825-1" in js
+    assert "data-response-manager" in js
     assert "window.DevPilotResponses" in responses
     assert "aria-live" in responses
     assert "data-type=\"loading\"" in responses
