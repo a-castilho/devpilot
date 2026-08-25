@@ -25,17 +25,24 @@ def test_backend_has_no_automatic_deferred_scheduler():
     assert "script.dataset.devpilotCore = '1'" in loader
 
 
-def test_legacy_optional_inventory_is_never_part_of_core():
-    for name in (
+def test_legacy_optional_runtime_is_never_part_of_automatic_boot():
+    legacy_runtime = (
         "tasks-lazy-load.js",
         "simplified-nav.js",
         "workspace-skins.js",
+    )
+    for name in legacy_runtime:
+        assert name not in _CORE_AUTHENTICATED_SCRIPTS
+        assert name not in _DEFERRED_AUTHENTICATED_SCRIPTS
+
+    optional_inventory = (
         "task-analytics.js",
         "build-game.js",
         "mobile-game-mode.js",
         "telemetry-capture.js",
         "token-usage.js",
-    ):
+    )
+    for name in optional_inventory:
         assert name not in _CORE_AUTHENTICATED_SCRIPTS
         assert name in _DEFERRED_AUTHENTICATED_SCRIPTS
 
