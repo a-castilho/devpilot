@@ -5,9 +5,57 @@
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
 
+  const root = document.documentElement;
+  const SAFE_STYLE_ID = 'devpilot-auth-compositor-safe';
   let bootstrapRequired = false;
   let localBootstrapAvailable = false;
   let resolveAuthReady;
+  let runtimeHandoffStarted = false;
+
+  function installCompositorSafeMode() {
+    if (!document.getElementById(SAFE_STYLE_ID)) {
+      const style = document.createElement('style');
+      style.id = SAFE_STYLE_ID;
+      style.textContent = `
+        dialog::backdrop {
+          background: #020811 !important;
+          backdrop-filter: none !important;
+          -webkit-backdrop-filter: none !important;
+        }
+        html.devpilot-auth-pending body {
+          background: #07111f !important;
+          background-image: none !important;
+        }
+        html.devpilot-auth-pending .shell,
+        html.devpilot-auth-pending .voice-dock,
+        html.devpilot-auth-pending .toast {
+          visibility: hidden !important;
+        }
+        html.devpilot-auth-pending dialog {
+          visibility: visible !important;
+          box-shadow: 0 18px 48px rgba(0,0,0,.55) !important;
+          transform: none !important;
+          animation: none !important;
+          transition: none !important;
+        }
+        html.devpilot-auth-pending *,
+        html.devpilot-auth-pending *::before,
+        html.devpilot-auth-pending *::after {
+          animation-play-state: paused !important;
+        }
+        @media (max-width: 900px) {
+          html.devpilot-auth-pending .sidebar {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    root.classList.add('devpilot-auth-pending');
+  }
+
+  installCompositorSafeMode();
 
   window.__devpilotAuthReady = new Promise(resolve => {
     resolveAuthReady = resolve;
@@ -28,6 +76,14 @@
     if (modal.open) modal.close();
   };
 
+  const revealDashboard = () => {
+    root.classList.remove('devpilot-auth-pending');
+    closeModal();
+    window.requestAnimationFrame(() => {
+      document.dispatchEvent(new CustomEvent('devpilot:dashboard-revealed'));
+    });
+  };
+
   const installLogout = () => {
     const header = document.querySelector('.header-actions');
     if (!header || document.querySelector('#logout')) return;
@@ -42,6 +98,38 @@
     });
     header.prepend(button);
   };
+
+  function handoffAuthenticatedRuntime(statusElement = null) {
+    if (runtimeHandoffStarted) return;
+    runtimeHandoffStarted = true;
+    installLogout();
+
+    if (statusElement) statusElement.textContent = 'Abrindo ambiente seguro…';
+
+    const finish = () => {
+      if (!runtimeHandoffStarted) return;
+      runtimeHandoffStarted = false;
+      revealDashboard();
+    };
+
+    document.addEventListener('devpilot:authenticated-core-ready', finish, {once: true});
+
+    // Caso o evento tenha ocorrido entre a validação e a instalação do listener.
+    queueMicrotask(() => {
+      if (window.__devpilotBoot?.phase === 'ready') finish();
+    });
+
+    completeAuth(true);
+
+    // Falha de asset não pode deixar um modal aparentemente congelado para sempre.
+    window.setTimeout(() => {
+      if (!root.classList.contains('devpilot-auth-pending')) return;
+      if (window.__devpilotBoot?.phase === 'failed') {
+        runtimeHandoffStarted = false;
+        if (statusElement) statusElement.textContent = 'Falha ao carregar a interface. Atualize a página.';
+      }
+    }, 8000);
+  }
 
   async function readStatus() {
     try {
@@ -69,6 +157,8 @@
   }
 
   function renderLoginForm(message = '') {
+    installCompositorSafeMode();
+    runtimeHandoffStarted = false;
     modal.innerHTML = `
       <form class="modal" id="auth-form">
         <span class="eyebrow">ACESSO</span>
@@ -103,6 +193,7 @@
       if (!errorBox || !submit) return;
       errorBox.textContent = '';
       submit.disabled = true;
+      submit.textContent = 'Validando…';
 
       const payload = {
         email: document.querySelector('#auth-email')?.value.trim() || '',
@@ -118,6 +209,7 @@
           if (!bootstrapToken) {
             errorBox.textContent = 'Informe o token de bootstrap.';
             submit.disabled = false;
+            submit.textContent = 'Entrar';
             return;
           }
           headers.Authorization = `Bearer ${bootstrapToken}`;
@@ -137,13 +229,12 @@
         }
 
         localStorage.setItem(TOKEN_KEY, data.access_token);
-        installLogout();
-        closeModal();
         document.dispatchEvent(new CustomEvent('devpilot:login-complete'));
-        completeAuth(true);
+        handoffAuthenticatedRuntime(errorBox);
       } catch (error) {
         errorBox.textContent = error.message || 'Falha na autenticação';
         submit.disabled = false;
+        submit.textContent = bootstrapRequired ? 'Criar Super Admin e entrar' : 'Entrar';
       }
     });
 
@@ -151,6 +242,8 @@
   }
 
   function renderResumeSession(token) {
+    installCompositorSafeMode();
+    runtimeHandoffStarted = false;
     modal.innerHTML = `
       <div class="modal" id="auth-resume">
         <span class="eyebrow">SESSÃO SALVA</span>
@@ -177,9 +270,7 @@
         renderLoginForm('A sessão não é mais válida. Entre novamente.');
         return;
       }
-      installLogout();
-      closeModal();
-      completeAuth(true);
+      handoffAuthenticatedRuntime(errorBox);
     });
 
     other?.addEventListener('click', () => {
