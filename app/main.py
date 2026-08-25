@@ -450,7 +450,8 @@ def telemetry_page():
 @app.get("/{path:path}", include_in_schema=False)
 def spa(path: str):
     candidate = STATIC / path
-    if path and candidate.is_file():
+    # index.html is the SPA entry point and must use the authenticated shell.
+    if path and candidate.is_file() and candidate != STATIC / "index.html":
         headers = None
         if candidate.suffix.lower() in {".html", ".htm"}:
             headers = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
