@@ -27,7 +27,14 @@ def test_initial_html_contains_only_preauth_scripts_plus_inline_boot():
 
 def test_authenticated_core_is_minimal_and_optional_inventory_remains_available():
     assert _CORE_AUTHENTICATED_SCRIPTS == ["app.js", "feature-loader.js"]
-    assert "tasks-lazy-load.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
+
+    # Paginação de tarefas agora pertence ao app.js e não pode voltar como
+    # módulo automático/deferred do pós-login.
+    assert "tasks-lazy-load.js" not in _CORE_AUTHENTICATED_SCRIPTS
+    assert "tasks-lazy-load.js" not in _DEFERRED_AUTHENTICATED_SCRIPTS
+
+    # Módulos realmente opcionais continuam apenas como inventário; o navegador
+    # não percorre essa lista durante autenticação.
     assert "telemetry-capture.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
     assert "telemetry-replay-capture.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
 
