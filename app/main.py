@@ -361,6 +361,14 @@ app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
 app.include_router(voice_transcription_router, dependencies=[Depends(require_ai_budget_access)])
 app.include_router(token_usage_router)
+
+
+@app.get("/assets/index.html", include_in_schema=False)
+def assets_index_shell():
+    """Never expose the raw SPA index through the static mount."""
+    return spa("index.html")
+
+
 app.mount("/assets", StaticFiles(directory=STATIC), name="assets")
 
 
