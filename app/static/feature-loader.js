@@ -44,7 +44,12 @@
       'career-linkedin.js',
       'mission-control.js',
     ],
-    game: ['build-game.js', 'mobile-game-mode.js', 'game-linux-training.js'],
+    game: [
+      'build-game.js',
+      'build-game-subphases.js',
+      'mobile-game-mode.js',
+      'game-linux-training.js',
+    ],
     audit: ['audit-integrity.js'],
   });
 
@@ -226,41 +231,36 @@
       delete trigger.dataset.devpilotFeatureReplay;
       return;
     }
-    if (featureState.get(feature)?.status === 'loaded') return;
+
+    const current = featureState.get(feature);
+    if (current?.status === 'loaded') return;
 
     event.preventDefault();
     event.stopImmediatePropagation();
     trigger.setAttribute('aria-busy', 'true');
-
-    void loadFeature(feature).then(() => {
+    void loadFeature(feature).then(ok => {
       trigger.removeAttribute('aria-busy');
+      if (!ok) window.toast?.(`Parte do módulo ${feature} não pôde ser carregada.`);
       if (!trigger.isConnected) return;
       trigger.dataset.devpilotFeatureReplay = '1';
       trigger.click();
     }).catch(error => {
       trigger.removeAttribute('aria-busy');
-      console.error(`[DevPilot] Falha ao abrir feature ${feature}`, error);
+      console.error(`[DevPilot] Falha ao abrir ${feature}`, error);
       window.toast?.(`Falha ao abrir ${feature}.`);
     });
   }, true);
 
-  async function installRolePlaceholders() {
-    if (!localStorage.getItem(TOKEN_KEY)) return;
+  function initializePlaceholders() {
     addPlaceholder('profile', 'Perfil');
-    addPlaceholder('game', 'Jogo');
-
-    try {
-      const response = await fetch('/api/auth/me', {
-        headers: {Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}`},
-        cache: 'no-store',
-      });
-      if (!response.ok) return;
-      const user = await response.json();
-      const role = String(user?.role || '').toUpperCase();
-      if (['SUPER_ADMIN', 'OWNER', 'ADMIN'].includes(role)) addPlaceholder('users', 'Usuários');
-      if (role === 'SUPER_ADMIN') addPlaceholder('admin', 'Super Admin', {superAdmin: true});
-    } catch (_) {}
+    addPlaceholder('users', 'Usuários');
+    addPlaceholder('game', 'Modo Jogo');
+    addPlaceholder('admin', 'Super Admin', {superAdmin: true});
   }
 
-  void installRolePlaceholders();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializePlaceholders, {once: true});
+  } else {
+    initializePlaceholders();
+  }
 })();
