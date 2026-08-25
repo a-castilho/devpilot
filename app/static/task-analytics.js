@@ -145,54 +145,67 @@
   else boot();
 })();
 
-/* Load project-scoped system testing workspace. */
+/*
+ * Legacy game/system assets used to be appended synchronously as soon as the
+ * analytics module loaded. That bypassed the authenticated boot scheduler and
+ * produced a burst of compilation, observers and duplicate build-game code on
+ * the main thread. Keep compatibility, but only after the main UI is ready and
+ * load one asset at a time during idle periods.
+ */
 (() => {
-  if (document.querySelector('script[data-system-tests-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/system-tests.js?v=20260824-1';
-  script.async = false;
-  script.dataset.systemTestsLoader = 'true';
-  document.head.appendChild(script);
-})();
+  'use strict';
+  const LEGACY_GAME_EXTRAS = [
+    {name:'system-tests.js', marker:'system-tests-loader'},
+    {name:'build-game-subphases.js', marker:'build-game-subphases-loader'},
+    {name:'build-game-new-session.js', marker:'build-game-new-session-loader'},
+    {name:'build-game-url-bonus.js', marker:'build-game-url-bonus-loader'},
+    {name:'build-game-weapons.js', marker:'build-game-weapons-loader'},
+  ];
+  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+  const whenIdle = () => new Promise(resolve => {
+    if ('requestIdleCallback' in window) window.requestIdleCallback(() => resolve(), {timeout: 2200});
+    else window.setTimeout(resolve, 220);
+  });
+  const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
 
-/* Load the progressive DevPilot build game. */
-(() => {
-  if (document.querySelector('script[data-build-game-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/build-game.js?v=20260824-2';
-  script.async = false;
-  script.dataset.buildGameLoader = 'true';
-  document.head.appendChild(script);
-})();
+  function alreadyLoaded(name) {
+    return [...document.scripts].some(script => {
+      if (!script.src) return false;
+      try { return new URL(script.src, location.href).pathname === `/assets/${name}`; }
+      catch (_) { return false; }
+    });
+  }
 
-/* Load automatic corrective subphases after the build game. */
-(() => {
-  if (document.querySelector('script[data-build-game-subphases-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/build-game-subphases.js?v=20260824-2';
-  script.async = false;
-  script.dataset.buildGameSubphasesLoader = 'true';
-  document.head.appendChild(script);
-})();
+  function loadAsset(asset) {
+    if (!tokenExists() || alreadyLoaded(asset.name) || document.querySelector(`script[data-${asset.marker}]`)) {
+      return Promise.resolve(true);
+    }
+    return new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = `/assets/${asset.name}?v=20260825-postboot1`;
+      script.async = false;
+      script.dataset[asset.marker.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = 'true';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
 
-/* Harden New game so a fresh mission resets progress, XP, log and victory state. */
-(() => {
-  if (document.querySelector('script[data-build-game-new-session-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/build-game-new-session.js?v=20260824-2';
-  script.async = false;
-  script.dataset.buildGameNewSessionLoader = 'true';
-  document.head.appendChild(script);
-})();
+  async function loadLegacyExtras() {
+    if (!tokenExists()) return;
+    await sleep(1200);
+    for (const asset of LEGACY_GAME_EXTRAS) {
+      if (!tokenExists()) break;
+      while (document.hidden && tokenExists()) await sleep(1200);
+      await whenIdle();
+      await loadAsset(asset);
+      await sleep(450);
+    }
+  }
 
-/* Load the victory reward that releases a verified test URL. */
-(() => {
-  if (document.querySelector('script[data-build-game-url-bonus-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/build-game-url-bonus.js?v=20260824-2';
-  script.async = false;
-  script.dataset.buildGameUrlBonusLoader = 'true';
-  document.head.appendChild(script);
+  const start = () => { void loadLegacyExtras(); };
+  if (window.__devpilotBoot?.phase === 'ready') start();
+  else document.addEventListener('devpilot:authenticated-ui-ready', start, {once:true});
 })();
 
 /* Compatibility guard: old workers could leave successful game tasks in review forever. */
@@ -211,14 +224,4 @@
   };
   wrappedApi.__buildGameReviewCompat = true;
   api = wrappedApi;
-})();
-
-/* Load the ship weapons development workshop. */
-(() => {
-  if (document.querySelector('script[data-build-game-weapons-loader]')) return;
-  const script = document.createElement('script');
-  script.src = '/assets/build-game-weapons.js?v=20260824-2';
-  script.async = false;
-  script.dataset.buildGameWeaponsLoader = 'true';
-  document.head.appendChild(script);
 })();
