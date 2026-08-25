@@ -44,7 +44,9 @@ def test_auth_requires_explicit_resume_before_runtime():
     assert "window.__devpilotAuthReady = new Promise" in source
     assert "Continuar sessão" in source
     assert "renderResumeSession(token)" in source
-    assert "fetch('/api/auth/me'" in source
+    assert "async function validateToken(token)" in source
+    assert "fetchWithTimeout('/api/auth/me'" in source
+    assert "Authorization: `Bearer ${token}`" in source
     assert "completeAuth(true)" in source
 
 

@@ -1,3 +1,6 @@
-"""DevPilot release version."""
+"""DevPilot release version.
 
-__version__ = "1.0.1"
+This module is the single source of truth for the application/package version.
+"""
+
+__version__ = "1.1.0"

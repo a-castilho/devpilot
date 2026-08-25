@@ -1,4 +1,5 @@
 import os
+import re
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -51,8 +52,16 @@ def test_replay_frontend_is_visual_only_and_captures_pointer_motion():
     assert "/assets/telemetry-replay.js" in html
 
 
-def test_spa_loads_pointer_capture_and_replay_router_is_registered():
+def test_spa_keeps_replay_capture_lazy_and_router_is_registered():
     main = read("app/main.py")
+    loader = read("app/static/feature-loader.js")
+
     assert "telemetry_replay_router" in main
     assert "app.include_router(telemetry_replay_router)" in main
-    assert "/assets/telemetry-replay-capture.js" in main
+    assert "/assets/telemetry-replay-capture.js" not in main
+
+    audit_bundle = re.search(r"audit:\s*\[(.*?)\]", loader, re.DOTALL)
+    assert audit_bundle is not None
+    assets = re.findall(r"'([^']+\.js)'", audit_bundle.group(1))
+    assert "telemetry-capture.js" in assets
+    assert "telemetry-replay-capture.js" in assets

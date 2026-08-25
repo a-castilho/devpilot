@@ -20,7 +20,7 @@ concurrency:
 jobs:
   aplicar:
     name: Aplicar compromisso em todos os Markdown
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
 
     steps:
       - name: Checkout
