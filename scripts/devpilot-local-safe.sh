@@ -20,6 +20,37 @@ health_ok() {
   grep -Eq '"service"[[:space:]]*:[[:space:]]*"devpilot"' <<<"$body"
 }
 
+port_inspection_available() {
+  command -v lsof >/dev/null 2>&1 || \
+    command -v fuser >/dev/null 2>&1 || \
+    command -v ss >/dev/null 2>&1
+}
+
+require_port_inspector() {
+  if port_inspection_available; then
+    return 0
+  fi
+  log "ERRO: não há lsof, fuser ou ss para identificar com segurança o dono da porta ${PORT}."
+  log "Operação recusada: o runtime local trabalha em fail-closed quando a porta não pode ser inspecionada."
+  return 1
+}
+
+port_has_listener() {
+  if command -v ss >/dev/null 2>&1; then
+    ss -H -ltn "sport = :${PORT}" 2>/dev/null | grep -q .
+    return $?
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | tail -n +2 | grep -q .
+    return $?
+  fi
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -n tcp "$PORT" >/dev/null 2>&1
+    return $?
+  fi
+  return 2
+}
+
 port_listener_pids() {
   if command -v lsof >/dev/null 2>&1; then
     lsof -t -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | awk '/^[0-9]+$/' | sort -u
@@ -29,7 +60,14 @@ port_listener_pids() {
     fuser -n tcp "$PORT" 2>/dev/null | tr ' ' '\n' | awk '/^[0-9]+$/' | sort -u
     return 0
   fi
-  pgrep -f "[u]vicorn app.main:app.*--port ${PORT}" 2>/dev/null || true
+  if command -v ss >/dev/null 2>&1; then
+    ss -H -ltnp "sport = :${PORT}" 2>/dev/null \
+      | grep -oE 'pid=[0-9]+' \
+      | cut -d= -f2 \
+      | sort -u || true
+    return 0
+  fi
+  return 2
 }
 
 pid_command() {
@@ -40,14 +78,26 @@ pid_command() {
 is_known_devpilot_pid() {
   local pid="$1"
   local cmd
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
   cmd="$(pid_command "$pid")"
   [[ "$cmd" == *"uvicorn"* && "$cmd" == *"app.main:app"* && "$cmd" == *"--port ${PORT}"* ]]
 }
 
 assert_port_is_safe() {
   local pid
+  if ! require_port_inspector; then
+    return 1
+  fi
+
   mapfile -t listeners < <(port_listener_pids)
-  ((${#listeners[@]} == 0)) && return 0
+  if ((${#listeners[@]} == 0)); then
+    if port_has_listener; then
+      log "ERRO: porta ${PORT} possui listener, mas o PID não pôde ser identificado com segurança."
+      log "Nada será encerrado ou iniciado automaticamente."
+      return 1
+    fi
+    return 0
+  fi
 
   if health_ok; then
     for pid in "${listeners[@]}"; do
@@ -71,10 +121,16 @@ assert_port_is_safe() {
 
 wait_for_port_free() {
   local attempts="${1:-20}"
-  local i
+  local i state
   for ((i=1; i<=attempts; i++)); do
-    mapfile -t listeners < <(port_listener_pids)
-    ((${#listeners[@]} == 0)) && return 0
+    port_has_listener
+    state=$?
+    if ((state == 1)); then
+      return 0
+    fi
+    if ((state == 2)); then
+      return 1
+    fi
     sleep 0.25
   done
   return 1
@@ -102,9 +158,12 @@ runtime_report() {
 }
 
 start_server() {
-  mapfile -t listeners < <(port_listener_pids)
-  if ((${#listeners[@]})); then
-    log "ERRO: recusando iniciar; porta ${PORT} ainda está ocupada por PID(s): ${listeners[*]}"
+  if ! assert_port_is_safe; then
+    return 1
+  fi
+  if port_has_listener; then
+    mapfile -t listeners < <(port_listener_pids)
+    log "ERRO: recusando iniciar; porta ${PORT} ainda está ocupada por PID(s): ${listeners[*]:-desconhecido}"
     return 1
   fi
 
@@ -174,6 +233,44 @@ rollback_runtime() {
   return 1
 }
 
+restore_after_shutdown_timeout() {
+  local target_sha="$1"
+  log "Restaurando checkout anterior ${target_sha:0:7} após timeout de shutdown..."
+  git reset --hard "$target_sha"
+
+  if health_ok; then
+    log "Revisão anterior restaurada no checkout; processo antigo continua saudável."
+    runtime_report
+    return 0
+  fi
+
+  log "Aguardando a porta ${PORT} ser liberada para reativar a revisão anterior..."
+  if wait_for_port_free 40; then
+    if ! assert_port_is_safe; then
+      return 1
+    fi
+    if ! start_server; then
+      return 1
+    fi
+    if wait_for_health 30; then
+      log "RECUPERAÇÃO OK: revisão anterior voltou após timeout de shutdown."
+      runtime_report
+      return 0
+    fi
+  fi
+
+  # Última verificação: o processo antigo pode ter voltado a responder enquanto
+  # aguardávamos. Nunca lançamos uma segunda instância sobre uma porta ocupada.
+  if health_ok; then
+    log "Revisão anterior está saudável após a espera de recuperação."
+    runtime_report
+    return 0
+  fi
+
+  log "RECUPERAÇÃO FALHOU: checkout anterior foi restaurado, mas o serviço não ficou saudável."
+  return 1
+}
+
 cd "$ROOT"
 
 if [[ ! -x .venv/bin/python ]]; then
@@ -184,6 +281,10 @@ fi
 if [[ -n "$(git status --porcelain)" ]]; then
   log "ERRO: existem alterações locais não commitadas. Nada foi atualizado nem encerrado."
   git status --short
+  exit 1
+fi
+
+if ! require_port_inspector; then
   exit 1
 fi
 
@@ -231,7 +332,10 @@ fi
 
 log "Preflight aprovado em ${AFTER_SHA:0:7}. Só agora o processo antigo será reiniciado."
 if ! stop_server; then
-  log "ERRO: processo antigo não encerrou com segurança. A nova versão não será iniciada."
+  log "ERRO: processo antigo não encerrou dentro do limite seguro. A nova versão não será iniciada."
+  if ! restore_after_shutdown_timeout "$BEFORE_SHA"; then
+    log "ERRO CRÍTICO: não foi possível garantir a continuidade da revisão anterior."
+  fi
   exit 1
 fi
 
