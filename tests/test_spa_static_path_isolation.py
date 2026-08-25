@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from app.main import STATIC, _safe_static_candidate
@@ -11,9 +12,11 @@ def test_index_html_never_bypasses_authenticated_shell():
 
 def test_static_candidate_cannot_escape_static_root():
     outside = Path(__file__).resolve()
-    relative_escape = f"../tests/{outside.name}"
+    relative_escape = os.path.relpath(outside, STATIC)
 
     assert outside.is_file()
+    assert relative_escape.startswith("..")
+    assert (STATIC / relative_escape).resolve() == outside
     assert _safe_static_candidate(relative_escape) is None
 
 
