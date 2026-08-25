@@ -16,6 +16,7 @@
 
   let bootstrapRequired = false;
   let localBootstrapAvailable = false;
+  let taskNavigationInFlight = false;
 
   modal.innerHTML = `
     <form class="modal" id="auth-form">
@@ -85,6 +86,67 @@
   // O bootstrap autenticado aguarda esta Promise. Assim, um token antigo nunca
   // dispara app.js, chat, voz ou outros módulos pesados enquanto o login está aberto.
   window.__devpilotAuthReady = validateStoredSession();
+
+  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+
+  async function waitForTaskRuntime() {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (typeof loadAllTasks === 'function' && typeof renderTasks === 'function' && typeof showView === 'function') {
+        return true;
+      }
+      await sleep(50);
+    }
+    return false;
+  }
+
+  async function ensureTaskLimiter() {
+    if (!(await waitForTaskRuntime())) return false;
+    if (document.querySelector('script[data-devpilot-task-limiter="1"]')) return true;
+
+    const existing = [...document.scripts].find(script => {
+      if (!script.src) return false;
+      try { return new URL(script.src, location.href).pathname === '/assets/tasks-lazy-load.js'; }
+      catch (_) { return false; }
+    });
+    if (existing) return true;
+
+    return new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = `/assets/tasks-lazy-load.js?v=safe-task-navigation-${Date.now()}`;
+      script.async = false;
+      script.dataset.devpilotTaskLimiter = '1';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  // app.js abre Desenvolvimento chamando loadAllTasks() imediatamente. O limitador
+  // precisa existir ANTES desse onclick; por isso este gate roda em capture phase.
+  document.addEventListener('click', event => {
+    const nav = event.target.closest?.('.nav[data-view="tasks"]');
+    if (!nav || taskNavigationInFlight) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    taskNavigationInFlight = true;
+
+    void (async () => {
+      try {
+        const limited = await ensureTaskLimiter();
+        if (!limited) {
+          console.error('[DevPilot] Não foi possível instalar o limitador da lista de tarefas.');
+          return;
+        }
+        if (typeof window.__devpilotLoadFeature === 'function') {
+          await window.__devpilotLoadFeature('tasks');
+        }
+        if (typeof showView === 'function') showView('tasks');
+      } finally {
+        taskNavigationInFlight = false;
+      }
+    })();
+  }, true);
 
   async function readStatus() {
     try {
