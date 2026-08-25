@@ -49,8 +49,6 @@
       'build-game-new-session.js',
       'build-game-url-bonus.js',
       'build-game-weapons.js',
-      'mobile-game-mode.js',
-      'game-linux-training.js',
     ],
     audit: ['audit-integrity.js'],
   });
@@ -74,25 +72,53 @@
 
   const shortYield = () => new Promise(resolve => window.setTimeout(resolve, 35));
 
+  function waitForExistingFeatureScript(script, name) {
+    return new Promise(resolve => {
+      const settle = ok => {
+        if (ok) {
+          script.dataset.devpilotFeatureLoadState = 'loaded';
+          loadedFiles.add(name);
+        } else {
+          script.dataset.devpilotFeatureLoadState = 'failed';
+          script.remove();
+        }
+        resolve(ok);
+      };
+
+      script.addEventListener('load', () => settle(true), {once: true});
+      script.addEventListener('error', () => settle(false), {once: true});
+    });
+  }
+
   function loadScript(name) {
     if (!name || loadedFiles.has(name)) return Promise.resolve(true);
 
     const existing = Array.from(document.scripts).find(script => scriptName(script.src) === name);
     if (existing) {
-      loadedFiles.add(name);
-      return Promise.resolve(true);
+      if (existing.dataset.devpilotFeatureLoadState === 'failed') {
+        existing.remove();
+      } else if (existing.dataset.devpilotFeatureScript === '1') {
+        return waitForExistingFeatureScript(existing, name);
+      } else {
+        loadedFiles.add(name);
+        return Promise.resolve(true);
+      }
     }
 
     return new Promise(resolve => {
       const script = document.createElement('script');
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-4`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-5`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
+      script.dataset.devpilotFeatureLoadState = 'loading';
       script.onload = () => {
+        script.dataset.devpilotFeatureLoadState = 'loaded';
         loadedFiles.add(name);
         resolve(true);
       };
       script.onerror = () => {
+        script.dataset.devpilotFeatureLoadState = 'failed';
+        script.remove();
         console.error(`[DevPilot] Falha ao carregar ${name}`);
         resolve(false);
       };
@@ -152,6 +178,13 @@
     document.querySelector(`[data-devpilot-feature-placeholder="${feature}"]`)?.remove();
   }
 
+  function restorePlaceholder(button, original) {
+    if (!button?.isConnected) return;
+    button.disabled = false;
+    button.textContent = original;
+    delete button.dataset.devpilotBusy;
+  }
+
   function findUsersNav() {
     return Array.from(document.querySelectorAll('.sidebar nav .nav'))
       .find(item => item.textContent?.trim() === 'Usuários');
@@ -164,39 +197,65 @@
     const original = button.textContent;
     button.textContent = `${original} · carregando…`;
 
-    if (feature === 'profile' || feature === 'users') removePlaceholder(feature);
+    try {
+      const ok = await loadFeature(feature);
+      if (!ok) {
+        const failures = featureState.get(feature)?.failures || [];
+        console.error(`[DevPilot] Módulo ${feature} incompleto`, failures);
+        window.toast?.(`Não foi possível carregar ${original}. Tente novamente.`);
+        restorePlaceholder(button, original);
+        return;
+      }
 
-    const ok = await loadFeature(feature);
-    if (!ok) {
-      window.toast?.(`Parte do módulo ${original} não pôde ser carregada.`);
-    }
+      await nextPaint();
 
-    await nextPaint();
+      if (feature === 'profile') {
+        const target = document.querySelector('.nav[data-profile-view="1"], .nav[data-view="profile"]');
+        if (!target) {
+          window.toast?.('Perfil foi carregado, mas a navegação não ficou disponível.');
+          restorePlaceholder(button, original);
+          return;
+        }
+        removePlaceholder(feature);
+        target.click();
+        return;
+      }
 
-    if (feature === 'profile') {
-      document.querySelector('.nav[data-profile-view="1"], .nav[data-view="profile"]')?.click();
-      return;
-    }
-    if (feature === 'users') {
-      findUsersNav()?.click();
-      return;
-    }
-    if (feature === 'game') {
-      const target = document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"], [data-build-game]');
-      if (target) target.click();
-      else window.toast?.('Modo Jogo carregado.');
-      return;
-    }
-    if (feature === 'admin') {
-      button.remove();
-      window.toast?.('Módulos Super Admin carregados.');
-      return;
-    }
+      if (feature === 'users') {
+        const target = findUsersNav();
+        if (!target) {
+          window.toast?.('Usuários foi carregado, mas a navegação não ficou disponível.');
+          restorePlaceholder(button, original);
+          return;
+        }
+        removePlaceholder(feature);
+        target.click();
+        return;
+      }
 
-    if (button.isConnected) {
-      button.disabled = false;
-      button.textContent = original;
-      delete button.dataset.devpilotBusy;
+      if (feature === 'game') {
+        const target = document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"], [data-build-game]');
+        if (!target) {
+          window.toast?.('Modo Jogo foi carregado, mas a navegação não ficou disponível.');
+          restorePlaceholder(button, original);
+          return;
+        }
+        removePlaceholder(feature);
+        target.click();
+        return;
+      }
+
+      if (feature === 'admin') {
+        removePlaceholder(feature);
+        window.toast?.('Módulos Super Admin carregados.');
+        return;
+      }
+
+      restorePlaceholder(button, original);
+    } catch (error) {
+      console.error(`[DevPilot] Falha ao abrir ${feature}`, error);
+      window.toast?.(`Falha ao abrir ${original}.`);
+      restorePlaceholder(button, original);
     }
   }
 
@@ -242,7 +301,12 @@
     trigger.setAttribute('aria-busy', 'true');
     void loadFeature(feature).then(ok => {
       trigger.removeAttribute('aria-busy');
-      if (!ok) window.toast?.(`Parte do módulo ${feature} não pôde ser carregada.`);
+      if (!ok) {
+        const failures = featureState.get(feature)?.failures || [];
+        console.error(`[DevPilot] Módulo ${feature} incompleto`, failures);
+        window.toast?.(`Parte do módulo ${feature} não pôde ser carregada.`);
+        return;
+      }
       if (!trigger.isConnected) return;
       trigger.dataset.devpilotFeatureReplay = '1';
       trigger.click();
