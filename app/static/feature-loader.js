@@ -47,12 +47,14 @@
       'mission-control.js',
     ],
     game: [
+      'game-workflow-adapter.js',
       'build-game.js',
       'build-game-subphases.js',
       'build-game-repair-mission.js',
       'build-game-new-session.js',
       'build-game-url-bonus.js',
       'build-game-weapons.js',
+      'game-workflow-ui.js',
     ],
     audit: ['audit-integrity.js'],
   });
@@ -149,7 +151,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-8`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-9`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
