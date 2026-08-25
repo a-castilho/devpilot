@@ -47,6 +47,7 @@
       'mission-control.js',
     ],
     game: [
+      'game-shell.js',
       'build-game.js',
       'build-game-subphases.js',
       'build-game-repair-mission.js',
@@ -149,7 +150,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-8`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-9`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -411,9 +412,6 @@
     initializeMobileShell();
   }
 
-  // Não altera o menu enquanto o modal de autenticação está ativo. O loader
-  // pode ser baixado no core, mas seu primeiro trabalho de DOM só acontece
-  // depois que o dashboard foi revelado.
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
     document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
   } else if (document.readyState === 'loading') {

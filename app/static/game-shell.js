@@ -21,6 +21,15 @@
     document.head.appendChild(link);
   }
 
+  function ensureResponseManager() {
+    if (window.DevPilotResponses || document.querySelector('script[data-game-response-manager="1"]')) return;
+    const script = document.createElement('script');
+    script.src = '/assets/response-manager.js?v=20260825-2';
+    script.async = false;
+    script.dataset.gameResponseManager = '1';
+    document.head.appendChild(script);
+  }
+
   const listeners = new Map();
   const events = window.DevPilotGameEvents = window.DevPilotGameEvents || {
     emit(type, detail = {}) {
@@ -162,6 +171,7 @@
 
   function boot() {
     ensureStyle();
+    ensureResponseManager();
     ensureRoot();
     wireGameFeedback();
     if (sync()) watchView(document.getElementById(VIEW_ID));
