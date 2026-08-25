@@ -2,6 +2,10 @@
   'use strict';
 
   const MAX_ERROR_TEXT = 220;
+  const TASK_GET_TTL_MS = 5000;
+  const TASK_GET_HIDDEN_TTL_MS = 30000;
+  const taskReadsInFlight = new Map();
+  const taskReadCache = new Map();
 
   function normalizeErrorDetail(data, raw, status) {
     if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail.trim();
@@ -22,40 +26,78 @@
     return `Falha na operação (HTTP ${status})`;
   }
 
+  function isTaskCollectionRead(path, method) {
+    return method === 'GET' && /^\/tasks(?:\?|$)/.test(String(path || ''));
+  }
+
+  function clearTaskReadCache() {
+    taskReadCache.clear();
+  }
+
+  async function performApiRequest(path, options, token) {
+    const headers = {'Authorization': `Bearer ${token}`, ...options.headers};
+    if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+
+    let response;
+    try {
+      response = await fetch(`/api${path}`, {...options, headers});
+    } catch (_) {
+      throw new Error('Sem conexão com o DevPilot. Verifique a rede e tente novamente.');
+    }
+
+    const raw = await response.text();
+    let data = {};
+    if (raw) {
+      try {
+        data = JSON.parse(raw);
+      } catch (_) {
+        data = {};
+      }
+    }
+
+    if (response.status === 401) {
+      document.querySelector('#auth-modal')?.showModal?.();
+      throw new Error('Autenticação necessária');
+    }
+    if (!response.ok) throw new Error(normalizeErrorDetail(data, raw, response.status));
+    return data;
+  }
+
   function installDetailedApiErrors() {
     if (typeof api !== 'function' || api.__devpilotDetailedErrors) return;
 
     const improvedApi = async (path, options = {}) => {
       const token = localStorage.getItem('devpilot-token') || '';
-      const headers = {'Authorization': `Bearer ${token}`, ...options.headers};
-      if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
+      const method = String(options.method || 'GET').toUpperCase();
+      const taskRead = isTaskCollectionRead(path, method);
+      const requestKey = taskRead ? `${token}:${path}` : '';
 
-      let response;
+      if (taskRead) {
+        const cached = taskReadCache.get(requestKey);
+        const ttl = document.hidden ? TASK_GET_HIDDEN_TTL_MS : TASK_GET_TTL_MS;
+        if (cached && Date.now() - cached.savedAt < ttl) return cached.data;
+
+        const pending = taskReadsInFlight.get(requestKey);
+        if (pending) return pending;
+      } else if (method !== 'GET' && /^\/tasks(?:\/|\?|$)/.test(String(path || ''))) {
+        clearTaskReadCache();
+      }
+
+      const request = performApiRequest(path, options, token);
+      if (!taskRead) return request;
+
+      taskReadsInFlight.set(requestKey, request);
       try {
-        response = await fetch(`/api${path}`, {...options, headers});
-      } catch (_) {
-        throw new Error('Sem conexão com o DevPilot. Verifique a rede e tente novamente.');
+        const data = await request;
+        taskReadCache.set(requestKey, {savedAt: Date.now(), data});
+        return data;
+      } finally {
+        if (taskReadsInFlight.get(requestKey) === request) taskReadsInFlight.delete(requestKey);
       }
-
-      const raw = await response.text();
-      let data = {};
-      if (raw) {
-        try {
-          data = JSON.parse(raw);
-        } catch (_) {
-          data = {};
-        }
-      }
-
-      if (response.status === 401) {
-        document.querySelector('#auth-modal')?.showModal?.();
-        throw new Error('Autenticação necessária');
-      }
-      if (!response.ok) throw new Error(normalizeErrorDetail(data, raw, response.status));
-      return data;
     };
 
     improvedApi.__devpilotDetailedErrors = true;
+    improvedApi.__devpilotTaskReadCoalescing = true;
     api = improvedApi;
   }
 
