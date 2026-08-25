@@ -61,6 +61,7 @@ node --check app/static/build-game-subphases.js
 node --check app/static/build-game-url-bonus.js
 bash -n scripts/install-linux-agent.sh
 bash -n scripts/devpilot-local-safe.sh
+bash -n scripts/setup-github-self-hosted-runner.sh
 
 "$PYTHON_CMD" -m json.tool vercel.json >/dev/null
 node --check tools/build-vercel-static.mjs
