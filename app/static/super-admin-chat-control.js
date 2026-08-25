@@ -3,8 +3,8 @@
 
   if (window.__devpilotChatControl?.installed) return;
 
-  let resolveReady;
-  const ready = new Promise(resolve => { resolveReady = resolve; });
+  let releaseDeferred;
+  const ready = new Promise(resolve => { releaseDeferred = resolve; });
   const control = window.__devpilotChatControl = {
     installed: true,
     enabled: false,
@@ -12,6 +12,13 @@
     source: 'default',
     updatedAt: null,
     ready,
+    deferredReleased: false,
+    releaseDeferred() {
+      if (control.deferredReleased) return;
+      control.deferredReleased = true;
+      releaseDeferred?.(control);
+      releaseDeferred = null;
+    },
   };
 
   const token = () => localStorage.getItem('devpilot-token') || '';
@@ -19,6 +26,109 @@
     Authorization: `Bearer ${token()}`,
     'Content-Type': 'application/json',
   });
+
+  // O loader global de main.py aguarda control.ready antes de iniciar dezenas de
+  // módulos opcionais. Nesta versão o Promise fica pendente de propósito: a Visão
+  // geral permanece leve e cada área carrega somente o seu bundle quando o usuário
+  // realmente entra nela. Isso evita a segunda rajada de JS que congelava o Brave.
+  const FEATURE_BUNDLES = {
+    organizations: ['organization-normalization-ui.js'],
+    projects: [
+      'project-provisioning.js',
+      'project-builder.js',
+      'project-description-profile.js',
+      'mobile-project-card-compact.js',
+    ],
+    tasks: [
+      'task-modal.js',
+      'task-analytics.js',
+      'task-failures.js',
+      'task-image-upload.js',
+      'tasks-lazy-load.js',
+      'approval-slider.js',
+      'analysis-commercial-proposal.js',
+      'analysis-failure-actions.js',
+      'analysis-incomplete-commercial.js',
+    ],
+    providers: ['provider-models.js', 'provider-ollama.js'],
+    reports: ['reports.js'],
+    audit: ['audit-integrity.js'],
+  };
+
+  const loadedAssets = new Set();
+  const loadingAssets = new Map();
+
+  const idle = () => new Promise(resolve => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => resolve(), {timeout: 1200});
+    } else {
+      window.setTimeout(resolve, 80);
+    }
+  });
+
+  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+
+  function alreadyLoaded(name) {
+    return [...document.scripts].some(script => {
+      if (!script.src) return false;
+      try { return new URL(script.src, location.href).pathname === `/assets/${name}`; }
+      catch (_) { return false; }
+    });
+  }
+
+  function loadAsset(name) {
+    if (loadedAssets.has(name) || alreadyLoaded(name)) {
+      loadedAssets.add(name);
+      return Promise.resolve(true);
+    }
+    if (loadingAssets.has(name)) return loadingAssets.get(name);
+
+    const task = new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = `/assets/${name}?v=20260825-safe-boot-v2`;
+      script.async = false;
+      script.dataset.devpilotFeatureLazy = '1';
+      script.onload = () => {
+        loadedAssets.add(name);
+        loadingAssets.delete(name);
+        resolve(true);
+      };
+      script.onerror = () => {
+        loadingAssets.delete(name);
+        resolve(false);
+      };
+      document.body.appendChild(script);
+    });
+    loadingAssets.set(name, task);
+    return task;
+  }
+
+  async function loadBundle(view) {
+    const names = FEATURE_BUNDLES[view] || [];
+    for (const name of names) {
+      await idle();
+      await loadAsset(name);
+      await sleep(120);
+    }
+  }
+
+  window.__devpilotLoadFeature = loadBundle;
+
+  function installFeatureLazyLoading() {
+    if (document.documentElement.dataset.featureLazyInstalled === '1') return;
+    document.documentElement.dataset.featureLazyInstalled = '1';
+
+    document.addEventListener('click', event => {
+      const nav = event.target.closest?.('.nav[data-view]');
+      if (nav) void loadBundle(String(nav.dataset.view || ''));
+
+      const opener = event.target.closest?.('[data-open="task-modal"]');
+      if (opener) void loadBundle('tasks');
+
+      const projectBuilder = event.target.closest?.('[data-project-builder-open]');
+      if (projectBuilder) void loadBundle('projects');
+    }, true);
+  }
 
   function setAssistantPresentation(enabled, reason = '') {
     document.documentElement.dataset.devpilotChatEnabled = enabled ? 'true' : 'false';
@@ -79,22 +189,16 @@
     return data;
   }
 
-  async function refreshControl({settleReady = false} = {}) {
+  async function refreshControl() {
     try {
       const data = await request('/chat/control');
       applyControl(data);
     } catch (_) {
-      // Fail closed: if control state cannot be read, chat stays disabled.
       applyControl({
         enabled: false,
         reason: 'Estado do chat indisponível; mantido desligado por segurança.',
         source: 'fail-closed',
       });
-    } finally {
-      if (settleReady && resolveReady) {
-        resolveReady(control);
-        resolveReady = null;
-      }
     }
     return control;
   }
@@ -172,18 +276,16 @@
           </div>
         </article>
         <article class="chat-control-card">
-          <span class="eyebrow">EFEITO DO INTERRUPTOR</span>
-          <h3>Backend + interface</h3>
-          <p class="chat-control-note">Desligado: /api/chat e /api/voice/chat recusam novas conversas, os controles de conversa somem da interface e os módulos pesados de chat/voz não entram no boot após recarregar.</p>
-          <p class="chat-control-note">Ligado: o Super Admin libera novamente o chat. A página recarrega para inicializar os módulos conversacionais de forma controlada.</p>
-          <p class="chat-control-note">Toda alteração do interruptor é registrada na auditoria da plataforma.</p>
+          <span class="eyebrow">BOOT SEGURO</span>
+          <h3>Recursos sob demanda</h3>
+          <p class="chat-control-note">A Visão geral carrega somente o núcleo. Projetos, tarefas, relatórios e provedores carregam seus módulos quando você abre a área, evitando congelamento depois do login.</p>
+          <p class="chat-control-note">Chat e voz continuam desligados quando o interruptor global estiver OFF.</p>
         </article>
       </div>`;
 
     navRoot.appendChild(nav);
     main.appendChild(section);
     nav.addEventListener('click', () => showControlView(nav, section));
-
     section.querySelector('[data-chat-control-off]')?.addEventListener('click', () => updateControl(false));
     section.querySelector('[data-chat-control-on]')?.addEventListener('click', () => updateControl(true));
     renderControlView();
@@ -223,8 +325,11 @@
 
   async function initialize() {
     injectStyles();
-    await refreshControl({settleReady: true});
+    installFeatureLazyLoading();
+    await refreshControl();
     if (await currentRole() === 'SUPER_ADMIN') ensureSuperAdminView();
+    document.documentElement.dataset.devpilotSafeBoot = 'true';
+    document.dispatchEvent(new CustomEvent('devpilot:safe-core-ready'));
   }
 
   if (document.readyState === 'loading') {
