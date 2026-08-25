@@ -221,7 +221,6 @@ class SessionManager:
         columns: int = 120,
         rows: int = 34,
         use_direct_user: bool = False,
-        isolated_home: bool = False,
         git_auth: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         linux_user = self._current_linux_user()
@@ -262,10 +261,6 @@ class SessionManager:
             env = os.environ.copy()
             env.setdefault("TERM", "xterm-256color")
             env["DEVPILOT_TERMINAL_SESSION_ID"] = session_id
-            if isolated_home:
-                env["HOME"] = str(target_cwd)
-                env["PWD"] = str(target_cwd)
-                env["DEVPILOT_WORKSPACE_ROOT"] = str(target_cwd)
             env.update(git_env)
             process = subprocess.Popen(
                 command,

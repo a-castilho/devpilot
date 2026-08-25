@@ -8,8 +8,8 @@ VALIDATE_CI = Path("scripts/validate-ci.sh")
 
 def test_subphase_engine_is_loaded_after_build_game():
     loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
-    assert "/assets/build-game.js?v=" in loader
-    assert "/assets/build-game-subphases.js?v=" in loader
+    assert "/assets/build-game.js?v=20260824-1" in loader
+    assert "/assets/build-game-subphases.js?v=20260824-1" in loader
     assert loader.index("/assets/build-game.js") < loader.index("/assets/build-game-subphases.js")
     assert "data-build-game-subphases-loader" in loader
 

@@ -6,7 +6,7 @@
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260824-2';
+    link.href = '/assets/acs-loader.css?v=20260823-1';
     document.head.appendChild(link);
   }
 
@@ -64,28 +64,9 @@
 
   document.body.prepend(loader);
 
-  let finished = false;
-  const finish = () => {
-    if (finished) return;
-    finished = true;
-    loader.classList.add('acs-loader--leaving');
-    window.setTimeout(() => {
-      loader.remove();
-      document.body.style.overflow = previousOverflow;
-    }, 450);
-  };
-
-  // O splash é visual, nunca um gate da aplicação. Mesmo que API, CSS,
-  // imagem ou outro serviço demore/falhe, a interface deve ser liberada.
-  window.setTimeout(finish, 1400);
+  window.setTimeout(() => loader.classList.add('acs-loader--leaving'), 1850);
   window.setTimeout(() => {
-    if (document.getElementById('acs-homolog-loader')) {
-      loader.remove();
-      document.body.style.overflow = previousOverflow;
-    }
-  }, 3000);
-
-  window.addEventListener('pageshow', (event) => {
-    if (event.persisted) finish();
-  }, { once: true });
+    loader.remove();
+    document.body.style.overflow = previousOverflow;
+  }, 2550);
 })();

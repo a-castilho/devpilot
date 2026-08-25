@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -59,32 +58,19 @@ def cloud_admin_connection(
     return token, str(metadata.get("scope") or "").strip()
 
 
-def _trial_cloud_entitled(workspace_id: str, entitlements: dict[str, dict[str, object]]) -> bool:
-    """Validate an explicit platform-managed trial entitlement, failing closed."""
-    entitlement = entitlements.get(str(workspace_id))
-    if not isinstance(entitlement, dict):
-        return False
-    if str(entitlement.get("status") or "").strip().lower() != "active":
-        return False
-
-    expires_at = entitlement.get("expires_at")
-    if not isinstance(expires_at, str) or not expires_at.strip():
-        return False
-    try:
-        parsed = datetime.fromisoformat(expires_at.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return False
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc) > datetime.now(timezone.utc)
-
-
 def managed_trial_connection(
     db: Session,
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    """Use DevPilot's platform credential only for an explicitly entitled active trial."""
+    """Use DevPilot's platform credential for an unconfigured trial workspace.
+
+    Trial users never receive the token. The credential remains encrypted in the
+    platform workspace and is consumed only by the backend. A workspace that has
+    its own Cloud Admin row is considered self-managed, even when that row is
+    intentionally disabled, so an explicit customer configuration is never
+    silently replaced by DevPilot's credential.
+    """
     settings = get_settings()
     normalized = provider.strip().lower()
     if not settings.managed_trial_clouds_enabled:
@@ -92,8 +78,6 @@ def managed_trial_connection(
     if normalized not in settings.managed_trial_providers:
         return None
     if _cloud_admin_row(db, workspace_id, normalized) is not None:
-        return None
-    if not _trial_cloud_entitled(workspace_id, settings.managed_trial_entitlements):
         return None
 
     platform = db.scalar(
@@ -119,7 +103,7 @@ def _connection_with_cloud_admin(
     if legacy is not None:
         return legacy
 
-    # 3. Platform credentials are restricted to explicitly entitled active trials.
+    # 3. Trial workspaces get the frictionless DevPilot-managed experience.
     return managed_trial_connection(db, workspace_id, provider)
 
 
@@ -151,7 +135,7 @@ def _request_json_with_cloud_scope(
 
 
 def install_delivery_cloud_bridge() -> None:
-    """Make product delivery consume self-managed or entitled trial cloud credentials."""
+    """Make product delivery consume self-managed or DevPilot-managed cloud credentials."""
     if not getattr(delivery.connection, "_devpilot_cloud_admin_bridge", False):
         setattr(_connection_with_cloud_admin, "_devpilot_cloud_admin_bridge", True)
         delivery.connection = _connection_with_cloud_admin

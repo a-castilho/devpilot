@@ -1,6 +1,5 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-import json
 import re
 
 from fastapi import Depends, FastAPI
@@ -8,13 +7,11 @@ from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 import app.models  # noqa: F401
-import app.platform_models  # noqa: F401
 from app.ai_budget_dependency import require_ai_budget_access
 from app.api import router
 from app.audit_routes import router as audit_router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
-from app.chat_control_routes import require_chat_available, router as chat_control_router
 from app.chat_mode_routes import router as chat_mode_router
 from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
@@ -28,7 +25,6 @@ from app.linux_routes import router as linux_router
 from app.local_test_routes import router as local_test_router
 from app.ollama_provider_routes import router as ollama_provider_router
 from app.product_delivery_routes import router as product_delivery_router
-from app.project_connect_routes import router as project_connect_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
 from app.super_admin_voice_routes import router as super_admin_voice_router
@@ -55,106 +51,15 @@ STATIC = Path(__file__).parent / "static"
 _SCRIPT_SRC_RE = re.compile(
     r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
 )
-_SCRIPT_TAG_RE = re.compile(
-    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
-    re.IGNORECASE,
-)
-_PREAUTH_SCRIPT_NAMES = {"auth-ui.js"}
-
-# Keep the login page isolated from the dashboard runtime. app.js is authenticated
-# application code and must only execute after /api/auth/me validates the stored
-# session. This prevents a stale token from starting dozens of modules behind the
-# login modal and freezing low-memory browsers.
-_CORE_AUTHENTICATED_SCRIPTS = [
-    "app.js",
-    "super-admin-chat-control.js",
-    "profile.js",
-    "users.js",
-    "consolidated-ui.js",
-    "workspace-skins.js",
-    "simplified-nav.js",
-]
-
-_DEFERRED_AUTHENTICATED_SCRIPTS = [
-    "project-provisioning.js",
-    "project-builder.js",
-    "project-description-profile.js",
-    "task-modal.js",
-    "task-analytics.js",
-    "reports.js",
-    "example-project.js",
-    "example-project-mobile-training.js",
-    "example-project-graphs-fix.js",
-    "project-ships.js",
-    "build-game-cockpit.js",
-    "mobile-accordion-menu.js",
-    "telemetry-capture.js",
-    "telemetry-replay-capture.js",
-    "token-usage.js",
-    "token-usage-mobile-fix.js",
-    "provider-models.js",
-    "provider-ollama.js",
-    "super-admin-voice.js",
-    "product-delivery-ui.js",
-    "voice-project-start.js",
-    "voice-local-update.js",
-    "voice-microphone-permission.js",
-    "voice-playback.js",
-    "voice-enhanced-ui.js",
-    "voice-chatgpt-layout.js",
-    "voice-insecure-lan-guard.js",
-    "task-failures.js",
-    "task-image-upload.js",
-    "tasks-lazy-load.js",
-    "analysis-commercial-proposal.js",
-    "analysis-failure-actions.js",
-    "analysis-incomplete-commercial.js",
-    "organization-normalization-ui.js",
-    "mobile-project-card-compact.js",
-    "repeatai-analysis-scroll.js",
-    "repeatai-live-graphs.js",
-    "repeatai-dashboard-graphs.js",
-    "repeatai-pattern-graphs.js",
-    "approval-slider.js",
-    "tws-example.js",
-    "deploy-admin.js",
-    "cloud-admin.js",
-    "super-admin-local-test.js",
-    "investia-admin.js",
-    "investia-homologation.js",
-    "career-linkedin.js",
-    "ui-literal-newline-cleanup.js",
-    "linux-terminal.js",
-    "linux-beginner-coach.js",
-    "build-game.js",
-    "mobile-game-mode.js",
-    "game-linux-training.js",
-    "audit-integrity.js",
-    "mission-control.js",
-]
-
-_CHAT_AUTHENTICATED_SCRIPTS = {
-    "super-admin-voice.js",
-    "voice-project-start.js",
-    "voice-local-update.js",
-    "voice-microphone-permission.js",
-    "voice-playback.js",
-    "voice-enhanced-ui.js",
-    "voice-chatgpt-layout.js",
-    "voice-insecure-lan-guard.js",
-}
-
-
-def _asset_revision(name: str) -> str:
-    try:
-        return str((STATIC / name).stat().st_mtime_ns)
-    except OSError:
-        return "1"
 
 
 def _version_frontend_scripts(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
-        revision = _asset_revision(match.group("name"))
+        asset = STATIC / match.group("name")
+        try:
+            revision = str(asset.stat().st_mtime_ns)
+        except OSError:
+            revision = "1"
         return f'{match.group("prefix")}?v={revision}{match.group("suffix")}'
 
     return _SCRIPT_SRC_RE.sub(replace, html)
@@ -206,181 +111,6 @@ def _mark_mobile_route(html: str) -> str:
     return html
 
 
-def _strip_pre_auth_heavy_scripts(html: str) -> str:
-    """Keep login boot tiny; authenticated features are loaded only after validation."""
-
-    def replace(match: re.Match[str]) -> str:
-        name = match.group("name")
-        return match.group(0) if name in _PREAUTH_SCRIPT_NAMES else ""
-
-    return _SCRIPT_TAG_RE.sub(replace, html)
-
-
-def _unique_script_names(names: list[str], seen: set[str] | None = None) -> list[str]:
-    result: list[str] = []
-    known = set(seen or ())
-    for name in names:
-        if name in known:
-            continue
-        known.add(name)
-        result.append(name)
-    return result
-
-
-def _script_urls(names: list[str]) -> list[str]:
-    return [
-        f"/assets/{name}?v={_asset_revision(name)}"
-        for name in names
-        if (STATIC / name).is_file()
-    ]
-
-
-def _authenticated_script_loader() -> str:
-    core_names = _unique_script_names(_CORE_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))
-    deferred_names = _unique_script_names(
-        _DEFERRED_AUTHENTICATED_SCRIPTS,
-        set(_PREAUTH_SCRIPT_NAMES) | set(core_names),
-    )
-    core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
-    deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
-    chat_urls = json.dumps(
-        _script_urls([name for name in deferred_names if name in _CHAT_AUTHENTICATED_SCRIPTS]),
-        ensure_ascii=False,
-    )
-    return f"""<script>
-(() => {{
-  'use strict';
-  const coreSources = {core_urls};
-  const deferredSources = {deferred_urls};
-  const chatSources = new Set({chat_urls});
-  const boot = window.__devpilotBoot = window.__devpilotBoot || {{
-    phase: 'waiting', loaded: [], failed: [], skipped: [], startedAt: Date.now()
-  }};
-
-  const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
-  const tokenExists = () => Boolean(token());
-  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
-  const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
-  const whenIdle = () => new Promise(resolve => {{
-    if ('requestIdleCallback' in window) {{
-      window.requestIdleCallback(() => resolve(), {{timeout: 1800}});
-    }} else {{
-      window.setTimeout(resolve, 180);
-    }}
-  }});
-
-  const validateSession = async () => {{
-    if (!tokenExists()) return false;
-    if (window.__devpilotAuthReady) {{
-      try {{ return Boolean(await window.__devpilotAuthReady); }} catch (_) {{ return false; }}
-    }}
-
-    try {{
-      const response = await fetch('/api/auth/me', {{
-        headers: {{Authorization: `Bearer ${{token()}}`}},
-        cache: 'no-store',
-      }});
-      if (response.ok) return true;
-      if ([401, 403, 404].includes(response.status)) localStorage.removeItem('devpilot-token');
-    }} catch (_) {{}}
-    return false;
-  }};
-
-  const markLegacyProjectShipsLoader = () => {{
-    // mobile-accordion-menu.js historically injected project-ships.js itself.
-    // main.py owns asset scheduling now; this inert marker prevents a second copy.
-    if (document.querySelector('script[data-project-ships-loader="1"]')) return;
-    const marker = document.createElement('script');
-    marker.type = 'application/json';
-    marker.dataset.projectShipsLoader = '1';
-    marker.textContent = '{{"managedBy":"devpilot-boot"}}';
-    document.head.appendChild(marker);
-  }};
-
-  const loadScript = src => new Promise(resolve => {{
-    const existing = [...document.scripts].find(script => script.src === new URL(src, location.href).href);
-    if (existing) {{
-      if (!boot.loaded.includes(src)) boot.loaded.push(src);
-      resolve(true);
-      return;
-    }}
-
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = false;
-    script.dataset.devpilotLazy = 'authenticated';
-    script.onload = () => {{
-      boot.loaded.push(src);
-      document.dispatchEvent(new CustomEvent('devpilot:asset-loaded', {{detail: {{src}}}}));
-      resolve(true);
-    }};
-    script.onerror = () => {{
-      boot.failed.push(src);
-      resolve(false);
-    }};
-    document.body.appendChild(script);
-  }});
-
-  const loadCore = async () => {{
-    boot.phase = 'core';
-    for (const src of coreSources) {{
-      if (!tokenExists()) return false;
-      await loadScript(src);
-      await nextPaint();
-    }}
-    boot.phase = 'interactive';
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
-    return true;
-  }};
-
-  const loadDeferred = async () => {{
-    await sleep(900);
-    const chatControl = window.__devpilotChatControl;
-    if (chatControl?.ready) {{
-      try {{ await chatControl.ready; }} catch (_) {{}}
-    }}
-    const chatEnabled = Boolean(window.__devpilotChatControl?.enabled);
-    boot.chatEnabled = chatEnabled;
-    boot.phase = 'deferred';
-    for (const src of deferredSources) {{
-      if (!tokenExists()) break;
-      if (!chatEnabled && chatSources.has(src)) {{
-        boot.skipped.push(src);
-        continue;
-      }}
-      while (document.hidden && tokenExists()) await sleep(1200);
-      await whenIdle();
-      await loadScript(src);
-      await sleep(90);
-    }}
-    boot.phase = 'ready';
-    boot.finishedAt = Date.now();
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
-  }};
-
-  const start = async () => {{
-    if (boot.phase !== 'waiting') return;
-    boot.phase = 'auth';
-    const authenticated = await validateSession();
-    boot.authenticated = authenticated;
-    if (!authenticated) {{
-      boot.phase = 'waiting-login';
-      return;
-    }}
-    markLegacyProjectShipsLoader();
-    const coreReady = await loadCore();
-    if (coreReady) void loadDeferred();
-  }};
-
-  if (document.readyState === 'loading') {{
-    document.addEventListener('DOMContentLoaded', start, {{once: true}});
-  }} else {{
-    void start();
-  }}
-}})();
-</script>"""
-
-
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
@@ -404,8 +134,7 @@ app.include_router(users_router)
 app.include_router(router)
 app.include_router(audit_router)
 app.include_router(career_router)
-app.include_router(chat_control_router)
-app.include_router(chat_mode_router, dependencies=[Depends(require_chat_available)])
+app.include_router(chat_mode_router)
 app.include_router(host_action_router)
 app.include_router(investia_admin_router)
 app.include_router(investia_public_router)
@@ -414,7 +143,6 @@ app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
 app.include_router(task_image_router)
-app.include_router(project_connect_router)
 app.include_router(project_provisioning_router)
 app.include_router(product_delivery_router)
 app.include_router(provider_models_router)
@@ -424,7 +152,7 @@ app.include_router(deploy_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
 app.include_router(telemetry_replay_router)
-app.include_router(voice_conversation_router, dependencies=[Depends(require_chat_available)])
+app.include_router(voice_conversation_router)
 app.include_router(voice_speech_router)
 app.include_router(
     voice_transcription_router,
@@ -459,14 +187,65 @@ def spa(path: str):
     mobile_route = _is_mobile_route(path)
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = _normalize_index_head(html)
-    html = _strip_pre_auth_heavy_scripts(html)
     if mobile_route:
         html = _mark_mobile_route(html)
 
-    auth_script = '<script src="/assets/auth-ui.js" defer></script>'
-    if not _has_frontend_script(html, "auth-ui.js"):
-        html = html.replace("</body>", f"  {auth_script}\n</body>")
-    html = html.replace("</body>", f"  {_authenticated_script_loader()}\n</body>")
+    scripts = [
+        '<script src="/assets/acs-loader.js" defer></script>',
+        '<script src="/assets/telemetry-capture.js" defer></script>',
+        '<script src="/assets/telemetry-replay-capture.js" defer></script>',
+        '<script src="/assets/profile.js" defer></script>',
+        '<script src="/assets/auth-ui.js" defer></script>',
+        '<script src="/assets/users.js" defer></script>',
+        '<script src="/assets/token-usage.js" defer></script>',
+        '<script src="/assets/token-usage-mobile-fix.js" defer></script>',
+        '<script src="/assets/provider-models.js" defer></script>',
+        '<script src="/assets/provider-ollama.js" defer></script>',
+        '<script src="/assets/super-admin-voice.js" defer></script>',
+        '<script src="/assets/project-provisioning.js" defer></script>',
+        '<script src="/assets/product-delivery-ui.js" defer></script>',
+        '<script src="/assets/voice-project-start.js" defer></script>',
+        '<script src="/assets/voice-local-update.js" defer></script>',
+        '<script src="/assets/voice-microphone-permission.js" defer></script>',
+        '<script src="/assets/voice-playback.js" defer></script>',
+        '<script src="/assets/voice-enhanced-ui.js" defer></script>',
+        '<script src="/assets/voice-chatgpt-layout.js" defer></script>',
+        '<script src="/assets/voice-insecure-lan-guard.js" defer></script>',
+        '<script src="/assets/task-failures.js" defer></script>',
+        '<script src="/assets/task-image-upload.js" defer></script>',
+        '<script src="/assets/consolidated-ui.js" defer></script>',
+        '<script src="/assets/tasks-lazy-load.js" defer></script>',
+        '<script src="/assets/workspace-skins.js" defer></script>',
+        '<script src="/assets/analysis-commercial-proposal.js" defer></script>',
+        '<script src="/assets/analysis-failure-actions.js" defer></script>',
+        '<script src="/assets/analysis-incomplete-commercial.js" defer></script>',
+        '<script src="/assets/organization-normalization-ui.js" defer></script>',
+        '<script src="/assets/mobile-project-card-compact.js" defer></script>',
+        '<script src="/assets/example-project.js" defer></script>',
+        '<script src="/assets/repeatai-analysis-scroll.js" defer></script>',
+        '<script src="/assets/repeatai-live-graphs.js" defer></script>',
+        '<script src="/assets/repeatai-dashboard-graphs.js" defer></script>',
+        '<script src="/assets/repeatai-pattern-graphs.js" defer></script>',
+        '<script src="/assets/approval-slider.js" defer></script>',
+        '<script src="/assets/tws-example.js" defer></script>',
+        '<script src="/assets/deploy-admin.js" defer></script>',
+        '<script src="/assets/cloud-admin.js" defer></script>',
+        '<script src="/assets/super-admin-local-test.js" defer></script>',
+        '<script src="/assets/investia-admin.js" defer></script>',
+        '<script src="/assets/investia-homologation.js" defer></script>',
+        '<script src="/assets/career-linkedin.js" defer></script>',
+        '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
+        '<script src="/assets/linux-terminal.js" defer></script>',
+        '<script src="/assets/linux-beginner-coach.js" defer></script>',
+        '<script src="/assets/audit-integrity.js" defer></script>',
+        '<script src="/assets/mission-control.js" defer></script>',
+    ]
+    for script in scripts:
+        match = _SCRIPT_SRC_RE.search(script)
+        name = match.group("name") if match else ""
+        if name and _has_frontend_script(html, name):
+            continue
+        html = html.replace("</body>", f"  {script}\n</body>")
 
     html = _inject_stylesheet(html, "super-admin-voice.css")
     html = _inject_mobile_scroll_unlock(html)

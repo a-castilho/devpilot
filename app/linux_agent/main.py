@@ -266,7 +266,6 @@ def create_terminal_session(payload: TerminalCreate):
             columns=payload.columns,
             rows=payload.rows,
             use_direct_user=not isolated_workspace,
-            isolated_home=isolated_workspace,
             git_auth=payload.git_auth.model_dump() if payload.git_auth else None,
         )
     except TerminalUserUnavailable as error:

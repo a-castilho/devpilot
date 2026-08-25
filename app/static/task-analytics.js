@@ -1,36 +1,39 @@
 (() => {
-  'use strict';
-
   const root = () => document.querySelector('#task-analytics');
   const clean = value => String(value || '').replaceAll('_', ' ').trim();
   const normalizeStatus = value => clean(value).toLowerCase().replaceAll(' ', '_');
   const ptStatus = value => ({
-    awaiting_approval:'Aguardando aprovação', queued:'Na fila', running:'Executando',
-    review:'Em revisão', completed:'Concluída', failed:'Falhou', cancelled:'Cancelada', blocked:'Bloqueada'
+    awaiting_approval:'Aguardando aprovação',queued:'Na fila',running:'Executando',
+    review:'Em revisão',completed:'Concluída',failed:'Falhou',cancelled:'Cancelada',blocked:'Bloqueada'
   })[normalizeStatus(value)] || clean(value) || 'Sem status';
-  const countBy = (items, selector) => items.reduce((acc, item) => {
-    const key = selector(item);
-    acc[key] = (acc[key] || 0) + 1;
-    return acc;
+  const countBy = (items, selector) => items.reduce((acc,item) => {
+    const key = selector(item); acc[key] = (acc[key] || 0) + 1; return acc;
   }, {});
-
   const taskType = task => {
     if (task.type) return clean(task.type);
     const source = String(task.source || '').toLowerCase();
     const title = String(task.title || '');
     const prompt = String(task.prompt || '');
     const lowerPrompt = prompt.toLocaleLowerCase('pt-BR');
-    const text = `${title} ${prompt}`.toLocaleLowerCase('pt-BR');
+    const text = (title + ' ' + prompt).toLocaleLowerCase('pt-BR');
     const actionSignals = [
-      'correção baseada na análise', 'correcao baseada na analise',
-      'ação recomendada', 'acao recomendada', 'execute as correções',
-      'execute as correcoes', 'não faça uma nova análise', 'nao faca uma nova analise'
+      'correção baseada na análise',
+      'correcao baseada na analise',
+      'ação recomendada',
+      'acao recomendada',
+      'execute as correções',
+      'execute as correcoes',
+      'não faça uma nova análise',
+      'nao faca uma nova analise'
     ];
 
     if (
-      source === 'analysis' || source === 'analysis-action' ||
-      lowerPrompt.includes('[analysis-action]') || lowerPrompt.includes('[analysis-run:') ||
-      lowerPrompt.includes('[devpilot_stage=execute]') || lowerPrompt.includes('[devpilot_stage=correct]') ||
+      source === 'analysis' ||
+      source === 'analysis-action' ||
+      lowerPrompt.includes('[analysis-action]') ||
+      lowerPrompt.includes('[analysis-run:') ||
+      lowerPrompt.includes('[devpilot_stage=execute]') ||
+      lowerPrompt.includes('[devpilot_stage=correct]') ||
       actionSignals.some(signal => text.includes(signal))
     ) return 'Execução';
 
@@ -43,17 +46,17 @@
     const mode = prompt.match(/\[DEVPILOT_MODE=([^\]]+)\]/i)?.[1]?.toLowerCase();
     if (mode === 'analysis-read-only' || mode === 'review') return 'Análise';
     if (mode === 'develop' || mode === 'fix') return 'Execução';
+
     return /an[aá]lis|audit|diagn[oó]st|revis/.test(text) ? 'Análise' : 'Execução';
   };
-
   const bars = values => {
-    const entries = Object.entries(values).sort((a, b) => b[1] - a[1]);
-    const max = Math.max(1, ...entries.map(([, value]) => value));
+    const entries = Object.entries(values).sort((a,b) => b[1] - a[1]);
+    const max = Math.max(1, ...entries.map(([,value]) => value));
     if (!entries.length) return '<div class="task-empty-chart">Sem dados para exibir.</div>';
-    return '<div class="task-bars">' + entries.map(([label, value]) =>
-      '<div class="task-bar-row"><span class="task-bar-label">' + esc(label) + '</span>' +
-      '<div class="task-bar-track"><div class="task-bar-fill" style="width:' + ((value / max) * 100).toFixed(1) + '%"></div></div>' +
-      '<strong class="task-bar-value">' + value + '</strong></div>'
+    return '<div class="task-bars">' + entries.map(([label,value]) =>
+      '<div class="task-bar-row"><span class="task-bar-label">'+esc(label)+'</span>'+
+      '<div class="task-bar-track"><div class="task-bar-fill" style="width:'+((value/max)*100).toFixed(1)+'%"></div></div>'+
+      '<strong class="task-bar-value">'+value+'</strong></div>'
     ).join('') + '</div>';
   };
 
@@ -92,33 +95,30 @@
     const statusValues = countBy(tasks, task => ptStatus(task.status));
     const typeValues = countBy(tasks, taskType);
     const sourceValues = countBy(tasks, task => ({
-      voice:'Voz', dashboard:'Painel', api:'API', analysis:'Análise automática',
-      'analysis-action':'Execução automática', 'execution-verification':'Validação automática'
+      voice:'Voz',dashboard:'Painel',api:'API',analysis:'Análise automática',
+      'analysis-action':'Execução automática','execution-verification':'Validação automática'
     })[String(task.source || '').toLowerCase()] || clean(task.source) || 'Outra');
     const completed = tasks.filter(task => normalizeStatus(task.status) === 'completed').length;
     const active = tasks.filter(task => ['awaiting_approval','queued','running','review','blocked'].includes(normalizeStatus(task.status))).length;
-    const avgPriority = tasks.length ? Math.round(tasks.reduce((sum, task) => sum + Number(task.priority || 0), 0) / tasks.length) : 0;
+    const avgPriority = tasks.length ? Math.round(tasks.reduce((sum,task) => sum + Number(task.priority || 0), 0) / tasks.length) : 0;
     const priority = [
-      ['Baixa · 0–39', tasks.filter(t => Number(t.priority || 0) < 40).length],
-      ['Média · 40–69', tasks.filter(t => Number(t.priority || 0) >= 40 && Number(t.priority || 0) < 70).length],
-      ['Alta · 70–100', tasks.filter(t => Number(t.priority || 0) >= 70).length]
+      ['Baixa · 0–39',tasks.filter(t => Number(t.priority || 0) < 40).length],
+      ['Média · 40–69',tasks.filter(t => Number(t.priority || 0) >= 40 && Number(t.priority || 0) < 70).length],
+      ['Alta · 70–100',tasks.filter(t => Number(t.priority || 0) >= 70).length]
     ];
-
     target.innerHTML =
-      '<div class="task-analytics-head"><div><span class="eyebrow">VISÃO ANALÍTICA</span><h2>Gráficos das tarefas</h2></div><p>Atualizados automaticamente com os dados exibidos abaixo.</p></div>' +
-      '<div class="task-kpis">' +
-        '<div class="task-kpi"><span>Total</span><strong>' + tasks.length + '</strong><small>tarefas registradas</small></div>' +
-        '<div class="task-kpi"><span>Em andamento</span><strong>' + active + '</strong><small>fila, execução e revisão</small></div>' +
-        '<div class="task-kpi"><span>Concluídas</span><strong>' + completed + '</strong><small>' + (tasks.length ? Math.round(completed / tasks.length * 100) : 0) + '% do total</small></div>' +
-        '<div class="task-kpi"><span>Prioridade média</span><strong>' + avgPriority + '</strong><small>escala de 0 a 100</small></div>' +
-      '</div>' +
-      '<div class="task-charts-grid">' +
-        '<article class="task-chart"><h3>Tarefas por status</h3>' + bars(statusValues) + '</article>' +
-        '<article class="task-chart"><h3>Análise × execução</h3>' + bars(typeValues) + '</article>' +
-        '<article class="task-chart"><h3>Origem das tarefas</h3>' + bars(sourceValues) + '</article>' +
-        '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">' +
-          priority.map(([label, value]) => '<div class="task-priority-item"><i></i><strong>' + value + '</strong><span>' + label + '</span></div>').join('') +
-        '</div></article>' +
+      '<div class="task-analytics-head"><div><span class="eyebrow">VISÃO ANALÍTICA</span><h2>Gráficos das tarefas</h2></div><p>Atualizados automaticamente com os dados exibidos abaixo.</p></div>'+
+      '<div class="task-kpis">'+
+        '<div class="task-kpi"><span>Total</span><strong>'+tasks.length+'</strong><small>tarefas registradas</small></div>'+
+        '<div class="task-kpi"><span>Em andamento</span><strong>'+active+'</strong><small>fila, execução e revisão</small></div>'+
+        '<div class="task-kpi"><span>Concluídas</span><strong>'+completed+'</strong><small>'+(tasks.length ? Math.round(completed/tasks.length*100) : 0)+'% do total</small></div>'+
+        '<div class="task-kpi"><span>Prioridade média</span><strong>'+avgPriority+'</strong><small>escala de 0 a 100</small></div>'+
+      '</div>'+
+      '<div class="task-charts-grid">'+
+        '<article class="task-chart"><h3>Tarefas por status</h3>'+bars(statusValues)+'</article>'+
+        '<article class="task-chart"><h3>Análise × execução</h3>'+bars(typeValues)+'</article>'+
+        '<article class="task-chart"><h3>Origem das tarefas</h3>'+bars(sourceValues)+'</article>'+
+        '<article class="task-chart"><h3>Distribuição de prioridade</h3><div class="task-priority">'+priority.map(([label,value]) => '<div class="task-priority-item"><i></i><strong>'+value+'</strong><span>'+label+'</span></div>').join('')+'</div></article>'+
       '</div>';
   };
 
@@ -132,100 +132,71 @@
       scheduled = true;
       requestAnimationFrame(() => {
         scheduled = false;
-        if (document.querySelector('#tasks-view.active')) window.renderTaskAnalytics();
+        window.renderTaskAnalytics();
       });
     }).observe(table, {childList:true, subtree:true, characterData:true});
   };
 
   const boot = () => {
     observeTasks();
-    if (document.querySelector('#tasks-view.active')) window.renderTaskAnalytics();
+    window.renderTaskAnalytics();
   };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true});
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
 
-/*
- * Game extras are intentionally cold after authentication. They are expensive
- * compatibility modules and must not start just because the dashboard finished
- * booting. They are loaded only after an explicit game-related user action.
- */
+/* Load project-scoped system testing workspace. */
 (() => {
-  'use strict';
+  if (document.querySelector('script[data-system-tests-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/system-tests.js?v=20260824-1';
+  script.async = false;
+  script.dataset.systemTestsLoader = 'true';
+  document.head.appendChild(script);
+})();
 
-  const LEGACY_GAME_EXTRAS = [
-    {name:'system-tests.js', marker:'system-tests-loader'},
-    {name:'build-game-subphases.js', marker:'build-game-subphases-loader'},
-    {name:'build-game-new-session.js', marker:'build-game-new-session-loader'},
-    {name:'build-game-url-bonus.js', marker:'build-game-url-bonus-loader'},
-    {name:'build-game-weapons.js', marker:'build-game-weapons-loader'},
-  ];
-  const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
-  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
-  const whenIdle = () => new Promise(resolve => {
-    if ('requestIdleCallback' in window) window.requestIdleCallback(() => resolve(), {timeout: 3000});
-    else window.setTimeout(resolve, 300);
-  });
-  let loading = null;
+/* Load the progressive DevPilot build game. */
+(() => {
+  if (document.querySelector('script[data-build-game-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameLoader = 'true';
+  document.head.appendChild(script);
+})();
 
-  function alreadyLoaded(name) {
-    return [...document.scripts].some(script => {
-      if (!script.src) return false;
-      try { return new URL(script.src, location.href).pathname === `/assets/${name}`; }
-      catch (_) { return false; }
-    });
-  }
+/* Load automatic corrective subphases after the build game. */
+(() => {
+  if (document.querySelector('script[data-build-game-subphases-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-subphases.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameSubphasesLoader = 'true';
+  document.head.appendChild(script);
+})();
 
-  function loadAsset(asset) {
-    if (!tokenExists() || alreadyLoaded(asset.name) || document.querySelector(`script[data-${asset.marker}]`)) {
-      return Promise.resolve(true);
-    }
-    return new Promise(resolve => {
-      const script = document.createElement('script');
-      script.src = `/assets/${asset.name}?v=20260825-on-demand1`;
-      script.async = false;
-      script.dataset[asset.marker.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = 'true';
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  }
+/* Harden New game so a fresh mission resets progress, XP, log and victory state. */
+(() => {
+  if (document.querySelector('script[data-build-game-new-session-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-new-session.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameNewSessionLoader = 'true';
+  document.head.appendChild(script);
+})();
 
-  async function loadLegacyExtras() {
-    if (!tokenExists()) return false;
-    for (const asset of LEGACY_GAME_EXTRAS) {
-      if (!tokenExists()) return false;
-      await whenIdle();
-      await loadAsset(asset);
-      await sleep(650);
-    }
-    return true;
-  }
-
-  function start() {
-    if (!loading) loading = loadLegacyExtras();
-    return loading;
-  }
-
-  function isGameIntent(target) {
-    if (!(target instanceof Element)) return false;
-    if (target.closest('#build-game-view, .build-game-shell, [data-example-project], [data-build-game], [data-build-game-nav], [data-game-mode], [data-play-phase], [data-game-refresh]')) return true;
-    const nav = target.closest('.sidebar .nav, .sidebar button');
-    if (!nav) return false;
-    const label = String(nav.textContent || '').toLocaleLowerCase('pt-BR');
-    return label.includes('jogo') || label.includes('partida') || label.includes('armas');
-  }
-
-  window.__devpilotLoadGameExtras = start;
-  document.addEventListener('devpilot:game-open', start);
-  document.addEventListener('click', event => {
-    if (isGameIntent(event.target)) void start();
-  }, {capture:true, passive:true});
+/* Load the victory reward that releases a verified test URL. */
+(() => {
+  if (document.querySelector('script[data-build-game-url-bonus-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-url-bonus.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameUrlBonusLoader = 'true';
+  document.head.appendChild(script);
 })();
 
 /* Compatibility guard: old workers could leave successful game tasks in review forever. */
 (() => {
-  'use strict';
   if (typeof api !== 'function' || api.__buildGameReviewCompat) return;
   const baseApi = api;
   const wrappedApi = async (path, options = {}) => {
@@ -240,4 +211,14 @@
   };
   wrappedApi.__buildGameReviewCompat = true;
   api = wrappedApi;
+})();
+
+/* Load the ship weapons development workshop. */
+(() => {
+  if (document.querySelector('script[data-build-game-weapons-loader]')) return;
+  const script = document.createElement('script');
+  script.src = '/assets/build-game-weapons.js?v=20260824-2';
+  script.async = false;
+  script.dataset.buildGameWeaponsLoader = 'true';
+  document.head.appendChild(script);
 })();

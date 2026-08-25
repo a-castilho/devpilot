@@ -122,9 +122,6 @@
     view = document.createElement('section');
     view.className = 'view';
     view.id = 'project-example-view';
-    // O exemplo possui seu próprio treinamento local. Ele nunca deve alimentar
-    // o Gravador de Processos global, mesmo se uma sessão de telemetria estiver ativa.
-    view.dataset.telemetryControl = '1';
     view.innerHTML = `
       <section class="repeatai-wizard" id="repeatai-wizard" tabindex="0" aria-live="polite">
         <div class="repeatai-wizard-head">
@@ -137,7 +134,7 @@
         <div class="repeatai-wizard-body">
           <p class="repeatai-wizard-kicker" id="repeatai-wizard-kicker">TREINAMENTO RÁPIDO</p>
           <h2 class="repeatai-wizard-title" id="repeatai-wizard-title">VAMOS CARREGAR A IA</h2>
-          <p class="repeatai-wizard-copy" id="repeatai-wizard-copy">Os sinais deste treinamento ficam no próprio exemplo e só começam depois de você tocar em COMEÇAR.</p>
+          <p class="repeatai-wizard-copy" id="repeatai-wizard-copy">Em poucos segundos o RepetAI coleta somente sinais de interação para preparar a análise.</p>
           <div class="repeatai-wizard-progress" aria-hidden="true"><span id="repeatai-wizard-progress"></span></div>
           <div class="repeatai-wizard-meter" id="repeatai-wizard-meter">pronto para começar</div>
           <div class="repeatai-wizard-actions" id="repeatai-wizard-actions">
@@ -184,7 +181,6 @@
       keys: 0,
       scrollDistance: 0,
       complete: false,
-      captureController: null,
     };
 
     const title = view.querySelector('#repeatai-wizard-title');
@@ -216,21 +212,6 @@
       window.setTimeout(() => wizard.focus({preventScroll: true}), 30);
     }
 
-    function stopWizardCapture() {
-      state.captureController?.abort();
-      state.captureController = null;
-      state.lastMouse = null;
-    }
-
-    function startWizardCapture() {
-      if (state.captureController) return;
-      const controller = new AbortController();
-      state.captureController = controller;
-      wizard.addEventListener('mousemove', onMouseMove, {passive: true, signal: controller.signal});
-      wizard.addEventListener('keydown', onKeyDown, {signal: controller.signal});
-      wizard.addEventListener('wheel', onWheel, {passive: true, signal: controller.signal});
-    }
-
     function renderStep() {
       paintChips();
       actions.innerHTML = '';
@@ -240,7 +221,7 @@
         stepcount.textContent = 'INÍCIO';
         kicker.textContent = 'TREINAMENTO RÁPIDO';
         title.textContent = 'VAMOS CARREGAR A IA';
-        copy.textContent = 'Os sinais deste treinamento ficam no próprio exemplo e só começam depois de você tocar em COMEÇAR.';
+        copy.textContent = 'Em poucos segundos o RepetAI coleta somente sinais de interação para preparar a análise.';
         meter.textContent = 'pronto para começar';
         setProgress(0);
         const button = document.createElement('button');
@@ -248,7 +229,6 @@
         button.type = 'button';
         button.textContent = 'COMEÇAR';
         button.addEventListener('click', () => {
-          startWizardCapture();
           state.step = 1;
           renderStep();
         });
@@ -260,7 +240,7 @@
         stepcount.textContent = 'PASSO 1 DE 3';
         kicker.textContent = 'MOUSE';
         title.textContent = 'MOVA O MOUSE LOUCAMENTE';
-        copy.textContent = 'Faça trajetórias rápidas somente dentro deste painel. Só distância e movimento são usados.';
+        copy.textContent = 'Faça trajetórias rápidas e variadas nesta área. Só distância e movimento são usados.';
         meter.textContent = '0% de movimento capturado';
         setProgress(0);
         focusWizard();
@@ -271,7 +251,7 @@
         stepcount.textContent = 'PASSO 2 DE 3';
         kicker.textContent = 'TECLADO';
         title.textContent = 'DIGITE LOUCAMENTE';
-        copy.textContent = 'Com este painel em foco, digite normalmente. O conteúdo das teclas não é armazenado; o wizard conta apenas eventos.';
+        copy.textContent = 'Digite normalmente. O conteúdo das teclas não é armazenado; o wizard conta apenas eventos.';
         meter.textContent = `0 / ${WIZARD_TARGETS.keyboard} eventos de teclado`;
         setProgress(0);
         focusWizard();
@@ -281,7 +261,7 @@
       stepcount.textContent = 'PASSO 3 DE 3';
       kicker.textContent = 'SCROLL';
       title.textContent = 'USE SCROLL LOUCAMENTE';
-      copy.textContent = 'Role para cima e para baixo dentro deste painel para completar a carga inicial.';
+      copy.textContent = 'Role para cima e para baixo nesta página para completar a carga inicial.';
       meter.textContent = '0% de scroll capturado';
       setProgress(0);
       focusWizard();
@@ -290,7 +270,6 @@
     function completeWizard() {
       state.complete = true;
       state.step = 4;
-      stopWizardCapture();
       paintChips();
       stepcount.textContent = 'CONCLUÍDO';
       kicker.textContent = 'REPETAI PRONTO';
@@ -345,6 +324,10 @@
       meter.textContent = `${Math.round(percent)}% de scroll capturado`;
       if (state.scrollDistance >= WIZARD_TARGETS.scroll) completeWizard();
     }
+
+    window.addEventListener('mousemove', onMouseMove, {passive: true});
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('wheel', onWheel, {passive: true});
 
     renderStep();
   }
