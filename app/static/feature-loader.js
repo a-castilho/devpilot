@@ -17,6 +17,10 @@
       'mobile-project-card-compact.js',
     ],
     reports: ['reports.js'],
+    tasks: [
+      'task-analytics.js',
+      'system-tests.js',
+    ],
     example: [
       'example-project.js',
       'example-project-mobile-training.js',
@@ -55,7 +59,11 @@
       'build-game-url-bonus.js',
       'build-game-weapons.js',
     ],
-    audit: ['audit-integrity.js'],
+    audit: [
+      'audit-integrity.js',
+      'telemetry-capture.js',
+      'telemetry-replay-capture.js',
+    ],
   });
 
   const scriptName = src => {
@@ -324,6 +332,7 @@
     ['[data-project-builder-open]', 'projectBuilder'],
     ['[data-example-project]', 'example'],
     ['.nav[data-view="reports"]', 'reports'],
+    ['.nav[data-view="tasks"]', 'tasks'],
     ['#voice-hero, #voice-dock', 'voice'],
     ['.nav[data-view="audit"]', 'audit'],
   ];
