@@ -2,25 +2,57 @@
   'use strict';
 
   const MARKER = '[DEVPILOT_BUILD_GAME_V1]';
+  const PROJECT_KEY = 'devpilot-build-game-project';
+  const MISSION_KEY = 'devpilot-build-game-mission';
   const watchers = new Map();
+  const taskCache = new Map();
 
-  const normalize = value => String(value || '').toLowerCase().replaceAll(' ', '_');
+  const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
   const isGameTask = task => String(task?.prompt || '').includes(MARKER);
 
-  function phaseFromTask(task) {
-    const match = String(task?.prompt || '').match(/^FASE:\s*(\d+)\//mi);
-    return Number(match?.[1] || 0);
+  async function request(path) {
+    const authToken = token();
+    const response = await fetch(path, {
+      headers: authToken ? {Authorization: `Bearer ${authToken}`} : {},
+      cache: 'no-store',
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`);
+    return data;
   }
 
-  function latestGameTasks() {
-    const tasks = Array.isArray(window.state?.tasks) ? window.state.tasks : [];
+  function promptValue(task, label) {
+    const safe = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return String(task?.prompt || '').match(new RegExp(`^${safe}:\\s*(.+)$`, 'mi'))?.[1]?.trim() || '';
+  }
+
+  function phaseFromTask(task) {
+    return Number(promptValue(task, 'FASE').split('/')[0]) || 0;
+  }
+
+  function currentProjectId() {
+    return String(document.querySelector('#build-game-project')?.value || localStorage.getItem(PROJECT_KEY) || '').trim();
+  }
+
+  function currentMissionId() {
+    return String(localStorage.getItem(MISSION_KEY) || '').trim();
+  }
+
+  async function latestGameTasks() {
+    const projectId = currentProjectId();
+    if (!projectId) return new Map();
+    const rows = await request(`/api/tasks?project_id=${encodeURIComponent(projectId)}&limit=500`);
+    const missionId = currentMissionId();
     const byPhase = new Map();
-    tasks.filter(isGameTask).forEach(task => {
-      const phase = phaseFromTask(task);
-      if (!phase) return;
-      const previous = byPhase.get(phase);
-      if (!previous || new Date(task.created_at || 0) > new Date(previous.created_at || 0)) byPhase.set(phase, task);
-    });
+    (Array.isArray(rows) ? rows : [])
+      .filter(task => isGameTask(task) && (!missionId || promptValue(task, 'PARTIDA') === missionId))
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      .forEach(task => {
+        const phase = phaseFromTask(task);
+        if (!phase || byPhase.has(phase)) return;
+        byPhase.set(phase, task);
+        taskCache.set(String(task.id), task);
+      });
     return byPhase;
   }
 
@@ -68,7 +100,8 @@
     try {
       const current = await window.DevPilotGameWorkflow.missionState(task.id);
       applyState(task, current);
-      if (!['MISSION_COMPLETE', 'SHOT_FAILED', 'SHIELD_BLOCKED'].includes(current.game_state) && !watchers.has(String(task.id))) {
+      const terminal = ['MISSION_COMPLETE', 'SHOT_FAILED', 'SHIELD_BLOCKED'].includes(current.game_state);
+      if (!terminal && !watchers.has(String(task.id))) {
         const stop = window.DevPilotGameWorkflow.watch(task.id, {
           onChange: state => applyState(task, state),
         });
@@ -81,25 +114,27 @@
     }
   }
 
-  function reconcile() {
-    if (!window.DevPilotGameWorkflow) return;
-    latestGameTasks().forEach(task => void reconcileTask(task));
+  async function reconcile() {
+    if (!window.DevPilotGameWorkflow || !document.querySelector('#build-game-view')) return;
+    try {
+      const byPhase = await latestGameTasks();
+      byPhase.forEach(task => void reconcileTask(task));
+    } catch (error) {
+      document.dispatchEvent(new CustomEvent('devpilot:game-error', {detail: {message: error.message}}));
+    }
   }
 
-  document.addEventListener('devpilot:game-workflow-ready', reconcile);
+  document.addEventListener('devpilot:game-workflow-ready', () => void reconcile());
   document.addEventListener('devpilot:game-state', event => {
-    const taskId = event.detail?.task_id;
-    const task = Array.isArray(window.state?.tasks)
-      ? window.state.tasks.find(item => String(item.id) === String(taskId))
-      : null;
+    const task = taskCache.get(String(event.detail?.task_id || ''));
     if (task) applyState(task, event.detail);
   });
   document.addEventListener('devpilot:feature-ready', event => {
-    if (event.detail?.feature === 'game' && !(event.detail?.failures || []).length) setTimeout(reconcile, 0);
+    if (event.detail?.feature === 'game' && !(event.detail?.failures || []).length) setTimeout(() => void reconcile(), 0);
   });
   document.addEventListener('click', event => {
     if (event.target.closest?.('[data-game-refresh], [data-play-phase], [data-view="build-game"]')) {
-      setTimeout(reconcile, 100);
+      setTimeout(() => void reconcile(), 120);
     }
   });
 
@@ -107,12 +142,12 @@
   if (typeof originalLoad === 'function' && !originalLoad.__workflowWrapped) {
     const wrapped = async (...args) => {
       const result = await originalLoad(...args);
-      reconcile();
+      await reconcile();
       return result;
     };
     wrapped.__workflowWrapped = true;
     window.loadBuildGame = wrapped;
   }
 
-  setTimeout(reconcile, 0);
+  setTimeout(() => void reconcile(), 0);
 })();
