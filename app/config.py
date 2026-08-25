@@ -1,4 +1,5 @@
 from functools import lru_cache
+import json
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,6 +30,7 @@ class Settings(BaseSettings):
     managed_trial_clouds_enabled: bool = True
     managed_trial_workspace_slug: str = "default"
     managed_trial_cloud_providers: str = "neon,render,vercel"
+    managed_trial_entitlements_json: str = "{}"
 
     @property
     def git_hosts(self) -> set[str]:
@@ -40,6 +42,25 @@ class Settings(BaseSettings):
             item.strip().lower()
             for item in self.managed_trial_cloud_providers.split(",")
             if item.strip()
+        }
+
+    @property
+    def managed_trial_entitlements(self) -> dict[str, dict[str, object]]:
+        """Platform-controlled managed-cloud trial entitlements keyed by workspace ID.
+
+        Example value for DEVPILOT_MANAGED_TRIAL_ENTITLEMENTS_JSON:
+        {"workspace-id":{"status":"active","expires_at":"2026-09-01T00:00:00Z"}}
+        """
+        try:
+            value = json.loads(self.managed_trial_entitlements_json or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(workspace_id): entitlement
+            for workspace_id, entitlement in value.items()
+            if isinstance(entitlement, dict)
         }
 
     def prepare(self) -> None:
