@@ -13,9 +13,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-env:
-  DEVPILOT_POLICY_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-
 # Use repository variable DEVPILOT_RUNNER=devpilot-ci (or self-hosted)
 # to bypass GitHub-hosted minute exhaustion without weakening any gate.
 jobs:
@@ -28,6 +25,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Resolve current policy base
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+              BASE="$BEFORE"
+            else
+              BASE="$(git rev-parse HEAD^)"
+            fi
+          fi
+          echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
+          echo "Policy base: $BASE"
 
       - name: Set up Python on GitHub-hosted runner
         if: ${{ !vars.DEVPILOT_RUNNER }}
@@ -63,6 +75,20 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Resolve current policy base
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+              BASE="$BEFORE"
+            else
+              BASE="$(git rev-parse HEAD^)"
+            fi
+          fi
+          echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
 
       - name: Set up Python on GitHub-hosted runner
         if: ${{ !vars.DEVPILOT_RUNNER }}
