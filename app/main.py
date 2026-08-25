@@ -59,7 +59,19 @@ _SCRIPT_TAG_RE = re.compile(
 )
 _PREAUTH_SCRIPT_NAMES = {"app.js", "auth-ui.js"}
 
-_INDEX_AUTHENTICATED_SCRIPTS = [
+# Keep the first authenticated paint intentionally small. app.js already renders
+# overview/projects/tasks, so these modules are only the shell enhancements that
+# are useful on every screen. Everything else is progressively initialized while
+# the browser is idle instead of monopolizing the main thread after login.
+_CORE_AUTHENTICATED_SCRIPTS = [
+    "profile.js",
+    "users.js",
+    "consolidated-ui.js",
+    "workspace-skins.js",
+    "simplified-nav.js",
+]
+
+_DEFERRED_AUTHENTICATED_SCRIPTS = [
     "project-provisioning.js",
     "project-builder.js",
     "project-description-profile.js",
@@ -69,24 +81,16 @@ _INDEX_AUTHENTICATED_SCRIPTS = [
     "example-project.js",
     "example-project-mobile-training.js",
     "example-project-graphs-fix.js",
-    "simplified-nav.js",
     "project-ships.js",
     "build-game-cockpit.js",
     "mobile-accordion-menu.js",
-]
-
-_RUNTIME_AUTHENTICATED_SCRIPTS = [
-    "acs-loader.js",
     "telemetry-capture.js",
     "telemetry-replay-capture.js",
-    "profile.js",
-    "users.js",
     "token-usage.js",
     "token-usage-mobile-fix.js",
     "provider-models.js",
     "provider-ollama.js",
     "super-admin-voice.js",
-    "project-provisioning.js",
     "product-delivery-ui.js",
     "voice-project-start.js",
     "voice-local-update.js",
@@ -97,15 +101,12 @@ _RUNTIME_AUTHENTICATED_SCRIPTS = [
     "voice-insecure-lan-guard.js",
     "task-failures.js",
     "task-image-upload.js",
-    "consolidated-ui.js",
     "tasks-lazy-load.js",
-    "workspace-skins.js",
     "analysis-commercial-proposal.js",
     "analysis-failure-actions.js",
     "analysis-incomplete-commercial.js",
     "organization-normalization-ui.js",
     "mobile-project-card-compact.js",
-    "example-project.js",
     "repeatai-analysis-scroll.js",
     "repeatai-live-graphs.js",
     "repeatai-dashboard-graphs.js",
@@ -164,7 +165,11 @@ def _normalize_index_head(html: str) -> str:
 
 
 def _inject_stylesheet(html: str, name: str) -> str:
-    revision = _asset_revision(name)
+    asset = STATIC / name
+    try:
+        revision = str(asset.stat().st_mtime_ns)
+    except OSError:
+        revision = "1"
     link = f'<link rel="stylesheet" href="/assets/{name}?v={revision}">'
     if name not in html:
         html = html.replace("</head>", f"  {link}\n</head>")
@@ -196,55 +201,131 @@ def _strip_pre_auth_heavy_scripts(html: str) -> str:
     return _SCRIPT_TAG_RE.sub(replace, html)
 
 
-def _unique_authenticated_scripts() -> list[str]:
-    names: list[str] = []
-    seen = set(_PREAUTH_SCRIPT_NAMES)
-    for name in [*_INDEX_AUTHENTICATED_SCRIPTS, *_RUNTIME_AUTHENTICATED_SCRIPTS]:
-        if name in seen:
+def _unique_script_names(names: list[str], seen: set[str] | None = None) -> list[str]:
+    result: list[str] = []
+    known = set(seen or ())
+    for name in names:
+        if name in known:
             continue
-        seen.add(name)
-        names.append(name)
-    return names
+        known.add(name)
+        result.append(name)
+    return result
+
+
+def _script_urls(names: list[str]) -> list[str]:
+    return [
+        f"/assets/{name}?v={_asset_revision(name)}"
+        for name in names
+        if (STATIC / name).is_file()
+    ]
 
 
 def _authenticated_script_loader() -> str:
-    urls = [
-        f"/assets/{name}?v={_asset_revision(name)}"
-        for name in _unique_authenticated_scripts()
-        if (STATIC / name).is_file()
-    ]
-    encoded_urls = json.dumps(urls, ensure_ascii=False)
+    core_names = _unique_script_names(_CORE_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))
+    deferred_names = _unique_script_names(
+        _DEFERRED_AUTHENTICATED_SCRIPTS,
+        set(_PREAUTH_SCRIPT_NAMES) | set(core_names),
+    )
+    core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
+    deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
     return f"""<script>
 (() => {{
   'use strict';
-  const sources = {encoded_urls};
+  const coreSources = {core_urls};
+  const deferredSources = {deferred_urls};
+  const boot = window.__devpilotBoot = window.__devpilotBoot || {{
+    phase: 'waiting', loaded: [], failed: [], startedAt: Date.now()
+  }};
 
-  const start = () => {{
-    if (!localStorage.getItem('devpilot-token')) return;
-    let index = 0;
+  const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
+  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+  const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
+  const whenIdle = () => new Promise(resolve => {{
+    if ('requestIdleCallback' in window) {{
+      window.requestIdleCallback(() => resolve(), {{timeout: 1800}});
+    }} else {{
+      window.setTimeout(resolve, 180);
+    }}
+  }});
 
-    const loadNext = () => {{
-      if (index >= sources.length) {{
-        document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
-        return;
-      }}
-      const src = sources[index++];
-      const script = document.createElement('script');
-      script.src = src;
-      script.async = false;
-      script.dataset.devpilotLazy = 'authenticated';
-      script.onload = loadNext;
-      script.onerror = loadNext;
-      document.body.appendChild(script);
+  const markLegacyProjectShipsLoader = () => {{
+    // mobile-accordion-menu.js historically injected project-ships.js itself.
+    // main.py owns asset scheduling now; this inert marker prevents a second copy.
+    if (document.querySelector('script[data-project-ships-loader="1"]')) return;
+    const marker = document.createElement('script');
+    marker.type = 'application/json';
+    marker.dataset.projectShipsLoader = '1';
+    marker.textContent = '{{"managedBy":"devpilot-boot"}}';
+    document.head.appendChild(marker);
+  }};
+
+  const loadScript = src => new Promise(resolve => {{
+    const existing = [...document.scripts].find(script => script.src === new URL(src, location.href).href);
+    if (existing) {{
+      if (!boot.loaded.includes(src)) boot.loaded.push(src);
+      resolve(true);
+      return;
+    }}
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset.devpilotLazy = 'authenticated';
+    script.onload = () => {{
+      boot.loaded.push(src);
+      document.dispatchEvent(new CustomEvent('devpilot:asset-loaded', {{detail: {{src}}}}));
+      resolve(true);
     }};
+    script.onerror = () => {{
+      boot.failed.push(src);
+      resolve(false);
+    }};
+    document.body.appendChild(script);
+  }});
 
-    loadNext();
+  const loadCore = async () => {{
+    boot.phase = 'core';
+    for (const src of coreSources) {{
+      if (!tokenExists()) return false;
+      await loadScript(src);
+      // Give layout, input and paint a turn between every module. A serial script
+      // chain without this yield was the post-login main-thread freeze.
+      await nextPaint();
+    }}
+    boot.phase = 'interactive';
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
+    return true;
+  }};
+
+  const loadDeferred = async () => {{
+    // Let the overview become usable before optional game/voice/admin modules boot.
+    await sleep(900);
+    boot.phase = 'deferred';
+    for (const src of deferredSources) {{
+      if (!tokenExists()) break;
+      while (document.hidden && tokenExists()) await sleep(1200);
+      await whenIdle();
+      await loadScript(src);
+      // A small gap prevents dozens of observers, styles and fetches from being
+      // registered in one uninterrupted main-thread burst on low-RAM machines.
+      await sleep(90);
+    }}
+    boot.phase = 'ready';
+    boot.finishedAt = Date.now();
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
+  }};
+
+  const start = async () => {{
+    if (!tokenExists() || boot.phase !== 'waiting') return;
+    markLegacyProjectShipsLoader();
+    const coreReady = await loadCore();
+    if (coreReady) void loadDeferred();
   }};
 
   if (document.readyState === 'loading') {{
     document.addEventListener('DOMContentLoaded', start, {{once: true}});
   }} else {{
-    start();
+    void start();
   }}
 }})();
 </script>"""
@@ -331,10 +412,6 @@ def spa(path: str):
     if mobile_route:
         html = _mark_mobile_route(html)
 
-    # Authentication must stay interactive even on low-memory machines. The
-    # dashboard/game/voice enhancement stack is loaded only after login and is
-    # intentionally sequenced to avoid a burst of MutationObservers, network
-    # requests and script compilation while the login dialog is open.
     auth_script = '<script src="/assets/auth-ui.js" defer></script>'
     if not _has_frontend_script(html, "auth-ui.js"):
         html = html.replace("</body>", f"  {auth_script}\n</body>")

@@ -1,7 +1,8 @@
 from app.main import (
+    _CORE_AUTHENTICATED_SCRIPTS,
+    _DEFERRED_AUTHENTICATED_SCRIPTS,
     _authenticated_script_loader,
     _strip_pre_auth_heavy_scripts,
-    _unique_authenticated_scripts,
     spa,
 )
 
@@ -20,21 +21,36 @@ def test_pre_auth_html_keeps_only_boot_scripts():
     assert '/assets/build-game-cockpit.js' not in result
 
 
-def test_authenticated_loader_is_token_gated_and_sequential():
+def test_authenticated_loader_yields_between_core_modules_and_uses_idle_time_for_features():
     loader = _authenticated_script_loader()
     assert "localStorage.getItem('devpilot-token')" in loader
     assert "script.async = false" in loader
-    assert "script.onload = loadNext" in loader
-    assert "script.onerror = loadNext" in loader
+    assert "await nextPaint()" in loader
+    assert "requestIdleCallback" in loader
+    assert "await whenIdle()" in loader
+    assert "await sleep(90)" in loader
+    assert "devpilot:authenticated-core-ready" in loader
     assert "devpilot:authenticated-ui-ready" in loader
 
 
-def test_authenticated_script_list_is_deduplicated():
-    scripts = _unique_authenticated_scripts()
+def test_authenticated_boot_lists_are_small_core_and_deduplicated():
+    scripts = [*_CORE_AUTHENTICATED_SCRIPTS, *_DEFERRED_AUTHENTICATED_SCRIPTS]
+    assert len(_CORE_AUTHENTICATED_SCRIPTS) <= 6
     assert len(scripts) == len(set(scripts))
-    assert "project-provisioning.js" in scripts
-    assert "build-game-cockpit.js" in scripts
-    assert "mission-control.js" in scripts
+    assert "profile.js" in _CORE_AUTHENTICATED_SCRIPTS
+    assert "simplified-nav.js" in _CORE_AUTHENTICATED_SCRIPTS
+    assert "project-provisioning.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
+    assert "build-game-cockpit.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
+    assert "mission-control.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
+
+
+def test_loader_does_not_relaunch_acs_loader_or_duplicate_project_ships():
+    loader = _authenticated_script_loader()
+    scripts = [*_CORE_AUTHENTICATED_SCRIPTS, *_DEFERRED_AUTHENTICATED_SCRIPTS]
+    assert "acs-loader.js" not in scripts
+    assert scripts.count("project-ships.js") == 1
+    assert 'data-project-ships-loader="1"' in loader
+    assert "managedBy" in loader
 
 
 def test_spa_does_not_boot_heavy_scripts_before_authentication():
@@ -45,3 +61,4 @@ def test_spa_does_not_boot_heavy_scripts_before_authentication():
     assert '<script src="/assets/build-game-cockpit.js' not in html
     assert '<script src="/assets/project-ships.js' not in html
     assert "localStorage.getItem('devpilot-token')" in html
+    assert "window.__devpilotBoot" in html
