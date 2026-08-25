@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.api import router
 from app.db import get_db
 from app.models import Run, Task, TaskStatus, Workspace
-from app.security import require_access
 from app.services.audit import record
-
-router = APIRouter(prefix="/api/game", dependencies=[Depends(require_access)])
 
 _GAME_STATE = {
     TaskStatus.queued: "MISSION_READY",
@@ -82,7 +80,7 @@ def _payload(task: Task, run: Run | None) -> dict:
     }
 
 
-@router.get("/missions/{task_id}")
+@router.get("/game/missions/{task_id}")
 def mission_state(task_id: str, db: Session = Depends(get_db)):
     workspace_id = _workspace_id(db)
     task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
@@ -91,7 +89,7 @@ def mission_state(task_id: str, db: Session = Depends(get_db)):
     return _payload(task, _latest_run(db, task.id))
 
 
-@router.post("/missions/{task_id}/fire")
+@router.post("/game/missions/{task_id}/fire")
 def fire_mission(task_id: str, db: Session = Depends(get_db)):
     workspace_id = _workspace_id(db)
     task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
