@@ -196,11 +196,18 @@ def check_changed_frontend(base: str | None) -> None:
             continue
         if path == "app/static/feature-loader.js":
             continue
+
+        # Scan the complete added text for this file, not each line independently.
+        # This intentionally catches formatting such as:
+        #   document.createElement(\n  'script'\n)
+        # and assignments whose /assets/ value is placed on a later line.
+        added_source = "\n".join(lines)
+        if DYNAMIC_SCRIPT_PATTERN.search(added_source):
+            violations.append(
+                f"{path}: loader dinâmico de <script> fora de feature-loader.js (inclusive multilinha)"
+            )
+
         for added in lines:
-            if DYNAMIC_SCRIPT_PATTERN.search(added):
-                violations.append(
-                    f"{path}: loader dinâmico de <script> fora de feature-loader.js: {added.strip()}"
-                )
             if MUTATION_OBSERVER_PATTERN.search(added):
                 violations.append(
                     f"{path}: novo MutationObserver em módulo comum: {added.strip()}"
