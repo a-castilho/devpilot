@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE = ROOT / "app" / "static" / "example-project.js"
+CAPTURE = ROOT / "app" / "static" / "telemetry-capture.js"
 REPLAY = ROOT / "app" / "static" / "telemetry-replay-capture.js"
 REPETAI = ROOT / "app" / "static" / "examples" / "repeatai" / "index.html"
 
@@ -34,6 +35,16 @@ def test_example_wizard_capture_starts_only_after_explicit_user_action_and_stops
     assert "startWizardCapture();\n          state.step = 1;" in text
     assert "state.step = 4;\n      stopWizardCapture();" in text
     assert "captureController: null" in text
+
+
+def test_process_telemetry_click_and_keyboard_flush_timer_only_runs_during_recording():
+    text = source(CAPTURE)
+    assert "const startFlushTimer=()=>" in text
+    assert "if(flushTimer||!recording||!activeSession?.id)return;" in text
+    assert "const stopFlushTimer=()=>" in text
+    assert "attach();\n        startFlushTimer();" in text
+    assert "recording=false;detach();activeSession=null;\n        stopFlushTimer();" in text
+    assert "mountEntryPoint();\n  flushTimer=setInterval" not in text
 
 
 def test_pointer_replay_listener_is_idle_without_active_telemetry_session():
