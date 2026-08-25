@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import json
 import re
 
 from fastapi import Depends, FastAPI
@@ -52,15 +53,92 @@ STATIC = Path(__file__).parent / "static"
 _SCRIPT_SRC_RE = re.compile(
     r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
 )
+_SCRIPT_TAG_RE = re.compile(
+    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
+    re.IGNORECASE,
+)
+_PREAUTH_SCRIPT_NAMES = {"app.js", "auth-ui.js"}
+
+_INDEX_AUTHENTICATED_SCRIPTS = [
+    "project-provisioning.js",
+    "project-builder.js",
+    "project-description-profile.js",
+    "task-modal.js",
+    "task-analytics.js",
+    "reports.js",
+    "example-project.js",
+    "example-project-mobile-training.js",
+    "example-project-graphs-fix.js",
+    "simplified-nav.js",
+    "project-ships.js",
+    "build-game-cockpit.js",
+    "mobile-accordion-menu.js",
+]
+
+_RUNTIME_AUTHENTICATED_SCRIPTS = [
+    "acs-loader.js",
+    "telemetry-capture.js",
+    "telemetry-replay-capture.js",
+    "profile.js",
+    "users.js",
+    "token-usage.js",
+    "token-usage-mobile-fix.js",
+    "provider-models.js",
+    "provider-ollama.js",
+    "super-admin-voice.js",
+    "project-provisioning.js",
+    "product-delivery-ui.js",
+    "voice-project-start.js",
+    "voice-local-update.js",
+    "voice-microphone-permission.js",
+    "voice-playback.js",
+    "voice-enhanced-ui.js",
+    "voice-chatgpt-layout.js",
+    "voice-insecure-lan-guard.js",
+    "task-failures.js",
+    "task-image-upload.js",
+    "consolidated-ui.js",
+    "tasks-lazy-load.js",
+    "workspace-skins.js",
+    "analysis-commercial-proposal.js",
+    "analysis-failure-actions.js",
+    "analysis-incomplete-commercial.js",
+    "organization-normalization-ui.js",
+    "mobile-project-card-compact.js",
+    "example-project.js",
+    "repeatai-analysis-scroll.js",
+    "repeatai-live-graphs.js",
+    "repeatai-dashboard-graphs.js",
+    "repeatai-pattern-graphs.js",
+    "approval-slider.js",
+    "tws-example.js",
+    "deploy-admin.js",
+    "cloud-admin.js",
+    "super-admin-local-test.js",
+    "investia-admin.js",
+    "investia-homologation.js",
+    "career-linkedin.js",
+    "ui-literal-newline-cleanup.js",
+    "linux-terminal.js",
+    "linux-beginner-coach.js",
+    "build-game.js",
+    "mobile-game-mode.js",
+    "game-linux-training.js",
+    "audit-integrity.js",
+    "mission-control.js",
+]
+
+
+def _asset_revision(name: str) -> str:
+    try:
+        return str((STATIC / name).stat().st_mtime_ns)
+    except OSError:
+        return "1"
 
 
 def _version_frontend_scripts(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
-        asset = STATIC / match.group("name")
-        try:
-            revision = str(asset.stat().st_mtime_ns)
-        except OSError:
-            revision = "1"
+        revision = _asset_revision(match.group("name"))
         return f'{match.group("prefix")}?v={revision}{match.group("suffix")}'
 
     return _SCRIPT_SRC_RE.sub(replace, html)
@@ -86,11 +164,7 @@ def _normalize_index_head(html: str) -> str:
 
 
 def _inject_stylesheet(html: str, name: str) -> str:
-    asset = STATIC / name
-    try:
-        revision = str(asset.stat().st_mtime_ns)
-    except OSError:
-        revision = "1"
+    revision = _asset_revision(name)
     link = f'<link rel="stylesheet" href="/assets/{name}?v={revision}">'
     if name not in html:
         html = html.replace("</head>", f"  {link}\n</head>")
@@ -110,6 +184,70 @@ def _mark_mobile_route(html: str) -> str:
     if 'class="mobile-route"' not in html:
         html = html.replace("<body>", '<body class="mobile-route">', 1)
     return html
+
+
+def _strip_pre_auth_heavy_scripts(html: str) -> str:
+    """Keep login boot tiny; authenticated features are loaded after a valid token exists."""
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group("name")
+        return match.group(0) if name in _PREAUTH_SCRIPT_NAMES else ""
+
+    return _SCRIPT_TAG_RE.sub(replace, html)
+
+
+def _unique_authenticated_scripts() -> list[str]:
+    names: list[str] = []
+    seen = set(_PREAUTH_SCRIPT_NAMES)
+    for name in [*_INDEX_AUTHENTICATED_SCRIPTS, *_RUNTIME_AUTHENTICATED_SCRIPTS]:
+        if name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
+def _authenticated_script_loader() -> str:
+    urls = [
+        f"/assets/{name}?v={_asset_revision(name)}"
+        for name in _unique_authenticated_scripts()
+        if (STATIC / name).is_file()
+    ]
+    encoded_urls = json.dumps(urls, ensure_ascii=False)
+    return f"""<script>
+(() => {{
+  'use strict';
+  const sources = {encoded_urls};
+
+  const start = () => {{
+    if (!localStorage.getItem('devpilot-token')) return;
+    let index = 0;
+
+    const loadNext = () => {{
+      if (index >= sources.length) {{
+        document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
+        return;
+      }}
+      const src = sources[index++];
+      const script = document.createElement('script');
+      script.src = src;
+      script.async = false;
+      script.dataset.devpilotLazy = 'authenticated';
+      script.onload = loadNext;
+      script.onerror = loadNext;
+      document.body.appendChild(script);
+    }};
+
+    loadNext();
+  }};
+
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', start, {{once: true}});
+  }} else {{
+    start();
+  }}
+}})();
+</script>"""
 
 
 @asynccontextmanager
@@ -189,68 +327,18 @@ def spa(path: str):
     mobile_route = _is_mobile_route(path)
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = _normalize_index_head(html)
+    html = _strip_pre_auth_heavy_scripts(html)
     if mobile_route:
         html = _mark_mobile_route(html)
 
-    scripts = [
-        '<script src="/assets/acs-loader.js" defer></script>',
-        '<script src="/assets/telemetry-capture.js" defer></script>',
-        '<script src="/assets/telemetry-replay-capture.js" defer></script>',
-        '<script src="/assets/profile.js" defer></script>',
-        '<script src="/assets/auth-ui.js" defer></script>',
-        '<script src="/assets/users.js" defer></script>',
-        '<script src="/assets/token-usage.js" defer></script>',
-        '<script src="/assets/token-usage-mobile-fix.js" defer></script>',
-        '<script src="/assets/provider-models.js" defer></script>',
-        '<script src="/assets/provider-ollama.js" defer></script>',
-        '<script src="/assets/super-admin-voice.js" defer></script>',
-        '<script src="/assets/project-provisioning.js" defer></script>',
-        '<script src="/assets/product-delivery-ui.js" defer></script>',
-        '<script src="/assets/voice-project-start.js" defer></script>',
-        '<script src="/assets/voice-local-update.js" defer></script>',
-        '<script src="/assets/voice-microphone-permission.js" defer></script>',
-        '<script src="/assets/voice-playback.js" defer></script>',
-        '<script src="/assets/voice-enhanced-ui.js" defer></script>',
-        '<script src="/assets/voice-chatgpt-layout.js" defer></script>',
-        '<script src="/assets/voice-insecure-lan-guard.js" defer></script>',
-        '<script src="/assets/task-failures.js" defer></script>',
-        '<script src="/assets/task-image-upload.js" defer></script>',
-        '<script src="/assets/consolidated-ui.js" defer></script>',
-        '<script src="/assets/tasks-lazy-load.js" defer></script>',
-        '<script src="/assets/workspace-skins.js" defer></script>',
-        '<script src="/assets/analysis-commercial-proposal.js" defer></script>',
-        '<script src="/assets/analysis-failure-actions.js" defer></script>',
-        '<script src="/assets/analysis-incomplete-commercial.js" defer></script>',
-        '<script src="/assets/organization-normalization-ui.js" defer></script>',
-        '<script src="/assets/mobile-project-card-compact.js" defer></script>',
-        '<script src="/assets/example-project.js" defer></script>',
-        '<script src="/assets/repeatai-analysis-scroll.js" defer></script>',
-        '<script src="/assets/repeatai-live-graphs.js" defer></script>',
-        '<script src="/assets/repeatai-dashboard-graphs.js" defer></script>',
-        '<script src="/assets/repeatai-pattern-graphs.js" defer></script>',
-        '<script src="/assets/approval-slider.js" defer></script>',
-        '<script src="/assets/tws-example.js" defer></script>',
-        '<script src="/assets/deploy-admin.js" defer></script>',
-        '<script src="/assets/cloud-admin.js" defer></script>',
-        '<script src="/assets/super-admin-local-test.js" defer></script>',
-        '<script src="/assets/investia-admin.js" defer></script>',
-        '<script src="/assets/investia-homologation.js" defer></script>',
-        '<script src="/assets/career-linkedin.js" defer></script>',
-        '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
-        '<script src="/assets/linux-terminal.js" defer></script>',
-        '<script src="/assets/linux-beginner-coach.js" defer></script>',
-        '<script src="/assets/build-game.js" defer></script>',
-        '<script src="/assets/mobile-game-mode.js" defer></script>',
-        '<script src="/assets/game-linux-training.js" defer></script>',
-        '<script src="/assets/audit-integrity.js" defer></script>',
-        '<script src="/assets/mission-control.js" defer></script>',
-    ]
-    for script in scripts:
-        match = _SCRIPT_SRC_RE.search(script)
-        name = match.group("name") if match else ""
-        if name and _has_frontend_script(html, name):
-            continue
-        html = html.replace("</body>", f"  {script}\n</body>")
+    # Authentication must stay interactive even on low-memory machines. The
+    # dashboard/game/voice enhancement stack is loaded only after login and is
+    # intentionally sequenced to avoid a burst of MutationObservers, network
+    # requests and script compilation while the login dialog is open.
+    auth_script = '<script src="/assets/auth-ui.js" defer></script>'
+    if not _has_frontend_script(html, "auth-ui.js"):
+        html = html.replace("</body>", f"  {auth_script}\n</body>")
+    html = html.replace("</body>", f"  {_authenticated_script_loader()}\n</body>")
 
     html = _inject_stylesheet(html, "super-admin-voice.css")
     html = _inject_mobile_scroll_unlock(html)
