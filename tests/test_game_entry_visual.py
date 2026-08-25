@@ -36,7 +36,7 @@ def test_game_entry_keeps_game_bundle_lazy_and_uses_response_manager():
 def test_game_entry_explicitly_hands_off_to_game_shell():
     entry = ENTRY_JS.read_text(encoding="utf-8")
     shell = SHELL_JS.read_text(encoding="utf-8")
-    assert "window.DevPilotGameShell?.sync?.()" in entry
+    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" in entry
     assert "window.DevPilotGameShell = Object.freeze" in shell
     assert "enter: enterGame" in shell
     assert "exit: exitGame" in shell
