@@ -3,15 +3,21 @@ from pathlib import Path
 
 SUBPHASES_JS = Path("app/static/build-game-subphases.js")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
+FEATURE_LOADER_JS = Path("app/static/feature-loader.js")
 VALIDATE_CI = Path("scripts/validate-ci.sh")
 
 
-def test_subphase_engine_is_loaded_after_build_game():
-    loader = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
-    assert "/assets/build-game.js?v=20260824-1" in loader
-    assert "/assets/build-game-subphases.js?v=20260824-1" in loader
-    assert loader.index("/assets/build-game.js") < loader.index("/assets/build-game-subphases.js")
-    assert "data-build-game-subphases-loader" in loader
+def test_subphase_engine_is_loaded_only_with_explicit_game_bundle():
+    analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
+
+    assert "/assets/build-game.js" not in analytics
+    assert "/assets/build-game-subphases.js" not in analytics
+    assert "game: [" in loader
+    assert "'build-game.js'" in loader
+    assert "'build-game-subphases.js'" in loader
+    assert loader.index("'build-game.js'") < loader.index("'build-game-subphases.js'")
+    assert "window.__devpilotLoadFeature = loadFeature" in loader
 
 
 def test_real_failures_create_corrective_subphases():
