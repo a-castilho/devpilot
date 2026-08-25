@@ -8,7 +8,6 @@ import sys
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
 
 
 def redact_command(command: str) -> str:
@@ -29,52 +28,15 @@ def sanitize_cwd(cwd: str) -> str:
     return re.sub(r"^/home/[^/]+", "~", cwd.strip())[:500]
 
 
-def read_env_value(path: Path, name: str) -> str:
-    try:
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            if key.strip() != name:
-                continue
-            return value.strip().strip("'\"")
-    except (OSError, UnicodeError):
-        return ""
-    return ""
-
-
 def resolve_token() -> str:
-    token = os.getenv("DEVPILOT_BOOTSTRAP_TOKEN", "").strip()
-    if token:
-        return token
-
-    home = Path(
-        os.getenv(
-            "DEVPILOT_HOME",
-            str(Path.home() / "Documents" / "devpilot"),
-        )
-    ).expanduser()
-
-    for name in (".env.local", ".env"):
-        token = read_env_value(home / name, "DEVPILOT_BOOTSTRAP_TOKEN")
-        if token:
-            return token
-
-    return ""
+    # Telemetry is a normal authenticated API. Never reuse the bootstrap secret
+    # here: bootstrap credentials are intentionally restricted to auth bootstrap.
+    return os.getenv("DEVPILOT_TELEMETRY_TOKEN", "").strip()
 
 
 def candidate_urls() -> list[str]:
     configured = os.getenv("DEVPILOT_URL", "").strip().rstrip("/")
-    if configured:
-        return [configured]
-
-    # Docker/desktop local padrão atual. Mantemos 8081 apenas como fallback
-    # para instalações antigas ainda não migradas.
-    return [
-        "http://127.0.0.1:8080",
-        "http://127.0.0.1:8081",
-    ]
+    return [configured or "http://127.0.0.1:8080"]
 
 
 def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
@@ -92,9 +54,10 @@ def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
             response.read(256)
         return True
     except urllib.error.HTTPError as exc:
-        # 404/409 normalmente significam que não existe sessão ativa; não é
-        # erro operacional do hook e não deve poluir o terminal.
-        if exc.code in {404, 409}:
+        # Authentication failures must stop this capture attempt instead of
+        # producing fallback traffic/log churn. 404/409 are also benign here:
+        # they normally mean there is no active telemetry session.
+        if exc.code in {401, 403, 404, 409}:
             return True
     except (urllib.error.URLError, TimeoutError, OSError):
         pass
@@ -102,6 +65,9 @@ def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
 
 
 def main() -> int:
+    if os.getenv("DEVPILOT_TERMINAL_CAPTURE", "0").strip() != "1":
+        return 0
+
     token = resolve_token()
     command = os.getenv("DEVPILOT_CAPTURE_COMMAND", "").strip()
     if not token or not command:
