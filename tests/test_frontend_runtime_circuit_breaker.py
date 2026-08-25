@@ -37,6 +37,17 @@ def test_acs_loader_never_locks_body_or_pointer_input():
     assert "window.setTimeout(removeNow, 1400)" in loader
 
 
+def test_pre_core_bridge_keeps_legacy_runtime_from_aborting_boot():
+    loader = read("app/static/acs-loader.js")
+
+    assert "HTMLCollection.prototype.forEach" in loader
+    assert "Array.prototype.forEach" in loader
+    assert "ensureLegacyAuthAnchors" in loader
+    assert "token.id = 'token'" in loader
+    assert "save.id = 'save-token'" in loader
+    assert "DOMContentLoaded" in loader
+
+
 def test_sidebar_attribute_observers_are_blocked_before_core_runtime():
     loader = read("app/static/acs-loader.js")
 
