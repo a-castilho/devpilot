@@ -68,6 +68,13 @@ def test_auth_ui_handles_expired_session_before_dashboard_boot():
     assert "if (!modal.open) modal.showModal()" in source
 
 
+def test_auth_ui_normalizes_legacy_approve_selector_to_collection():
+    source = AUTH_UI.read_text(encoding="utf-8")
+    assert "const nativeQuerySelector = document.querySelector.bind(document)" in source
+    assert "selector === '.approve'" in source
+    assert "document.querySelectorAll(selector)" in source
+
+
 def test_spa_keeps_app_js_behind_authenticated_loader():
     response = spa("")
     html = response.body.decode("utf-8")
