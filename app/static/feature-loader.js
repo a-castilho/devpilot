@@ -7,6 +7,7 @@
   let navigationEpoch = 0;
 
   const FEATURE_BUNDLES = Object.freeze({
+    mobileShell: ['mobile-accordion-menu.js'],
     profile: ['profile.js'],
     users: ['users.js'],
     projectBuilder: [
@@ -148,7 +149,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-7`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-8`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -393,14 +394,35 @@
     addPlaceholder('admin', 'Super Admin', {superAdmin: true});
   }
 
+  let mobileShellRequested = false;
+  function initializeMobileShell() {
+    if (mobileShellRequested || !window.matchMedia('(max-width: 900px)').matches) return;
+    mobileShellRequested = true;
+    void loadFeature('mobileShell').then(ok => {
+      if (!ok) {
+        mobileShellRequested = false;
+        console.error('[DevPilot] Menu mobile não pôde ser inicializado.');
+      }
+    });
+  }
+
+  function initializeAuthenticatedUi() {
+    initializePlaceholders();
+    initializeMobileShell();
+  }
+
   // Não altera o menu enquanto o modal de autenticação está ativo. O loader
   // pode ser baixado no core, mas seu primeiro trabalho de DOM só acontece
   // depois que o dashboard foi revelado.
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
-    document.addEventListener('devpilot:dashboard-revealed', initializePlaceholders, {once: true});
+    document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
   } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializePlaceholders, {once: true});
+    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
   } else {
-    initializePlaceholders();
+    initializeAuthenticatedUi();
   }
+
+  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => {
+    if (event.matches) initializeMobileShell();
+  });
 })();
