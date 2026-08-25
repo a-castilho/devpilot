@@ -48,6 +48,7 @@
     game: [
       'build-game.js',
       'build-game-subphases.js',
+      'build-game-repair-mission.js',
       'build-game-new-session.js',
       'build-game-url-bonus.js',
       'build-game-weapons.js',
@@ -147,7 +148,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-6`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-7`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
