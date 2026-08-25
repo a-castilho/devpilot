@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import json
 import re
 
 from fastapi import Depends, FastAPI
@@ -51,15 +52,93 @@ STATIC = Path(__file__).parent / "static"
 _SCRIPT_SRC_RE = re.compile(
     r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
 )
+_SCRIPT_TAG_RE = re.compile(
+    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
+    re.IGNORECASE,
+)
+_PREAUTH_SCRIPT_NAMES = {"acs-loader.js", "auth-ui.js"}
+
+# O navegador deve ficar interativo antes de iniciar dezenas de módulos opcionais.
+# O núcleo abaixo é pequeno e suficiente para Visão geral, Perfil, Usuários e
+# Desenvolvimento paginado. O restante é carregado progressivamente em idle time.
+_CORE_AUTHENTICATED_SCRIPTS = [
+    "app.js",
+    "tasks-lazy-load.js",
+    "profile.js",
+    "users.js",
+    "simplified-nav.js",
+    "workspace-skins.js",
+]
+
+_DEFERRED_AUTHENTICATED_SCRIPTS = [
+    "consolidated-ui.js",
+    "project-provisioning.js",
+    "project-builder.js",
+    "project-description-profile.js",
+    "task-modal.js",
+    "task-analytics.js",
+    "reports.js",
+    "example-project.js",
+    "example-project-mobile-training.js",
+    "example-project-graphs-fix.js",
+    "project-ships.js",
+    "build-game-cockpit.js",
+    "mobile-accordion-menu.js",
+    "token-usage.js",
+    "token-usage-mobile-fix.js",
+    "provider-models.js",
+    "provider-ollama.js",
+    "super-admin-voice.js",
+    "product-delivery-ui.js",
+    "voice-project-start.js",
+    "voice-local-update.js",
+    "voice-microphone-permission.js",
+    "voice-playback.js",
+    "voice-enhanced-ui.js",
+    "voice-chatgpt-layout.js",
+    "voice-insecure-lan-guard.js",
+    "task-failures.js",
+    "task-image-upload.js",
+    "analysis-commercial-proposal.js",
+    "analysis-failure-actions.js",
+    "analysis-incomplete-commercial.js",
+    "organization-normalization-ui.js",
+    "mobile-project-card-compact.js",
+    "repeatai-analysis-scroll.js",
+    "repeatai-live-graphs.js",
+    "repeatai-dashboard-graphs.js",
+    "repeatai-pattern-graphs.js",
+    "approval-slider.js",
+    "tws-example.js",
+    "deploy-admin.js",
+    "cloud-admin.js",
+    "super-admin-local-test.js",
+    "investia-admin.js",
+    "investia-homologation.js",
+    "career-linkedin.js",
+    "ui-literal-newline-cleanup.js",
+    "linux-terminal.js",
+    "linux-beginner-coach.js",
+    "build-game.js",
+    "mobile-game-mode.js",
+    "game-linux-training.js",
+    "audit-integrity.js",
+    "mission-control.js",
+    "telemetry-capture.js",
+    "telemetry-replay-capture.js",
+]
+
+
+def _asset_revision(name: str) -> str:
+    try:
+        return str((STATIC / name).stat().st_mtime_ns)
+    except OSError:
+        return "1"
 
 
 def _version_frontend_scripts(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
-        asset = STATIC / match.group("name")
-        try:
-            revision = str(asset.stat().st_mtime_ns)
-        except OSError:
-            revision = "1"
+        revision = _asset_revision(match.group("name"))
         return f'{match.group("prefix")}?v={revision}{match.group("suffix")}'
 
     return _SCRIPT_SRC_RE.sub(replace, html)
@@ -85,11 +164,7 @@ def _normalize_index_head(html: str) -> str:
 
 
 def _inject_stylesheet(html: str, name: str) -> str:
-    asset = STATIC / name
-    try:
-        revision = str(asset.stat().st_mtime_ns)
-    except OSError:
-        revision = "1"
+    revision = _asset_revision(name)
     link = f'<link rel="stylesheet" href="/assets/{name}?v={revision}">'
     if name not in html:
         html = html.replace("</head>", f"  {link}\n</head>")
@@ -109,6 +184,172 @@ def _mark_mobile_route(html: str) -> str:
     if 'class="mobile-route"' not in html:
         html = html.replace("<body>", '<body class="mobile-route">', 1)
     return html
+
+
+def _strip_boot_runtime_scripts(html: str) -> str:
+    """Remove a antiga rajada de scripts; o loader autenticado passa a ser o dono do boot."""
+
+    def replace(match: re.Match[str]) -> str:
+        name = match.group("name")
+        return match.group(0) if name in _PREAUTH_SCRIPT_NAMES else ""
+
+    return _SCRIPT_TAG_RE.sub(replace, html)
+
+
+def _unique_script_names(names: list[str], seen: set[str] | None = None) -> list[str]:
+    result: list[str] = []
+    known = set(seen or ())
+    for name in names:
+        if name in known:
+            continue
+        known.add(name)
+        result.append(name)
+    return result
+
+
+def _script_urls(names: list[str]) -> list[str]:
+    return [
+        f"/assets/{name}?v={_asset_revision(name)}"
+        for name in names
+        if (STATIC / name).is_file()
+    ]
+
+
+def _authenticated_script_loader() -> str:
+    core_names = _unique_script_names(_CORE_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))
+    deferred_names = _unique_script_names(
+        _DEFERRED_AUTHENTICATED_SCRIPTS,
+        set(_PREAUTH_SCRIPT_NAMES) | set(core_names),
+    )
+    core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
+    deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
+
+    return f"""<script>
+(() => {{
+  'use strict';
+  const coreSources = {core_urls};
+  const deferredSources = {deferred_urls};
+  const boot = window.__devpilotBoot = window.__devpilotBoot || {{
+    phase: 'waiting', current: null, loaded: [], failed: [], timings: {{}}, startedAt: Date.now()
+  }};
+
+  const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
+  const tokenExists = () => Boolean(token());
+  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+  const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
+  const whenIdle = () => new Promise(resolve => {{
+    if ('requestIdleCallback' in window) {{
+      window.requestIdleCallback(() => resolve(), {{timeout: 2200}});
+    }} else {{
+      window.setTimeout(resolve, 180);
+    }}
+  }});
+
+  const validateSession = async () => {{
+    if (!tokenExists()) return false;
+    if (window.__devpilotAuthReady) {{
+      try {{ return Boolean(await window.__devpilotAuthReady); }} catch (_) {{ return false; }}
+    }}
+    try {{
+      const response = await fetch('/api/auth/me', {{
+        headers: {{Authorization: `Bearer ${{token()}}`}},
+        cache: 'no-store',
+      }});
+      if (response.ok) return true;
+      if ([401, 403, 404].includes(response.status)) localStorage.removeItem('devpilot-token');
+    }} catch (_) {{}}
+    return false;
+  }};
+
+  const markLegacyProjectShipsLoader = () => {{
+    if (document.querySelector('script[data-project-ships-loader="1"]')) return;
+    const marker = document.createElement('script');
+    marker.type = 'application/json';
+    marker.dataset.projectShipsLoader = '1';
+    marker.textContent = '{{"managedBy":"devpilot-progressive-boot"}}';
+    document.head.appendChild(marker);
+  }};
+
+  const loadScript = src => new Promise(resolve => {{
+    const absolute = new URL(src, location.href).href;
+    const existing = [...document.scripts].find(script => script.src === absolute);
+    if (existing) {{
+      if (!boot.loaded.includes(src)) boot.loaded.push(src);
+      resolve(true);
+      return;
+    }}
+
+    const started = performance.now();
+    boot.current = src;
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = false;
+    script.dataset.devpilotProgressive = '1';
+    script.onload = () => {{
+      boot.timings[src] = Math.round(performance.now() - started);
+      boot.loaded.push(src);
+      boot.current = null;
+      document.dispatchEvent(new CustomEvent('devpilot:asset-loaded', {{detail: {{src}}}}));
+      resolve(true);
+    }};
+    script.onerror = () => {{
+      boot.timings[src] = Math.round(performance.now() - started);
+      boot.failed.push(src);
+      boot.current = null;
+      resolve(false);
+    }};
+    document.body.appendChild(script);
+  }});
+
+  const loadCore = async () => {{
+    boot.phase = 'core';
+    for (const src of coreSources) {{
+      if (!tokenExists()) return false;
+      await loadScript(src);
+      await nextPaint();
+    }}
+    boot.phase = 'interactive';
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
+    return true;
+  }};
+
+  const loadDeferred = async () => {{
+    await sleep(1400);
+    boot.phase = 'deferred';
+    for (const src of deferredSources) {{
+      if (!tokenExists()) break;
+      while (document.hidden && tokenExists()) await sleep(1200);
+      await whenIdle();
+      await loadScript(src);
+      await nextPaint();
+      await sleep(120);
+    }}
+    boot.phase = 'ready';
+    boot.finishedAt = Date.now();
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
+  }};
+
+  const start = async () => {{
+    if (boot.phase !== 'waiting') return;
+    boot.phase = 'auth';
+    const authenticated = await validateSession();
+    boot.authenticated = authenticated;
+    if (!authenticated) {{
+      boot.phase = 'waiting-login';
+      return;
+    }}
+    markLegacyProjectShipsLoader();
+    const coreReady = await loadCore();
+    if (coreReady) void loadDeferred();
+  }};
+
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', start, {{once: true}});
+  }} else {{
+    void start();
+  }}
+}})();
+</script>"""
 
 
 @asynccontextmanager
@@ -187,65 +428,17 @@ def spa(path: str):
     mobile_route = _is_mobile_route(path)
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = _normalize_index_head(html)
+    html = _strip_boot_runtime_scripts(html)
     if mobile_route:
         html = _mark_mobile_route(html)
 
-    scripts = [
-        '<script src="/assets/acs-loader.js" defer></script>',
-        '<script src="/assets/telemetry-capture.js" defer></script>',
-        '<script src="/assets/telemetry-replay-capture.js" defer></script>',
-        '<script src="/assets/profile.js" defer></script>',
-        '<script src="/assets/auth-ui.js" defer></script>',
-        '<script src="/assets/users.js" defer></script>',
-        '<script src="/assets/token-usage.js" defer></script>',
-        '<script src="/assets/token-usage-mobile-fix.js" defer></script>',
-        '<script src="/assets/provider-models.js" defer></script>',
-        '<script src="/assets/provider-ollama.js" defer></script>',
-        '<script src="/assets/super-admin-voice.js" defer></script>',
-        '<script src="/assets/project-provisioning.js" defer></script>',
-        '<script src="/assets/product-delivery-ui.js" defer></script>',
-        '<script src="/assets/voice-project-start.js" defer></script>',
-        '<script src="/assets/voice-local-update.js" defer></script>',
-        '<script src="/assets/voice-microphone-permission.js" defer></script>',
-        '<script src="/assets/voice-playback.js" defer></script>',
-        '<script src="/assets/voice-enhanced-ui.js" defer></script>',
-        '<script src="/assets/voice-chatgpt-layout.js" defer></script>',
-        '<script src="/assets/voice-insecure-lan-guard.js" defer></script>',
-        '<script src="/assets/task-failures.js" defer></script>',
-        '<script src="/assets/task-image-upload.js" defer></script>',
-        '<script src="/assets/consolidated-ui.js" defer></script>',
-        '<script src="/assets/tasks-lazy-load.js" defer></script>',
-        '<script src="/assets/workspace-skins.js" defer></script>',
-        '<script src="/assets/analysis-commercial-proposal.js" defer></script>',
-        '<script src="/assets/analysis-failure-actions.js" defer></script>',
-        '<script src="/assets/analysis-incomplete-commercial.js" defer></script>',
-        '<script src="/assets/organization-normalization-ui.js" defer></script>',
-        '<script src="/assets/mobile-project-card-compact.js" defer></script>',
-        '<script src="/assets/example-project.js" defer></script>',
-        '<script src="/assets/repeatai-analysis-scroll.js" defer></script>',
-        '<script src="/assets/repeatai-live-graphs.js" defer></script>',
-        '<script src="/assets/repeatai-dashboard-graphs.js" defer></script>',
-        '<script src="/assets/repeatai-pattern-graphs.js" defer></script>',
-        '<script src="/assets/approval-slider.js" defer></script>',
-        '<script src="/assets/tws-example.js" defer></script>',
-        '<script src="/assets/deploy-admin.js" defer></script>',
-        '<script src="/assets/cloud-admin.js" defer></script>',
-        '<script src="/assets/super-admin-local-test.js" defer></script>',
-        '<script src="/assets/investia-admin.js" defer></script>',
-        '<script src="/assets/investia-homologation.js" defer></script>',
-        '<script src="/assets/career-linkedin.js" defer></script>',
-        '<script src="/assets/ui-literal-newline-cleanup.js" defer></script>',
-        '<script src="/assets/linux-terminal.js" defer></script>',
-        '<script src="/assets/linux-beginner-coach.js" defer></script>',
-        '<script src="/assets/audit-integrity.js" defer></script>',
-        '<script src="/assets/mission-control.js" defer></script>',
-    ]
-    for script in scripts:
-        match = _SCRIPT_SRC_RE.search(script)
-        name = match.group("name") if match else ""
-        if name and _has_frontend_script(html, name):
-            continue
-        html = html.replace("</body>", f"  {script}\n</body>")
+    acs_script = '<script src="/assets/acs-loader.js" defer></script>'
+    auth_script = '<script src="/assets/auth-ui.js" defer></script>'
+    if not _has_frontend_script(html, "acs-loader.js"):
+        html = html.replace("</body>", f"  {acs_script}\n</body>")
+    if not _has_frontend_script(html, "auth-ui.js"):
+        html = html.replace("</body>", f"  {auth_script}\n</body>")
+    html = html.replace("</body>", f"  {_authenticated_script_loader()}\n</body>")
 
     html = _inject_stylesheet(html, "super-admin-voice.css")
     html = _inject_mobile_scroll_unlock(html)
@@ -259,6 +452,5 @@ def spa(path: str):
             "Pragma": "no-cache",
             "Expires": "0",
             "Permissions-Policy": "microphone=(self)",
-            "Feature-Policy": "microphone 'self'",
         },
     )
