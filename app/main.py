@@ -59,15 +59,16 @@ _SCRIPT_TAG_RE = re.compile(
 )
 _PREAUTH_SCRIPT_NAMES = {"acs-loader.js", "auth-ui.js"}
 
+# Boot autenticado deliberadamente mínimo e determinístico.
+# Nenhum módulo de domínio é carregado automaticamente após login.
 _CORE_AUTHENTICATED_SCRIPTS = [
     "app.js",
-    "tasks-lazy-load.js",
-    "profile.js",
-    "users.js",
-    "simplified-nav.js",
-    "workspace-skins.js",
+    "feature-loader.js",
 ]
 
+# Mantido como inventário de módulos opcionais para compatibilidade e auditoria.
+# O navegador NÃO percorre esta lista. O feature-loader carrega somente o bundle
+# explicitamente acionado pelo usuário.
 _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "consolidated-ui.js",
     "project-provisioning.js",
@@ -187,18 +188,8 @@ def _strip_boot_runtime_scripts(html: str) -> str:
     def replace(match: re.Match[str]) -> str:
         name = match.group("name")
         return match.group(0) if name in _PREAUTH_SCRIPT_NAMES else ""
+
     return _SCRIPT_TAG_RE.sub(replace, html)
-
-
-def _unique_script_names(names: list[str], seen: set[str] | None = None) -> list[str]:
-    result: list[str] = []
-    known = set(seen or ())
-    for name in names:
-        if name in known:
-            continue
-        known.add(name)
-        result.append(name)
-    return result
 
 
 def _script_urls(names: list[str]) -> list[str]:
@@ -210,74 +201,59 @@ def _script_urls(names: list[str]) -> list[str]:
 
 
 def _authenticated_script_loader() -> str:
-    core_names = _unique_script_names(_CORE_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))
-    deferred_names = _unique_script_names(
-        _DEFERRED_AUTHENTICATED_SCRIPTS,
-        set(_PREAUTH_SCRIPT_NAMES) | set(core_names),
-    )
-    core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
-    deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
+    core_urls = json.dumps(_script_urls(_CORE_AUTHENTICATED_SCRIPTS), ensure_ascii=False)
 
     return f"""<script>
 (() => {{
   'use strict';
   const coreSources = {core_urls};
-  const deferredSources = {deferred_urls};
-  const boot = window.__devpilotBoot = window.__devpilotBoot || {{
-    phase: 'waiting', current: null, loaded: [], failed: [], timings: {{}}, startedAt: Date.now()
+  const boot = window.__devpilotBoot = {{
+    phase: 'auth',
+    current: null,
+    loaded: [],
+    failed: [],
+    timings: {{}},
+    startedAt: Date.now(),
   }};
-  const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
-  const tokenExists = () => Boolean(token());
-  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
-  const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
-  const whenIdle = () => new Promise(resolve => {{
-    if ('requestIdleCallback' in window) window.requestIdleCallback(() => resolve(), {{timeout: 2200}});
-    else window.setTimeout(resolve, 180);
-  }});
 
-  const validateSession = async () => {{
-    if (!tokenExists()) return false;
+  const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
+
+  const waitForAuthentication = async () => {{
     if (window.__devpilotAuthReady) {{
-      try {{ return Boolean(await window.__devpilotAuthReady); }} catch (_) {{ return false; }}
+      try {{ return Boolean(await window.__devpilotAuthReady); }}
+      catch (_) {{ return false; }}
     }}
+    if (!token()) return false;
     try {{
       const response = await fetch('/api/auth/me', {{
-        headers: {{Authorization: `Bearer ${{token()}}`}}, cache: 'no-store'
+        headers: {{Authorization: `Bearer ${{token()}}`}},
+        cache: 'no-store',
       }});
-      if (response.ok) return true;
-      if ([401, 403, 404].includes(response.status)) localStorage.removeItem('devpilot-token');
-    }} catch (_) {{}}
-    return false;
-  }};
-
-  const markLegacyProjectShipsLoader = () => {{
-    if (document.querySelector('script[data-project-ships-loader="1"]')) return;
-    const marker = document.createElement('script');
-    marker.type = 'application/json';
-    marker.dataset.projectShipsLoader = '1';
-    marker.textContent = '{{"managedBy":"devpilot-progressive-boot"}}';
-    document.head.appendChild(marker);
+      return response.ok;
+    }} catch (_) {{
+      return false;
+    }}
   }};
 
   const loadScript = src => new Promise(resolve => {{
     const absolute = new URL(src, location.href).href;
-    const existing = [...document.scripts].find(script => script.src === absolute);
+    const existing = Array.from(document.scripts).find(script => script.src === absolute);
     if (existing) {{
       if (!boot.loaded.includes(src)) boot.loaded.push(src);
       resolve(true);
       return;
     }}
+
     const started = performance.now();
     boot.current = src;
     const script = document.createElement('script');
     script.src = src;
     script.async = false;
-    script.dataset.devpilotProgressive = '1';
+    script.dataset.devpilotCore = '1';
     script.onload = () => {{
       boot.timings[src] = Math.round(performance.now() - started);
       boot.loaded.push(src);
       boot.current = null;
-      document.dispatchEvent(new CustomEvent('devpilot:asset-loaded', {{detail: {{src}}}}));
       resolve(true);
     }};
     script.onerror = () => {{
@@ -289,50 +265,38 @@ def _authenticated_script_loader() -> str:
     document.body.appendChild(script);
   }});
 
-  const loadCore = async () => {{
-    boot.phase = 'core';
-    for (const src of coreSources) {{
-      if (!tokenExists()) return false;
-      await loadScript(src);
-      await nextPaint();
-    }}
-    boot.phase = 'interactive';
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
-    return true;
-  }};
-
-  const loadDeferred = async () => {{
-    await sleep(1400);
-    boot.phase = 'deferred';
-    for (const src of deferredSources) {{
-      if (!tokenExists()) break;
-      while (document.hidden && tokenExists()) await sleep(1200);
-      await whenIdle();
-      await loadScript(src);
-      await nextPaint();
-      await sleep(120);
-    }}
-    boot.phase = 'ready';
-    boot.finishedAt = Date.now();
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
-  }};
-
   const start = async () => {{
-    if (boot.phase !== 'waiting') return;
-    boot.phase = 'auth';
-    const authenticated = await validateSession();
+    const authenticated = await waitForAuthentication();
     boot.authenticated = authenticated;
-    if (!authenticated) {{
+    if (!authenticated || !token()) {{
       boot.phase = 'waiting-login';
       return;
     }}
-    markLegacyProjectShipsLoader();
-    const coreReady = await loadCore();
-    if (coreReady) void loadDeferred();
+
+    boot.phase = 'core';
+    for (const src of coreSources) {{
+      if (!token()) {{
+        boot.phase = 'logged-out';
+        return;
+      }}
+      const ok = await loadScript(src);
+      if (!ok) {{
+        boot.phase = 'failed';
+        return;
+      }}
+    }}
+
+    boot.phase = 'ready';
+    boot.finishedAt = Date.now();
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
   }};
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start, {{once: true}});
-  else void start();
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', () => void start(), {{once: true}});
+  }} else {{
+    void start();
+  }}
 }})();
 </script>"""
 
