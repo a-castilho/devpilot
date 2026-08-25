@@ -15,7 +15,16 @@ def test_persisted_session_requires_explicit_resume():
     assert "dashboard só será iniciado depois da sua confirmação" in auth
     assert "window.__devpilotAuthReady = new Promise" in auth
     assert "renderResumeSession(token)" in auth
-    assert "sessionStorage.getItem(EXPLICIT_LOGIN_KEY)" in auth
+
+
+def test_fresh_login_releases_runtime_without_page_reload():
+    auth = read("app/static/auth-ui.js")
+
+    assert "localStorage.setItem(TOKEN_KEY, data.access_token)" in auth
+    assert "completeAuth(true)" in auth
+    assert "scheduler autenticado" in auth
+    assert "sessionStorage.getItem" not in auth
+    assert "sessionStorage.setItem" not in auth
 
 
 def test_auth_does_not_override_document_query_selector():
@@ -28,7 +37,7 @@ def test_auth_does_not_override_document_query_selector():
 def test_core_app_uses_real_multi_selector_for_approval_buttons():
     app = read("app/static/app.js")
 
-    assert "$$('.approve').forEach" in app
+    assert "$$('.approve', table).forEach" in app
     assert "$('.approve').forEach" not in app
 
 
@@ -37,6 +46,30 @@ def test_core_app_has_no_legacy_save_token_click_binding():
 
     assert "$('#save-token').onclick" not in app
     assert "$('#token').value" not in app
+
+
+def test_post_login_does_not_fetch_heavy_projects_or_organizations():
+    app = read("app/static/app.js")
+    dashboard = app.split("async function loadDashboard()", 1)[1].split("async function loadProjects()", 1)[0]
+
+    assert "api('/overview')" in dashboard
+    assert "api('/ui/tasks?limit=5')" in dashboard
+    assert "api('/projects')" not in dashboard
+    assert "api('/organizations')" not in dashboard
+    assert "agents_md" not in dashboard
+    assert "codex_config" not in dashboard
+
+
+def test_large_project_and_task_text_is_excluded_from_summary_routes():
+    routes = read("app/frontend_ui_routes.py")
+
+    project_summary = routes.split('@router.get("/projects")', 1)[1].split('@router.get("/tasks")', 1)[0]
+    task_summary = routes.split('@router.get("/tasks")', 1)[1].split('@router.get("/tasks/{task_id}")', 1)[0]
+
+    assert "Project.agents_md" not in project_summary
+    assert "Project.codex_config" not in project_summary
+    assert "Task.prompt" not in task_summary
+    assert '"prompt": item.prompt' in routes
 
 
 def test_mobile_navigation_has_no_attribute_mutation_observer_loop():
