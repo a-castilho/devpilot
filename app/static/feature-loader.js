@@ -51,6 +51,8 @@
       'build-game-new-session.js',
       'build-game-url-bonus.js',
       'build-game-weapons.js',
+      'mobile-game-mode.js',
+      'game-linux-training.js',
     ],
     audit: ['audit-integrity.js'],
   });
@@ -147,7 +149,7 @@
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
 
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-6`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-7`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -392,9 +394,6 @@
     addPlaceholder('admin', 'Super Admin', {superAdmin: true});
   }
 
-  // Não altera o menu enquanto o modal de autenticação está ativo. O loader
-  // pode ser baixado no core, mas seu primeiro trabalho de DOM só acontece
-  // depois que o dashboard foi revelado.
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
     document.addEventListener('devpilot:dashboard-revealed', initializePlaceholders, {once: true});
   } else if (document.readyState === 'loading') {
