@@ -6,8 +6,18 @@
   window.__devpilotGameEntryReady = true;
 
   const CARD_ID = 'devpilot-game-entry';
+  const STYLE_ID = 'devpilot-game-entry-style';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const PROJECT_KEY = 'devpilot-build-game-project';
+
+  function ensureStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const link = document.createElement('link');
+    link.id = STYLE_ID;
+    link.rel = 'stylesheet';
+    link.href = '/assets/game-entry.css?v=20260825-1';
+    document.head.appendChild(link);
+  }
 
   const hasSession = () => Boolean(String(localStorage.getItem(MISSION_KEY) || '').trim());
 
@@ -18,6 +28,7 @@
   function createCard() {
     const overview = document.querySelector('#overview-view');
     if (!overview || document.getElementById(CARD_ID)) return false;
+    ensureStyle();
 
     const card = document.createElement('article');
     card.id = CARD_ID;
@@ -73,6 +84,7 @@
   }
 
   function boot() {
+    ensureStyle();
     if (createCard()) return;
     const observer = new MutationObserver(() => {
       if (createCard()) observer.disconnect();
