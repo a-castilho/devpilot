@@ -56,15 +56,14 @@ _SCRIPT_SRC_RE = re.compile(
     r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
 )
 _SCRIPT_TAG_RE = re.compile(
-    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
+    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?v=[^"]*)?"[^>]*></script>',
     re.IGNORECASE,
 )
 _PREAUTH_SCRIPT_NAMES = {"app.js", "auth-ui.js"}
 
-# Keep the first authenticated paint intentionally small. app.js already renders
-# overview/projects/tasks, so these modules are only the shell enhancements that
-# are useful on every screen. Everything else is progressively initialized while
-# the browser is idle instead of monopolizing the main thread after login.
+# Keep the authenticated shell intentionally small. Optional features are no
+# longer all booted simply because a token exists: they are loaded by active
+# view or explicit interaction so low-RAM browsers keep their main thread free.
 _CORE_AUTHENTICATED_SCRIPTS = [
     "super-admin-chat-control.js",
     "profile.js",
@@ -74,62 +73,108 @@ _CORE_AUTHENTICATED_SCRIPTS = [
     "simplified-nav.js",
 ]
 
-_DEFERRED_AUTHENTICATED_SCRIPTS = [
-    "project-provisioning.js",
-    "project-builder.js",
-    "project-description-profile.js",
-    "task-modal.js",
-    "task-analytics.js",
-    "reports.js",
-    "example-project.js",
-    "example-project-mobile-training.js",
-    "example-project-graphs-fix.js",
-    "project-ships.js",
-    "build-game-cockpit.js",
-    "mobile-accordion-menu.js",
-    "telemetry-capture.js",
-    "telemetry-replay-capture.js",
+_VIEW_AUTHENTICATED_SCRIPTS = {
+    "organizations": [
+        "organization-normalization-ui.js",
+    ],
+    "projects": [
+        "project-provisioning.js",
+        "project-builder.js",
+        "project-description-profile.js",
+        "project-ships.js",
+        "mobile-project-card-compact.js",
+        "product-delivery-ui.js",
+    ],
+    "tasks": [
+        "task-modal.js",
+        "task-analytics.js",
+        "task-failures.js",
+        "task-image-upload.js",
+        "tasks-lazy-load.js",
+        "analysis-commercial-proposal.js",
+        "analysis-failure-actions.js",
+        "analysis-incomplete-commercial.js",
+        "approval-slider.js",
+    ],
+    "providers": [
+        "provider-models.js",
+        "provider-ollama.js",
+    ],
+    "reports": [
+        "reports.js",
+    ],
+    "audit": [
+        "audit-integrity.js",
+    ],
+}
+
+_FEATURE_AUTHENTICATED_SCRIPTS = {
+    "example": [
+        "example-project.js",
+        "example-project-mobile-training.js",
+        "example-project-graphs-fix.js",
+        "repeatai-analysis-scroll.js",
+        "repeatai-live-graphs.js",
+        "repeatai-dashboard-graphs.js",
+        "repeatai-pattern-graphs.js",
+        "tws-example.js",
+    ],
+    "voice": [
+        "super-admin-voice.js",
+        "voice-project-start.js",
+        "voice-local-update.js",
+        "voice-microphone-permission.js",
+        "voice-playback.js",
+        "voice-enhanced-ui.js",
+        "voice-chatgpt-layout.js",
+        "voice-insecure-lan-guard.js",
+    ],
+    "game": [
+        "build-game-cockpit.js",
+        "build-game.js",
+        "mobile-game-mode.js",
+        "game-linux-training.js",
+        "mission-control.js",
+        "system-tests.js",
+        "build-game-subphases.js",
+        "build-game-new-session.js",
+        "build-game-url-bonus.js",
+        "build-game-weapons.js",
+    ],
+    "linux": [
+        "linux-terminal.js",
+        "linux-beginner-coach.js",
+    ],
+}
+
+# These modules create secondary admin/navigation capabilities or background
+# observability. They wait for real user interaction instead of competing with
+# first paint and authentication.
+_INTERACTION_AUTHENTICATED_SCRIPTS = [
     "token-usage.js",
     "token-usage-mobile-fix.js",
-    "provider-models.js",
-    "provider-ollama.js",
-    "super-admin-voice.js",
-    "product-delivery-ui.js",
-    "voice-project-start.js",
-    "voice-local-update.js",
-    "voice-microphone-permission.js",
-    "voice-playback.js",
-    "voice-enhanced-ui.js",
-    "voice-chatgpt-layout.js",
-    "voice-insecure-lan-guard.js",
-    "task-failures.js",
-    "task-image-upload.js",
-    "tasks-lazy-load.js",
-    "analysis-commercial-proposal.js",
-    "analysis-failure-actions.js",
-    "analysis-incomplete-commercial.js",
-    "organization-normalization-ui.js",
-    "mobile-project-card-compact.js",
-    "repeatai-analysis-scroll.js",
-    "repeatai-live-graphs.js",
-    "repeatai-dashboard-graphs.js",
-    "repeatai-pattern-graphs.js",
-    "approval-slider.js",
-    "tws-example.js",
     "deploy-admin.js",
     "cloud-admin.js",
     "super-admin-local-test.js",
     "investia-admin.js",
     "investia-homologation.js",
     "career-linkedin.js",
+    "telemetry-capture.js",
+    "telemetry-replay-capture.js",
+]
+
+_MOBILE_SHELL_AUTHENTICATED_SCRIPTS = [
+    "mobile-accordion-menu.js",
     "ui-literal-newline-cleanup.js",
-    "linux-terminal.js",
-    "linux-beginner-coach.js",
-    "build-game.js",
-    "mobile-game-mode.js",
-    "game-linux-training.js",
-    "audit-integrity.js",
-    "mission-control.js",
+]
+
+# Compatibility export used by tests and older integrations. This remains a
+# complete inventory, but the loader no longer iterates over it automatically.
+_DEFERRED_AUTHENTICATED_SCRIPTS = [
+    *[name for names in _VIEW_AUTHENTICATED_SCRIPTS.values() for name in names],
+    *[name for names in _FEATURE_AUTHENTICATED_SCRIPTS.values() for name in names],
+    *_INTERACTION_AUTHENTICATED_SCRIPTS,
+    *_MOBILE_SHELL_AUTHENTICATED_SCRIPTS,
 ]
 
 _CHAT_AUTHENTICATED_SCRIPTS = {
@@ -234,26 +279,45 @@ def _script_urls(names: list[str]) -> list[str]:
     ]
 
 
+def _script_group_urls(groups: dict[str, list[str]]) -> dict[str, list[str]]:
+    return {
+        group: _script_urls(_unique_script_names(names, set(_PREAUTH_SCRIPT_NAMES)))
+        for group, names in groups.items()
+    }
+
+
 def _authenticated_script_loader() -> str:
     core_names = _unique_script_names(_CORE_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))
-    deferred_names = _unique_script_names(
-        _DEFERRED_AUTHENTICATED_SCRIPTS,
-        set(_PREAUTH_SCRIPT_NAMES) | set(core_names),
-    )
     core_urls = json.dumps(_script_urls(core_names), ensure_ascii=False)
-    deferred_urls = json.dumps(_script_urls(deferred_names), ensure_ascii=False)
-    chat_urls = json.dumps(
-        _script_urls([name for name in deferred_names if name in _CHAT_AUTHENTICATED_SCRIPTS]),
+    view_urls = json.dumps(_script_group_urls(_VIEW_AUTHENTICATED_SCRIPTS), ensure_ascii=False)
+    feature_urls = json.dumps(_script_group_urls(_FEATURE_AUTHENTICATED_SCRIPTS), ensure_ascii=False)
+    interaction_urls = json.dumps(
+        _script_urls(_unique_script_names(_INTERACTION_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))),
         ensure_ascii=False,
     )
+    mobile_shell_urls = json.dumps(
+        _script_urls(_unique_script_names(_MOBILE_SHELL_AUTHENTICATED_SCRIPTS, set(_PREAUTH_SCRIPT_NAMES))),
+        ensure_ascii=False,
+    )
+    chat_urls = json.dumps(_script_urls(sorted(_CHAT_AUTHENTICATED_SCRIPTS)), ensure_ascii=False)
+
     return f"""<script>
 (() => {{
   'use strict';
   const coreSources = {core_urls};
-  const deferredSources = {deferred_urls};
+  const viewGroups = {view_urls};
+  const featureGroups = {feature_urls};
+  const interactionSources = {interaction_urls};
+  const mobileShellSources = {mobile_shell_urls};
   const chatSources = new Set({chat_urls});
+  const groupPromises = new Map();
   const boot = window.__devpilotBoot = window.__devpilotBoot || {{
-    phase: 'waiting', loaded: [], failed: [], skipped: [], startedAt: Date.now()
+    phase: 'waiting',
+    loaded: [],
+    failed: [],
+    skipped: [],
+    groups: [],
+    startedAt: Date.now()
   }};
 
   const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
@@ -267,9 +331,12 @@ def _authenticated_script_loader() -> str:
     }}
   }});
 
+  const currentView = () => {{
+    const active = document.querySelector('.view.active');
+    return active?.id?.replace(/-view$/, '') || 'overview';
+  }};
+
   const markLegacyProjectShipsLoader = () => {{
-    // mobile-accordion-menu.js historically injected project-ships.js itself.
-    // main.py owns asset scheduling now; this inert marker prevents a second copy.
     if (document.querySelector('script[data-project-ships-loader="1"]')) return;
     const marker = document.createElement('script');
     marker.type = 'application/json';
@@ -278,10 +345,27 @@ def _authenticated_script_loader() -> str:
     document.head.appendChild(marker);
   }};
 
+  const sameAsset = (script, src) => {{
+    if (!script.src) return false;
+    try {{
+      const current = new URL(script.src, location.href);
+      const expected = new URL(src, location.href);
+      return current.pathname === expected.pathname;
+    }} catch (_) {{
+      return false;
+    }}
+  }};
+
   const loadScript = src => new Promise(resolve => {{
-    const existing = [...document.scripts].find(script => script.src === new URL(src, location.href).href);
+    const existing = [...document.scripts].find(script => sameAsset(script, src));
     if (existing) {{
       if (!boot.loaded.includes(src)) boot.loaded.push(src);
+      resolve(true);
+      return;
+    }}
+
+    if (chatSources.has(src) && boot.chatEnabled === false) {{
+      boot.skipped.push(src);
       resolve(true);
       return;
     }}
@@ -302,53 +386,109 @@ def _authenticated_script_loader() -> str:
     document.body.appendChild(script);
   }});
 
+  const loadGroup = (name, sources, gap = 150) => {{
+    if (!sources?.length) return Promise.resolve(true);
+    if (groupPromises.has(name)) return groupPromises.get(name);
+
+    const promise = (async () => {{
+      for (const src of sources) {{
+        if (!tokenExists()) return false;
+        while (document.hidden && tokenExists()) await sleep(900);
+        await whenIdle();
+        await loadScript(src);
+        await nextPaint();
+        await sleep(gap);
+      }}
+      if (!boot.groups.includes(name)) boot.groups.push(name);
+      document.dispatchEvent(new CustomEvent('devpilot:asset-group-ready', {{detail: {{name}}}}));
+      return true;
+    }})();
+
+    groupPromises.set(name, promise);
+    return promise;
+  }};
+
+  const resolveChatControl = async () => {{
+    const chatControl = window.__devpilotChatControl;
+    if (chatControl?.ready) {{
+      try {{ await chatControl.ready; }} catch (_) {{}}
+    }}
+    boot.chatEnabled = Boolean(window.__devpilotChatControl?.enabled);
+  }};
+
   const loadCore = async () => {{
     boot.phase = 'core';
     for (const src of coreSources) {{
       if (!tokenExists()) return false;
       await loadScript(src);
-      // Give layout, input and paint a turn between every module. A serial script
-      // chain without this yield was the post-login main-thread freeze.
       await nextPaint();
+      await sleep(40);
     }}
+    await resolveChatControl();
     boot.phase = 'interactive';
     document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
     return true;
   }};
 
-  const loadDeferred = async () => {{
-    // Let the overview become usable before optional game/voice/admin modules boot.
-    await sleep(900);
-    const chatControl = window.__devpilotChatControl;
-    if (chatControl?.ready) {{
-      try {{ await chatControl.ready; }} catch (_) {{}}
-    }}
-    const chatEnabled = Boolean(window.__devpilotChatControl?.enabled);
-    boot.chatEnabled = chatEnabled;
-    boot.phase = 'deferred';
-    for (const src of deferredSources) {{
-      if (!tokenExists()) break;
-      if (!chatEnabled && chatSources.has(src)) {{
-        boot.skipped.push(src);
-        continue;
-      }}
-      while (document.hidden && tokenExists()) await sleep(1200);
-      await whenIdle();
-      await loadScript(src);
-      // A small gap prevents dozens of observers, styles and fetches from being
-      // registered in one uninterrupted main-thread burst on low-RAM machines.
-      await sleep(90);
-    }}
-    boot.phase = 'ready';
-    boot.finishedAt = Date.now();
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
+  const loadView = view => loadGroup(`view:${{view}}`, viewGroups[view] || [], 120);
+  const loadFeature = feature => loadGroup(`feature:${{feature}}`, featureGroups[feature] || [], 220);
+
+  const featureFromTarget = target => {{
+    if (!target) return '';
+    if (target.closest('[data-example-project]')) return 'example';
+    if (target.closest('#voice-hero, #voice-dock, #voice-start, [data-voice-action]')) return 'voice';
+    if (target.closest('.project-ship-play, [data-build-game], [data-game-mode], [data-open-game]')) return 'game';
+    if (target.closest('[data-linux-view]')) return 'linux';
+    return '';
   }};
+
+  document.addEventListener('click', event => {{
+    const target = event.target instanceof Element ? event.target : null;
+    const viewTarget = target?.closest('[data-view]');
+    const view = viewTarget?.dataset?.view;
+    if (view && viewGroups[view]) void loadView(view);
+
+    const feature = featureFromTarget(target);
+    if (!feature || !featureGroups[feature]) return;
+    const groupName = `feature:${{feature}}`;
+    if (boot.groups.includes(groupName)) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const replayTarget = target.closest(
+      '[data-example-project], #voice-hero, #voice-dock, #voice-start, [data-voice-action], ' +
+      '.project-ship-play, [data-build-game], [data-game-mode], [data-open-game], [data-linux-view]'
+    );
+    void loadFeature(feature).then(() => replayTarget?.click());
+  }}, true);
+
+  let interactionQueueStarted = false;
+  const startInteractionQueue = () => {{
+    if (interactionQueueStarted || !tokenExists()) return;
+    interactionQueueStarted = true;
+    window.setTimeout(() => {{
+      void loadGroup('interaction', interactionSources, 400);
+    }}, 6000);
+  }};
+
+  ['pointerdown', 'touchstart', 'keydown'].forEach(type => {{
+    window.addEventListener(type, startInteractionQueue, {{once: true, passive: true}});
+  }});
 
   const start = async () => {{
     if (!tokenExists() || boot.phase !== 'waiting') return;
     markLegacyProjectShipsLoader();
     const coreReady = await loadCore();
-    if (coreReady) void loadDeferred();
+    if (!coreReady) return;
+
+    if (document.body.classList.contains('mobile-route')) {{
+      await loadGroup('mobile-shell', mobileShellSources, 160);
+    }}
+
+    await loadView(currentView());
+    boot.phase = 'ready';
+    boot.finishedAt = Date.now();
+    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
   }};
 
   if (document.readyState === 'loading') {{
@@ -449,6 +589,7 @@ def spa(path: str):
 
     html = _inject_stylesheet(html, "super-admin-voice.css")
     html = _inject_mobile_scroll_unlock(html)
+    html = _inject_stylesheet(html, "frontend-performance.css")
     if mobile_route:
         html = _inject_stylesheet(html, "mobile-route.css")
     html = _version_frontend_scripts(html)
