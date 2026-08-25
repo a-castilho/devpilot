@@ -59,13 +59,14 @@ _SCRIPT_TAG_RE = re.compile(
     r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
     re.IGNORECASE,
 )
-_PREAUTH_SCRIPT_NAMES = {"app.js", "auth-ui.js"}
+_PREAUTH_SCRIPT_NAMES = {"auth-ui.js"}
 
-# Keep the first authenticated paint intentionally small. app.js already renders
-# overview/projects/tasks, so these modules are only the shell enhancements that
-# are useful on every screen. Everything else is progressively initialized while
-# the browser is idle instead of monopolizing the main thread after login.
+# Keep the login page isolated from the dashboard runtime. app.js is authenticated
+# application code and must only execute after /api/auth/me validates the stored
+# session. This prevents a stale token from starting dozens of modules behind the
+# login modal and freezing low-memory browsers.
 _CORE_AUTHENTICATED_SCRIPTS = [
+    "app.js",
     "super-admin-chat-control.js",
     "profile.js",
     "users.js",
@@ -206,7 +207,7 @@ def _mark_mobile_route(html: str) -> str:
 
 
 def _strip_pre_auth_heavy_scripts(html: str) -> str:
-    """Keep login boot tiny; authenticated features are loaded after a valid token exists."""
+    """Keep login boot tiny; authenticated features are loaded only after validation."""
 
     def replace(match: re.Match[str]) -> str:
         name = match.group("name")
@@ -256,7 +257,8 @@ def _authenticated_script_loader() -> str:
     phase: 'waiting', loaded: [], failed: [], skipped: [], startedAt: Date.now()
   }};
 
-  const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
+  const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
+  const tokenExists = () => Boolean(token());
   const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
   const nextPaint = () => new Promise(resolve => requestAnimationFrame(() => resolve()));
   const whenIdle = () => new Promise(resolve => {{
@@ -266,6 +268,23 @@ def _authenticated_script_loader() -> str:
       window.setTimeout(resolve, 180);
     }}
   }});
+
+  const validateSession = async () => {{
+    if (!tokenExists()) return false;
+    if (window.__devpilotAuthReady) {{
+      try {{ return Boolean(await window.__devpilotAuthReady); }} catch (_) {{ return false; }}
+    }}
+
+    try {{
+      const response = await fetch('/api/auth/me', {{
+        headers: {{Authorization: `Bearer ${{token()}}`}},
+        cache: 'no-store',
+      }});
+      if (response.ok) return true;
+      if ([401, 403, 404].includes(response.status)) localStorage.removeItem('devpilot-token');
+    }} catch (_) {{}}
+    return false;
+  }};
 
   const markLegacyProjectShipsLoader = () => {{
     // mobile-accordion-menu.js historically injected project-ships.js itself.
@@ -307,8 +326,6 @@ def _authenticated_script_loader() -> str:
     for (const src of coreSources) {{
       if (!tokenExists()) return false;
       await loadScript(src);
-      // Give layout, input and paint a turn between every module. A serial script
-      // chain without this yield was the post-login main-thread freeze.
       await nextPaint();
     }}
     boot.phase = 'interactive';
@@ -317,7 +334,6 @@ def _authenticated_script_loader() -> str:
   }};
 
   const loadDeferred = async () => {{
-    // Let the overview become usable before optional game/voice/admin modules boot.
     await sleep(900);
     const chatControl = window.__devpilotChatControl;
     if (chatControl?.ready) {{
@@ -335,8 +351,6 @@ def _authenticated_script_loader() -> str:
       while (document.hidden && tokenExists()) await sleep(1200);
       await whenIdle();
       await loadScript(src);
-      // A small gap prevents dozens of observers, styles and fetches from being
-      // registered in one uninterrupted main-thread burst on low-RAM machines.
       await sleep(90);
     }}
     boot.phase = 'ready';
@@ -345,7 +359,14 @@ def _authenticated_script_loader() -> str:
   }};
 
   const start = async () => {{
-    if (!tokenExists() || boot.phase !== 'waiting') return;
+    if (boot.phase !== 'waiting') return;
+    boot.phase = 'auth';
+    const authenticated = await validateSession();
+    boot.authenticated = authenticated;
+    if (!authenticated) {{
+      boot.phase = 'waiting-login';
+      return;
+    }}
     markLegacyProjectShipsLoader();
     const coreReady = await loadCore();
     if (coreReady) void loadDeferred();

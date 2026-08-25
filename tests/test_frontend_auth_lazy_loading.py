@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.main import (
     _CORE_AUTHENTICATED_SCRIPTS,
     _DEFERRED_AUTHENTICATED_SCRIPTS,
@@ -6,42 +8,47 @@ from app.main import (
     spa,
 )
 
+AUTH_UI = Path("app/static/auth-ui.js")
 
-def test_pre_auth_html_keeps_only_boot_scripts():
+
+def test_pre_auth_html_keeps_only_auth_script():
     html = """
     <body>
       <script src="/assets/app.js" defer></script>
+      <script src="/assets/auth-ui.js" defer></script>
       <script src="/assets/project-ships.js?v=1" defer></script>
-      <script src="/assets/build-game-cockpit.js?v=1" defer></script>
     </body>
     """
     result = _strip_pre_auth_heavy_scripts(html)
-    assert '/assets/app.js' in result
+    assert '/assets/auth-ui.js' in result
+    assert '/assets/app.js' not in result
     assert '/assets/project-ships.js' not in result
-    assert '/assets/build-game-cockpit.js' not in result
 
 
-def test_authenticated_loader_yields_between_core_modules_and_uses_idle_time_for_features():
+def test_authenticated_loader_validates_session_before_core():
     loader = _authenticated_script_loader()
-    assert "localStorage.getItem('devpilot-token')" in loader
+    assert "window.__devpilotAuthReady" in loader
+    assert "fetch('/api/auth/me'" in loader
+    assert "boot.phase = 'auth'" in loader
+    assert "boot.phase = 'waiting-login'" in loader
+    assert "const authenticated = await validateSession()" in loader
     assert "script.async = false" in loader
     assert "await nextPaint()" in loader
     assert "requestIdleCallback" in loader
     assert "await whenIdle()" in loader
-    assert "await sleep(90)" in loader
     assert "devpilot:authenticated-core-ready" in loader
     assert "devpilot:authenticated-ui-ready" in loader
 
 
 def test_authenticated_boot_lists_are_small_core_and_deduplicated():
     scripts = [*_CORE_AUTHENTICATED_SCRIPTS, *_DEFERRED_AUTHENTICATED_SCRIPTS]
-    assert len(_CORE_AUTHENTICATED_SCRIPTS) <= 6
+    assert len(_CORE_AUTHENTICATED_SCRIPTS) <= 7
     assert len(scripts) == len(set(scripts))
+    assert _CORE_AUTHENTICATED_SCRIPTS[0] == "app.js"
     assert "profile.js" in _CORE_AUTHENTICATED_SCRIPTS
     assert "simplified-nav.js" in _CORE_AUTHENTICATED_SCRIPTS
     assert "project-provisioning.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
     assert "build-game-cockpit.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
-    assert "mission-control.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
 
 
 def test_loader_does_not_relaunch_acs_loader_or_duplicate_project_ships():
@@ -53,12 +60,20 @@ def test_loader_does_not_relaunch_acs_loader_or_duplicate_project_ships():
     assert "managedBy" in loader
 
 
-def test_spa_does_not_boot_heavy_scripts_before_authentication():
+def test_auth_ui_handles_expired_session_before_dashboard_boot():
+    source = AUTH_UI.read_text(encoding="utf-8")
+    assert "window.__devpilotAuthReady = validateStoredSession()" in source
+    assert "fetch('/api/auth/me'" in source
+    assert "Sua sessão expirou. Entre novamente." in source
+    assert "if (!modal.open) modal.showModal()" in source
+
+
+def test_spa_keeps_app_js_behind_authenticated_loader():
     response = spa("")
     html = response.body.decode("utf-8")
-    assert '<script src="/assets/app.js?v=' in html
     assert '<script src="/assets/auth-ui.js?v=' in html
+    assert '<script src="/assets/app.js?v=' not in html
     assert '<script src="/assets/build-game-cockpit.js' not in html
-    assert '<script src="/assets/project-ships.js' not in html
-    assert "localStorage.getItem('devpilot-token')" in html
+    assert '"/assets/app.js?v=' in html
+    assert "window.__devpilotAuthReady" in html
     assert "window.__devpilotBoot" in html
