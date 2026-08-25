@@ -1,6 +1,7 @@
 from app.main import (
     _CORE_AUTHENTICATED_SCRIPTS,
     _DEFERRED_AUTHENTICATED_SCRIPTS,
+    _ON_DEMAND_CHAT_SCRIPTS,
     _authenticated_script_loader,
     _strip_pre_auth_heavy_scripts,
     spa,
@@ -42,6 +43,24 @@ def test_authenticated_boot_lists_are_small_core_and_deduplicated():
     assert "project-provisioning.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
     assert "build-game-cockpit.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
     assert "mission-control.js" in _DEFERRED_AUTHENTICATED_SCRIPTS
+
+
+def test_chat_voice_modules_stay_off_until_user_opens_chat():
+    loader = _authenticated_script_loader()
+    boot_scripts = set(_CORE_AUTHENTICATED_SCRIPTS) | set(_DEFERRED_AUTHENTICATED_SCRIPTS)
+
+    assert set(_ON_DEMAND_CHAT_SCRIPTS).isdisjoint(boot_scripts)
+    assert len(_ON_DEMAND_CHAT_SCRIPTS) == len(set(_ON_DEMAND_CHAT_SCRIPTS))
+    assert "voice-enhanced-ui.js" in _ON_DEMAND_CHAT_SCRIPTS
+    assert "voice-chatgpt-layout.js" in _ON_DEMAND_CHAT_SCRIPTS
+    assert "super-admin-voice.js" in _ON_DEMAND_CHAT_SCRIPTS
+    assert "window.devpilotLoadChat = loadChat" in loader
+    assert "#voice-hero, #voice-dock" in loader
+    assert "devpilot:chat-open-requested" in loader
+    assert "devpilot:chat-ui-ready" in loader
+
+    start_section = loader.split("const start = async () =>", 1)[1]
+    assert "loadChat()" not in start_section
 
 
 def test_loader_does_not_relaunch_acs_loader_or_duplicate_project_ships():
