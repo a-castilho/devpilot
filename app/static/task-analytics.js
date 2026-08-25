@@ -146,67 +146,11 @@
 })();
 
 /*
- * Legacy game/system assets used to be appended synchronously as soon as the
- * analytics module loaded. That bypassed the authenticated boot scheduler and
- * produced a burst of compilation, observers and duplicate build-game code on
- * the main thread. Keep compatibility, but only after the main UI is ready and
- * load one asset at a time during idle periods.
+ * Game/system assets are intentionally NOT started from the task analytics
+ * module. Loading analytics must only render analytics. The authenticated boot
+ * loader owns the explicit "game" feature group and starts those assets only
+ * after the player asks to open the game.
  */
-(() => {
-  'use strict';
-  const LEGACY_GAME_EXTRAS = [
-    {name:'system-tests.js', marker:'system-tests-loader'},
-    {name:'build-game-subphases.js', marker:'build-game-subphases-loader'},
-    {name:'build-game-new-session.js', marker:'build-game-new-session-loader'},
-    {name:'build-game-url-bonus.js', marker:'build-game-url-bonus-loader'},
-    {name:'build-game-weapons.js', marker:'build-game-weapons-loader'},
-  ];
-  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
-  const whenIdle = () => new Promise(resolve => {
-    if ('requestIdleCallback' in window) window.requestIdleCallback(() => resolve(), {timeout: 2200});
-    else window.setTimeout(resolve, 220);
-  });
-  const tokenExists = () => Boolean(localStorage.getItem('devpilot-token'));
-
-  function alreadyLoaded(name) {
-    return [...document.scripts].some(script => {
-      if (!script.src) return false;
-      try { return new URL(script.src, location.href).pathname === `/assets/${name}`; }
-      catch (_) { return false; }
-    });
-  }
-
-  function loadAsset(asset) {
-    if (!tokenExists() || alreadyLoaded(asset.name) || document.querySelector(`script[data-${asset.marker}]`)) {
-      return Promise.resolve(true);
-    }
-    return new Promise(resolve => {
-      const script = document.createElement('script');
-      script.src = `/assets/${asset.name}?v=20260825-postboot1`;
-      script.async = false;
-      script.dataset[asset.marker.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = 'true';
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  }
-
-  async function loadLegacyExtras() {
-    if (!tokenExists()) return;
-    await sleep(1200);
-    for (const asset of LEGACY_GAME_EXTRAS) {
-      if (!tokenExists()) break;
-      while (document.hidden && tokenExists()) await sleep(1200);
-      await whenIdle();
-      await loadAsset(asset);
-      await sleep(450);
-    }
-  }
-
-  const start = () => { void loadLegacyExtras(); };
-  if (window.__devpilotBoot?.phase === 'ready') start();
-  else document.addEventListener('devpilot:authenticated-ui-ready', start, {once:true});
-})();
 
 /* Compatibility guard: old workers could leave successful game tasks in review forever. */
 (() => {
