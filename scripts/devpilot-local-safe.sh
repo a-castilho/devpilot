@@ -10,8 +10,74 @@ HEALTH_URL="http://127.0.0.1:${PORT}/health"
 
 log() { printf '[devpilot] %s\n' "$*"; }
 
+health_body() {
+  curl -fsS --max-time 2 "$HEALTH_URL" 2>/dev/null
+}
+
 health_ok() {
-  curl -fsS --max-time 2 "$HEALTH_URL" >/dev/null 2>&1
+  local body
+  body="$(health_body)" || return 1
+  grep -Eq '"service"[[:space:]]*:[[:space:]]*"devpilot"' <<<"$body"
+}
+
+port_listener_pids() {
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -t -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | awk '/^[0-9]+$/' | sort -u
+    return 0
+  fi
+  if command -v fuser >/dev/null 2>&1; then
+    fuser -n tcp "$PORT" 2>/dev/null | tr ' ' '\n' | awk '/^[0-9]+$/' | sort -u
+    return 0
+  fi
+  pgrep -f "[u]vicorn app.main:app.*--port ${PORT}" 2>/dev/null || true
+}
+
+pid_command() {
+  local pid="$1"
+  tr '\0' ' ' <"/proc/${pid}/cmdline" 2>/dev/null || true
+}
+
+is_known_devpilot_pid() {
+  local pid="$1"
+  local cmd
+  cmd="$(pid_command "$pid")"
+  [[ "$cmd" == *"uvicorn"* && "$cmd" == *"app.main:app"* && "$cmd" == *"--port ${PORT}"* ]]
+}
+
+assert_port_is_safe() {
+  local pid
+  mapfile -t listeners < <(port_listener_pids)
+  ((${#listeners[@]} == 0)) && return 0
+
+  if health_ok; then
+    for pid in "${listeners[@]}"; do
+      if ! is_known_devpilot_pid "$pid"; then
+        log "ERRO: /health parece DevPilot, mas a porta ${PORT} também possui PID desconhecido ${pid}: $(pid_command "$pid")"
+        return 1
+      fi
+    done
+    return 0
+  fi
+
+  for pid in "${listeners[@]}"; do
+    if ! is_known_devpilot_pid "$pid"; then
+      log "ERRO: porta ${PORT} ocupada por processo desconhecido PID ${pid}: $(pid_command "$pid")"
+      log "Nada será encerrado automaticamente. Libere a porta conscientemente e execute novamente."
+      return 1
+    fi
+  done
+  return 0
+}
+
+wait_for_port_free() {
+  local attempts="${1:-20}"
+  local i
+  for ((i=1; i<=attempts; i++)); do
+    mapfile -t listeners < <(port_listener_pids)
+    ((${#listeners[@]} == 0)) && return 0
+    sleep 0.25
+  done
+  return 1
 }
 
 wait_for_health() {
@@ -26,7 +92,22 @@ wait_for_health() {
   return 1
 }
 
+runtime_report() {
+  local revision pid health_state
+  revision="$(git rev-parse --short HEAD 2>/dev/null || printf 'desconhecida')"
+  pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+  health_state="FALHOU"
+  health_ok && health_state="OK"
+  log "RUNTIME: commit=${revision} porta=${PORT} pid=${pid:-desconhecido} health=${health_state} log=${LOG_FILE}"
+}
+
 start_server() {
+  mapfile -t listeners < <(port_listener_pids)
+  if ((${#listeners[@]})); then
+    log "ERRO: recusando iniciar; porta ${PORT} ainda está ocupada por PID(s): ${listeners[*]}"
+    return 1
+  fi
+
   : >"$LOG_FILE"
   nohup "$ROOT/.venv/bin/python" -m uvicorn app.main:app \
     --host "$HOST" \
@@ -34,7 +115,7 @@ start_server() {
     >"$LOG_FILE" 2>&1 &
   local pid=$!
   printf '%s\n' "$pid" >"$PID_FILE"
-  log "Processo iniciado com PID $pid; aguardando health check..."
+  log "Processo iniciado com PID $pid; aguardando health check do DevPilot..."
 }
 
 stop_server() {
@@ -43,7 +124,7 @@ stop_server() {
 
   if [[ -f "$PID_FILE" ]]; then
     pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null && is_known_devpilot_pid "$pid"; then
       log "Encerrando PID registrado $pid..."
       kill -TERM "$pid" 2>/dev/null || true
       stopped=1
@@ -54,19 +135,18 @@ stop_server() {
   if ((${#fallback_pids[@]})); then
     for pid in "${fallback_pids[@]}"; do
       [[ "$pid" =~ ^[0-9]+$ ]] || continue
-      if kill -0 "$pid" 2>/dev/null; then
-        log "Encerrando processo antigo $pid..."
+      if kill -0 "$pid" 2>/dev/null && is_known_devpilot_pid "$pid"; then
+        log "Encerrando processo DevPilot antigo $pid..."
         kill -TERM "$pid" 2>/dev/null || true
         stopped=1
       fi
     done
   fi
 
-  if ((stopped)); then
-    for _ in {1..20}; do
-      health_ok || break
-      sleep 0.25
-    done
+  if ((stopped)) && ! wait_for_port_free 24; then
+    mapfile -t remaining < <(port_listener_pids)
+    log "ERRO: porta ${PORT} não foi liberada após SIGTERM. PID(s): ${remaining[*]:-desconhecido}"
+    return 1
   fi
 
   rm -f "$PID_FILE"
@@ -85,16 +165,27 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
+if ! assert_port_is_safe; then
+  exit 1
+fi
+
 BEFORE_SHA="$(git rev-parse HEAD)"
 WAS_HEALTHY=0
 health_ok && WAS_HEALTHY=1
+runtime_report
 
 log "Atualizando main sem interromper o servidor atual..."
 git fetch origin main
 git merge --ff-only origin/main
 AFTER_SHA="$(git rev-parse HEAD)"
 
-log "Validando código antes do restart..."
+log "Validando política e código antes do restart..."
+if ! "$ROOT/.venv/bin/python" scripts/check-engineering-standards.py --changed --base "$BEFORE_SHA"; then
+  log "Preflight falhou no padrão de engenharia. Restaurando commit anterior e mantendo o processo atual."
+  git reset --hard "$BEFORE_SHA"
+  exit 1
+fi
+
 if ! "$ROOT/.venv/bin/python" -m compileall -q app; then
   log "Preflight falhou em compileall. Restaurando commit anterior e mantendo o processo atual."
   git reset --hard "$BEFORE_SHA"
@@ -121,14 +212,16 @@ stop_server
 start_server
 
 if wait_for_health 30; then
-  log "OK: DevPilot saudável em $HEALTH_URL"
+  log "OK: DevPilot saudável e identificado em $HEALTH_URL"
+  runtime_report
   log "LOCAL: http://127.0.0.1:${PORT}"
   LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
   [[ -n "$LAN_IP" ]] && log "REDE:  http://${LAN_IP}:${PORT}"
   exit 0
 fi
 
-log "ERRO: a nova versão não respondeu ao health check."
+log "ERRO: a nova versão não respondeu com health válido do DevPilot."
+runtime_report
 tail -n 80 "$LOG_FILE" 2>/dev/null || true
 
 if [[ "$AFTER_SHA" != "$BEFORE_SHA" ]]; then
@@ -138,6 +231,7 @@ if [[ "$AFTER_SHA" != "$BEFORE_SHA" ]]; then
   start_server
   if wait_for_health 30; then
     log "ROLLBACK OK: versão anterior restaurada e saudável."
+    runtime_report
     exit 1
   fi
 fi
