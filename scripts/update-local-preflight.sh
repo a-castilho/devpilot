@@ -35,7 +35,7 @@ if [[ -z "$AVAILABLE_KB" || "$AVAILABLE_KB" -lt "$MIN_AVAILABLE_KB" ]]; then
 fi
 
 echo "=== FETCH SEM ALTERAR O SISTEMA EM EXECUÇÃO ==="
-git fetch --quiet origin "$TARGET_BRANCH"
+git fetch --quiet origin "$TARGET_BRANCH" || fail "não foi possível buscar origin/$TARGET_BRANCH."
 TARGET="origin/$TARGET_BRANCH"
 CURRENT_SHA="$(git rev-parse HEAD)"
 TARGET_SHA="$(git rev-parse "$TARGET")"
@@ -49,26 +49,27 @@ fi
 
 git merge-base --is-ancestor HEAD "$TARGET" || fail "origin/$TARGET_BRANCH não é fast-forward do checkout atual."
 
-TMP="$(mktemp -d "${TMPDIR:-/tmp}/devpilot-preflight.XXXXXX")"
+TMP_PARENT="$(mktemp -d "${TMPDIR:-/tmp}/devpilot-preflight.XXXXXX")"
+TMP="$TMP_PARENT/worktree"
 cleanup() {
   git worktree remove --force "$TMP" >/dev/null 2>&1 || true
-  rm -rf "$TMP" >/dev/null 2>&1 || true
+  rm -rf "$TMP_PARENT" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
 echo "=== PRÉ-VALIDAÇÃO ISOLADA ==="
-git worktree add --quiet --detach "$TMP" "$TARGET_SHA"
+git worktree add --quiet --detach "$TMP" "$TARGET_SHA" || fail "não foi possível criar o worktree isolado de pré-validação."
 cd "$TMP"
 
 command -v node >/dev/null 2>&1 || fail "Node.js não encontrado."
-run_limited node --check app/static/feature-loader.js
+run_limited node --check app/static/feature-loader.js || fail "feature-loader.js falhou na validação de sintaxe."
 
 PYTHON="$ROOT/.venv/bin/python"
 [[ -x "$PYTHON" ]] || PYTHON="$(command -v python3 || true)"
 [[ -n "$PYTHON" ]] || fail "Python não encontrado."
 
 export PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
-run_limited "$PYTHON" -m pytest -q tests/test_post_login_game_lazy_boot.py --disable-warnings --maxfail=1
+run_limited "$PYTHON" -m pytest -q tests/test_post_login_game_lazy_boot.py --disable-warnings --maxfail=1 || fail "regressão detectada no boot lazy do jogo."
 
 cd "$ROOT"
 AVAILABLE_KB="$(mem_available_kb)"
@@ -80,7 +81,7 @@ fi
 [[ "$(git rev-parse HEAD)" == "$CURRENT_SHA" ]] || fail "HEAD mudou durante a validação; atualização abortada."
 
 echo "=== APLICANDO SOMENTE APÓS TESTES ==="
-git merge --ff-only "$TARGET"
+git merge --ff-only "$TARGET" || fail "fast-forward falhou; checkout não foi alterado com merge parcial."
 
 echo "=== RESULTADO ==="
 echo "OK: atualização pré-validada e aplicada em $(git rev-parse --short HEAD)."
