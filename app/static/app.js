@@ -103,8 +103,8 @@ async function loadDashboard() {
 
   state.dashboardLoading = (async () => {
     try {
-      // Pós-login deliberadamente pequeno: nenhum projeto completo, organização,
-      // AGENTS.md ou codex_config é baixado aqui.
+      // Pós-login deliberadamente pequeno: somente identidade, visão geral
+      // e cinco tarefas recentes são carregadas nesta etapa.
       state.currentUser = await api('/auth/me');
       applyRoleVisibility();
       const [overview, recentTasks] = await Promise.all([
