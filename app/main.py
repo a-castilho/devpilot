@@ -450,7 +450,9 @@ def telemetry_page():
 @app.get("/{path:path}", include_in_schema=False)
 def spa(path: str):
     candidate = STATIC / path
-    if path and candidate.is_file():
+    # /index.html is an alternate entry point to the SPA, not a raw static asset.
+    # It must receive the same pre-auth stripping and validated loader as `/`.
+    if path and candidate.is_file() and candidate != STATIC / "index.html":
         headers = None
         if candidate.suffix.lower() in {".html", ".htm"}:
             headers = {"Cache-Control": "no-store, max-age=0", "Pragma": "no-cache"}
