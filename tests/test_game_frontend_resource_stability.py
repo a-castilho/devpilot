@@ -44,36 +44,41 @@ def test_mobile_menu_boot_is_single_mount_and_wait_observer_is_released():
     assert "waitObserver = null" in source
 
 
-def test_game_bundle_is_lazy_and_feature_ready_drives_handoff():
+def test_first_game_entry_loads_only_lightweight_core():
     source = FEATURE_LOADER_JS.read_text(encoding="utf-8")
 
-    assert "game: [" in source
-    assert "'game-shell.js'" in source
+    assert "game: ['game-shell.js', 'build-game.js']" in source
+    assert "gameAdvanced:" in source
+    assert "'build-game-subphases.js'" in source
+    assert "window.__devpilotLoadGameAdvanced" in source
     assert "devpilot:feature-ready" in source
     assert "await loadScript(file)" in source
 
 
-def test_cockpit_does_not_refresh_linux_economy_when_already_mounted():
+def test_cockpit_mobile_safe_mode_skips_advanced_runtime():
     source = GAME_COCKPIT_JS.read_text(encoding="utf-8")
 
-    assert "if (shell.querySelector('[data-build-game-cockpit]')) return false" in source
-    assert "new MutationObserver(queueSyncOnlyWhenCockpitMissing)" in source
-    assert "if (view.querySelector('[data-build-game-cockpit]')) return" in source
+    assert "const MOBILE_QUERY = '(max-width: 900px)'" in source
+    assert "if (isMobile()) return false" in source
+    assert "if (isMobile()) {" in source
+    assert "buildGameMobileSafe" in source
+    assert "new MutationObserver" not in source
 
 
 def test_cockpit_deduplicates_linux_task_fetches_and_caps_payload():
     source = GAME_COCKPIT_JS.read_text(encoding="utf-8")
 
-    assert "const TASK_FETCH_LIMIT = 100" in source
     assert "let linuxRefreshInFlight = null" in source
-    assert "if (linuxRefreshInFlight && !force) return linuxRefreshInFlight" in source
-    assert "limit=${TASK_FETCH_LIMIT}" in source
+    assert "if (linuxRefreshInFlight) return linuxRefreshInFlight" in source
+    assert "limit=100" in source
     assert "limit=500" not in source
 
 
-def test_cockpit_boot_is_idempotent():
+def test_cockpit_boot_is_idempotent_and_event_driven():
     source = GAME_COCKPIT_JS.read_text(encoding="utf-8")
 
     assert "if (window.__devpilotBuildGameCockpitReady) return" in source
     assert "window.__devpilotBuildGameCockpitReady = true" in source
-    assert "buildGameCockpitObserved" in source
+    assert "devpilot:game:rendered" in source
+    assert "devpilot:game:entered" in source
+    assert "MutationObserver" not in source
