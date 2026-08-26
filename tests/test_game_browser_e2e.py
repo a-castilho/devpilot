@@ -164,10 +164,9 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             )
             assert project.get("id")
 
-            game_nav = page.locator(
-                '.sidebar nav .nav[data-view="build-game"], .sidebar nav .nav[data-view="game"]'
-            ).first
-            game_nav.evaluate("el => el.click()")
+            game_entry = page.locator("[data-open-game-entry]")
+            game_entry.wait_for(state="visible", timeout=10_000)
+            game_entry.click()
             page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
             page.wait_for_function(
                 "() => document.body.classList.contains('devpilot-game-mode')",
@@ -201,10 +200,9 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                     "() => !document.body.classList.contains('devpilot-game-mode')",
                     timeout=5_000,
                 )
-                game_nav = page.locator(
-                    '.sidebar nav .nav[data-view="build-game"], .sidebar nav .nav[data-view="game"]'
-                ).first
-                game_nav.evaluate("el => el.click()")
+                game_entry = page.locator("[data-open-game-entry]")
+                game_entry.wait_for(state="visible", timeout=5_000)
+                game_entry.click()
                 page.wait_for_function(
                     "() => document.body.classList.contains('devpilot-game-mode')",
                     timeout=8_000,
