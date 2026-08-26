@@ -96,9 +96,11 @@ def test_provider_auth_error_does_not_expose_response_body(monkeypatch):
         lambda *args, **kwargs: response(401, {"error": {"message": "sensitive account detail"}}),
     )
 
-    with pytest.raises(ProviderModelDiscoveryError, match="API key rejeitada") as caught:
+    with pytest.raises(ProviderModelDiscoveryError, match="não autenticada") as caught:
         discover_provider_models("openai", "sk-invalid")
 
+    assert caught.value.code == "authentication_failed"
+    assert caught.value.upstream_status == 401
     assert "sensitive account detail" not in str(caught.value)
 
 
