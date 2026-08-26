@@ -7,12 +7,21 @@ SUBPHASES = ROOT / "app" / "static" / "build-game-subphases.js"
 REPAIR = ROOT / "app" / "static" / "build-game-repair-mission.js"
 
 
-def test_game_shell_captures_base_loader_before_enhancement_wrappers():
+def test_game_shell_captures_base_loader_without_polling_guard():
     js = SHELL.read_text(encoding="utf-8")
+
     assert "window.__devpilotBaseLoadBuildGame = baseLoadBuildGame" in js
-    assert "startLoaderGuard()" in js
-    assert "window.setInterval" in js
-    assert "}, 8);" in js
+    assert "function captureBaseLoader()" in js
+    assert "function guardLoaderDuringBundleBoot()" in js
+    assert "document.addEventListener('devpilot:feature-ready'" in js
+    assert "if (event.detail?.feature !== 'game') return;" in js
+    assert "guardLoaderDuringBundleBoot();" in js
+
+    # Regression guard: polling agressivo no critical path pode consumir CPU e
+    # competir com renderização/carregamento do jogo em máquinas de pouca RAM.
+    assert "startLoaderGuard()" not in js
+    assert "window.setInterval" not in js
+    assert "}, 8);" not in js
 
 
 def test_initial_sidebar_entry_bypasses_heavy_enhancement_chain():
