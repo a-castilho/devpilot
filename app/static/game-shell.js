@@ -140,8 +140,10 @@
     activeView = view;
     refresh(view);
 
-    METRICS.enters += 1;
-    events.emit('entered', {mission_id: localStorage.getItem('devpilot-build-game-mission') || null});
+    if (!alreadyActive) {
+      METRICS.enters += 1;
+      events.emit('entered', {mission_id: localStorage.getItem('devpilot-build-game-mission') || null});
+    }
     return true;
   }
 
@@ -161,8 +163,10 @@
     document.body.classList.remove('devpilot-game-mode');
     view?.classList.remove('devpilot-game-view-mounted');
     activeView = null;
-    METRICS.exits += 1;
-    events.emit('exited');
+    if (wasActive) {
+      METRICS.exits += 1;
+      events.emit('exited');
+    }
     return true;
   }
 
