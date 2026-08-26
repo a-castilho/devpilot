@@ -13,13 +13,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Pull requests always use a GitHub-hosted runner so required gates cannot be
-# blocked by an offline/misconfigured self-hosted runner. Push/manual runs may
-# still opt into DEVPILOT_RUNNER for cost control.
+# Use repository variable DEVPILOT_RUNNER=devpilot-ci (or self-hosted)
+# to bypass GitHub-hosted minute exhaustion without weakening any gate.
 jobs:
   policy:
     name: DevPilot policy
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Checkout full history for policy diff
@@ -43,13 +42,13 @@ jobs:
           echo "Policy base: $BASE"
 
       - name: Set up Python on GitHub-hosted runner
-        if: ${{ github.event_name == 'pull_request' || !vars.DEVPILOT_RUNNER }}
+        if: ${{ !vars.DEVPILOT_RUNNER }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Verify Python on self-hosted runner
-        if: ${{ github.event_name != 'pull_request' && vars.DEVPILOT_RUNNER }}
+        if: ${{ vars.DEVPILOT_RUNNER }}
         run: |
           python3 - <<'PY'
           import sys
@@ -60,7 +59,7 @@ jobs:
 
       - name: Enforce engineering standard
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" && -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then
             python3 scripts/check-engineering-standards.py --changed
           else
             python scripts/check-engineering-standards.py --changed
@@ -69,7 +68,7 @@ jobs:
   quality:
     name: DevPilot full quality
     needs: policy
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 35
     env:
       DEVPILOT_RUN_BROWSER_E2E: "1"
@@ -94,14 +93,14 @@ jobs:
           echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
 
       - name: Set up Python on GitHub-hosted runner
-        if: ${{ github.event_name == 'pull_request' || !vars.DEVPILOT_RUNNER }}
+        if: ${{ !vars.DEVPILOT_RUNNER }}
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Verify Python on self-hosted runner
-        if: ${{ github.event_name != 'pull_request' && vars.DEVPILOT_RUNNER }}
+        if: ${{ vars.DEVPILOT_RUNNER }}
         run: |
           python3 - <<'PY'
           import sys
@@ -112,21 +111,21 @@ jobs:
 
       - name: Install package, test and browser dependencies
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" && -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then PYTHON=python3; else PYTHON=python; fi
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then PYTHON=python3; else PYTHON=python; fi
           "$PYTHON" -m pip install --upgrade pip
           "$PYTHON" -m pip install -e '.[test,e2e]'
 
       - name: Install Chromium on GitHub-hosted runner
-        if: ${{ github.event_name == 'pull_request' || !vars.DEVPILOT_RUNNER }}
+        if: ${{ !vars.DEVPILOT_RUNNER }}
         run: python -m playwright install --with-deps chromium
 
       - name: Install Chromium on self-hosted runner
-        if: ${{ github.event_name != 'pull_request' && vars.DEVPILOT_RUNNER }}
+        if: ${{ vars.DEVPILOT_RUNNER }}
         run: python3 -m playwright install chromium
 
       - name: Run complete validation including browser game E2E
         run: |
-          if [[ "${{ github.event_name }}" != "pull_request" && -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then export PYTHON_BIN="$(command -v python3)"; fi
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then export PYTHON_BIN="$(command -v python3)"; fi
           bash scripts/test-all.sh
 
       - name: Publish complete failure report
