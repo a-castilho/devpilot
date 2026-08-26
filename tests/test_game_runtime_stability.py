@@ -60,9 +60,10 @@ def test_game_loader_refreshes_hud_after_real_render_without_dom_storm():
     assert "__devpilotGameStableWrapper" in js
 
 
-def test_game_entry_uses_explicit_shell_handoff():
+def test_game_entry_uses_navigation_and_leaves_shell_as_single_owner():
     js = ENTRY.read_text(encoding="utf-8")
-    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" in js
+    assert "target.click();" in js
+    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" not in js
     assert "requestAnimationFrame(() => window.DevPilotGameShell?.sync?.())" not in js
 
 
