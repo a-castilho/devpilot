@@ -23,6 +23,7 @@ def test_organization_credential_recovery_keeps_secret_protected_and_revalidates
     assert "tokenInput.value = ''" in script
     assert "await syncOrganization(organizationId)" in script
     assert "Resource owner = a-castilho" in script
+    assert "localStorage" not in script
     assert "MutationObserver" not in script
     assert "createElement('script')" not in script
     assert "console.log" not in script
