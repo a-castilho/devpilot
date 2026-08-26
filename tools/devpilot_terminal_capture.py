@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 
 def redact_command(command: str) -> str:
@@ -39,7 +42,57 @@ def candidate_urls() -> list[str]:
     return [configured or "http://127.0.0.1:8080"]
 
 
-def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
+def breaker_path() -> Path:
+    configured = os.getenv("DEVPILOT_TELEMETRY_BREAKER_FILE", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    runtime_dir = os.getenv("XDG_RUNTIME_DIR", "").strip()
+    if runtime_dir:
+        return Path(runtime_dir) / "devpilot-telemetry-auth-breaker.json"
+    return Path(tempfile.gettempdir()) / f"devpilot-telemetry-auth-breaker-{os.getuid()}.json"
+
+
+def token_fingerprint(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def auth_breaker_open(token: str) -> bool:
+    path = breaker_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    return data.get("token_sha256") == token_fingerprint(token)
+
+
+def open_auth_breaker(token: str, status: int) -> None:
+    path = breaker_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "token_sha256": token_fingerprint(token),
+                    "status": status,
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def clear_auth_breaker() -> None:
+    try:
+        breaker_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def send(base_url: str, token: str, payload: dict[str, object]) -> str:
     request = urllib.request.Request(
         f"{base_url}/api/telemetry/terminal/command",
         data=json.dumps(payload, separators=(",", ":")).encode(),
@@ -52,16 +105,15 @@ def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
     try:
         with urllib.request.urlopen(request, timeout=1.5) as response:
             response.read(256)
-        return True
+        return "ok"
     except urllib.error.HTTPError as exc:
-        # Authentication failures must stop this capture attempt instead of
-        # producing fallback traffic/log churn. 404/409 are also benign here:
-        # they normally mean there is no active telemetry session.
-        if exc.code in {401, 403, 404, 409}:
-            return True
+        if exc.code in {401, 403}:
+            return "auth"
+        if exc.code in {404, 409}:
+            return "benign"
     except (urllib.error.URLError, TimeoutError, OSError):
         pass
-    return False
+    return "retry"
 
 
 def main() -> int:
@@ -70,7 +122,7 @@ def main() -> int:
 
     token = resolve_token()
     command = os.getenv("DEVPILOT_CAPTURE_COMMAND", "").strip()
-    if not token or not command:
+    if not token or not command or auth_breaker_open(token):
         return 0
 
     command = redact_command(command)
@@ -91,7 +143,13 @@ def main() -> int:
     }
 
     for base_url in candidate_urls():
-        if send(base_url, token, payload):
+        result = send(base_url, token, payload)
+        if result == "auth":
+            open_auth_breaker(token, 401)
+            break
+        if result in {"ok", "benign"}:
+            if result == "ok":
+                clear_auth_breaker()
             break
 
     return 0
