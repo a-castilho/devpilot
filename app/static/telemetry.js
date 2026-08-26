@@ -170,7 +170,7 @@ async function loadHistory(){
   }catch(error){toast(error.message)}
 }
 
-const hookText="export DEVPILOT_URL=http://127.0.0.1:8081\nexport DEVPILOT_BOOTSTRAP_TOKEN='seu-token'\nsource tools/devpilot_terminal_capture.sh";
+const hookText="export DEVPILOT_URL=http://127.0.0.1:8080\nexport DEVPILOT_TERMINAL_CAPTURE=1\nexport DEVPILOT_TELEMETRY_TOKEN='seu-token-de-acesso'\nsource \"$HOME/Documents/devpilot/tools/devpilot_terminal_capture.sh\"";
 document.querySelectorAll('.duration').forEach(button=>button.onclick=()=>startSession(button.dataset.seconds));
 $('#stop').onclick=()=>finishSession(true);$('#analyze').onclick=analyzeCurrent;$('#refresh-history').onclick=loadHistory;
 $('#copy-hook').onclick=async()=>{try{await navigator.clipboard.writeText(hookText);toast('Configuração copiada')}catch{toast('Não foi possível copiar')}};
