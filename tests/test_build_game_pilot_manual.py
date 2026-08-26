@@ -9,12 +9,12 @@ def source(name: str) -> str:
     return (STATIC / name).read_text(encoding="utf-8")
 
 
-def test_pilot_manual_stays_off_critical_game_entry_path():
+def test_pilot_manual_is_completely_absent_from_critical_game_loader():
     loader = source("feature-loader.js")
     assert "game: ['game-shell.js', 'build-game.js']" in loader
-    assert "gameManual: ['build-game-pilot-manual.js']" in loader
-    assert "document.addEventListener('devpilot:game:entered', requestGameManual)" in loader
-    assert "window.requestAnimationFrame" in loader
+    assert "build-game-pilot-manual.js" not in loader
+    assert "gameManual" not in loader
+    assert "requestGameManual" not in loader
 
 
 def test_pilot_manual_is_frontend_only_and_does_not_call_backend():
