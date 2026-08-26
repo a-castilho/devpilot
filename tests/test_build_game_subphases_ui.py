@@ -72,6 +72,17 @@ def test_subphase_engine_does_not_wrap_game_loader_on_reentry():
     assert "__subphasesWrapped" not in source
 
 
+def test_corrective_creation_is_followed_by_non_creating_resync():
+    source = SUBPHASES_JS.read_text(encoding="utf-8")
+    first_sync = "const created = await syncSubphases({allowCreate});"
+    safe_resync = "if (created) await syncSubphases({allowCreate: false});"
+
+    assert first_sync in source
+    assert safe_resync in source
+    assert source.index(first_sync) < source.index(safe_resync)
+    assert "window.loadBuildGame = wrapped" not in source
+
+
 def test_ci_checks_subphase_asset():
     source = VALIDATE_CI.read_text(encoding="utf-8")
     assert "node --check app/static/build-game-subphases.js" in source
