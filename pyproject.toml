@@ -19,6 +19,7 @@ devpilot = "app.cli:main"
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2,<4"]
 test = ["pytest>=8.4,<9", "pytest-cov>=6.2,<7"]
+e2e = ["playwright>=1.48,<2"]
 
 [build-system]
 requires = ["setuptools>=77"]
@@ -33,6 +34,9 @@ include = ["app*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "browser_e2e: browser-level end-to-end tests that require Playwright/Chromium",
+]
 
 [tool.ruff]
 line-length = 100
