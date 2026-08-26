@@ -6,14 +6,16 @@ FEATURE_LOADER_JS = Path("app/static/feature-loader.js")
 WEAPONS_JS = Path("app/static/build-game-weapons.js")
 
 
-def test_weapons_workshop_is_loaded_only_by_explicit_game_bundle():
+def test_weapons_workshop_is_loaded_only_by_explicit_advanced_game_bundle():
     analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
     loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
 
     assert "build-game-weapons.js" not in analytics
-    assert "'build-game-weapons.js'" in loader
-    game_block = loader.split("game: [", 1)[1].split("],", 1)[0]
-    assert game_block.index("'build-game.js'") < game_block.index("'build-game-weapons.js'")
+    assert "game: ['game-shell.js', 'build-game.js']" in loader
+    assert "gameAdvanced:" in loader
+    advanced_block = loader.split("gameAdvanced:", 1)[1].split("],", 1)[0]
+    assert "'build-game-weapons.js'" in advanced_block
+    assert "window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced')" in loader
     assert "addPlaceholder('game', 'Modo Jogo')" in loader
 
 
