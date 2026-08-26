@@ -20,9 +20,8 @@
     example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
     voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js'],
     admin: ['token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js'],
-    // First entry is intentionally tiny. Advanced modules and documentation never block navigation.
+    // Keep first game entry minimal. Nothing else is allowed on this critical path.
     game: ['game-shell.js', 'build-game.js'],
-    gameManual: ['build-game-pilot-manual.js'],
     gameAdvanced: ['build-game-subphases.js', 'build-game-repair-mission.js', 'build-game-new-session.js', 'build-game-url-bonus.js', 'build-game-weapons.js'],
     audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
   });
@@ -95,7 +94,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260826-2`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260826-3`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -130,19 +129,6 @@
   window.__devpilotLoadFeature = loadFeature;
   window.__devpilotFeatureState = featureState;
   window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced');
-  window.__devpilotLoadGameManual = () => loadFeature('gameManual');
-
-  let gameManualRequested = false;
-  function requestGameManual() {
-    if (gameManualRequested || featureState.get('gameManual')?.status === 'loaded') return;
-    gameManualRequested = true;
-    window.requestAnimationFrame(() => {
-      void loadFeature('gameManual').finally(() => {
-        gameManualRequested = false;
-      });
-    });
-  }
-  document.addEventListener('devpilot:game:entered', requestGameManual);
 
   const navRoot = () => document.querySelector('.sidebar nav');
 
