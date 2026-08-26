@@ -1,6 +1,9 @@
-/* DevPilot Build Game cockpit: spaceship interior HUD + DevPilotVoz bridge. */
+/* DevPilot Build Game cockpit: stable touch-first HUD + DevPilotVoz bridge. */
 (() => {
   'use strict';
+
+  if (window.__devpilotBuildGameCockpitReady) return;
+  window.__devpilotBuildGameCockpitReady = true;
 
   const STYLE_ID = 'build-game-cockpit-style';
   const STYLE_URL = '/assets/build-game-cockpit.css?v=20260824-1';
@@ -10,10 +13,14 @@
   const VOICE_DIAGNOSTIC_URL = '/api/super-admin/voice';
   const LINUX_INFRA_MARKER = '[DEVPILOT_GAME_LINUX_INFRA_V1]';
   const LINUX_INFRA_COST = 50;
+  const TASK_FETCH_LIMIT = 100;
   const ACTIVE_TASK_STATUSES = new Set(['awaiting_approval', 'queued', 'running', 'review', 'blocked']);
   const REFUND_TASK_STATUSES = new Set(['failed', 'cancelled']);
+
   let voiceTestSequence = 0;
   let linuxRefreshSequence = 0;
+  let linuxRefreshInFlight = null;
+  let observerQueued = false;
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -56,7 +63,6 @@
     const project = currentProject(view);
     const description = String(project?.description || '').trim();
     if (description) return description;
-
     const selectedName = view.querySelector('#build-game-project')?.selectedOptions?.[0]?.textContent?.trim();
     const scoreName = view.querySelector('.build-game-score > div:nth-child(3) strong')?.textContent?.trim();
     const projectName = String(project?.name || selectedName || scoreName || 'selecionado').trim();
@@ -67,7 +73,6 @@
     const view = button?.closest?.('#build-game-view') || document.querySelector('#build-game-view');
     const input = view?.querySelector('#build-game-goal');
     if (!view || !input || String(input.value || '').trim()) return false;
-
     input.value = automaticGoal(view);
     input.dispatchEvent(new Event('input', {bubbles: true}));
     input.dispatchEvent(new Event('change', {bubbles: true}));
@@ -87,25 +92,18 @@
   function setVoiceProjectContext() {
     const projectId = gameProjectId();
     if (!projectId) return false;
-
     const bridge = window.devpilotChatProjectContext;
-    if (bridge && typeof bridge.setProjectId === 'function') {
-      const applied = bridge.setProjectId(projectId);
-      if (applied) return true;
-    }
-
+    if (bridge && typeof bridge.setProjectId === 'function' && bridge.setProjectId(projectId)) return true;
     localStorage.setItem(VOICE_PROJECT_KEY, projectId);
-    window.dispatchEvent(new CustomEvent('devpilot:active-project-changed', {
-      detail: {project_id: projectId},
-    }));
+    window.dispatchEvent(new CustomEvent('devpilot:active-project-changed', {detail: {project_id: projectId}}));
     return true;
   }
 
-  function updateVoiceState(view, state, message) {
+  function updateVoiceState(view, stateName, message) {
     const comms = view.querySelector('[data-cockpit-comms]');
     const label = view.querySelector('[data-cockpit-voice-status]');
     if (!comms || !label) return;
-    comms.dataset.state = state;
+    comms.dataset.state = stateName;
     label.textContent = message;
   }
 
@@ -115,7 +113,6 @@
     const timeout = window.setTimeout(() => controller.abort(), 4500);
     updateVoiceState(view, 'checking', 'Testando DevPilotVoz…');
     setVoiceProjectContext();
-
     try {
       const response = await fetch(VOICE_DIAGNOSTIC_URL, {
         method: 'GET',
@@ -129,19 +126,14 @@
         const chain = Array.isArray(data.chain) ? data.chain : [];
         const configured = chain.filter(item => item && item.configured).length;
         const last = data.last_transcription && typeof data.last_transcription === 'object'
-          ? `${data.last_transcription.provider || 'voz'} · ${data.last_transcription.model || 'modelo'}`
-          : '';
-        const message = last
-          ? `Online · última: ${last}`
-          : `Online · ${configured} rota(s) configurada(s)`;
-        updateVoiceState(view, 'online', message);
+          ? `${data.last_transcription.provider || 'voz'} · ${data.last_transcription.model || 'modelo'}` : '';
+        updateVoiceState(view, 'online', last ? `Online · última: ${last}` : `Online · ${configured} rota(s) configurada(s)`);
         document.dispatchEvent(new CustomEvent('devpilot:build-game-voice-link', {
           detail: {ok: true, project_id: gameProjectId(), configured_routes: configured},
         }));
         if (announce) toastMessage('DevPilotVoz conectado ao projeto da partida');
         return true;
       }
-
       if (response.status === 403) {
         const voiceClientReady = Boolean(document.querySelector('#voice-modal') && document.querySelector('#voice-dock'));
         const message = voiceClientReady
@@ -149,23 +141,14 @@
           : 'Interface DevPilotVoz não encontrada';
         updateVoiceState(view, 'warn', message);
         document.dispatchEvent(new CustomEvent('devpilot:build-game-voice-link', {
-          detail: {
-            ok: null,
-            project_id: gameProjectId(),
-            diagnostic_restricted: true,
-            voice_client_ready: voiceClientReady,
-          },
+          detail: {ok: null, project_id: gameProjectId(), diagnostic_restricted: true, voice_client_ready: voiceClientReady},
         }));
-        if (announce) {
-          toastMessage(voiceClientReady
-            ? 'Interface DevPilotVoz pronta; diagnóstico de ligação não autorizado para este perfil'
-            : 'Interface DevPilotVoz indisponível');
-        }
+        if (announce) toastMessage(voiceClientReady
+          ? 'Interface DevPilotVoz pronta; diagnóstico de ligação não autorizado para este perfil'
+          : 'Interface DevPilotVoz indisponível');
         return false;
       }
-
-      const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`;
-      throw new Error(detail);
+      throw new Error(typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`);
     } catch (error) {
       if (sequence !== voiceTestSequence || !view.isConnected) return false;
       const reason = error?.name === 'AbortError' ? 'tempo limite excedido' : (error?.message || 'falha de comunicação');
@@ -189,14 +172,11 @@
       toastMessage('DevPilotVoz não está disponível nesta tela');
       return;
     }
-
     dock.click();
     window.setTimeout(() => setVoiceProjectContext(), 0);
-    updateVoiceState(
-      view,
-      'checking',
-      projectLinked ? 'Canal aberto · projeto sincronizado · aguardando comando' : 'Canal aberto · aguardando comando',
-    );
+    updateVoiceState(view, 'checking', projectLinked
+      ? 'Canal aberto · projeto sincronizado · aguardando comando'
+      : 'Canal aberto · aguardando comando');
   }
 
   async function gameApi(path, options = {}) {
@@ -233,10 +213,14 @@
     const latest = requests[0] || null;
     const latestStatus = normalizeStatus(latest?.status);
     const reserved = latest && !REFUND_TASK_STATUSES.has(latestStatus);
-    const balance = Math.max(0, earned - (reserved ? LINUX_INFRA_COST : 0));
-    const active = Boolean(latest && ACTIVE_TASK_STATUSES.has(latestStatus));
-    const ready = latestStatus === 'completed';
-    return {earned, balance, latest, latestStatus, active, ready};
+    return {
+      earned,
+      balance: Math.max(0, earned - (reserved ? LINUX_INFRA_COST : 0)),
+      latest,
+      latestStatus,
+      active: Boolean(latest && ACTIVE_TASK_STATUSES.has(latestStatus)),
+      ready: latestStatus === 'completed',
+    };
   }
 
   function linuxWalletMarkup(economy) {
@@ -254,23 +238,17 @@
     } else if (economy.latest && REFUND_TASK_STATUSES.has(economy.latestStatus)) {
       stateLabel = 'Tentativa anterior falhou · Linux devolvido';
     }
-
-    return `<article class="panel build-game-linux-wallet" data-linux-wallet style="border-color:rgba(104,240,187,.28);background:linear-gradient(145deg,rgba(6,28,25,.9),rgba(3,11,18,.96))">
-      <div class="panel-title" style="gap:12px;align-items:center">
-        <div><span class="eyebrow">MOEDA DE INFRAESTRUTURA</span><h3 style="margin:.2rem 0">🐧 Linux · ${economy.balance}</h3></div>
-        <strong style="font-size:.82rem">${esc(stateLabel)}</strong>
-      </div>
-      <p style="margin:.35rem 0 .8rem;color:var(--muted,#9eacc2)">Cada 10 XP concluídos valem 1 Linux. Use Linux para obter uma sandbox dedicada da partida, isolada do host e vinculada somente ao seu projeto.</p>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <button class="primary" type="button" data-linux-infra-buy ${disabled ? 'disabled' : ''}>${esc(buttonLabel)}</button>
-        <small style="color:var(--muted,#9eacc2)">Ganho: ${economy.earned} · Saldo: ${economy.balance} · Sem acesso privilegiado ao host</small>
-      </div>
+    return `<article class="panel build-game-linux-wallet" data-linux-wallet>
+      <div class="panel-title"><div><span class="eyebrow">MOEDA DE INFRAESTRUTURA</span><h3>🐧 Linux · ${economy.balance}</h3></div><strong>${esc(stateLabel)}</strong></div>
+      <p>Cada 10 XP concluídos valem 1 Linux. Use Linux para obter uma sandbox dedicada da partida, isolada do host e vinculada somente ao seu projeto.</p>
+      <div><button class="primary" type="button" data-linux-infra-buy ${disabled ? 'disabled' : ''}>${esc(buttonLabel)}</button>
+      <small>Ganho: ${economy.earned} · Saldo: ${economy.balance} · Sem acesso privilegiado ao host</small></div>
     </article>`;
   }
 
   async function fetchProjectTasks(projectId) {
     if (!projectId) return [];
-    const tasks = await gameApi(`/tasks?project_id=${encodeURIComponent(projectId)}&limit=500`);
+    const tasks = await gameApi(`/tasks?project_id=${encodeURIComponent(projectId)}&limit=${TASK_FETCH_LIMIT}`);
     return Array.isArray(tasks) ? tasks : [];
   }
 
@@ -278,7 +256,6 @@
     const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
     const mission = gameMissionId();
     if (!projectId || !mission) return toastMessage('Inicie uma partida antes de ativar a Infra Linux');
-
     button.disabled = true;
     const original = button.textContent;
     button.textContent = 'Validando saldo…';
@@ -287,10 +264,8 @@
       const economy = linuxEconomy(view, tasks);
       if (economy.active || economy.ready) return toastMessage('Esta partida já possui uma Infra Linux dedicada');
       if (economy.balance < LINUX_INFRA_COST) return toastMessage(`Saldo insuficiente: são necessários ${LINUX_INFRA_COST} Linux`);
-
       const project = currentProject(view);
       const prompt = `${LINUX_INFRA_MARKER}\n[DEVPILOT_MODE=develop]\nPARTIDA: ${mission}\nPROJETO: ${projectId}\nCUSTO_LINUX: ${LINUX_INFRA_COST}\n\nOBJETIVO:\nProvisionar uma infraestrutura Linux dedicada para esta partida e vinculada exclusivamente ao jogador/projeto selecionado.\n\nREQUISITOS OBRIGATÓRIOS:\n- Use somente provedores, contas e credenciais cloud já autorizados e gerenciados pelo DevPilot; nunca exponha tokens no frontend, logs ou resultado.\n- Crie sandbox/container/VM isolada por tenant e projeto, sem --privileged, sem montar docker.sock e sem acesso administrativo ao host do DevPilot.\n- A identidade do jogador deve ser propagada pelo backend; não confie em user_id fornecido pelo navegador.\n- Aplique limites de CPU, memória, disco, processos e tempo de vida. Prefira rootless/unprivileged e imagem Linux mínima mantida.\n- O terminal da sandbox deve ser acessível apenas após autenticação do DevPilot e autorização do proprietário; SUPER_ADMIN pode auditar/administrar, mas outros usuários não podem acessar.\n- Restrinja rede e portas ao necessário para jogar/testar o projeto. Não exponha SSH ou serviços diretamente à Internet sem camada autenticada.\n- Registre auditoria de criação, início, parada, acesso e destruição da sandbox, sem registrar segredos.\n- O provisionamento deve ser idempotente para a chave partida+projeto; não crie infraestrutura duplicada ao repetir a tarefa.\n- Não crie recurso pago fora dos limites/quota já configurados. Se não houver capacidade segura/autorizada, finalize como bloqueado/falha com motivo explícito.\n- Ao concluir, devolva no resultado o identificador da sandbox, status, limites aplicados e URL/rota autenticada de acesso quando existir.\n\nCRITÉRIO DE VITÓRIA:\nA Infra Linux está pronta somente quando o ambiente isolado foi realmente provisionado, o acesso do jogador foi validado e não existe caminho de privilégio para o host.`;
-
       await gameApi('/tasks', {
         method: 'POST',
         body: JSON.stringify({
@@ -306,7 +281,7 @@
       document.dispatchEvent(new CustomEvent('devpilot:build-game-linux-infra', {
         detail: {project_id: projectId, mission_id: mission, cost: LINUX_INFRA_COST},
       }));
-      await refreshLinuxEconomy(view);
+      await refreshLinuxEconomy(view, true);
     } catch (error) {
       toastMessage(error?.message || 'Falha ao ativar Infra Linux');
     } finally {
@@ -317,94 +292,103 @@
     }
   }
 
-  async function refreshLinuxEconomy(view) {
+  async function refreshLinuxEconomy(view, force = false) {
+    const shell = view?.querySelector('.build-game-shell');
+    if (!shell || !view.isConnected) return false;
+    if (linuxRefreshInFlight && !force) return linuxRefreshInFlight;
+
     const sequence = ++linuxRefreshSequence;
-    const shell = view.querySelector('.build-game-shell');
-    if (!shell) return;
-    try {
-      const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
-      const tasks = await fetchProjectTasks(projectId);
-      if (sequence !== linuxRefreshSequence || !view.isConnected) return;
-      const economy = linuxEconomy(view, tasks);
-      const host = document.createElement('div');
-      host.innerHTML = linuxWalletMarkup(economy).trim();
-      const wallet = host.firstElementChild;
-      if (!wallet) return;
-      shell.querySelector('[data-linux-wallet]')?.remove();
-      const cockpit = shell.querySelector('[data-build-game-cockpit]');
-      if (cockpit) cockpit.insertAdjacentElement('afterend', wallet);
-      else shell.prepend(wallet);
-      wallet.querySelector('[data-linux-infra-buy]')?.addEventListener('click', event => activateLinuxInfra(view, event.currentTarget));
-    } catch (error) {
-      if (sequence === linuxRefreshSequence) toastMessage(`Moeda Linux indisponível: ${error?.message || 'falha ao carregar'}`);
-    }
+    const operation = (async () => {
+      try {
+        const projectId = String(view.querySelector('#build-game-project')?.value || gameProjectId()).trim();
+        const tasks = await fetchProjectTasks(projectId);
+        if (sequence !== linuxRefreshSequence || !view.isConnected) return false;
+        const economy = linuxEconomy(view, tasks);
+        const host = document.createElement('div');
+        host.innerHTML = linuxWalletMarkup(economy).trim();
+        const wallet = host.firstElementChild;
+        if (!wallet) return false;
+        const existing = shell.querySelector('[data-linux-wallet]');
+        if (existing) existing.replaceWith(wallet);
+        else {
+          const cockpit = shell.querySelector('[data-build-game-cockpit]');
+          if (cockpit) cockpit.insertAdjacentElement('afterend', wallet);
+          else shell.prepend(wallet);
+        }
+        wallet.querySelector('[data-linux-infra-buy]')?.addEventListener('click', event => activateLinuxInfra(view, event.currentTarget));
+        return true;
+      } catch (error) {
+        if (sequence === linuxRefreshSequence) toastMessage(`Moeda Linux indisponível: ${error?.message || 'falha ao carregar'}`);
+        return false;
+      }
+    })();
+
+    linuxRefreshInFlight = operation.finally(() => {
+      if (linuxRefreshInFlight === operation || sequence === linuxRefreshSequence) linuxRefreshInFlight = null;
+    });
+    return linuxRefreshInFlight;
   }
 
   function cockpitMarkup(snapshot) {
-    return `
-      <section class="build-game-cockpit" data-build-game-cockpit aria-label="Skin visão de dentro da nave">
-        <div class="build-game-cockpit-window" aria-hidden="true">
-          <div class="build-game-cockpit-crosshair"></div>
-          <div class="build-game-cockpit-hud">
-            <div>
-              <span class="cockpit-kicker">DEV-01 · VISÃO DA CABINE</span>
-              <strong>${esc(snapshot.project)}</strong>
-              <small>ROTA ATUAL · ${esc(snapshot.current)}</small>
-            </div>
-            <div class="cockpit-hud-progress"><b>${esc(snapshot.progress)}</b><span>${esc(snapshot.xp)}</span></div>
-          </div>
+    return `<section class="build-game-cockpit" data-build-game-cockpit aria-label="Skin visão de dentro da nave">
+      <div class="build-game-cockpit-window" aria-hidden="true"><div class="build-game-cockpit-crosshair"></div>
+        <div class="build-game-cockpit-hud"><div><span class="cockpit-kicker">DEV-01 · VISÃO DA CABINE</span><strong>${esc(snapshot.project)}</strong><small>ROTA ATUAL · ${esc(snapshot.current)}</small></div>
+        <div class="cockpit-hud-progress"><b>${esc(snapshot.progress)}</b><span>${esc(snapshot.xp)}</span></div></div></div>
+      <div class="build-game-cockpit-console">
+        <div class="cockpit-gauge"><span>NAVE</span><strong>DEV PILOT / ONLINE</strong><small>controle de missão ativo</small></div>
+        <div class="cockpit-gauge"><span>NAVEGAÇÃO</span><strong>${esc(snapshot.progress)}</strong><small>${esc(snapshot.current)}</small></div>
+        <div class="cockpit-gauge"><span>ENERGIA</span><strong>${esc(snapshot.xp)}</strong><small>experiência acumulada</small></div>
+        <div class="cockpit-comms" data-cockpit-comms data-state="checking"><div><span class="cockpit-comms-label">COMMS · DEVPILOTVOZ</span>
+          <div class="cockpit-comms-state"><i class="cockpit-comms-light"></i><span data-cockpit-voice-status aria-live="polite">Verificando ligação…</span></div></div>
+          <div class="cockpit-comms-actions"><button class="ghost" type="button" data-cockpit-test-voice>Testar ligação</button><button class="primary" type="button" data-cockpit-open-voice>Falar com DevPilotVoz</button></div>
         </div>
-        <div class="build-game-cockpit-console">
-          <div class="cockpit-gauge"><span>NAVE</span><strong>DEV PILOT / ONLINE</strong><small>controle de missão ativo</small></div>
-          <div class="cockpit-gauge"><span>NAVEGAÇÃO</span><strong>${esc(snapshot.progress)}</strong><small>${esc(snapshot.current)}</small></div>
-          <div class="cockpit-gauge"><span>ENERGIA</span><strong>${esc(snapshot.xp)}</strong><small>experiência acumulada</small></div>
-          <div class="cockpit-comms" data-cockpit-comms data-state="checking">
-            <div>
-              <span class="cockpit-comms-label">COMMS · DEVPILOTVOZ</span>
-              <div class="cockpit-comms-state"><i class="cockpit-comms-light"></i><span data-cockpit-voice-status aria-live="polite">Verificando ligação…</span></div>
-            </div>
-            <div class="cockpit-comms-actions">
-              <button class="ghost" type="button" data-cockpit-test-voice>Testar ligação</button>
-              <button class="primary" type="button" data-cockpit-open-voice>Falar com DevPilotVoz</button>
-            </div>
-          </div>
-        </div>
-      </section>`;
+      </div>
+    </section>`;
   }
 
   function enhance(view) {
-    const shell = view.querySelector('.build-game-shell');
-    if (!shell) return;
+    const shell = view?.querySelector('.build-game-shell');
+    if (!shell) return false;
     view.classList.add('build-game-cockpit-view');
-
     const goalInput = view.querySelector('#build-game-goal');
     if (goalInput) {
       goalInput.placeholder = 'Opcional — se vazio, o DevPilot define automaticamente.';
       goalInput.setAttribute('aria-label', 'Objetivo da partida; opcional, será definido automaticamente se vazio');
     }
 
-    const existing = shell.querySelector('[data-build-game-cockpit]');
-    if (existing) {
-      void refreshLinuxEconomy(view);
-      return;
-    }
+    // Critical: when the cockpit already exists, this must be a no-op. The old code
+    // refreshed Linux economy here; that refresh mutated the DOM observed below and
+    // created an endless observer -> fetch -> DOM mutation -> observer loop on mobile.
+    if (shell.querySelector('[data-build-game-cockpit]')) return false;
 
     const host = document.createElement('div');
     host.innerHTML = cockpitMarkup(gameSnapshot(view)).trim();
     const cockpit = host.firstElementChild;
-    if (!cockpit) return;
+    if (!cockpit) return false;
     shell.prepend(cockpit);
-
     cockpit.querySelector('[data-cockpit-test-voice]')?.addEventListener('click', () => testVoiceLink(view, true));
     cockpit.querySelector('[data-cockpit-open-voice]')?.addEventListener('click', () => openVoice(view));
-    testVoiceLink(view, false);
+    void testVoiceLink(view, false);
     void refreshLinuxEconomy(view);
+    return true;
   }
 
   function sync() {
     const view = document.querySelector('#build-game-view');
-    if (!view) return;
-    enhance(view);
+    if (!view) return false;
+    return enhance(view);
+  }
+
+  function queueSyncOnlyWhenCockpitMissing() {
+    const view = document.querySelector('#build-game-view');
+    if (!view?.querySelector('.build-game-shell')) return;
+    if (view.querySelector('[data-build-game-cockpit]')) return;
+    if (observerQueued) return;
+    observerQueued = true;
+    requestAnimationFrame(() => {
+      observerQueued = false;
+      sync();
+    });
   }
 
   function boot() {
@@ -414,16 +398,14 @@
     const main = document.querySelector('main') || document.body;
     if (!main || main.dataset.buildGameCockpitObserved === '1') return;
     main.dataset.buildGameCockpitObserved = '1';
-    let queued = false;
-    new MutationObserver(() => {
-      if (queued) return;
-      queued = true;
-      requestAnimationFrame(() => {
-        queued = false;
-        sync();
-      });
-    }).observe(main, {childList: true, subtree: true});
+    new MutationObserver(queueSyncOnlyWhenCockpitMissing).observe(main, {childList: true, subtree: true});
   }
+
+  document.addEventListener('devpilot:game:rendered', queueSyncOnlyWhenCockpitMissing);
+  document.addEventListener('devpilot:build-game-linux-infra', () => {
+    const view = document.querySelector('#build-game-view');
+    if (view) void refreshLinuxEconomy(view, true);
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
   else boot();
