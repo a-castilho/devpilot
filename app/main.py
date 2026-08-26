@@ -14,6 +14,7 @@ from app.audit_routes import router as audit_router
 from app.auth_routes import router as auth_router
 from app.career_routes import router as career_router
 from app.chat_mode_routes import router as chat_mode_router
+from app.ci_routes import router as ci_router
 from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
 from app.delivery_url_recovery import install_delivery_url_recovery
@@ -334,6 +335,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="DevPilot API", version=__version__, lifespan=lifespan)
 app.include_router(auth_router)
+app.include_router(ci_router)
 app.include_router(users_router)
 app.include_router(frontend_ui_router)
 app.include_router(router)
