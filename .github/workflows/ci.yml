@@ -66,10 +66,10 @@ jobs:
           fi
 
   quality:
-    name: DevPilot quality
+    name: DevPilot full quality
     needs: policy
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -113,10 +113,19 @@ jobs:
           "$PYTHON" -m pip install --upgrade pip
           "$PYTHON" -m pip install -e '.[test]'
 
-      - name: Validate application
+      - name: Run complete validation without stopping at first failure
         run: |
           if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then export PYTHON_BIN="$(command -v python3)"; fi
-          bash scripts/validate-ci.sh
+          bash scripts/test-all.sh
+
+      - name: Publish complete failure report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: devpilot-test-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .artifacts/test-results
+          if-no-files-found: warn
+          retention-days: 14
 
   runtime-image:
     name: DevPilot runtime image
