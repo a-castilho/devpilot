@@ -84,11 +84,7 @@
       </header>
       <main class="devpilot-game-stage" data-game-slot></main>
     `;
-    root.querySelector('.devpilot-game-exit')?.addEventListener('click', () => {
-      const overview = document.querySelector('.sidebar .nav[data-view="overview"]');
-      if (overview) overview.click();
-      else exitGame();
-    });
+    root.querySelector('.devpilot-game-exit')?.addEventListener('click', leaveGameToOverview);
     document.body.appendChild(root);
     return root;
   }
@@ -167,6 +163,24 @@
     return true;
   }
 
+  function leaveGameToOverview() {
+    exitGame();
+    if (typeof showView === 'function') {
+      showView('overview');
+    } else {
+      document.querySelectorAll('.view').forEach(view => {
+        view.classList.toggle('active', view.id === 'overview-view');
+      });
+      document.querySelectorAll('.sidebar .nav').forEach(nav => {
+        nav.classList.toggle('active', nav.dataset.view === 'overview');
+      });
+    }
+    const title = document.querySelector('#page-title');
+    if (title) title.textContent = 'Visão geral';
+    window.requestAnimationFrame(() => window.scrollTo({top: 0, left: 0, behavior: 'auto'}));
+    return true;
+  }
+
   function sync() {
     const view = document.getElementById(VIEW_ID);
     if (!view) return false;
@@ -183,7 +197,6 @@
       if (view.classList.contains('active')) enterGame(view);
       else if (document.body.classList.contains('devpilot-game-mode')) exitGame();
     });
-    // Renderizações internas do jogo não podem reentrar no shell.
     viewObserver.observe(view, {attributes: true, attributeFilter: ['class']});
   }
 
@@ -268,8 +281,6 @@
     if (feedbackWired) return;
     feedbackWired = true;
 
-    // O primeiro acesso pelo menu usa somente o motor base. Os módulos avançados
-    // continuam carregados, mas não entram na cadeia de fetch/render inicial.
     document.addEventListener('click', event => {
       const nav = event.target.closest?.('.sidebar nav .nav[data-view="build-game"], .sidebar nav .nav[data-view="game"]');
       if (nav && typeof window.__devpilotBaseLoadBuildGame === 'function') {
@@ -296,6 +307,7 @@
   window.DevPilotGameShell = Object.freeze({
     enter: enterGame,
     exit: exitGame,
+    leaveToOverview: leaveGameToOverview,
     sync,
     refresh,
     loadBase: runBaseLoad,
