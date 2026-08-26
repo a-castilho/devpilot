@@ -16,6 +16,17 @@ class ProviderModelDiscoveryError(RuntimeError):
     Provider response bodies and credentials must never be included in this exception.
     """
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "provider_error",
+        upstream_status: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.upstream_status = upstream_status
+
 
 @dataclass(frozen=True, slots=True)
 class ProviderModel:
@@ -160,22 +171,49 @@ def _request_json(
             follow_redirects=False,
         )
     except httpx.RequestError as error:
-        raise ProviderModelDiscoveryError("Não foi possível alcançar a API do provedor.") from error
+        raise ProviderModelDiscoveryError(
+            "Não foi possível alcançar a API do provedor.",
+            code="provider_unreachable",
+        ) from error
 
-    if response.status_code in {401, 403}:
-        raise ProviderModelDiscoveryError("API key rejeitada pelo provedor.")
+    if response.status_code == 401:
+        raise ProviderModelDiscoveryError(
+            "API key não autenticada pelo provedor. "
+            "Verifique se a chave está correta, ativa e pertence ao projeto/organização esperados.",
+            code="authentication_failed",
+            upstream_status=401,
+        )
+    if response.status_code == 403:
+        raise ProviderModelDiscoveryError(
+            "O provedor negou acesso ao catálogo de modelos (HTTP 403). "
+            "Revise as permissões da API key e do projeto para permitir a leitura do catálogo.",
+            code="catalog_forbidden",
+            upstream_status=403,
+        )
     if response.status_code == 429:
-        raise ProviderModelDiscoveryError("O provedor limitou temporariamente a consulta de modelos.")
+        raise ProviderModelDiscoveryError(
+            "O provedor limitou temporariamente a consulta de modelos.",
+            code="rate_limited",
+            upstream_status=429,
+        )
     if response.status_code >= 400:
         raise ProviderModelDiscoveryError(
-            f"O provedor recusou a consulta de modelos (HTTP {response.status_code})."
+            f"O provedor recusou a consulta de modelos (HTTP {response.status_code}).",
+            code="provider_http_error",
+            upstream_status=response.status_code,
         )
     try:
         payload = response.json()
     except ValueError as error:
-        raise ProviderModelDiscoveryError("O provedor retornou um catálogo inválido.") from error
+        raise ProviderModelDiscoveryError(
+            "O provedor retornou um catálogo inválido.",
+            code="invalid_catalog",
+        ) from error
     if not isinstance(payload, dict):
-        raise ProviderModelDiscoveryError("O provedor retornou um catálogo inválido.")
+        raise ProviderModelDiscoveryError(
+            "O provedor retornou um catálogo inválido.",
+            code="invalid_catalog",
+        )
     return payload
 
 
@@ -252,11 +290,13 @@ def discover_provider_models(
     api_key = api_key.strip()
     if provider not in SUPPORTED_MODEL_PROVIDERS:
         raise ProviderModelDiscoveryError(
-            "Este provedor não oferece descoberta automática no DevPilot."
+            "Este provedor não oferece descoberta automática no DevPilot.",
+            code="unsupported_provider",
         )
     if len(api_key) < 8:
         raise ProviderModelDiscoveryError(
-            "Informe uma API key válida para consultar os modelos atuais."
+            "Informe uma API key válida para consultar os modelos atuais.",
+            code="invalid_key_format",
         )
 
     if provider == "openai":
@@ -267,5 +307,8 @@ def discover_provider_models(
         models = _google_models(api_key, timeout_seconds)
 
     if not models:
-        raise ProviderModelDiscoveryError("Nenhum modelo utilizável foi retornado pelo provedor.")
+        raise ProviderModelDiscoveryError(
+            "Nenhum modelo utilizável foi retornado pelo provedor.",
+            code="empty_catalog",
+        )
     return models
