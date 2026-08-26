@@ -2,6 +2,9 @@
 (() => {
   'use strict';
 
+  if (window.__devpilotBuildGameSubphasesReady) return;
+  window.__devpilotBuildGameSubphasesReady = true;
+
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const SUBPHASE_MARKER = '[DEVPILOT_BUILD_GAME_SUBPHASE_V1]';
   const PROJECT_KEY = 'devpilot-build-game-project';
@@ -10,6 +13,7 @@
   const MAX_SUBPHASES = 12;
   const PHASE_NAMES = ['Mapa da missão','Primeiro circuito','Regras blindadas','Interface jogável','Batalha de testes','Chefe final'];
   const FAILURE_STATUSES = new Set(['failed', 'blocked']);
+  let syncInFlight = null;
 
   const normalize = value => String(value || '').toLowerCase().replaceAll(' ', '_');
   const escapeRegExp = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -156,27 +160,21 @@
     return created;
   };
 
+  const scheduleSync = ({allowCreate = true} = {}) => {
+    if (syncInFlight) return syncInFlight;
+    syncInFlight = Promise.resolve()
+      .then(() => syncSubphases({allowCreate}))
+      .catch(error => console.error('DevPilot build-game subphases:', error))
+      .finally(() => { syncInFlight = null; });
+    return syncInFlight;
+  };
+
   const install = () => {
-    if (typeof api !== 'function' || typeof window.loadBuildGame !== 'function') return setTimeout(install, 50);
-    if (window.loadBuildGame.__subphasesWrapped) return;
-    const baseLoad = window.loadBuildGame;
-    const wrapped = async (...args) => {
-      const result = await baseLoad(...args);
-      try {
-        const created = await syncSubphases({allowCreate: true});
-        if (created) {
-          await baseLoad(...args);
-          await syncSubphases({allowCreate: false});
-        }
-      } catch (error) {
-        console.error('DevPilot build-game subphases:', error);
-      }
-      return result;
-    };
-    wrapped.__subphasesWrapped = true;
-    window.loadBuildGame = wrapped;
+    if (typeof api !== 'function') return window.setTimeout(install, 50);
     installStyle();
-    if (document.querySelector('#build-game-view.active')) window.loadBuildGame();
+    document.addEventListener('devpilot:game:state', () => { void scheduleSync({allowCreate: true}); });
+    document.addEventListener('devpilot:build-game-new-session', () => { void scheduleSync({allowCreate: true}); });
+    if (document.querySelector('#build-game-view.active')) void scheduleSync({allowCreate: true});
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, {once: true});
