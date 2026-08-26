@@ -163,7 +163,10 @@
   const scheduleSync = ({allowCreate = true} = {}) => {
     if (syncInFlight) return syncInFlight;
     syncInFlight = Promise.resolve()
-      .then(() => syncSubphases({allowCreate}))
+      .then(async () => {
+        const created = await syncSubphases({allowCreate});
+        if (created) await syncSubphases({allowCreate: false});
+      })
       .catch(error => console.error('DevPilot build-game subphases:', error))
       .finally(() => { syncInFlight = null; });
     return syncInFlight;
