@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     execution_enabled: bool = False
     embedded_worker: bool = False
     allowed_git_hosts: str = "github.com"
+    github_webhook_secret: str = ""
     openai_model: str = "gpt-5.4"
     realtime_model: str = "gpt-realtime-2.1"
     usd_brl_rate: float = 0.0
