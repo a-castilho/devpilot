@@ -73,10 +73,9 @@
       const target = document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"]');
       if (!target) throw new Error('A navegação do Modo Jogo não ficou disponível.');
 
+      // A partir daqui o Game Shell é o único dono da montagem e do lifecycle.
+      // O clique é interceptado por game-shell.js, que navega, monta e carrega o runtime base.
       target.click();
-      // Handoff explícito: a entrada visual não depende mais de MutationObserver
-      // nem de uma corrida entre renderização do engine e o shell mobile.
-      window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'));
       window.DevPilotResponses?.success?.('Modo Jogo pronto. Boa missão.');
     } catch (error) {
       window.DevPilotResponses?.error?.(error?.message || 'Falha ao abrir o Modo Jogo.');
