@@ -108,7 +108,7 @@ def send(base_url: str, token: str, payload: dict[str, object]) -> str:
         return "ok"
     except urllib.error.HTTPError as exc:
         if exc.code in {401, 403}:
-            return "auth"
+            return f"auth:{exc.code}"
         if exc.code in {404, 409}:
             return "benign"
     except (urllib.error.URLError, TimeoutError, OSError):
@@ -144,8 +144,8 @@ def main() -> int:
 
     for base_url in candidate_urls():
         result = send(base_url, token, payload)
-        if result == "auth":
-            open_auth_breaker(token, 401)
+        if result.startswith("auth:"):
+            open_auth_breaker(token, int(result.split(":", 1)[1]))
             break
         if result in {"ok", "benign"}:
             if result == "ok":
