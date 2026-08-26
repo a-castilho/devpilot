@@ -1,6 +1,9 @@
 (() => {
   'use strict';
 
+  if (window.__devpilotFeatureLoaderReady) return;
+  window.__devpilotFeatureLoaderReady = true;
+
   const loadedFiles = new Set();
   const featureState = new Map();
   const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
@@ -10,91 +13,34 @@
     mobileShell: ['mobile-accordion-menu.js'],
     profile: ['profile.js'],
     users: ['users.js'],
-    providers: [
-      'provider-models.js',
-      'provider-ollama.js',
-    ],
-    projectBuilder: [
-      'project-provisioning.js',
-      'project-builder.js',
-      'project-description-profile.js',
-      'mobile-project-card-compact.js',
-    ],
+    providers: ['provider-models.js', 'provider-ollama.js'],
+    projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
     reports: ['reports.js'],
-    tasks: [
-      'task-analytics.js',
-      'system-tests.js',
-    ],
-    example: [
-      'example-project.js',
-      'example-project-mobile-training.js',
-      'example-project-graphs-fix.js',
-      'tws-example.js',
-    ],
-    voice: [
-      'super-admin-voice.js',
-      'voice-project-start.js',
-      'voice-local-update.js',
-      'voice-microphone-permission.js',
-      'voice-playback.js',
-      'voice-enhanced-ui.js',
-      'voice-chatgpt-layout.js',
-      'voice-insecure-lan-guard.js',
-    ],
-    admin: [
-      'token-usage.js',
-      'token-usage-mobile-fix.js',
-      'deploy-admin.js',
-      'cloud-admin.js',
-      'super-admin-local-test.js',
-      'investia-admin.js',
-      'investia-homologation.js',
-      'linux-terminal.js',
-      'linux-beginner-coach.js',
-      'career-linkedin.js',
-      'mission-control.js',
-    ],
-    game: [
-      'game-shell.js',
-      'build-game.js',
-      'build-game-subphases.js',
-      'build-game-repair-mission.js',
-      'build-game-new-session.js',
-      'build-game-url-bonus.js',
-      'build-game-weapons.js',
-    ],
-    audit: [
-      'audit-integrity.js',
-      'telemetry-capture.js',
-      'telemetry-replay-capture.js',
-    ],
+    tasks: ['task-analytics.js', 'system-tests.js'],
+    example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
+    voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js'],
+    admin: ['token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js'],
+    // First entry is intentionally tiny. Advanced game modules never block navigation.
+    game: ['game-shell.js', 'build-game.js'],
+    gameAdvanced: ['build-game-subphases.js', 'build-game-repair-mission.js', 'build-game-new-session.js', 'build-game-url-bonus.js', 'build-game-weapons.js'],
+    audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
   });
 
   const scriptName = src => {
-    try {
-      return new URL(src, location.href).pathname.split('/').pop() || '';
-    } catch (_) {
-      return '';
-    }
+    try { return new URL(src, location.href).pathname.split('/').pop() || ''; }
+    catch (_) { return ''; }
   };
 
   Array.from(document.scripts).forEach(script => {
     const name = scriptName(script.src);
-    if (!name) return;
-    const dynamic = script.dataset.devpilotFeatureScript === '1';
-    const loaded = script.dataset.devpilotFeatureLoadState === 'loaded';
-    if (!dynamic || loaded) loadedFiles.add(name);
+    if (name && script.dataset.devpilotFeatureLoadState !== 'failed') loadedFiles.add(name);
   });
 
-  const nextPaint = () => new Promise(resolve => {
-    window.requestAnimationFrame(() => resolve());
-  });
-
-  const shortYield = () => new Promise(resolve => window.setTimeout(resolve, 35));
+  const nextPaint = () => new Promise(resolve => window.requestAnimationFrame(resolve));
 
   function waitForExistingFeatureScript(script, name) {
     const state = script.dataset.devpilotFeatureLoadState;
-    if (state === 'loaded') {
+    if (state === 'loaded' || script.dataset.devpilotFeatureScript !== '1') {
       loadedFiles.add(name);
       return Promise.resolve(true);
     }
@@ -102,7 +48,6 @@
       script.remove();
       return Promise.resolve(false);
     }
-
     return new Promise(resolve => {
       let settled = false;
       const finish = ok => {
@@ -118,11 +63,7 @@
         }
         resolve(ok);
       };
-      const timeoutId = window.setTimeout(() => {
-        console.error(`[DevPilot] Timeout ao carregar ${name}`);
-        finish(false);
-      }, FEATURE_SCRIPT_TIMEOUT_MS);
-
+      const timeoutId = window.setTimeout(() => finish(false), FEATURE_SCRIPT_TIMEOUT_MS);
       script.addEventListener('load', () => finish(true), {once: true});
       script.addEventListener('error', () => finish(false), {once: true});
     });
@@ -130,16 +71,8 @@
 
   function loadScript(name) {
     if (!name || loadedFiles.has(name)) return Promise.resolve(true);
-
     const existing = Array.from(document.scripts).find(script => scriptName(script.src) === name);
-    if (existing) {
-      if (existing.dataset.devpilotFeatureScript !== '1') {
-        loadedFiles.add(name);
-        return Promise.resolve(true);
-      }
-      if (existing.dataset.devpilotFeatureLoadState === 'failed') existing.remove();
-      else return waitForExistingFeatureScript(existing, name);
-    }
+    if (existing) return waitForExistingFeatureScript(existing, name);
 
     return new Promise(resolve => {
       const script = document.createElement('script');
@@ -161,16 +94,12 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260825-10`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260826-1`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
       script.onload = () => finish(true);
-      script.onerror = () => {
-        console.error(`[DevPilot] Falha ao carregar ${name}`);
-        finish(false);
-      };
+      script.onerror = () => finish(false);
       document.body.appendChild(script);
     });
   }
@@ -178,7 +107,6 @@
   async function loadFeature(feature) {
     const files = FEATURE_BUNDLES[feature];
     if (!Array.isArray(files)) return false;
-
     const current = featureState.get(feature);
     if (current?.status === 'loaded') return true;
     if (current?.promise) return current.promise;
@@ -189,25 +117,18 @@
         const ok = await loadScript(file);
         if (!ok) failures.push(file);
         await nextPaint();
-        await shortYield();
       }
-      featureState.set(feature, {
-        status: failures.length ? 'partial' : 'loaded',
-        failures,
-        promise: null,
-      });
-      document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
-        detail: {feature, failures},
-      }));
+      featureState.set(feature, {status: failures.length ? 'partial' : 'loaded', failures, promise: null});
+      document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {detail: {feature, failures}}));
       return failures.length === 0;
     })();
-
     featureState.set(feature, {status: 'loading', failures: [], promise});
     return promise;
   }
 
   window.__devpilotLoadFeature = loadFeature;
   window.__devpilotFeatureState = featureState;
+  window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced');
 
   const navRoot = () => document.querySelector('.sidebar nav');
 
@@ -229,48 +150,22 @@
 
   function restorePlaceholder(button, original) {
     if (!button?.isConnected) return;
-    const label = original || button.dataset.devpilotOriginalLabel || button.textContent.replace(/\s*·\s*carregando…?\s*$/u, '');
     button.disabled = false;
-    button.textContent = label;
+    button.removeAttribute('aria-busy');
+    button.textContent = original || button.dataset.devpilotOriginalLabel || button.textContent.replace(/\s*·\s*carregando…?\s*$/u, '');
     delete button.dataset.devpilotBusy;
     delete button.dataset.devpilotOriginalLabel;
   }
 
   function restorePendingPlaceholders() {
-    document.querySelectorAll('[data-devpilot-feature-placeholder][data-devpilot-busy="1"]').forEach(button => {
-      restorePlaceholder(button, button.dataset.devpilotOriginalLabel || '');
-    });
-  }
-
-  function findUsersNav() {
-    return Array.from(document.querySelectorAll('.sidebar nav .nav'))
-      .find(item => item.textContent?.trim() === 'Usuários');
+    document.querySelectorAll('[data-devpilot-feature-placeholder][data-devpilot-busy="1"]').forEach(button => restorePlaceholder(button, button.dataset.devpilotOriginalLabel || ''));
   }
 
   function featureTarget(feature) {
-    if (feature === 'profile') {
-      return document.querySelector('.nav[data-profile-view="1"], .nav[data-view="profile"]');
-    }
-    if (feature === 'users') return findUsersNav();
-    if (feature === 'game') {
-      return document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"], [data-build-game]');
-    }
+    if (feature === 'profile') return document.querySelector('.nav[data-profile-view="1"], .nav[data-view="profile"]');
+    if (feature === 'users') return Array.from(document.querySelectorAll('.sidebar nav .nav')).find(item => item.textContent?.trim() === 'Usuários');
+    if (feature === 'game') return document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"], [data-build-game]');
     return null;
-  }
-
-  function finishStalePlaceholderIntent(button, feature, ok, original) {
-    if (ok) {
-      const target = featureTarget(feature);
-      if (target) {
-        removePlaceholder(feature);
-        return;
-      }
-      if (feature === 'admin') {
-        removePlaceholder(feature);
-        return;
-      }
-    }
-    restorePlaceholder(button, original);
   }
 
   async function openPlaceholder(button, feature) {
@@ -280,66 +175,33 @@
     button.dataset.devpilotBusy = '1';
     button.dataset.devpilotOriginalLabel = original;
     button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
     button.textContent = `${original} · carregando…`;
-
     try {
       const ok = await loadFeature(feature);
-
-      if (intentEpoch !== navigationEpoch) {
-        finishStalePlaceholderIntent(button, feature, ok, original);
-        return;
-      }
-
+      if (intentEpoch !== navigationEpoch) return restorePlaceholder(button, original);
       if (!ok) {
-        const failures = featureState.get(feature)?.failures || [];
-        console.error(`[DevPilot] Módulo ${feature} incompleto`, failures);
         window.toast?.(`Não foi possível carregar ${original}. Tente novamente.`);
-        restorePlaceholder(button, original);
-        return;
+        return restorePlaceholder(button, original);
       }
-
-      await nextPaint();
-
-      if (intentEpoch !== navigationEpoch) {
-        finishStalePlaceholderIntent(button, feature, true, original);
-        return;
-      }
-
-      if (feature === 'profile' || feature === 'users' || feature === 'game') {
-        const target = featureTarget(feature);
-        if (!target) {
-          const label = feature === 'game' ? 'Modo Jogo' : feature === 'users' ? 'Usuários' : 'Perfil';
-          window.toast?.(`${label} foi carregado, mas a navegação não ficou disponível.`);
-          restorePlaceholder(button, original);
-          return;
-        }
-        removePlaceholder(feature);
-        target.click();
-        return;
-      }
-
+      const target = featureTarget(feature);
       if (feature === 'admin') {
         removePlaceholder(feature);
-        window.toast?.('Módulos Super Admin carregados.');
         return;
       }
-
-      restorePlaceholder(button, original);
+      if (!target) return restorePlaceholder(button, original);
+      removePlaceholder(feature);
+      target.click();
     } catch (error) {
       console.error(`[DevPilot] Falha ao abrir ${feature}`, error);
-      window.toast?.(`Falha ao abrir ${original}.`);
       restorePlaceholder(button, original);
     }
   }
 
   const TRIGGERS = [
-    ['[data-project-builder-open]', 'projectBuilder'],
-    ['[data-example-project]', 'example'],
-    ['.nav[data-view="providers"]', 'providers'],
-    ['.nav[data-view="reports"]', 'reports'],
-    ['.nav[data-view="tasks"]', 'tasks'],
-    ['#voice-hero, #voice-dock', 'voice'],
-    ['.nav[data-view="audit"]', 'audit'],
+    ['[data-project-builder-open]', 'projectBuilder'], ['[data-example-project]', 'example'],
+    ['.nav[data-view="providers"]', 'providers'], ['.nav[data-view="reports"]', 'reports'],
+    ['.nav[data-view="tasks"]', 'tasks'], ['#voice-hero, #voice-dock', 'voice'], ['.nav[data-view="audit"]', 'audit'],
   ];
 
   function matchFeatureTrigger(target) {
@@ -359,13 +221,11 @@
       void openPlaceholder(placeholder, placeholder.dataset.devpilotFeaturePlaceholder);
       return;
     }
-
     const navTarget = event.target.closest?.('.sidebar nav .nav');
     if (navTarget) {
       navigationEpoch += 1;
       restorePendingPlaceholders();
     }
-
     const match = matchFeatureTrigger(event.target);
     if (!match) return;
     const {trigger, feature} = match;
@@ -373,30 +233,17 @@
       delete trigger.dataset.devpilotFeatureReplay;
       return;
     }
-
-    const current = featureState.get(feature);
-    if (current?.status === 'loaded') return;
-
+    if (featureState.get(feature)?.status === 'loaded') return;
     const intentEpoch = navigationEpoch;
     event.preventDefault();
     event.stopImmediatePropagation();
     trigger.setAttribute('aria-busy', 'true');
     void loadFeature(feature).then(ok => {
       trigger.removeAttribute('aria-busy');
-      if (!ok) {
-        const failures = featureState.get(feature)?.failures || [];
-        console.error(`[DevPilot] Módulo ${feature} incompleto`, failures);
-        window.toast?.(`Parte do módulo ${feature} não pôde ser carregada.`);
-        return;
-      }
-      if (intentEpoch !== navigationEpoch || !trigger.isConnected) return;
+      if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;
       trigger.dataset.devpilotFeatureReplay = '1';
       trigger.click();
-    }).catch(error => {
-      trigger.removeAttribute('aria-busy');
-      console.error(`[DevPilot] Falha ao abrir ${feature}`, error);
-      window.toast?.(`Falha ao abrir ${feature}.`);
-    });
+    }).catch(() => trigger.removeAttribute('aria-busy'));
   }, true);
 
   let placeholdersInitialized = false;
@@ -413,12 +260,7 @@
   function initializeMobileShell() {
     if (mobileShellRequested || !window.matchMedia('(max-width: 900px)').matches) return;
     mobileShellRequested = true;
-    void loadFeature('mobileShell').then(ok => {
-      if (!ok) {
-        mobileShellRequested = false;
-        console.error('[DevPilot] Menu mobile não pôde ser inicializado.');
-      }
-    });
+    void loadFeature('mobileShell').then(ok => { if (!ok) mobileShellRequested = false; });
   }
 
   function initializeAuthenticatedUi() {
@@ -426,15 +268,9 @@
     initializeMobileShell();
   }
 
-  if (document.documentElement.classList.contains('devpilot-auth-pending')) {
-    document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
-  } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
-  } else {
-    initializeAuthenticatedUi();
-  }
+  if (document.documentElement.classList.contains('devpilot-auth-pending')) document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
+  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
+  else initializeAuthenticatedUi();
 
-  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => {
-    if (event.matches) initializeMobileShell();
-  });
+  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => { if (event.matches) initializeMobileShell(); });
 })();
