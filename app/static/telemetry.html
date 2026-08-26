@@ -25,8 +25,8 @@
     </section>
 
     <section class="auth-card hidden" id="auth-card" data-telemetry-control>
-      <div><strong>Token necessário</strong><p>Use o mesmo token do painel DevPilot.</p></div>
-      <div class="auth-actions"><input id="token-input" type="password" placeholder="DEVPILOT_BOOTSTRAP_TOKEN"><button id="save-token">Salvar token</button></div>
+      <div><strong>Token necessário</strong><p>Use um token de acesso válido do painel DevPilot.</p></div>
+      <div class="auth-actions"><input id="token-input" type="password" placeholder="Token de acesso DevPilot"><button id="save-token">Salvar token</button></div>
     </section>
 
     <section class="grid">
@@ -54,12 +54,14 @@
 
       <article class="panel terminal-help" data-telemetry-control>
         <p class="eyebrow">TERMINAL</p>
-        <h2>Hook Bash automático</h2>
-        <p>O comando <strong>atualizar</strong> instala o hook no Bash. Ele envia comandos somente enquanto houver uma sessão ativa; fora da gravação, nada é enviado.</p>
+        <h2>Hook Bash opt-in</h2>
+        <p>A captura de terminal fica desligada por padrão. Habilite-a explicitamente com um token de acesso de telemetria; o bootstrap token nunca é reutilizado.</p>
         <pre><code>export DEVPILOT_URL=http://127.0.0.1:8080
+export DEVPILOT_TERMINAL_CAPTURE=1
+export DEVPILOT_TELEMETRY_TOKEN='seu-token-de-acesso'
 source "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.sh"</code></pre>
         <button id="copy-hook">Copiar configuração</button>
-        <small>O token é lido localmente do ambiente ou do .env do DevPilot e não é exibido neste bloco.</small>
+        <small>Após 401/403, o helper abre um circuit breaker persistente para esse token e para de gerar novas tentativas até a credencial ser trocada.</small>
       </article>
     </section>
 
