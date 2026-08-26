@@ -25,7 +25,6 @@
   let feedbackWired = false;
   let baseLoadBuildGame = null;
   let loadInFlight = null;
-  let loaderGuardTimer = null;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -240,23 +239,6 @@
 
   function guardLoaderDuringBundleBoot() {
     if (captureBaseLoader()) wrapGameLoader();
-    if (loadBuildGameWrapped && loaderGuardTimer) {
-      window.clearInterval(loaderGuardTimer);
-      loaderGuardTimer = null;
-    }
-  }
-
-  function startLoaderGuard() {
-    if (loaderGuardTimer || loadBuildGameWrapped) return;
-    let attempts = 0;
-    loaderGuardTimer = window.setInterval(() => {
-      attempts += 1;
-      guardLoaderDuringBundleBoot();
-      if (attempts >= 250 && loaderGuardTimer) {
-        window.clearInterval(loaderGuardTimer);
-        loaderGuardTimer = null;
-      }
-    }, 8);
   }
 
   async function openBaseGameFromNavigation(button) {
@@ -337,7 +319,6 @@
     ensureResponseManager();
     ensureRoot();
     wireGameFeedback();
-    startLoaderGuard();
     guardLoaderDuringBundleBoot();
 
     const view = document.getElementById(VIEW_ID);
