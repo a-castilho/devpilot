@@ -62,6 +62,16 @@ def test_subphase_css_does_not_overflow_phase_grid():
     assert "#build-game-view .build-game-phase{min-width:0;box-sizing:border-box}" in source
 
 
+def test_subphase_engine_does_not_wrap_game_loader_on_reentry():
+    source = SUBPHASES_JS.read_text(encoding="utf-8")
+    assert "window.__devpilotBuildGameSubphasesReady" in source
+    assert "devpilot:game:state" in source
+    assert "syncInFlight" in source
+    assert "window.loadBuildGame = wrapped" not in source
+    assert "await baseLoad(...args)" not in source
+    assert "__subphasesWrapped" not in source
+
+
 def test_ci_checks_subphase_asset():
     source = VALIDATE_CI.read_text(encoding="utf-8")
     assert "node --check app/static/build-game-subphases.js" in source
