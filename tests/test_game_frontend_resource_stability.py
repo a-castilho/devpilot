@@ -35,6 +35,17 @@ def test_game_shell_boot_is_idempotent():
     assert "if (!view || viewObserver) return" in source
 
 
+def test_game_shell_exit_restores_overview_without_synthetic_sidebar_click():
+    source = GAME_SHELL_JS.read_text(encoding="utf-8")
+
+    assert "function leaveGameToOverview()" in source
+    assert "exitGame();" in source
+    assert "showView('overview')" in source
+    assert "leaveToOverview: leaveGameToOverview" in source
+    assert "addEventListener('click', leaveGameToOverview)" in source
+    assert "overview.click()" not in source
+
+
 def test_mobile_menu_boot_is_single_mount_and_wait_observer_is_released():
     source = MOBILE_MENU_JS.read_text(encoding="utf-8")
 
