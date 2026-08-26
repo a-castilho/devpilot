@@ -15,16 +15,19 @@
     classTransitions: 0,
     baseLoads: 0,
     dedupedLoads: 0,
+    resumes: 0,
   };
 
   let originalParent = null;
   let originalNextSibling = null;
   let viewObserver = null;
+  let observedView = null;
   let activeView = null;
   let loadBuildGameWrapped = false;
   let feedbackWired = false;
   let baseLoadBuildGame = null;
   let loadInFlight = null;
+  let baseRendered = false;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -112,6 +115,17 @@
     return true;
   }
 
+  function rememberOrigin(view) {
+    if (!view) return;
+    const root = document.getElementById(ROOT_ID);
+    const slot = root?.querySelector('[data-game-slot]');
+    if (view.parentNode === slot) return;
+    if (!originalParent || !originalParent.isConnected || originalParent === slot) {
+      originalParent = view.parentNode;
+      originalNextSibling = view.nextSibling;
+    }
+  }
+
   function enterGame(view = document.getElementById(VIEW_ID)) {
     if (!view) return false;
     const root = ensureRoot();
@@ -123,10 +137,7 @@
       && root.hidden === false
       && view.parentNode === slot;
 
-    if (!originalParent) {
-      originalParent = view.parentNode;
-      originalNextSibling = view.nextSibling;
-    }
+    rememberOrigin(view);
     if (view.parentNode !== slot) slot.appendChild(view);
     root.hidden = false;
     document.body.classList.add('devpilot-game-mode');
@@ -142,7 +153,7 @@
   }
 
   function restoreView(view) {
-    if (!view || !originalParent || view.parentNode === originalParent) return;
+    if (!view || !originalParent || !originalParent.isConnected || view.parentNode === originalParent) return;
     if (originalNextSibling?.parentNode === originalParent) originalParent.insertBefore(view, originalNextSibling);
     else originalParent.appendChild(view);
   }
@@ -190,7 +201,10 @@
   }
 
   function watchView(view) {
-    if (!view || viewObserver) return;
+    if (!view) return;
+    if (observedView === view && viewObserver) return;
+    viewObserver?.disconnect();
+    observedView = view;
     viewObserver = new MutationObserver(records => {
       if (!records.some(record => record.type === 'attributes' && record.attributeName === 'class')) return;
       METRICS.classTransitions += 1;
@@ -207,6 +221,10 @@
     return true;
   }
 
+  function hasRenderedBaseGame(view = document.getElementById(VIEW_ID)) {
+    return Boolean(baseRendered || view?.querySelector?.('.build-game-shell'));
+  }
+
   async function runBaseLoad(...args) {
     captureBaseLoader();
     const loader = baseLoadBuildGame || window.loadBuildGame;
@@ -216,7 +234,10 @@
       return loadInFlight;
     }
     METRICS.baseLoads += 1;
-    loadInFlight = Promise.resolve().then(() => loader(...args)).finally(() => {
+    loadInFlight = Promise.resolve().then(() => loader(...args)).then(result => {
+      baseRendered = true;
+      return result;
+    }).finally(() => {
       loadInFlight = null;
     });
     return loadInFlight;
@@ -236,6 +257,7 @@
         return loadInFlight;
       }
       loadInFlight = Promise.resolve().then(() => original(...args)).then(result => {
+        baseRendered = true;
         refresh();
         return result;
       }).finally(() => {
@@ -265,9 +287,16 @@
       if (title) title.textContent = 'Jogo de construção';
       const view = document.getElementById(VIEW_ID);
       if (view) enterGame(view);
-      await runBaseLoad();
-      refresh(view);
-      document.dispatchEvent(new CustomEvent('devpilot:game:base-ready'));
+
+      if (hasRenderedBaseGame(view)) {
+        METRICS.resumes += 1;
+        refresh(view);
+        events.emit('resumed', {mission_id: localStorage.getItem('devpilot-build-game-mission') || null});
+      } else {
+        await runBaseLoad();
+        refresh(view);
+        document.dispatchEvent(new CustomEvent('devpilot:game:base-ready'));
+      }
     } catch (error) {
       console.error('[DevPilot Game] Falha ao abrir runtime base:', error);
       window.DevPilotResponses?.error?.(error?.message || 'Falha ao abrir o Modo Jogo.');
@@ -324,7 +353,10 @@
     sync();
   });
 
-  document.addEventListener('devpilot:game:rendered', () => refresh());
+  document.addEventListener('devpilot:game:rendered', () => {
+    baseRendered = true;
+    refresh();
+  });
 
   function boot() {
     ensureStyle();
@@ -336,6 +368,7 @@
     const view = document.getElementById(VIEW_ID);
     if (view) {
       watchView(view);
+      baseRendered = hasRenderedBaseGame(view);
       sync();
       return;
     }
@@ -344,6 +377,7 @@
       const current = document.getElementById(VIEW_ID);
       if (!current) return;
       watchView(current);
+      baseRendered = hasRenderedBaseGame(current);
       sync();
       observer.disconnect();
     });
