@@ -5,8 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 RESULT_DIR="${DEVPILOT_TEST_RESULTS_DIR:-.artifacts/test-results}"
+export DEVPILOT_TEST_RESULTS_DIR="$RESULT_DIR"
 mkdir -p "$RESULT_DIR"
-rm -f "$RESULT_DIR"/*.log "$RESULT_DIR"/*.xml "$RESULT_DIR"/summary.txt
+rm -f "$RESULT_DIR"/*.log "$RESULT_DIR"/*.xml "$RESULT_DIR"/summary.txt "$RESULT_DIR"/*.png
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
   PYTHON_CMD="$PYTHON_BIN"
@@ -98,13 +99,28 @@ run_logged vercel-assets bash -c '
   exit "$rc"
 '
 
-# Pytest roda a suíte inteira: sem --maxfail. O JUnit permite inspecionar todas
-# as falhas em uma única execução, tanto localmente quanto no GitHub Actions.
+# Pytest de unidade/integração roda inteiro e exclui o browser gate, que possui
+# uma etapa própria para manter diagnóstico e artifacts separados.
 echo
 echo "=== pytest-all ==="
-"$PYTHON_CMD" -m pytest -q --disable-warnings --junitxml="$RESULT_DIR/pytest.xml" 2>&1 | tee "$RESULT_DIR/pytest.log"
+"$PYTHON_CMD" -m pytest -q -m "not browser_e2e" --disable-warnings --junitxml="$RESULT_DIR/pytest.xml" 2>&1 | tee "$RESULT_DIR/pytest.log"
 pytest_rc=${PIPESTATUS[0]}
 record pytest-all "$pytest_rc"
+
+if [[ "${DEVPILOT_RUN_BROWSER_E2E:-0}" == "1" ]]; then
+  echo
+  echo "=== game-browser-e2e ==="
+  "$PYTHON_CMD" -m pytest -q -m browser_e2e tests/test_game_browser_e2e.py \
+    --disable-warnings --junitxml="$RESULT_DIR/game-browser-e2e.xml" \
+    2>&1 | tee "$RESULT_DIR/game-browser-e2e.log"
+  browser_rc=${PIPESTATUS[0]}
+  record game-browser-e2e "$browser_rc"
+else
+  echo
+  echo "=== game-browser-e2e ==="
+  echo "SKIP local: defina DEVPILOT_RUN_BROWSER_E2E=1 para executar Chromium E2E."
+  printf 'SKIP  game-browser-e2e (opt-in local; obrigatório no CI)\n' | tee -a "$RESULT_DIR/summary.txt"
+fi
 
 {
   echo
