@@ -160,7 +160,9 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             )
             assert project.get("id")
 
-            page.get_by_role("button", name="Modo Jogo", exact=True).click()
+            game_entry = page.locator('[data-devpilot-feature-placeholder="game"]')
+            game_entry.wait_for(state="visible", timeout=10_000)
+            game_entry.click()
             page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
             page.wait_for_function(
                 "() => document.body.classList.contains('devpilot-game-mode')",
