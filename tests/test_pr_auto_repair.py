@@ -43,6 +43,17 @@ def test_pr_auto_repair_workflow_only_reacts_to_failed_ci_and_has_no_merge_permi
     assert "gh pr merge" not in text
 
 
+def test_write_capable_workflow_executes_trusted_controller_from_main():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "Protect auto-repair control plane" in text
+    assert "git show origin/main:scripts/pr_auto_repair.py" in text
+    assert "scripts/.devpilot-pr-auto-repair-trusted.py" in text
+    assert "--no-renames" in text
+    assert '"scripts/pr_auto_repair.py"' in text
+    assert '".github/workflows/pr-auto-repair.yml"' in text
+    assert "module.PROTECTED_PATHS.update" in text
+
+
 def test_safety_guard_blocks_policy_gates_and_secrets():
     module = _module()
     errors = module.safety_errors(
@@ -61,3 +72,4 @@ def test_controller_has_hard_three_attempt_circuit_breaker_and_no_force_push():
     assert "--force" not in text
     assert '"workflow", "run", "ci.yml"' in text
     assert 'DEVPILOT_RUN_BROWSER_E2E"] = "1"' in text
+    assert "stale_failed_run" in text
