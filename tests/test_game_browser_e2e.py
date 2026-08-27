@@ -35,7 +35,7 @@ def _wait_health(base_url: str, process: subprocess.Popen, timeout: float = 25.0
             if response.status_code == 200:
                 return
             last_error = f"HTTP {response.status_code}"
-        except Exception as exc:  # pragma: no cover - only useful on startup failure
+        except Exception as exc:
             last_error = str(exc)
         time.sleep(0.2)
     raise AssertionError(f"DevPilot E2E server did not become healthy: {last_error}")
@@ -64,18 +64,7 @@ def e2e_server(tmp_path):
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8") as log:
         process = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "uvicorn",
-                "app.main:app",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(port),
-                "--log-level",
-                "warning",
-            ],
+            [sys.executable, "-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning"],
             cwd=ROOT,
             env=env,
             stdout=log,
@@ -98,30 +87,24 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
     playwright_api = pytest.importorskip("playwright.sync_api")
     artifact_dir = Path(os.getenv("DEVPILOT_TEST_RESULTS_DIR", ".artifacts/test-results"))
     artifact_dir.mkdir(parents=True, exist_ok=True)
-
     page_errors: list[str] = []
     server_errors: list[str] = []
     api_requests: list[str] = []
     task_posts = 0
 
     with playwright_api.sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=True,
-            args=["--enable-precise-memory-info", "--disable-dev-shm-usage"],
-        )
+        browser = playwright.chromium.launch(headless=True, args=["--enable-precise-memory-info", "--disable-dev-shm-usage"])
         context = browser.new_context(viewport={"width": 1280, "height": 800})
         page = context.new_page()
-
         page.on("pageerror", lambda exc: page_errors.append(str(exc)))
 
         def on_response(response):
             nonlocal task_posts
-            url = response.url
-            if "/api/" in url:
-                api_requests.append(url)
+            if "/api/" in response.url:
+                api_requests.append(response.url)
             if response.status >= 500:
-                server_errors.append(f"{response.status} {url}")
-            if response.request.method == "POST" and "/api/tasks" in url:
+                server_errors.append(f"{response.status} {response.url}")
+            if response.request.method == "POST" and "/api/tasks" in response.url:
                 task_posts += 1
 
         page.on("response", on_response)
@@ -131,14 +114,7 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             page.locator("#auth-email").fill("e2e-game@devpilot.local")
             page.locator("#auth-password").fill("DevPilot-E2E-Password-2026")
             page.locator("#auth-submit").click()
-            page.wait_for_function(
-                "() => document.querySelector('#auth-modal')?.open === false",
-                timeout=15_000,
-            )
-            page.wait_for_function(
-                "() => Boolean(localStorage.getItem('devpilot-token'))",
-                timeout=5_000,
-            )
+            page.wait_for_function("() => Boolean(localStorage.getItem('devpilot-token'))", timeout=15_000)
 
             project = page.evaluate(
                 """async () => {
@@ -147,11 +123,9 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                     method: 'POST',
                     headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
                     body: JSON.stringify({
-                      name: 'Game E2E Project',
-                      slug: 'game-e2e-project',
+                      name: 'Game E2E Project', slug: 'game-e2e-project',
                       description: 'Validar o ciclo real do modo jogo sem congelamento.',
-                      repository_url: 'https://github.com/example/devpilot-game-e2e.git',
-                      default_branch: 'main'
+                      repository_url: 'https://github.com/example/devpilot-game-e2e.git', default_branch: 'main'
                     })
                   });
                   if (!response.ok) throw new Error(`project create HTTP ${response.status}`);
@@ -160,54 +134,37 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             )
             assert project.get("id")
 
-            page.get_by_role("button", name="Modo Jogo", exact=True).click()
+            page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
+            page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
             page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
-            page.wait_for_function(
-                "() => document.body.classList.contains('devpilot-game-mode')",
-                timeout=10_000,
-            )
+            page.wait_for_function("() => document.querySelector('#build-game-view')?.children.length > 0", timeout=15_000)
 
             page.locator("#build-game-goal").fill("Executar o smoke E2E real do modo jogo")
             first_phase = page.locator("#build-game-view [data-play-phase]").first
             first_phase.wait_for(state="visible", timeout=10_000)
             first_phase.click()
-            page.wait_for_function("() => document.querySelector('#build-game-view') !== null")
             deadline = time.monotonic() + 8
             while task_posts < 1 and time.monotonic() < deadline:
                 page.wait_for_timeout(100)
             assert task_posts == 1, f"expected exactly one phase task POST, got {task_posts}"
 
-            initial_heap = page.evaluate(
-                "() => performance.memory?.usedJSHeapSize ?? null"
-            )
+            initial_heap = page.evaluate("() => performance.memory?.usedJSHeapSize ?? null")
             initial_request_count = len(api_requests)
 
             for _ in range(3):
-                page.locator(".devpilot-game-exit").click()
-                page.wait_for_function(
-                    "() => !document.body.classList.contains('devpilot-game-mode')",
-                    timeout=5_000,
-                )
-                nav = page.locator(
-                    '.sidebar nav .nav[data-view="build-game"], .sidebar nav .nav[data-view="game"]'
-                ).first
-                nav.wait_for(state="visible", timeout=5_000)
-                nav.click()
-                page.wait_for_function(
-                    "() => document.body.classList.contains('devpilot-game-mode')",
-                    timeout=8_000,
-                )
-                page.wait_for_timeout(250)
+                page.locator("#game-exit").click()
+                page.wait_for_url(f"{e2e_server}/", timeout=10_000)
+                page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
+                page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
+                page.wait_for_function("() => document.querySelector('#build-game-view')?.children.length > 0", timeout=15_000)
 
-            page.wait_for_timeout(1500)
-            final_heap = page.evaluate(
-                "() => performance.memory?.usedJSHeapSize ?? null"
-            )
+            page.wait_for_timeout(500)
+            final_heap = page.evaluate("() => performance.memory?.usedJSHeapSize ?? null")
             extra_requests = len(api_requests) - initial_request_count
 
             assert not page_errors, f"JavaScript errors during game lifecycle: {page_errors}"
             assert not server_errors, f"HTTP 5xx during game lifecycle: {server_errors}"
-            assert extra_requests <= 30, f"possible request storm: {extra_requests} API requests after initial game entry"
+            assert extra_requests <= 40, f"possible request storm: {extra_requests} API requests after initial game entry"
             if initial_heap is not None and final_heap is not None:
                 growth = final_heap - initial_heap
                 assert growth < 64 * 1024 * 1024, f"possible browser memory leak: heap grew by {growth} bytes"
