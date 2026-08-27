@@ -1,0 +1,66 @@
+name: DevPilot PR Auto Repair
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: devpilot-pr-auto-repair-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Repair failed PR CI
+    if: >-
+      ${{
+        (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out') &&
+        github.event.workflow_run.head_branch != 'main' &&
+        github.event.workflow_run.head_branch != 'master' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVPILOT_FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+      DEVPILOT_FAILED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      DEVPILOT_FAILED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      DEVPILOT_FAILED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+
+    steps:
+      - name: Checkout failed PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - name: Verify self-hosted repair runtime
+        run: |
+          if [[ -z "${{ vars.DEVPILOT_RUNNER }}" ]]; then
+            echo "PR auto-repair requires the configured DevPilot self-hosted runner." >&2
+            exit 78
+          fi
+          command -v python3
+          command -v git
+          command -v gh
+          command -v codex
+          python3 --version
+          codex --version
+
+      - name: Repair, validate and re-dispatch CI
+        run: python3 scripts/pr_auto_repair.py
+
+      - name: Publish repair audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-auto-repair-${{ github.event.workflow_run.id }}-${{ github.run_attempt }}
+          path: .artifacts/pr-auto-repair/report.json
+          if-no-files-found: warn
+          retention-days: 30
