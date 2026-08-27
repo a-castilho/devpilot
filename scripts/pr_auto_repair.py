@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Conservative self-healing loop for failed DevPilot pull-request CI runs.
+"""Guarded self-healing loop for failed DevPilot pull-request CI runs.
 
-The controller may repair and push only the existing non-main PR branch. It never
-merges, deploys, force-pushes, changes the standing auto-repair policy, or edits
-critical CI/policy gates. The standing authorization is versioned on main in
-.devpilot/pr-auto-repair.json and is capped by a hard three-attempt circuit breaker.
+Repairs are limited to the existing non-main PR branch. The controller never
+merges, deploys, force-pushes, changes its standing policy, or weakens CI gates.
+Standing authorization is versioned on main and capped by a hard three-attempt
+circuit breaker.
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ POLICY_PATH = ".devpilot/pr-auto-repair.json"
 MAX_HARD_ATTEMPTS = 3
 AUTO_COMMIT_PREFIX = "fix(ci): auto-repair attempt "
 LOG_LIMIT = 50_000
+VALIDATION_FEEDBACK_LIMIT = 20_000
 PROTECTED_PATHS = {
     POLICY_PATH,
     "AGENTS.md",
@@ -74,6 +75,13 @@ def write_report(**payload) -> None:
     REPORT_PATH.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def redact(value: str) -> str:
+    text = str(value or "")
+    for pattern in SECRET_PATTERNS:
+        text = pattern.sub("[REDACTED]", text)
+    return text
+
+
 def load_main_policy() -> dict:
     result = run(["git", "show", f"origin/main:{POLICY_PATH}"])
     if result.returncode:
@@ -98,9 +106,12 @@ def load_main_policy() -> dict:
 
 
 def branch_repair_count(base_ref: str = "origin/main") -> int:
+    """Return the highest already-pushed auto-repair attempt number on the branch."""
     merge_base = run(["git", "merge-base", base_ref, "HEAD"], check=True).stdout.strip()
     log = run(["git", "log", "--format=%s", f"{merge_base}..HEAD"], check=True).stdout
-    return sum(1 for line in log.splitlines() if line.startswith(AUTO_COMMIT_PREFIX))
+    pattern = re.compile(rf"^{re.escape(AUTO_COMMIT_PREFIX)}(?P<attempt>\d+)\b")
+    attempts = [int(match.group("attempt")) for line in log.splitlines() if (match := pattern.match(line))]
+    return max(attempts, default=0)
 
 
 def open_pr_number(repository: str, branch: str) -> str:
@@ -130,7 +141,7 @@ def failed_run_log(run_id: str, repository: str) -> str:
     result = run(["gh", "run", "view", run_id, "--repo", repository, "--log-failed"], timeout=120)
     if result.returncode or not result.stdout.strip():
         result = run(["gh", "run", "view", run_id, "--repo", repository, "--log"], timeout=120)
-    text = (result.stdout or result.stderr or "CI log unavailable").strip()
+    text = redact((result.stdout or result.stderr or "CI log unavailable").strip())
     return text[-LOG_LIMIT:]
 
 
@@ -166,14 +177,33 @@ def reset_worktree() -> None:
     run(["git", "clean", "-fd"])
 
 
-def codex_repair_prompt(*, branch: str, run_id: str, attempt: int, failed_log: str) -> str:
-    return f"""PR AUTO REPAIR — tentativa {attempt}/{MAX_HARD_ATTEMPTS}
+def stage_and_inspect(paths: list[str]) -> tuple[list[str], str, list[str]]:
+    run(["git", "add", "-A", "--", *paths], check=True)
+    staged_diff = run(["git", "diff", "--cached", "--binary"], check=True).stdout
+    staged_paths = run(["git", "diff", "--cached", "--name-only"], check=True).stdout.splitlines()
+    violations = safety_errors(staged_paths, staged_diff)
+    return staged_paths, staged_diff, violations
+
+
+def unstage() -> None:
+    run(["git", "reset", "--mixed", "HEAD"], check=True)
+
+
+def codex_repair_prompt(
+    *,
+    branch: str,
+    run_id: str,
+    attempt: int,
+    max_attempts: int,
+    diagnostic: str,
+) -> str:
+    return f"""PR AUTO REPAIR — tentativa {attempt}/{max_attempts}
 
 Você está na branch de uma Pull Request existente: {branch}.
 O CI oficial falhou na execução {run_id}.
 
 OBJETIVO
-Diagnostique a causa raiz usando o log abaixo e aplique a MENOR correção completa necessária para fazer a implementação correta passar nos gates existentes.
+Diagnostique a causa raiz usando as evidências abaixo e aplique a MENOR correção completa necessária para fazer a implementação correta passar nos gates existentes.
 
 REGRAS OBRIGATÓRIAS
 - Leia e obedeça AGENTS.md e docs/ENGINEERING_STANDARD.md antes de editar.
@@ -186,9 +216,9 @@ REGRAS OBRIGATÓRIAS
 - Execute testes focados úteis durante o diagnóstico. O controlador executará a suíte completa depois.
 - Se não houver uma correção segura e determinística, não altere arquivos.
 
-LOG DO CI (trecho final, limitado):
+EVIDÊNCIAS DO CI / TENTATIVA ANTERIOR (limitadas e sanitizadas):
 -----
-{failed_log}
+{diagnostic[-LOG_LIMIT:]}
 -----
 """[:100_000]
 
@@ -196,6 +226,15 @@ LOG DO CI (trecho final, limitado):
 def remote_branch_sha(branch: str) -> str:
     result = run(["git", "ls-remote", "origin", f"refs/heads/{branch}"], check=True)
     return result.stdout.split()[0] if result.stdout.strip() else ""
+
+
+def validation_feedback(result: subprocess.CompletedProcess[str], attempt: int) -> str:
+    output = redact((result.stdout or "") + "\n" + (result.stderr or ""))[-VALIDATION_FEEDBACK_LIMIT:]
+    return (
+        f"\n\nA tentativa automática {attempt} produziu uma alteração, mas a validação completa local falhou. "
+        "Não repita a mesma correção; use a falha abaixo como nova evidência e corrija a causa raiz:\n"
+        f"{output}"
+    )
 
 
 def main() -> int:
@@ -238,7 +277,7 @@ def main() -> int:
                 attempts=completed_attempts,
             )
             return 0
-        attempt = completed_attempts + 1
+
         starting_sha = run(["git", "rev-parse", "HEAD"], check=True).stdout.strip()
         if failed_head_sha != starting_sha:
             write_report(
@@ -254,122 +293,142 @@ def main() -> int:
             write_report(status="blocked", reason="branch_moved_before_repair", branch=branch, run_id=run_id)
             return 0
 
-        failed_log = failed_run_log(run_id, repository)
-        prompt = codex_repair_prompt(branch=branch, run_id=run_id, attempt=attempt, failed_log=failed_log)
-        codex = run(["codex", "exec", "--json", prompt], timeout=1800)
-        if codex.returncode:
-            reset_worktree()
-            write_report(
-                status="failed",
-                reason="codex_failed",
-                branch=branch,
-                run_id=run_id,
-                pr_number=pr_number,
-                attempt=attempt,
-            )
-            return 1
+        diagnostic = failed_run_log(run_id, repository)
+        history: list[dict] = []
 
-        paths = changed_paths()
-        if not paths:
+        for attempt in range(completed_attempts + 1, max_attempts + 1):
+            prompt = codex_repair_prompt(
+                branch=branch,
+                run_id=run_id,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                diagnostic=diagnostic,
+            )
+            codex = run(["codex", "exec", "--json", prompt], timeout=1800)
+            if codex.returncode:
+                reset_worktree()
+                history.append({"attempt": attempt, "status": "codex_failed"})
+                diagnostic += f"\n\nTentativa {attempt}: Codex encerrou com exit code {codex.returncode}."
+                continue
+
+            paths = changed_paths()
+            if not paths:
+                history.append({"attempt": attempt, "status": "no_safe_change"})
+                diagnostic += f"\n\nTentativa {attempt}: nenhuma alteração segura foi produzida."
+                continue
+
+            # Stage once before running any project code. This makes new/untracked file
+            # contents visible to the secret/protected-path guard without committing them.
+            staged_paths, _, violations = stage_and_inspect(paths)
+            unstage()
+            if violations:
+                reset_worktree()
+                write_report(
+                    status="blocked",
+                    reason="safety_guard",
+                    violations=violations,
+                    branch=branch,
+                    run_id=run_id,
+                    pr_number=pr_number,
+                    attempt=attempt,
+                    history=history,
+                )
+                return 1
+            if not staged_paths:
+                reset_worktree()
+                history.append({"attempt": attempt, "status": "empty_diff"})
+                continue
+
+            validation_env = os.environ.copy()
+            validation_env["DEVPILOT_RUN_BROWSER_E2E"] = "1"
+            validation = run(["bash", "scripts/test-all.sh"], timeout=2400, env=validation_env)
+            if validation.returncode:
+                history.append({"attempt": attempt, "status": "validation_failed"})
+                diagnostic += validation_feedback(validation, attempt)
+                reset_worktree()
+                continue
+
+            if remote_branch_sha(branch) != starting_sha:
+                reset_worktree()
+                write_report(
+                    status="blocked",
+                    reason="branch_moved_during_repair",
+                    branch=branch,
+                    run_id=run_id,
+                    pr_number=pr_number,
+                    attempt=attempt,
+                    history=history,
+                )
+                return 0
+
+            # Stage only the files produced by Codex before validation. Test artifacts
+            # and runtime by-products must never become part of the repair commit.
+            staged_paths, _, violations = stage_and_inspect(paths)
+            if violations:
+                reset_worktree()
+                raise RuntimeError("staged repair violated safety guard: " + "; ".join(violations))
+            if not staged_paths:
+                reset_worktree()
+                history.append({"attempt": attempt, "status": "diff_disappeared"})
+                diagnostic += f"\n\nTentativa {attempt}: o diff desapareceu após a validação."
+                continue
+
+            run(["git", "config", "user.name", "DevPilot Auto Repair"], check=True)
+            run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+            message = f"{AUTO_COMMIT_PREFIX}{attempt} for run {run_id}"
+            run(["git", "commit", "-m", message], check=True)
+            repaired_sha = run(["git", "rev-parse", "HEAD"], check=True).stdout.strip()
+            push = run(["git", "push", "origin", f"HEAD:{branch}"], timeout=180)
+            if push.returncode:
+                raise RuntimeError(push.stderr.strip() or "repair push failed")
+
+            dispatch = run(
+                ["gh", "workflow", "run", "ci.yml", "--repo", repository, "--ref", branch],
+                timeout=120,
+            )
+            if dispatch.returncode:
+                raise RuntimeError(dispatch.stderr.strip() or "unable to dispatch CI revalidation")
+
+            history.append({"attempt": attempt, "status": "pushed"})
             write_report(
-                status="needs_attention",
-                reason="no_safe_change_produced",
+                status="pushed",
                 branch=branch,
                 run_id=run_id,
                 pr_number=pr_number,
                 attempt=attempt,
+                repaired_sha=repaired_sha,
+                changed_paths=staged_paths,
+                validation="passed",
+                revalidation="dispatched",
+                history=history,
             )
+            print(f"PR auto-repair pushed {repaired_sha[:8]} to {branch}; CI revalidation dispatched.")
             return 0
 
-        diff = run(["git", "diff", "--binary"], check=True).stdout
-        violations = safety_errors(paths, diff)
-        if violations:
-            reset_worktree()
-            write_report(
-                status="blocked",
-                reason="safety_guard",
-                violations=violations,
-                branch=branch,
-                run_id=run_id,
-                pr_number=pr_number,
-                attempt=attempt,
-            )
-            return 1
-
-        validation_env = os.environ.copy()
-        validation_env["DEVPILOT_RUN_BROWSER_E2E"] = "1"
-        validation = run(["bash", "scripts/test-all.sh"], timeout=2400, env=validation_env)
-        if validation.returncode:
-            reset_worktree()
-            write_report(
-                status="failed",
-                reason="full_validation_failed",
-                branch=branch,
-                run_id=run_id,
-                pr_number=pr_number,
-                attempt=attempt,
-            )
-            return 1
-
-        if remote_branch_sha(branch) != starting_sha:
-            reset_worktree()
-            write_report(status="blocked", reason="branch_moved_during_repair", branch=branch, run_id=run_id)
-            return 0
-
-        # Stage only the files produced by Codex before validation. Test artifacts and
-        # other runtime by-products must never become part of the repair commit.
-        run(["git", "add", "-A", "--", *paths], check=True)
-        staged_diff = run(["git", "diff", "--cached", "--binary"], check=True).stdout
-        staged_paths = run(["git", "diff", "--cached", "--name-only"], check=True).stdout.splitlines()
-        violations = safety_errors(staged_paths, staged_diff)
-        if violations:
-            reset_worktree()
-            raise RuntimeError("staged repair violated safety guard: " + "; ".join(violations))
-        if not staged_paths:
-            reset_worktree()
-            write_report(
-                status="needs_attention",
-                reason="repair_diff_disappeared_after_validation",
-                branch=branch,
-                run_id=run_id,
-                pr_number=pr_number,
-                attempt=attempt,
-            )
-            return 0
-
-        run(["git", "config", "user.name", "DevPilot Auto Repair"], check=True)
-        run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
-        message = f"{AUTO_COMMIT_PREFIX}{attempt} for run {run_id}"
-        run(["git", "commit", "-m", message], check=True)
-        repaired_sha = run(["git", "rev-parse", "HEAD"], check=True).stdout.strip()
-        push = run(["git", "push", "origin", f"HEAD:{branch}"], timeout=180)
-        if push.returncode:
-            raise RuntimeError(push.stderr.strip() or "repair push failed")
-
-        dispatch = run(["gh", "workflow", "run", "ci.yml", "--repo", repository, "--ref", branch], timeout=120)
-        if dispatch.returncode:
-            raise RuntimeError(dispatch.stderr.strip() or "unable to dispatch CI revalidation")
-
+        reset_worktree()
         write_report(
-            status="pushed",
+            status="circuit_open",
+            reason="attempts_exhausted_without_validated_repair",
             branch=branch,
             run_id=run_id,
             pr_number=pr_number,
-            attempt=attempt,
-            repaired_sha=repaired_sha,
-            changed_paths=staged_paths,
-            validation="passed",
-            revalidation="dispatched",
+            attempts=max_attempts,
+            history=history,
         )
-        print(f"PR auto-repair pushed {repaired_sha[:8]} to {branch}; CI revalidation dispatched.")
-        return 0
+        return 1
     except (RuntimeError, subprocess.TimeoutExpired) as error:
         try:
             reset_worktree()
         except Exception:
             pass
-        write_report(status="failed", reason="controller_error", branch=branch, run_id=run_id, error=str(error)[:2000])
-        print(f"PR auto-repair error: {error}", file=sys.stderr)
+        write_report(
+            status="failed",
+            reason="controller_error",
+            branch=branch,
+            run_id=run_id,
+            error=redact(str(error))[:2000],
+        )
+        print(f"PR auto-repair error: {redact(str(error))}", file=sys.stderr)
         return 1
 
 
