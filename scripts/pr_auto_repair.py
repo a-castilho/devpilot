@@ -85,6 +85,12 @@ def load_main_policy() -> dict:
 
     if policy.get("allow_merge") is not False:
         raise RuntimeError("PR auto-repair policy must explicitly keep merge disabled")
+    if policy.get("require_open_pull_request") is not True:
+        raise RuntimeError("PR auto-repair requires an open pull request")
+    if policy.get("require_same_repository") is not True:
+        raise RuntimeError("PR auto-repair requires a same-repository branch")
+    if policy.get("require_full_validation") is not True:
+        raise RuntimeError("PR auto-repair requires full validation before push")
     max_attempts = int(policy.get("max_attempts") or 0)
     if max_attempts < 1 or max_attempts > MAX_HARD_ATTEMPTS:
         raise RuntimeError(f"PR auto-repair max_attempts must be between 1 and {MAX_HARD_ATTEMPTS}")
@@ -196,6 +202,7 @@ def main() -> int:
     repository = required_env("GITHUB_REPOSITORY")
     branch = required_env("DEVPILOT_FAILED_HEAD_BRANCH")
     run_id = required_env("DEVPILOT_FAILED_RUN_ID")
+    failed_head_sha = required_env("DEVPILOT_FAILED_HEAD_SHA")
     expected_repository = str(os.getenv("DEVPILOT_FAILED_HEAD_REPOSITORY") or repository).strip()
 
     try:
@@ -207,7 +214,7 @@ def main() -> int:
         if not policy.get("allow_branch_push"):
             write_report(status="skipped", reason="branch_push_not_approved", branch=branch, run_id=run_id)
             return 0
-        if policy.get("require_same_repository", True) and expected_repository.lower() != repository.lower():
+        if expected_repository.lower() != repository.lower():
             write_report(status="blocked", reason="fork_or_repository_mismatch", branch=branch, run_id=run_id)
             return 0
         if branch in {"main", "master"}:
@@ -215,7 +222,7 @@ def main() -> int:
             return 0
 
         pr_number = open_pr_number(repository, branch)
-        if policy.get("require_open_pull_request", True) and not pr_number:
+        if not pr_number:
             write_report(status="blocked", reason="no_open_pull_request", branch=branch, run_id=run_id)
             return 0
 
@@ -233,6 +240,16 @@ def main() -> int:
             return 0
         attempt = completed_attempts + 1
         starting_sha = run(["git", "rev-parse", "HEAD"], check=True).stdout.strip()
+        if failed_head_sha != starting_sha:
+            write_report(
+                status="skipped",
+                reason="stale_failed_run",
+                branch=branch,
+                run_id=run_id,
+                failed_head_sha=failed_head_sha,
+                current_head_sha=starting_sha,
+            )
+            return 0
         if remote_branch_sha(branch) != starting_sha:
             write_report(status="blocked", reason="branch_moved_before_repair", branch=branch, run_id=run_id)
             return 0
@@ -291,7 +308,6 @@ def main() -> int:
                 run_id=run_id,
                 pr_number=pr_number,
                 attempt=attempt,
-                validation_tail=(validation.stdout + "\n" + validation.stderr)[-12_000:],
             )
             return 1
 
