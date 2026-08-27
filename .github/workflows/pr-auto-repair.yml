@@ -19,12 +19,13 @@ jobs:
     name: Repair failed PR CI
     if: >-
       ${{
+        vars.DEVPILOT_RUNNER != '' &&
         (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out') &&
         github.event.workflow_run.head_branch != 'main' &&
         github.event.workflow_run.head_branch != 'master' &&
         github.event.workflow_run.head_repository.full_name == github.repository
       }}
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER }}
     timeout-minutes: 50
     env:
       GH_TOKEN: ${{ github.token }}
@@ -42,10 +43,6 @@ jobs:
 
       - name: Verify self-hosted repair runtime
         run: |
-          if [[ -z "${{ vars.DEVPILOT_RUNNER }}" ]]; then
-            echo "PR auto-repair requires the configured DevPilot self-hosted runner." >&2
-            exit 78
-          fi
           command -v python3
           command -v git
           command -v gh
