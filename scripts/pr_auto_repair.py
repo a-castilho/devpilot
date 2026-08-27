@@ -133,11 +133,14 @@ def changed_paths() -> list[str]:
     paths: list[str] = []
     for raw in result.stdout.splitlines():
         entry = raw[3:].strip()
+        if not entry:
+            continue
         if " -> " in entry:
-            entry = entry.split(" -> ", 1)[1]
-        if entry:
+            old_path, new_path = entry.split(" -> ", 1)
+            paths.extend([old_path.strip(), new_path.strip()])
+        else:
             paths.append(entry)
-    return paths
+    return list(dict.fromkeys(path for path in paths if path))
 
 
 def safety_errors(paths: list[str], diff_text: str) -> list[str]:
@@ -297,13 +300,26 @@ def main() -> int:
             write_report(status="blocked", reason="branch_moved_during_repair", branch=branch, run_id=run_id)
             return 0
 
-        run(["git", "add", "--all"], check=True)
+        # Stage only the files produced by Codex before validation. Test artifacts and
+        # other runtime by-products must never become part of the repair commit.
+        run(["git", "add", "-A", "--", *paths], check=True)
         staged_diff = run(["git", "diff", "--cached", "--binary"], check=True).stdout
         staged_paths = run(["git", "diff", "--cached", "--name-only"], check=True).stdout.splitlines()
         violations = safety_errors(staged_paths, staged_diff)
         if violations:
             reset_worktree()
             raise RuntimeError("staged repair violated safety guard: " + "; ".join(violations))
+        if not staged_paths:
+            reset_worktree()
+            write_report(
+                status="needs_attention",
+                reason="repair_diff_disappeared_after_validation",
+                branch=branch,
+                run_id=run_id,
+                pr_number=pr_number,
+                attempt=attempt,
+            )
+            return 0
 
         run(["git", "config", "user.name", "DevPilot Auto Repair"], check=True)
         run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
