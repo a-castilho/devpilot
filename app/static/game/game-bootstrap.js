@@ -4,13 +4,24 @@
   if (window.__devpilotStandaloneGameReady) return;
   window.__devpilotStandaloneGameReady = true;
 
-  const backToDashboard = () => window.location.assign('/');
+  const TOKEN_KEY = 'devpilot-token';
+  let logoutStarted = false;
 
-  document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
-  document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
+  const returnToLogin = () => window.location.replace('/');
+
+  const logoutFromGame = () => {
+    if (logoutStarted) return;
+    logoutStarted = true;
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.clear();
+    window.location.replace('/');
+  };
+
+  document.getElementById('game-exit')?.addEventListener('click', logoutFromGame);
+  document.getElementById('game-auth-back')?.addEventListener('click', returnToLogin);
 
   async function boot() {
-    const token = String(localStorage.getItem('devpilot-token') || '').trim();
+    const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
     if (!token) {
       document.getElementById('auth-modal')?.showModal?.();
       return;
@@ -21,7 +32,11 @@
         headers: {Authorization: `Bearer ${token}`},
         cache: 'no-store',
       });
-      if (!response.ok) throw new Error('Autenticação necessária');
+      if (!response.ok) {
+        localStorage.removeItem(TOKEN_KEY);
+        document.getElementById('auth-modal')?.showModal?.();
+        return;
+      }
 
       if (typeof window.loadBuildGame !== 'function') {
         throw new Error('Motor do Modo Jogo indisponível');
@@ -33,8 +48,8 @@
       console.error('[DevPilot Game Standalone]', error);
       const target = document.getElementById('build-game-view');
       if (target) {
-        target.innerHTML = `<div class="empty"><strong>Não foi possível iniciar o jogo.</strong><p>${String(error?.message || 'Falha inesperada')}</p><button class="primary" id="game-error-back" type="button">Voltar ao painel</button></div>`;
-        document.getElementById('game-error-back')?.addEventListener('click', backToDashboard);
+        target.innerHTML = `<div class="empty"><strong>Não foi possível iniciar o jogo.</strong><p>${String(error?.message || 'Falha inesperada')}</p><button class="primary" id="game-error-back" type="button">Sair e voltar ao login</button></div>`;
+        document.getElementById('game-error-back')?.addEventListener('click', logoutFromGame);
       }
     }
   }
