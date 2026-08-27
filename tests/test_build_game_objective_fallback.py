@@ -21,5 +21,7 @@ def test_automatic_game_goal_uses_project_context_without_fake_success():
 
     assert "const description = String(project?.description || '').trim();" in source
     assert "if (description) return description;" in source
+    assert "const projectName = String(project?.name || selectedName || scoreName || 'selecionado').trim();" in source
     assert "Evoluir o projeto ${projectName} com uma entrega funcional, testada e verificável." in source
-    assert "Opcional — se vazio, o DevPilot define automaticamente." in source
+    assert "input.value = automaticGoal(view)" in source
+    assert "Objetivo definido automaticamente. Iniciando a fase…" in source

@@ -11,12 +11,13 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.game_rule_routes import router as game_rule_router
 from app.security import Principal, Role, require_roles
 from app.services.audit import record
 from app.version import __version__
 
 
-router = APIRouter(prefix="/api/admin/local-test", tags=["admin-local-test"])
+local_test_router = APIRouter(prefix="/api/admin/local-test", tags=["admin-local-test"])
 manage_local_test = require_roles(Role.SUPER_ADMIN)
 STATIC = Path(__file__).parent / "static"
 _PROBE_TIMEOUT = 3.0
@@ -46,7 +47,6 @@ def _private_non_loopback(value: str | None) -> str:
 def _detect_lan_ip() -> str:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        # UDP connect chooses the local outbound interface without sending application data.
         sock.connect(("10.255.255.255", 1))
         return _private_non_loopback(sock.getsockname()[0])
     except OSError:
@@ -90,24 +90,9 @@ def _probe_health(base_url: str) -> dict[str, Any]:
 
 def _source_checks() -> list[dict[str, Any]]:
     requirements = [
-        (
-            "mobile_scroll",
-            "Scroll mobile habilitado",
-            STATIC / "mobile-scroll-unlock.css",
-            None,
-        ),
-        (
-            "mission_state",
-            "Estado da missão persistente",
-            STATIC / "build-game.js",
-            ("MISSION_KEY", "localStorage"),
-        ),
-        (
-            "delivery_button",
-            "Entrega final/Gerar URL instalada",
-            STATIC / "build-game-url-bonus.js",
-            ("data-game-url-action", "missionDelivered"),
-        ),
+        ("mobile_scroll", "Scroll mobile habilitado", STATIC / "mobile-scroll-unlock.css", None),
+        ("mission_state", "Estado da missão persistente", STATIC / "build-game.js", ("MISSION_KEY", "localStorage")),
+        ("delivery_button", "Entrega final/Gerar URL instalada", STATIC / "build-game-url-bonus.js", ("data-game-url-action", "missionDelivered")),
     ]
     checks: list[dict[str, Any]] = []
     for check_id, label, path, needles in requirements:
@@ -124,7 +109,7 @@ def _source_checks() -> list[dict[str, Any]]:
     return checks
 
 
-@router.get("")
+@local_test_router.get("")
 def local_test_context(
     request: Request,
     principal: Principal = Depends(manage_local_test),
@@ -140,7 +125,7 @@ def local_test_context(
     }
 
 
-@router.post("/run")
+@local_test_router.post("/run")
 def run_local_test(
     request: Request,
     db: Session = Depends(get_db),
@@ -183,12 +168,14 @@ def run_local_test(
         actor=principal.actor,
         action="local_test.run",
         outcome="success" if result["ok"] else "warning",
-        details={
-            "passed": passed,
-            "total": len(checks),
-            "linux_ip": host,
-            "mobile_url": mobile_url,
-        },
+        details={"passed": passed, "total": len(checks), "linux_ip": host, "mobile_url": mobile_url},
     )
     db.commit()
     return result
+
+
+# Main imports only this symbol. Keep the existing local-test API and aggregate the
+# independent game-rules bounded context without coupling either router to app.main.
+router = APIRouter()
+router.include_router(local_test_router)
+router.include_router(game_rule_router)

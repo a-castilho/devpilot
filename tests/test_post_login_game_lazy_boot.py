@@ -7,34 +7,40 @@ FEATURE_LOADER = Path("app/static/feature-loader.js")
 STATIC = Path("app/static")
 
 
+def _bundle_assets(source: str, name: str) -> list[str]:
+    match = re.search(rf"{re.escape(name)}:\s*\[(.*?)\]", source, re.DOTALL)
+    assert match is not None, f"bundle {name} ausente"
+    return re.findall(r"'([^']+\.js)'", match.group(1))
+
+
 def test_game_extras_are_owned_only_by_explicit_feature_loader():
     analytics = TASK_ANALYTICS.read_text(encoding="utf-8")
     loader = FEATURE_LOADER.read_text(encoding="utf-8")
 
-    # O analytics deve permanecer estritamente analítico. Nenhum loader de jogo
-    # pode voltar para este arquivo, evitando dupla carga e corrida no pós-login.
+    # Analytics permanece estritamente analítico: nenhum segundo loader do jogo.
     assert "__devpilotLoadGameExtras" not in analytics
     assert "devpilot:game-open" not in analytics
     assert "isGameIntent" not in analytics
     assert "LEGACY_GAME_EXTRAS" not in analytics
     assert "build-game-weapons.js" not in analytics
 
-    # O único dono do carregamento do jogo é o feature loader explícito.
-    # Módulos aditivos são permitidos, desde que o núcleo mínimo continue presente
-    # e todos os assets referenciados existam.
-    assert "FEATURE_BUNDLES" in loader
-    game_bundle = re.search(r"game:\s*\[(.*?)\]", loader, re.DOTALL)
-    assert game_bundle is not None
-    assets = re.findall(r"'([^']+\.js)'", game_bundle.group(1))
-    required = {
-        "build-game.js",
+    # Entrada do jogo é deliberadamente mínima para proteger a thread principal.
+    base_assets = _bundle_assets(loader, "game")
+    assert base_assets == ["game-shell.js", "build-game.js"]
+
+    # Recursos pesados permanecem disponíveis, mas em um segundo bundle explícito.
+    advanced_assets = _bundle_assets(loader, "gameAdvanced")
+    required_advanced = {
         "build-game-subphases.js",
+        "build-game-repair-mission.js",
         "build-game-new-session.js",
         "build-game-url-bonus.js",
         "build-game-weapons.js",
     }
-    assert required.issubset(set(assets))
-    for asset in assets:
+    assert required_advanced.issubset(set(advanced_assets))
+    assert "window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced');" in loader
+
+    for asset in [*base_assets, *advanced_assets]:
         assert (STATIC / asset).is_file(), f"bundle do jogo referencia asset inexistente: {asset}"
 
     assert "addPlaceholder('game', 'Modo Jogo')" in loader
@@ -47,8 +53,8 @@ def test_game_placeholder_never_stays_loading_after_success_or_failure():
 
     assert "function restorePlaceholder(button, original)" in loader
     assert "function restorePendingPlaceholders()" in loader
-    assert "restorePlaceholder(button, original);" in loader
-    assert "removePlaceholder(feature);" in loader
+    assert "restorePlaceholder(button, original)" in loader
+    assert "removePlaceholder(feature)" in loader
     assert "if (!ok) {" in loader
     assert "Tente novamente." in loader
 
@@ -60,9 +66,8 @@ def test_navigation_away_cancels_stale_game_open_intent():
     assert "const intentEpoch = navigationEpoch;" in loader
     assert "navigationEpoch += 1;" in loader
     assert "restorePendingPlaceholders();" in loader
-    assert "if (intentEpoch !== navigationEpoch)" in loader
-    assert "finishStalePlaceholderIntent(button, feature, ok, original);" in loader
-    assert "if (intentEpoch !== navigationEpoch || !trigger.isConnected) return;" in loader
+    assert "if (intentEpoch !== navigationEpoch) return restorePlaceholder(button, original);" in loader
+    assert "if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;" in loader
 
 
 def test_feature_script_loading_has_timeout_and_retryable_failure():
@@ -77,10 +82,9 @@ def test_feature_script_loading_has_timeout_and_retryable_failure():
 def test_feature_loader_does_not_replay_partial_features():
     loader = FEATURE_LOADER.read_text(encoding="utf-8")
 
-    partial_guard = loader.index("if (!ok) {", loader.index("void loadFeature(feature).then"))
-    replay = loader.index("trigger.dataset.devpilotFeatureReplay = '1';", partial_guard)
-    guard_return = loader.index("return;", partial_guard)
-    assert guard_return < replay
+    then_block = loader.split("void loadFeature(feature).then(ok => {", 1)[1]
+    assert "if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;" in then_block
+    assert then_block.index("if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;") < then_block.index("trigger.dataset.devpilotFeatureReplay = '1';")
 
 
 def test_game_does_not_start_on_authenticated_ui_ready():
