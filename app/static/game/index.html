@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#07111f">
+  <title>DevPilot — Modo Jogo</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/game-shell.css">
+</head>
+<body data-devpilot-game-standalone="1">
+  <header class="devpilot-game-hud">
+    <button id="game-exit" class="devpilot-game-exit" type="button" aria-label="Sair do modo jogo">‹</button>
+    <div class="devpilot-game-hud-copy">
+      <span>MISSÃO ATIVA</span>
+      <strong>Modo Jogo isolado</strong>
+    </div>
+  </header>
+
+  <main class="devpilot-game-stage">
+    <section class="view active devpilot-game-view-mounted" id="build-game-view" aria-live="polite"></section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+  <dialog id="auth-modal">
+    <form method="dialog" class="modal">
+      <span class="eyebrow">ACESSO</span>
+      <h2>Conectar ao DevPilot</h2>
+      <p>Volte ao painel para autenticar antes de abrir o jogo.</p>
+      <button class="primary" id="game-auth-back" value="default">Voltar ao painel</button>
+    </form>
+  </dialog>
+
+  <script src="/assets/app.js"></script>
+  <script src="/assets/build-game.js"></script>
+  <script src="/assets/game/game-bootstrap.js"></script>
+</body>
+</html>
