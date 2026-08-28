@@ -19,9 +19,7 @@
     tasks: ['task-analytics.js', 'system-tests.js'],
     example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
     voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js'],
-    admin: ['token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js', 'rag-admin-ui.js', 'rag-jobs-ui.js'],
-    game: ['game-shell.js', 'build-game.js'],
-    gameAdvanced: ['build-game-subphases.js', 'build-game-repair-mission.js', 'build-game-new-session.js', 'build-game-url-bonus.js', 'build-game-weapons.js'],
+    admin: ['super-admin-task-panel.js', 'token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js', 'rag-admin-ui.js', 'rag-jobs-ui.js'],
     audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
   });
 
@@ -93,7 +91,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260828-rag`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260828-rag-main`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -127,7 +125,6 @@
 
   window.__devpilotLoadFeature = loadFeature;
   window.__devpilotFeatureState = featureState;
-  window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced');
 
   const navRoot = () => document.querySelector('.sidebar nav');
 
@@ -163,12 +160,15 @@
   function featureTarget(feature) {
     if (feature === 'profile') return document.querySelector('.nav[data-profile-view="1"], .nav[data-view="profile"]');
     if (feature === 'users') return Array.from(document.querySelectorAll('.sidebar nav .nav')).find(item => item.textContent?.trim() === 'Usuários');
-    if (feature === 'game') return document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"], [data-build-game]');
     return null;
   }
 
   async function openPlaceholder(button, feature) {
     if (!button || button.dataset.devpilotBusy === '1') return;
+    if (feature === 'game') {
+      window.location.assign('/game/index.html');
+      return;
+    }
     const intentEpoch = navigationEpoch;
     const original = button.textContent.replace(/\s*·\s*carregando…?\s*$/u, '');
     button.dataset.devpilotBusy = '1';
@@ -248,6 +248,8 @@
   let placeholdersInitialized = false;
   function initializePlaceholders() {
     if (placeholdersInitialized) return;
+    const nav = navRoot();
+    if (!nav) return;
     placeholdersInitialized = true;
     addPlaceholder('profile', 'Perfil');
     addPlaceholder('users', 'Usuários');
@@ -267,31 +269,21 @@
     initializeMobileShell();
   }
 
-  function authenticatedUiIsReady() {
-    const authModal = document.querySelector('#auth-modal');
-    return Boolean(localStorage.getItem('devpilot-token')) && (!authModal || authModal.open === false);
-  }
-
-  function maybeInitializeAuthenticatedUi() {
-    if (placeholdersInitialized || !authenticatedUiIsReady()) return;
-    initializeAuthenticatedUi();
-  }
-
-  function installAuthenticatedUiFallback() {
-    maybeInitializeAuthenticatedUi();
-    const authModal = document.querySelector('#auth-modal');
-    if (!authModal || placeholdersInitialized) return;
-    const observer = new MutationObserver(() => {
-      maybeInitializeAuthenticatedUi();
-      if (placeholdersInitialized) observer.disconnect();
-    });
-    observer.observe(authModal, {attributes: true, attributeFilter: ['open']});
-  }
+  const authModal = document.querySelector('#auth-modal');
+  const authenticatedUiVisible = () => Boolean(localStorage.getItem('devpilot-token')) && (!authModal || authModal.open === false);
 
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
-    document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installAuthenticatedUiFallback, {once: true});
-    else installAuthenticatedUiFallback();
+    document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi);
+    if (authenticatedUiVisible()) initializeAuthenticatedUi();
+    if (authModal) {
+      const observer = new MutationObserver(() => {
+        if (authenticatedUiVisible()) {
+          initializeAuthenticatedUi();
+          observer.disconnect();
+        }
+      });
+      observer.observe(authModal, {attributes: true, attributeFilter: ['open']});
+    }
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
   } else {

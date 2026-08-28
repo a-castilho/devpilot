@@ -5,7 +5,8 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY_JS = ROOT / "app" / "static" / "game-entry.js"
 ENTRY_CSS = ROOT / "app" / "static" / "game-entry.css"
 MOBILE_JS = ROOT / "app" / "static" / "mobile-accordion-menu.js"
-SHELL_JS = ROOT / "app" / "static" / "game-shell.js"
+FEATURE_LOADER_JS = ROOT / "app" / "static" / "feature-loader.js"
+GAME_HTML = ROOT / "app" / "static" / "game" / "index.html"
 
 
 def test_mobile_shell_loads_visible_game_entry():
@@ -25,22 +26,25 @@ def test_overview_has_clear_game_call_to_action_contract():
     assert "data-open-game-entry" in js
 
 
-def test_game_entry_keeps_game_bundle_lazy_and_uses_response_manager():
+def test_game_entry_navigates_to_isolated_document_and_keeps_response_feedback():
     js = ENTRY_JS.read_text(encoding="utf-8")
-    assert "window.__devpilotLoadFeature?.('game')" in js
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
+    html = GAME_HTML.read_text(encoding="utf-8")
+
+    assert "const GAME_URL = '/game/index.html'" in js
+    assert "window.location.assign(GAME_URL)" in js
+    assert "window.__devpilotLoadFeature?.('game')" not in js
+    assert "game: ['game-shell.js', 'build-game.js']" not in loader
+    assert '/assets/build-game.js' in html
     assert "window.DevPilotResponses?.loading" in js
     assert "window.DevPilotResponses?.success" in js
     assert "window.DevPilotResponses?.error" in js
 
 
-def test_game_entry_explicitly_hands_off_to_game_shell():
+def test_game_entry_does_not_handoff_to_dashboard_game_shell():
     entry = ENTRY_JS.read_text(encoding="utf-8")
-    shell = SHELL_JS.read_text(encoding="utf-8")
-    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" in entry
-    assert "window.DevPilotGameShell = Object.freeze" in shell
-    assert "enter: enterGame" in shell
-    assert "exit: exitGame" in shell
-    assert "sync," in shell
+    assert "window.DevPilotGameShell?.enter?." not in entry
+    assert "window.location.assign(GAME_URL)" in entry
 
 
 def test_game_entry_visual_is_large_but_bounded_on_mobile():

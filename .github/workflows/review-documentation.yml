@@ -14,7 +14,10 @@ concurrency:
 
 jobs:
   sync-review-document:
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    # This job only calls GitHub APIs and writes a markdown report. Keep it off the
+    # scarce self-hosted DevPilot runner so policy/full-quality jobs are never starved.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão
         uses: actions/github-script@v7
