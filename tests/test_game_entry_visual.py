@@ -12,8 +12,13 @@ GAME_HTML = ROOT / "app" / "static" / "game" / "index.html"
 def test_mobile_shell_loads_visible_game_entry():
     js = MOBILE_JS.read_text(encoding="utf-8")
     assert "ensureGameEntry" in js
-    assert "/assets/game-entry.js?v=20260825-1" in js
+    assert "/assets/game-entry.js?v=20260828-1" in js
     assert "data-game-entry" in js
+
+
+def test_mobile_feature_loader_invalidates_stale_shell_cache():
+    loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
+    assert "?v=ondemand-20260828-1" in loader
 
 
 def test_overview_has_clear_game_call_to_action_contract():
