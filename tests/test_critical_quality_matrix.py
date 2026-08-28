@@ -39,7 +39,8 @@ def test_quality_matrix_declares_all_critical_domains():
     assert modules["auth"]["active"] is True
     assert modules["game"]["active"] is True
     assert modules["frontend"]["active"] is True
-    assert modules["rag"]["active"] is False
+    assert modules["rag"]["activate_when_source_exists"] is True
+    assert modules["rag"]["browser_required"] is True
 
 
 def test_game_change_selects_game_and_frontend_contracts():
@@ -87,7 +88,7 @@ def test_structural_change_selects_every_active_module():
     expected = sorted(name for name, module in modules.items() if module["active"])
     assert structural is True
     assert selected == expected
-    assert "rag" not in selected
+    assert ("rag" in selected) is modules["rag"]["active"]
 
 
 def test_guarded_critical_path_without_owner_is_rejected():
