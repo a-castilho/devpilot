@@ -41,6 +41,18 @@ def test_lightweight_game_history_strips_large_prompt_body():
     assert ".limit(limit)" in routes
 
 
+def test_standalone_game_has_mobile_vertical_scroll_container():
+    css = (STATIC / "game-shell.css").read_text(encoding="utf-8")
+
+    assert 'body[data-devpilot-game-standalone="1"]' in css
+    assert "height:100dvh" in css
+    assert "grid-template-rows:auto minmax(0,1fr)" in css
+    assert ".devpilot-game-stage" in css
+    assert "overflow-y:auto" in css
+    assert "touch-action:pan-y" in css
+    assert "-webkit-overflow-scrolling:touch" in css
+
+
 def test_dashboard_game_placeholder_navigates_instead_of_lazy_loading_game_bundle():
     loader = (STATIC / "feature-loader.js").read_text(encoding="utf-8")
 
