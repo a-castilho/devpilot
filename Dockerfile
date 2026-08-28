@@ -28,7 +28,9 @@ FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=10
 
 WORKDIR /app
 
@@ -52,10 +54,21 @@ RUN ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin
 # setuptools resolves the dynamic version from app.version and discovers app*
 # while building the wheel. The source tree therefore must exist before pip
 # evaluates pyproject.toml; copying only pyproject.toml makes the image build
-# fail with ModuleNotFoundError: app.
+# fail with ModuleNotFoundError: app. Retry the complete install because a short
+# DNS outage can outlive pip's per-request retries on the self-hosted runner.
 COPY pyproject.toml README.md AGENTS.md ./
 COPY app ./app
-RUN pip install --no-cache-dir '.[postgres,rag]'
+RUN set -eux; \
+    installed=0; \
+    for attempt in 1 2 3 4; do \
+        echo "Python dependency install attempt ${attempt}/4"; \
+        if pip install --no-cache-dir '.[postgres,rag]'; then \
+            installed=1; \
+            break; \
+        fi; \
+        sleep $((attempt * 10)); \
+    done; \
+    [ "$installed" = "1" ]
 
 RUN useradd --create-home --uid 10001 devpilot \
     && mkdir -p /data/repositories \
