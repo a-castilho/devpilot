@@ -2,16 +2,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import get_settings
 from app.db import engine, get_db
 from app.models import Project
 from app.rag.admin import RagAdminService
-from app.rag.ingestion import RagIndexer
-from app.rag.runtime import get_rag_embedder, get_rag_service
+from app.rag.jobs import enqueue_index_job, list_jobs, retry_job
+from app.rag.runtime import get_rag_service
 from app.security import require_super_admin
 
 
@@ -49,29 +48,32 @@ def update_settings(changes: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.post("/projects/{project_id}/index")
+@router.post("/projects/{project_id}/index", status_code=202)
 def index_project(project_id: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     project = db.scalar(select(Project).where(Project.id == project_id))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     if not project.organization_id:
         raise HTTPException(status_code=409, detail="Project must belong to an organization")
-    embedder = get_rag_embedder()
-    if embedder is None:
-        raise HTTPException(status_code=503, detail="RAG embedding provider is not configured")
-    settings = get_settings()
-    indexer = RagIndexer(
+    job = enqueue_index_job(
         engine,
-        embedder,
-        chunk_size=settings.rag_chunk_size_tokens,
-        overlap=settings.rag_chunk_overlap_tokens,
-    )
-    result = indexer.index_project(project)
-    get_rag_service().invalidate_project(
         organization_id=project.organization_id,
         project_id=project.id,
     )
-    return {"status": "ok", **result}
+    return {"status": job["status"], "job_id": job["id"], "created": job["created"]}
+
+
+@router.get("/jobs")
+def jobs(project_id: str | None = None, limit: int = Query(default=50, ge=1, le=100)) -> list[dict]:
+    return list_jobs(engine, project_id=project_id, limit=limit)
+
+
+@router.post("/jobs/{job_id}/retry")
+def retry(job_id: str) -> dict[str, Any]:
+    job = retry_job(engine, job_id)
+    if not job:
+        raise HTTPException(status_code=409, detail="Job cannot be retried")
+    return job
 
 
 @router.post("/projects/{project_id}/retrieve")
