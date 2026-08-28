@@ -16,6 +16,7 @@ concurrency:
 # Pull requests run on GitHub-hosted runners so merge gates stay available even
 # when the local DevPilot runner is offline. Push/main can still use
 # DEVPILOT_RUNNER to save hosted minutes without weakening the PR gate.
+# This keeps PR validation independent from the developer workstation lifecycle.
 jobs:
   policy:
     name: DevPilot policy
