@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 
-def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> None:
-    """Create/evolve the additive RAG schema without making DEVpilot depend on it."""
+def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> bool:
+    """Create/evolve the additive RAG schema without making DEVpilot depend on it.
+
+    Returns True when the schema is available. PostgreSQL/pgvector setup failures
+    are intentionally fail-open so the DEVpilot core can still boot with RAG
+    degraded or disabled.
+    """
     if engine.dialect.name != "postgresql":
-        return
+        return False
     dimensions = int(embedding_dimensions)
     if dimensions < 256 or dimensions > 4096:
         raise ValueError("embedding_dimensions must be between 256 and 4096")
@@ -95,6 +101,10 @@ def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> No
         """,
         "CREATE INDEX IF NOT EXISTS ix_rag_queries_scope_created ON rag_queries (organization_id, project_id, created_at DESC)",
     ]
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    try:
+        with engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+    except SQLAlchemyError:
+        return False
+    return True
