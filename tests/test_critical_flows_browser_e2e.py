@@ -25,6 +25,18 @@ def _login(page, base_url: str) -> None:
     page.wait_for_function("() => window.__devpilotBoot?.phase === 'ready'", timeout=20_000)
 
 
+def _resume_saved_session(page) -> None:
+    """Confirm the intentionally explicit saved-session handoff after a reload."""
+    page.wait_for_selector("#auth-resume", state="visible", timeout=10_000)
+    assert page.locator("#auth-resume-submit").is_visible()
+    page.locator("#auth-resume-submit").click()
+    page.wait_for_function("() => window.__devpilotBoot?.phase === 'ready'", timeout=20_000)
+    page.wait_for_function(
+        "() => !document.documentElement.classList.contains('devpilot-auth-pending')",
+        timeout=10_000,
+    )
+
+
 def test_login_tasks_and_super_admin_critical_flow(e2e_server):
     playwright_api = pytest.importorskip("playwright.sync_api")
     artifact_dir = Path(os.getenv("DEVPILOT_TEST_RESULTS_DIR", ".artifacts/test-results"))
@@ -59,10 +71,11 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             assert session["status"] == 200
             assert session["body"]["role"] == "SUPER_ADMIN"
 
-            # Session must survive a real page reload on the same origin.
+            # A sessão persiste no mesmo origin, mas o produto exige confirmação explícita
+            # antes de religar o runtime autenticado após um reload.
             page.reload(wait_until="domcontentloaded", timeout=20_000)
             page.wait_for_function("() => Boolean(localStorage.getItem('devpilot-token'))", timeout=10_000)
-            page.wait_for_function("() => window.__devpilotBoot?.phase === 'ready'", timeout=20_000)
+            _resume_saved_session(page)
 
             created = page.evaluate(
                 """async () => {
