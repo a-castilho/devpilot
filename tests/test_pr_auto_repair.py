@@ -54,6 +54,13 @@ def test_write_capable_workflow_executes_trusted_controller_from_main():
     assert "module.PROTECTED_PATHS.update" in text
 
 
+def test_self_hosted_repair_runtime_checks_codex_authentication_before_repair():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "Verify self-hosted repair runtime" in text
+    assert "codex --version" in text
+    assert "codex login status" in text
+
+
 def test_safety_guard_blocks_policy_gates_and_secrets():
     module = _module()
     errors = module.safety_errors(

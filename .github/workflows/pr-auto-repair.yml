@@ -49,6 +49,7 @@ jobs:
           command -v codex
           python3 --version
           codex --version
+          codex login status
 
       - name: Protect auto-repair control plane
         run: |
