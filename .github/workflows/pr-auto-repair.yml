@@ -9,6 +9,7 @@ permissions:
   contents: write
   actions: write
   pull-requests: read
+  issues: write
 
 concurrency:
   group: devpilot-pr-auto-repair-${{ github.event.workflow_run.head_branch }}
@@ -28,18 +29,18 @@ jobs:
     runs-on: ${{ vars.DEVPILOT_RUNNER }}
     timeout-minutes: 50
     env:
-      GH_TOKEN: ${{ github.token }}
       DEVPILOT_FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
       DEVPILOT_FAILED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
       DEVPILOT_FAILED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       DEVPILOT_FAILED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
 
     steps:
-      - name: Checkout failed PR branch
+      - name: Checkout failed PR branch without persisted credentials
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.workflow_run.head_branch }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify self-hosted repair runtime
         run: |
@@ -50,7 +51,15 @@ jobs:
           python3 --version
           codex --version
 
+      - name: Install package, test and browser dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e '.[test,e2e]'
+          python3 -m playwright install chromium
+
       - name: Protect auto-repair control plane
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           git fetch --no-tags origin main
           BASE="$(git merge-base origin/main HEAD)"
@@ -73,12 +82,13 @@ jobs:
           done
 
           # workflow_run has write permission, so never execute controller code from
-          # the PR branch. Materialize the trusted controller from main in an ignored
-          # path whose location still resolves the repository root correctly.
+          # the mutable PR branch. Materialize the controller from the trusted main.
           printf '%s\n' 'scripts/.devpilot-pr-auto-repair-trusted.py' >> .git/info/exclude
           git show origin/main:scripts/pr_auto_repair.py > scripts/.devpilot-pr-auto-repair-trusted.py
 
       - name: Repair, validate and re-dispatch CI
+        env:
+          DEVPILOT_GITHUB_TOKEN: ${{ github.token }}
         run: |
           python3 - <<'PY'
           import importlib.util
@@ -89,10 +99,6 @@ jobs:
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
           spec.loader.exec_module(module)
-          module.PROTECTED_PATHS.update({
-              "scripts/pr_auto_repair.py",
-              "tests/test_pr_auto_repair.py",
-          })
           raise SystemExit(module.main())
           PY
 
