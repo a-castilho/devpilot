@@ -11,6 +11,7 @@ from app.services import executor as executor_service
 from app.services.ai_costs import budget_block_reason
 from app.services.alternating_flow import execute_task
 from app.services.audit import record
+from app.services.delivery_automation import process_one_delivery
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.services.task_flow import (
@@ -399,7 +400,9 @@ def main() -> None:
         raise SystemExit(78) from error
     print("[worker] runtime OK: " + ", ".join(f"{tool}={path}" for tool, path in runtime.items()), flush=True)
     while True:
-        if not process_one():
+        task_processed = process_one()
+        delivery_processed = process_one_delivery()
+        if not task_processed and not delivery_processed:
             time.sleep(2)
 
 

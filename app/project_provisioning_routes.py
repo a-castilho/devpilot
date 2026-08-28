@@ -12,6 +12,7 @@ from app.models import Organization, Project, ProviderCredential, Repository, Wo
 from app.security import Principal, Role, require_access, require_super_admin, session_principal
 from app.services.audit import record
 from app.services.github_provisioning import GitHubProvisioningError, create_github_repository
+from app.services.product_delivery import automatic_delivery_state
 from app.services.vault import Vault
 
 
@@ -88,7 +89,11 @@ def organization_access_token(db: Session, workspace_id: str, organization: Orga
         raise HTTPException(status_code=409, detail="A credencial GitHub da organização não pôde ser lida.") from error
 
 
-def optional_organization(db: Session, workspace_id: str, organization_id: str | None) -> Organization | None:
+def optional_organization(
+    db: Session,
+    workspace_id: str,
+    organization_id: str | None,
+) -> Organization | None:
     if not organization_id:
         return None
     item = db.scalar(
@@ -198,7 +203,7 @@ def provision_project(
     principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    """Create Git automatically with the centrally managed SUPER_ADMIN organization credential."""
+    """Create Git automatically and schedule managed homologation infrastructure."""
     ws = workspace(db)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
@@ -250,6 +255,9 @@ def provision_project(
         db.commit()
         raise provisioning_client_error(principal, error) from error
 
+    config = dict(payload.codex_config)
+    config["delivery"] = automatic_delivery_state()
+
     item = Project(
         workspace_id=ws.id,
         organization_id=organization.id,
@@ -259,7 +267,7 @@ def provision_project(
         repository_url=remote["clone_url"],
         default_branch=remote["default_branch"],
         agents_md=payload.agents_md,
-        codex_config=json.dumps(payload.codex_config),
+        codex_config=json.dumps(config, ensure_ascii=False, separators=(",", ":")),
     )
     db.add(item)
     db.flush()
@@ -291,6 +299,15 @@ def provision_project(
             "authorized": True,
             "credential_source": "super_admin_managed_organization",
         },
+    )
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=item.id,
+        actor=actor,
+        action="project.delivery_automation_scheduled",
+        outcome="pending",
+        details={"automatic": True, "environment": "homologation"},
     )
     db.commit()
     db.refresh(item)
