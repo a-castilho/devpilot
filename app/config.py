@@ -37,6 +37,7 @@ class Settings(BaseSettings):
 
     # RAG defaults are deliberately conservative for the 4 GB target host.
     rag_enabled: bool = False
+    rag_database_url: str = ""
     rag_cache_enabled: bool = True
     rag_git_enabled: bool = True
     rag_docs_enabled: bool = True
