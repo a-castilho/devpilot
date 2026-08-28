@@ -44,6 +44,13 @@ def enqueue_index_job(engine: Engine, *, organization_id: str, project_id: str, 
 
 
 def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50) -> list[dict]:
+    # The RAG schema is PostgreSQL/pgvector-only. Local SQLite deliberately skips
+    # that additive schema so the DevPilot core can keep running with RAG disabled.
+    # Treat the unavailable queue as empty instead of querying a table that cannot
+    # exist and turning the Super Admin poll into repeated HTTP 500 responses.
+    if engine.dialect.name != "postgresql":
+        return []
+
     clauses = []
     params: dict = {"limit": max(1, min(int(limit), 100))}
     if project_id:
