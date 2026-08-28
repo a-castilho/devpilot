@@ -5,11 +5,7 @@ from sqlalchemy.engine import Engine
 
 
 def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> None:
-    """Create the additive RAG schema without making DEVpilot depend on it.
-
-    SQLite/dev environments intentionally skip vector persistence. PostgreSQL uses
-    pgvector and keeps every row scoped by organization/project.
-    """
+    """Create/evolve the additive RAG schema without making DEVpilot depend on it."""
     if engine.dialect.name != "postgresql":
         return
     dimensions = int(embedding_dimensions)
@@ -67,9 +63,13 @@ def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> No
             last_error TEXT,
             started_at TIMESTAMPTZ,
             completed_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            progress_done INTEGER NOT NULL DEFAULT 0,
+            progress_total INTEGER NOT NULL DEFAULT 0
         )
         """,
+        "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS progress_done INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS progress_total INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS ix_rag_jobs_scope_status ON rag_index_jobs (organization_id, project_id, status)",
         """
         CREATE TABLE IF NOT EXISTS rag_queries (
