@@ -11,7 +11,8 @@ from app.models import Project
 from app.rag.admin import RagAdminService
 from app.rag.jobs import enqueue_index_job, list_jobs, retry_job
 from app.rag.metrics import RagMetricsService
-from app.rag.runtime import get_rag_service
+from app.rag.runtime import get_rag_service, reload_rag_service
+from app.rag.settings_store import save_runtime_settings
 from app.security import Principal, require_super_admin, session_principal
 from app.services.audit import record
 
@@ -76,6 +77,8 @@ def update_settings(
         updated = _admin().update_settings(changes)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    save_runtime_settings(engine, updated)
+    reload_rag_service()
     record(
         db,
         workspace_id=str(principal.workspace_id),
