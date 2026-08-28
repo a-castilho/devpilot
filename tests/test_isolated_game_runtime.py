@@ -15,7 +15,7 @@ def test_game_document_is_isolated_from_dashboard_feature_loader():
     assert 'class="sidebar"' not in html
 
 
-def test_standalone_game_bounds_initial_task_payload_before_bootstrap():
+def test_standalone_game_uses_lightweight_task_history_before_bootstrap():
     html = (STATIC / "game" / "index.html").read_text(encoding="utf-8")
     guard = (STATIC / "game" / "task-payload-guard.js").read_text(encoding="utf-8")
 
@@ -24,10 +24,21 @@ def test_standalone_game_bounds_initial_task_payload_before_bootstrap():
     bootstrap_index = html.index('/assets/game/game-bootstrap.js')
 
     assert build_index < guard_index < bootstrap_index
-    assert "const GAME_TASK_LIMIT = 100" in guard
+    assert "const GAME_TASK_LIMIT = 24" in guard
     assert "requestPath.startsWith('/tasks?')" in guard
-    assert "requestPath.includes('limit=500')" in guard
-    assert "replace(/([?&]limit=)500\\b/" in guard
+    assert "new URLSearchParams" in guard
+    assert "/ui/game-tasks?project_id=" in guard
+    assert "__devpilotGameUsesLightweightHistory = true" in guard
+
+
+def test_lightweight_game_history_strips_large_prompt_body():
+    routes = (ROOT / "app" / "frontend_ui_routes.py").read_text(encoding="utf-8")
+
+    assert '@router.get("/game-tasks")' in routes
+    assert 'Task.title.like("[Jogo]%")' in routes
+    assert "_game_prompt_metadata(row.prompt)" in routes
+    assert '_GAME_METADATA_LABELS = ("PARTIDA", "FASE", "OBJETIVO")' in routes
+    assert ".limit(limit)" in routes
 
 
 def test_dashboard_game_placeholder_navigates_instead_of_lazy_loading_game_bundle():
