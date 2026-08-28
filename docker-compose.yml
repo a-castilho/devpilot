@@ -53,7 +53,7 @@ services:
 
   worker:
     build: .
-    command: ["python", "-m", "app.worker"]
+    command: ["python", "-m", "app.worker_entry"]
     env_file: .env
     environment:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
