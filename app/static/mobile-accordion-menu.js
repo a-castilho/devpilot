@@ -11,7 +11,7 @@
   function ensureGameEntry() {
     if (window.__devpilotGameEntryReady || document.querySelector('script[data-game-entry="1"]')) return;
     const script = document.createElement('script');
-    script.src = '/assets/game-entry.js?v=20260825-1';
+    script.src = '/assets/game-entry.js?v=20260828-1';
     script.defer = true;
     script.dataset.gameEntry = '1';
     document.head.appendChild(script);
