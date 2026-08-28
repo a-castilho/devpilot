@@ -55,7 +55,7 @@ RUN ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin
 # fail with ModuleNotFoundError: app.
 COPY pyproject.toml README.md AGENTS.md ./
 COPY app ./app
-RUN pip install --no-cache-dir '.[postgres]'
+RUN pip install --no-cache-dir '.[postgres,rag]'
 
 RUN useradd --create-home --uid 10001 devpilot \
     && mkdir -p /data/repositories \
