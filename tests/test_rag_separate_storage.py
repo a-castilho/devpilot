@@ -35,15 +35,19 @@ def test_rag_routes_keep_core_settings_and_vector_jobs_separate():
     assert "list_jobs(get_rag_engine()" in source
 
 
-def test_local_rag_setup_is_bound_to_loopback():
+def test_local_rag_setup_is_bound_to_loopback_without_polluting_shared_env():
     from pathlib import Path
 
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     script = Path("scripts/devpilot-rag-local-safe.sh").read_text(encoding="utf-8")
     assert '"127.0.0.1:5433:5432"' in compose
-    assert "DEVPILOT_RAG_DATABASE_URL" in script
+    assert 'export DEVPILOT_RAG_DATABASE_URL="$RAG_URL"' in script
+    assert "path.write_text" not in script
     assert "docker compose up -d postgres" in script
     assert "app.rag_worker_entry" in script
+    assert compose.count(
+        "DEVPILOT_RAG_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot"
+    ) == 2
 
 
 def test_rag_reuses_general_openai_vault_credential_without_exposing_secret():
@@ -109,3 +113,12 @@ def test_rag_feature_branch_restart_does_not_merge_main_into_checkout():
     assert 'DEVPILOT_SAFE_SKIP_UPDATE:-0' in safe_script
     assert 'VALIDATION_BASE="${DEVPILOT_SAFE_VALIDATION_BASE:-origin/main}"' in safe_script
     assert 'git merge --ff-only origin/main' in safe_script
+
+
+def test_rag_worker_retries_transient_storage_failures():
+    from pathlib import Path
+
+    source = Path("app/rag_worker_entry.py").read_text(encoding="utf-8")
+    assert "except (SQLAlchemyError, OSError, RuntimeError)" in source
+    assert "falha transitória" in source
+    assert "time.sleep(RETRY_DELAY_SECONDS)" in source
