@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from dataclasses import asdict, dataclass
 from enum import Enum
@@ -55,28 +56,8 @@ class RetrievalResult:
 
 
 class RagRepository(Protocol):
-    def retrieve(
-        self,
-        *,
-        organization_id: str,
-        project_id: str,
-        query: str,
-        top_k: int,
-        similarity_threshold: float,
-    ) -> list[RetrievalChunk]: ...
-
-    def record_query(
-        self,
-        *,
-        organization_id: str,
-        project_id: str,
-        query: str,
-        query_type: str,
-        cache_hit: bool,
-        retrieved_chunks: int,
-        retrieval_time_ms: float,
-    ) -> None: ...
-
+    def retrieve(self, *, organization_id: str, project_id: str, query: str, top_k: int, similarity_threshold: float) -> list[RetrievalChunk]: ...
+    def record_query(self, *, organization_id: str, project_id: str, query: str, query_type: str, cache_hit: bool, retrieved_chunks: int, retrieval_time_ms: float) -> None: ...
     def health(self) -> dict[str, Any]: ...
 
 
@@ -113,13 +94,13 @@ class NullRagCache:
 
 
 class RagQueryRouter:
-    _NO_RAG_PREFIXES = ("olá", "ola", "oi", "bom dia", "boa tarde", "boa noite")
+    _GREETING_RE = re.compile(r"^(?:olá|ola|oi|bom dia|boa tarde|boa noite)(?=$|[\s!,.?:;])")
     _LIVE_TERMS = ("agora", "atual", "status", "saúde", "health", "fila", "worker", "cpu", "ram", "memória", "deploy")
     _HISTORY_TERMS = ("antes", "anterior", "novamente", "histórico", "historico", "decidido", "resolvemos", "documentação", "documentacao", "arquitetura", "commit")
 
     def classify(self, query: str) -> RagQueryMode:
         normalized = " ".join(query.lower().split())
-        if not normalized or normalized.startswith(self._NO_RAG_PREFIXES):
+        if not normalized or self._GREETING_RE.match(normalized):
             return RagQueryMode.NO_RAG
         live = any(term in normalized for term in self._LIVE_TERMS)
         history = any(term in normalized for term in self._HISTORY_TERMS)
@@ -149,7 +130,7 @@ class RagService:
             if cached is not None:
                 cached.cache_hit = True
                 cached.retrieval_time_ms = (time.perf_counter() - started) * 1000.0
-                self.repository.record_query(
+                self._record_query_safely(
                     organization_id=organization_id,
                     project_id=project_id,
                     query=query,
@@ -167,12 +148,8 @@ class RagService:
             top_k=self.settings.top_k,
             similarity_threshold=self.settings.similarity_threshold,
         )
-        result = RetrievalResult(
-            mode=mode,
-            chunks=chunks,
-            retrieval_time_ms=(time.perf_counter() - started) * 1000.0,
-        )
-        self.repository.record_query(
+        result = RetrievalResult(mode=mode, chunks=chunks, retrieval_time_ms=(time.perf_counter() - started) * 1000.0)
+        self._record_query_safely(
             organization_id=organization_id,
             project_id=project_id,
             query=query,
@@ -184,6 +161,15 @@ class RagService:
         if self.settings.cache_enabled:
             self.cache.set(cache_key, result, self.settings.cache_ttl_seconds)
         return result
+
+    def _record_query_safely(self, **event: Any) -> None:
+        recorder = getattr(self.repository, "record_query", None)
+        if not callable(recorder):
+            return
+        try:
+            recorder(**event)
+        except Exception:
+            return
 
     def invalidate_project(self, *, organization_id: str, project_id: str) -> None:
         self.cache.invalidate_project(organization_id, project_id)
@@ -201,8 +187,8 @@ class RagService:
     def overview(self) -> dict[str, Any]:
         return {"settings": self.settings.public_dict(), "health": self.health()}
 
-    @staticmethod
-    def _cache_key(organization_id: str, project_id: str, query: str) -> str:
+    def _cache_key(self, organization_id: str, project_id: str, query: str) -> str:
         normalized = " ".join(query.lower().split())
-        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        retrieval_config = f"top_k={self.settings.top_k};threshold={self.settings.similarity_threshold:.12g}"
+        digest = hashlib.sha256(f"{retrieval_config}\n{normalized}".encode("utf-8")).hexdigest()
         return f"rag:retrieval:{organization_id}:{project_id}:{digest}"
