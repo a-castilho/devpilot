@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
-from app.db import engine
 from app.models import Project
 
+from .database import rag_engine
 from .ingestion import RagIndexer
 from .jobs import claim_next_job, complete_job, fail_job, update_progress
 from .runtime import get_rag_embedder, reload_rag_service
 
 
 def process_one_rag_job(db: Session) -> bool:
-    if engine.dialect.name != "postgresql":
+    if rag_engine is None or rag_engine.dialect.name != "postgresql":
         return False
-    job = claim_next_job(engine)
+    job = claim_next_job(rag_engine)
     if not job:
         return False
 
@@ -29,7 +29,7 @@ def process_one_rag_job(db: Session) -> bool:
 
         rag = reload_rag_service()
         indexer = RagIndexer(
-            engine,
+            rag_engine,
             embedder,
             chunk_size=rag.settings.chunk_size_tokens,
             overlap=rag.settings.chunk_overlap_tokens,
@@ -37,14 +37,14 @@ def process_one_rag_job(db: Session) -> bool:
         indexer.index_project(
             project,
             progress=lambda done, total: update_progress(
-                engine, job["id"], done=done, total=total
+                rag_engine, job["id"], done=done, total=total
             ),
         )
         rag.invalidate_project(
             organization_id=project.organization_id,
             project_id=project.id,
         )
-        complete_job(engine, job["id"])
+        complete_job(rag_engine, job["id"])
     except Exception as error:
-        fail_job(engine, job["id"], str(error))
+        fail_job(rag_engine, job["id"], str(error))
     return True
