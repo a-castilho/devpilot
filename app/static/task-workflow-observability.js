@@ -238,6 +238,16 @@
     window.requestAnimationFrame(() => { scheduled = false; enhanceRows(); });
   }
 
+  if (typeof renderTasks === 'function' && !window.__devpilotTaskWorkflowRenderWrapped) {
+    window.__devpilotTaskWorkflowRenderWrapped = true;
+    const originalRenderTasks = renderTasks;
+    renderTasks = function renderTasksWithWorkflowObservability(...args) {
+      const result = originalRenderTasks.apply(this, args);
+      document.dispatchEvent(new CustomEvent('devpilot:tasks-rendered'));
+      return result;
+    };
+  }
+
   document.addEventListener('devpilot:feature-ready', event => {
     if (event.detail?.feature === 'tasks') {
       void loadLatestRuns(true);
