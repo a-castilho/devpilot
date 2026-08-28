@@ -9,8 +9,8 @@
   }[char]));
 
   function selectedProjectId() {
-    const active = document.querySelector('[data-rag-project].active');
-    return active?.dataset?.ragProject || '';
+    const active = document.querySelector('[data-rag-project].active, [data-id].active');
+    return active?.dataset?.ragProject || active?.dataset?.id || '';
   }
 
   function ensureJobsPanel() {
@@ -96,7 +96,11 @@
     ensureJobsPanel();
     startPolling();
     document.addEventListener('click', event => {
-      if (event.target.closest?.('[data-rag-project], #rag-index, [data-view="rag-admin"]')) {
+      if (event.target.closest?.('[data-view="rag-admin"]')) {
+        const title = document.getElementById('page-title');
+        if (title) title.textContent = 'RAG / Conhecimento';
+      }
+      if (event.target.closest?.('[data-rag-project], [data-id], #rag-index, [data-view="rag-admin"]')) {
         window.setTimeout(() => void loadJobs(), 200);
       }
     });
