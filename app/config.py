@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     managed_trial_workspace_slug: str = "default"
     managed_trial_cloud_providers: str = "neon,render,vercel"
     linkedin_client_id: str = ""
-    linkedin_client_secret: str = ""
+    linkedin_client_secret_ciphertext: str = ""
     linkedin_redirect_uri: str = ""
     linkedin_scopes: str = "openid,profile,email"
     linkedin_oauth_state_ttl_seconds: int = 600

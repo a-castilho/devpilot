@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.config import get_settings
+from app.services.vault import Vault
 
 AUTHORIZATION_URL = "https://www.linkedin.com/oauth/v2/authorization"
 TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
@@ -32,9 +33,19 @@ class LinkedInToken:
     expires_at: datetime | None
 
 
+def _client_secret() -> str:
+    ciphertext = get_settings().linkedin_client_secret_ciphertext.strip()
+    if not ciphertext:
+        return ""
+    try:
+        return Vault().decrypt(ciphertext)
+    except (RuntimeError, ValueError) as error:
+        raise LinkedInOAuthError("Credencial LinkedIn não pôde ser aberta pelo Vault") from error
+
+
 def oauth_configured() -> bool:
     settings = get_settings()
-    return bool(settings.linkedin_client_id and settings.linkedin_client_secret)
+    return bool(settings.linkedin_client_id and settings.linkedin_client_secret_ciphertext)
 
 
 def _state_secret() -> bytes:
@@ -51,13 +62,25 @@ def _b64decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (-len(value) % 4))
 
 
-def create_oauth_state(*, workspace_id: str, user_id: str) -> str:
+def hash_binding(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def new_browser_binding() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def new_oauth_nonce() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def create_oauth_state(*, workspace_id: str, user_id: str, nonce: str | None = None) -> str:
     settings = get_settings()
     payload = {
         "workspace_id": workspace_id,
         "user_id": user_id,
         "exp": int(time.time()) + settings.linkedin_oauth_state_ttl_seconds,
-        "nonce": secrets.token_urlsafe(12),
+        "nonce": nonce or new_oauth_nonce(),
     }
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     body = _b64encode(raw)
@@ -83,12 +106,12 @@ def verify_oauth_state(state: str) -> dict[str, Any]:
         raise LinkedInOAuthError("OAuth state inválido") from error
     if int(payload.get("exp", 0)) < int(time.time()):
         raise LinkedInOAuthError("OAuth state expirado. Inicie a conexão novamente")
-    if not payload.get("workspace_id") or not payload.get("user_id"):
+    if not payload.get("workspace_id") or not payload.get("user_id") or not payload.get("nonce"):
         raise LinkedInOAuthError("OAuth state incompleto")
     return payload
 
 
-def authorization_url(*, workspace_id: str, user_id: str, redirect_uri: str) -> str:
+def authorization_url(*, redirect_uri: str, state: str) -> str:
     settings = get_settings()
     if not oauth_configured():
         raise LinkedInOAuthError("LinkedIn OAuth não configurado no servidor")
@@ -98,7 +121,7 @@ def authorization_url(*, workspace_id: str, user_id: str, redirect_uri: str) -> 
             "response_type": "code",
             "client_id": settings.linkedin_client_id,
             "redirect_uri": redirect_uri,
-            "state": create_oauth_state(workspace_id=workspace_id, user_id=user_id),
+            "state": state,
             "scope": scopes,
         }
     )
@@ -109,6 +132,9 @@ async def exchange_code(*, code: str, redirect_uri: str) -> LinkedInToken:
     settings = get_settings()
     if not oauth_configured():
         raise LinkedInOAuthError("LinkedIn OAuth não configurado no servidor")
+    client_secret = _client_secret()
+    if not client_secret:
+        raise LinkedInOAuthError("LinkedIn OAuth não configurado no servidor")
     async with httpx.AsyncClient(timeout=15.0) as client:
         response = await client.post(
             TOKEN_URL,
@@ -117,7 +143,7 @@ async def exchange_code(*, code: str, redirect_uri: str) -> LinkedInToken:
                 "code": code,
                 "redirect_uri": redirect_uri,
                 "client_id": settings.linkedin_client_id,
-                "client_secret": settings.linkedin_client_secret,
+                "client_secret": client_secret,
             },
             headers={"Accept": "application/json"},
         )
