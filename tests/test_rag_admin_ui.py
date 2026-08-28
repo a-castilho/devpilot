@@ -28,3 +28,14 @@ def test_rag_admin_ui_has_visual_monitoring_charts_and_fail_open_loading():
     assert "Recursos habilitados" in ui
     assert "Promise.allSettled" in ui
     assert "Carregamento parcial" in ui
+
+
+def test_rag_disabled_is_neutral_and_actionable():
+    ui = (ROOT / "app/static/rag-admin-ui.js").read_text(encoding="utf-8")
+    assert "Ativar RAG" in ui
+    assert "DESATIVADO" in ui
+    assert "NÃO AVALIADA" in ui
+    assert "NÃO AVALIADO" in ui
+    assert "Isto não é uma falha do sistema" in ui
+    assert "status||'').toLowerCase()) ? 100" in ui
+    assert "==='disabled' ? 20" not in ui
