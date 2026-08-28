@@ -37,6 +37,12 @@
     return total > 0 ? Math.max(0, Math.min(100, Math.round((done / total) * 100))) : 0;
   }
 
+  function renderUnavailable(message) {
+    const target = document.getElementById('rag-jobs-list');
+    if (!target) return;
+    target.innerHTML = `<div class="rag-empty">${esc(message || 'RAG indisponível neste ambiente.')}</div>`;
+  }
+
   function renderJobs(jobs) {
     const target = document.getElementById('rag-jobs-list');
     if (!target) return;
@@ -79,8 +85,16 @@
     const projectId = selectedProjectId();
     try {
       const suffix = projectId ? `?project_id=${encodeURIComponent(projectId)}&limit=20` : '?limit=20';
-      const jobs = await api(`/super-admin/rag/jobs${suffix}`);
-      renderJobs(Array.isArray(jobs) ? jobs : []);
+      const payload = await api(`/super-admin/rag/jobs${suffix}`);
+      if (Array.isArray(payload)) {
+        renderJobs(payload);
+        return;
+      }
+      if (payload?.available === false) {
+        renderUnavailable(payload.message);
+        return;
+      }
+      renderJobs(Array.isArray(payload?.jobs) ? payload.jobs : []);
     } catch (error) {
       const target = document.getElementById('rag-jobs-list');
       if (target) target.innerHTML = `<div class="rag-empty">${esc(error.message)}</div>`;
