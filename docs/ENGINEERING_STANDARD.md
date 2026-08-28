@@ -30,7 +30,7 @@ Arquivos críticos protegidos por `guard_patterns` não podem surgir sem pertenc
 
 O gate focado é adicional. Ele nunca substitui `pytest` completo, validação de build, sintaxe ou E2E. Sua finalidade é falhar cedo e fornecer diagnóstico por domínio sem reduzir a proteção global.
 
-E2E de navegador usam o marker pytest `browser_e2e`. O CI descobre todos os testes marcados dentro de `tests`, portanto um novo E2E crítico entra automaticamente na etapa de navegador sem exigir alteração manual da lista do workflow.
+E2E de navegador usam o marker pytest `browser_e2e` e o padrão de nome `*_browser_e2e.py`. O CI coleta somente esses arquivos e ainda filtra pelo marker. Isso evita importar a suíte unitária inteira no processo do navegador antes que o fixture instale banco, settings e diretórios E2E isolados. Um novo E2E crítico entra automaticamente na etapa de navegador ao seguir esse contrato.
 
 ## CI e main
 
@@ -55,3 +55,14 @@ Quando os minutos hospedados voltarem a estar disponíveis, remover a variável 
 ## Critério de pronto
 
 Uma mudança está pronta quando política, matriz crítica, compileall quando aplicável, sintaxe JavaScript, testes automatizados, E2E aplicáveis, validação manual do fluxo visível e CI estiverem aprovados. Regressões importantes devem gerar teste ou gate permanente sempre que tecnicamente viável.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
