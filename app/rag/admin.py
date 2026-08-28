@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from typing import Any
 
@@ -7,11 +8,7 @@ from .service import RagService, RagSettings
 
 
 class RagAdminService:
-    """Administrative facade used by Super Admin API/UI.
-
-    Persistence/audit hooks can be injected later; this class intentionally keeps
-    the UI decoupled from Redis, pgvector and embedding providers.
-    """
+    """Administrative validation facade used by the audited Super Admin API/UI."""
 
     _SAFE_INT_FIELDS = {
         "top_k": (1, 10),
@@ -59,9 +56,11 @@ class RagAdminService:
                     raise ValueError(f"{key} must be between {minimum} and {maximum}")
                 valid[key] = value
             elif key == "similarity_threshold":
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    raise ValueError("similarity_threshold must be a finite number between 0 and 1")
                 numeric = float(value)
-                if numeric < 0.0 or numeric > 1.0:
-                    raise ValueError("similarity_threshold must be between 0 and 1")
+                if not math.isfinite(numeric) or numeric < 0.0 or numeric > 1.0:
+                    raise ValueError("similarity_threshold must be a finite number between 0 and 1")
                 valid[key] = numeric
             else:
                 raise ValueError(f"unsupported RAG setting: {key}")
