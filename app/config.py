@@ -30,6 +30,24 @@ class Settings(BaseSettings):
     managed_trial_workspace_slug: str = "default"
     managed_trial_cloud_providers: str = "neon,render,vercel"
 
+    # RAG defaults are deliberately conservative for the 4 GB target host.
+    rag_enabled: bool = False
+    rag_cache_enabled: bool = True
+    rag_git_enabled: bool = True
+    rag_docs_enabled: bool = True
+    rag_audit_enabled: bool = False
+    rag_tasks_enabled: bool = False
+    rag_logs_enabled: bool = False
+    rag_top_k: int = 5
+    rag_similarity_threshold: float = 0.70
+    rag_cache_ttl_seconds: int = 900
+    rag_chunk_size_tokens: int = 500
+    rag_chunk_overlap_tokens: int = 50
+    rag_index_batch_size: int = 10
+    rag_index_worker_concurrency: int = 1
+    rag_embedding_dimensions: int = 1536
+    redis_url: str = ""
+
     @property
     def git_hosts(self) -> set[str]:
         return {item.strip().lower() for item in self.allowed_git_hosts.split(",") if item.strip()}
