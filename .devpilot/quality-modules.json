@@ -60,7 +60,7 @@
         "tests/test_mobile_auth_blank_screen_guard.py"
       ],
       "browser_tests": [
-        "tests/test_game_browser_e2e.py"
+        "tests/test_critical_flows_browser_e2e.py"
       ],
       "browser_required": true
     },
@@ -81,7 +81,10 @@
         "tests/test_task_*.py",
         "tests/test_tasks_*.py"
       ],
-      "browser_tests": []
+      "browser_tests": [
+        "tests/test_critical_flows_browser_e2e.py"
+      ],
+      "browser_required": true
     },
     {
       "name": "game",
@@ -115,7 +118,10 @@
         "tests/test_profile_super_admin_stability.py",
         "tests/test_cloud_admin.py"
       ],
-      "browser_tests": []
+      "browser_tests": [
+        "tests/test_critical_flows_browser_e2e.py"
+      ],
+      "browser_required": true
     },
     {
       "name": "rag",
@@ -203,7 +209,9 @@
         "tests/test_profile_ui_integrity.py"
       ],
       "browser_tests": [
-        "tests/test_game_browser_e2e.py"
+        "tests/test_critical_flows_browser_e2e.py",
+        "tests/test_game_browser_e2e.py",
+        "tests/test_rag_browser_e2e.py"
       ],
       "browser_required": true
     }
