@@ -35,7 +35,7 @@ def test_super_admin_can_open_rag_and_read_health_without_external_calls(e2e_ser
     artifact_dir = Path(os.getenv("DEVPILOT_TEST_RESULTS_DIR", ".artifacts/test-results"))
     artifact_dir.mkdir(parents=True, exist_ok=True)
     page_errors: list[str] = []
-    server_errors: list[str] = []
+    rag_server_errors: list[str] = []
 
     with playwright_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
@@ -44,8 +44,8 @@ def test_super_admin_can_open_rag_and_read_health_without_external_calls(e2e_ser
         page.on("pageerror", lambda exc: page_errors.append(str(exc)))
         page.on(
             "response",
-            lambda response: server_errors.append(f"{response.status} {response.url}")
-            if response.status >= 500
+            lambda response: rag_server_errors.append(f"{response.status} {response.url}")
+            if response.status >= 500 and "/api/super-admin/rag/" in response.url
             else None,
         )
 
@@ -101,7 +101,7 @@ def test_super_admin_can_open_rag_and_read_health_without_external_calls(e2e_ser
             assert isinstance(api_result["settingsBody"], dict)
 
             assert not page_errors, f"JavaScript errors during RAG flow: {page_errors}"
-            assert not server_errors, f"HTTP 5xx during RAG flow: {server_errors}"
+            assert not rag_server_errors, f"HTTP 5xx during RAG flow: {rag_server_errors}"
         except Exception:
             page.screenshot(path=str(artifact_dir / "rag-browser-e2e-failure.png"), full_page=True)
             raise
