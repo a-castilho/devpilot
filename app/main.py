@@ -32,6 +32,7 @@ from app.provider_models_routes import router as provider_models_router
 from app.rag.schema import ensure_rag_schema
 from app.rag_admin_routes import router as rag_admin_router
 from app.super_admin_voice_routes import router as super_admin_voice_router
+from app.task_documentation_routes import router as task_documentation_router
 from app.task_image_routes import router as task_image_router
 from app.task_run_routes import router as task_run_router
 from app.token_usage_routes import router as token_usage_router
@@ -72,6 +73,7 @@ _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "project-builder.js",
     "project-description-profile.js",
     "task-modal.js",
+    "task-completion-documentation.js",
     "task-analytics.js",
     "reports.js",
     "example-project.js",
@@ -341,6 +343,7 @@ app.include_router(linux_router)
 app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
+app.include_router(task_documentation_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
 app.include_router(product_delivery_router)
