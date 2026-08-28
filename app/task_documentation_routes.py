@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import Project, Run, Task, TaskStatus, Workspace
 from app.security import require_access
 from app.services.audit import record
+from app.services.task_orchestrator import TaskOrchestrator, runtime_view
 from app.task_run_routes import sanitize_payload, sanitize_text
 
 
@@ -23,6 +24,25 @@ def _workspace_id(db: Session) -> str:
     if not workspace_id:
         raise HTTPException(404, "Workspace not found")
     return workspace_id
+
+
+def _task_or_404(db: Session, task_id: str) -> Task:
+    workspace_id = _workspace_id(db)
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
+    if not task:
+        raise HTTPException(404, "Task not found")
+    return task
+
+
+def _orchestrate(db: Session, task_id: str, action: str):
+    _task_or_404(db, task_id)
+    orchestrator = TaskOrchestrator(db, actor="owner")
+    try:
+        return getattr(orchestrator, action)(task_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+    except RuntimeError as error:
+        raise HTTPException(409, str(error)) from error
 
 
 def _safe_filename(value: str) -> str:
@@ -135,12 +155,45 @@ def build_task_documentation(task: Task, project: Project | None, runs: list[Run
     return "\n".join(lines)
 
 
+@router.get("/tasks/{task_id}/orchestrator")
+def task_orchestrator_state(task_id: str, db: Session = Depends(get_db)):
+    task = _task_or_404(db, task_id)
+    return runtime_view(db, task)
+
+
+@router.post("/tasks/{task_id}/next")
+def task_next(task_id: str, db: Session = Depends(get_db)):
+    return _orchestrate(db, task_id, "next")
+
+
+@router.post("/tasks/{task_id}/auto")
+def task_auto(task_id: str, db: Session = Depends(get_db)):
+    return _orchestrate(db, task_id, "auto_advance")
+
+
+@router.post("/tasks/{task_id}/pause")
+def task_pause(task_id: str, db: Session = Depends(get_db)):
+    return _orchestrate(db, task_id, "pause")
+
+
+@router.post("/tasks/{task_id}/resume")
+def task_resume(task_id: str, db: Session = Depends(get_db)):
+    return _orchestrate(db, task_id, "resume")
+
+
+@router.post("/tasks/{task_id}/cancel")
+def task_cancel(task_id: str, db: Session = Depends(get_db)):
+    return _orchestrate(db, task_id, "cancel")
+
+
+@router.post("/tasks/{task_id}/archive")
+def task_archive(task_id: str, db: Session = Depends(get_db)):
+    return _orchestrate(db, task_id, "archive")
+
+
 @router.post("/tasks/{task_id}/documentation")
 def generate_task_documentation(task_id: str, db: Session = Depends(get_db)):
-    workspace_id = _workspace_id(db)
-    task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
-    if not task:
-        raise HTTPException(404, "Task not found")
+    task = _task_or_404(db, task_id)
     if task.status != TaskStatus.completed:
         raise HTTPException(409, "Documentation can only be generated for completed tasks")
 
