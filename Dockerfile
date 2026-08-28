@@ -28,7 +28,10 @@ FROM python:3.12-slim-bookworm
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    DEBIAN_FRONTEND=noninteractive
+    DEBIAN_FRONTEND=noninteractive \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=8
 
 WORKDIR /app
 
@@ -55,7 +58,21 @@ RUN ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin
 # fail with ModuleNotFoundError: app.
 COPY pyproject.toml README.md AGENTS.md ./
 COPY app ./app
-RUN pip install --no-cache-dir '.[postgres,rag]'
+
+# PyPI/DNS can be temporarily unavailable on the self-hosted runner. Retry the
+# complete install with backoff, but still fail the image build if every attempt
+# fails so dependency or packaging errors are never hidden.
+RUN set -eux; \
+    installed=0; \
+    for attempt in 1 2 3 4; do \
+        echo "Python dependency install attempt ${attempt}/4"; \
+        if pip install --no-cache-dir '.[postgres,rag]'; then \
+            installed=1; \
+            break; \
+        fi; \
+        sleep $((attempt * 15)); \
+    done; \
+    [ "$installed" = "1" ]
 
 RUN useradd --create-home --uid 10001 devpilot \
     && mkdir -p /data/repositories \
