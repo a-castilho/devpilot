@@ -174,10 +174,21 @@ require_port_inspector || exit 1
 assert_port_is_safe || exit 1
 
 BEFORE_SHA="$(git rev-parse HEAD)"; WAS_HEALTHY=0; health_ok && WAS_HEALTHY=1; runtime_report
-log "Atualizando main sem interromper o servidor atual..."; git fetch origin main; git merge --ff-only origin/main; AFTER_SHA="$(git rev-parse HEAD)"
+if [[ "${DEVPILOT_SAFE_SKIP_UPDATE:-0}" == "1" ]]; then
+  log "Mantendo checkout atual para validação local segura..."
+  git fetch origin main
+  AFTER_SHA="$BEFORE_SHA"
+  VALIDATION_BASE="${DEVPILOT_SAFE_VALIDATION_BASE:-origin/main}"
+else
+  log "Atualizando main sem interromper o servidor atual..."
+  git fetch origin main
+  git merge --ff-only origin/main
+  AFTER_SHA="$(git rev-parse HEAD)"
+  VALIDATION_BASE="$BEFORE_SHA"
+fi
 
 log "Validando política e código antes do restart..."
-if ! "$ROOT/.venv/bin/python" scripts/check-engineering-standards.py --changed --base "$BEFORE_SHA"; then log "Preflight falhou no padrão de engenharia. Restaurando commit anterior e mantendo o processo atual."; git reset --hard "$BEFORE_SHA"; exit 1; fi
+if ! "$ROOT/.venv/bin/python" scripts/check-engineering-standards.py --changed --base "$VALIDATION_BASE"; then log "Preflight falhou no padrão de engenharia. Restaurando commit anterior e mantendo o processo atual."; git reset --hard "$BEFORE_SHA"; exit 1; fi
 if ! "$ROOT/.venv/bin/python" -m compileall -q app; then log "Preflight falhou em compileall. Restaurando commit anterior e mantendo o processo atual."; git reset --hard "$BEFORE_SHA"; exit 1; fi
 if ! "$ROOT/.venv/bin/python" -c 'from app.main import app; assert app.title'; then log "Preflight falhou ao importar app.main. Restaurando commit anterior e mantendo o processo atual."; git reset --hard "$BEFORE_SHA"; exit 1; fi
 if [[ "${DEVPILOT_SAFE_RUN_TESTS:-0}" == "1" ]]; then
