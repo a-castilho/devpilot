@@ -48,7 +48,7 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Every active critical module must resolve at least one automated focused test. Optional modules such as RAG become mandatory automatically as soon as their source exists.
 - Structural changes to runtime, database, configuration, CI, Docker, deployment build, policy, or the matrix itself select every active module for the focused gate.
 - CI must run the focused matrix before the complete suite; the complete suite remains mandatory and must not be replaced by selective testing.
-- Browser E2E tests must use the `browser_e2e` pytest marker. CI discovers all tests with that marker instead of maintaining a hard-coded single-module browser list.
+- Browser E2E tests must use the `browser_e2e` pytest marker and the `*_browser_e2e.py` naming contract. CI collects only those files and then filters by marker so unit-test imports cannot contaminate the isolated browser runtime.
 - Do not remove a path, module, test contract, guard, or browser E2E from the matrix merely to make CI pass; fix the implementation or update the contract to reflect the real architecture.
 
 ## Validation
