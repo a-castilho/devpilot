@@ -17,3 +17,14 @@ def test_rag_admin_ui_uses_super_admin_rag_endpoints():
     assert "/super-admin/rag/health" in ui
     assert "/super-admin/rag/projects/" in ui
     assert "RAG / Conhecimento" in ui
+
+
+def test_rag_admin_ui_has_visual_monitoring_charts_and_fail_open_loading():
+    ui = (ROOT / "app/static/rag-admin-ui.js").read_text(encoding="utf-8")
+    assert "rag-chart-grid" in ui
+    assert "rag-bar" in ui
+    assert "Cobertura dos projetos" in ui
+    assert "Saúde das dependências" in ui
+    assert "Recursos habilitados" in ui
+    assert "Promise.allSettled" in ui
+    assert "Carregamento parcial" in ui
