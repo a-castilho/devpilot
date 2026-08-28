@@ -13,6 +13,8 @@
   let scheduled = false;
   const latestRunsByTask = new Map();
   const runDetailCache = new Map();
+  const workflowEvidenceCache = new Map();
+  const workflowEvidencePromises = new Map();
 
   const escapeHtml = value => typeof esc === 'function'
     ? esc(value)
@@ -58,7 +60,8 @@
       .task-workflow-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px 12px;margin:0 0 8px;border:1px solid var(--border,#2a3342);border-radius:10px;background:rgba(0,0,0,.12)}
       .task-workflow-stage{min-width:0;padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}
       .task-workflow-stage b,.task-workflow-stage span{display:block}.task-workflow-stage span{margin-top:3px;font-size:11px;opacity:.75;overflow-wrap:anywhere}
-      .task-workflow-stage a{font-size:11px;overflow-wrap:anywhere}
+      .task-workflow-stage a{display:inline-block;margin-top:4px;font-size:11px;overflow-wrap:anywhere}
+      .task-workflow-jobs{margin:5px 0 0;padding-left:16px;font-size:11px;opacity:.82}
       @media(max-width:700px){.task-workflow-detail{grid-template-columns:1fr}.task-workflow-health{align-items:flex-start;flex-direction:column}}
     `;
     document.head.appendChild(style);
@@ -90,7 +93,7 @@
     const host = healthHost();
     if (!host) return;
     if (!canSeeRunner()) {
-      host.innerHTML = '<strong>Esteira de execução</strong><small>Acompanhe o estado real de cada tarefa. Informações de infraestrutura do runner ficam restritas ao Super Admin.</small>';
+      host.innerHTML = '<strong>Esteira de execução</strong><small>Acompanhe o estado real de cada tarefa; nenhum estado é presumido. Informações de infraestrutura do runner ficam restritas ao Super Admin.</small>';
       return;
     }
     const tone = runnerTone(runnerState);
@@ -133,6 +136,25 @@
     return detail || null;
   }
 
+  async function loadWorkflowEvidence(taskId, force = false) {
+    const key = String(taskId);
+    if (workflowEvidenceCache.has(key) && !force) return workflowEvidenceCache.get(key);
+    if (workflowEvidencePromises.has(key)) return workflowEvidencePromises.get(key);
+    const promise = api(`/tasks/${encodeURIComponent(taskId)}/workflow-evidence`)
+      .then(value => {
+        workflowEvidenceCache.set(key, value || null);
+        return value || null;
+      })
+      .catch(error => {
+        const value = {correlated: false, reason: 'query_failed', error: error?.message || 'Falha ao consultar GitHub Actions', workflow: null, jobs: []};
+        workflowEvidenceCache.set(key, value);
+        return value;
+      })
+      .finally(() => workflowEvidencePromises.delete(key));
+    workflowEvidencePromises.set(key, promise);
+    return promise;
+  }
+
   function taskStatusText(task) {
     return String(task?.status || 'unknown').replaceAll('_', ' ') || 'unknown';
   }
@@ -155,6 +177,24 @@
     return parts.join('') || '<span>Execução sem commit/PR registrado.</span>';
   }
 
+  function ciStage(task) {
+    const evidence = workflowEvidenceCache.get(String(task.id));
+    if (!evidence) return '<span>Consultando GitHub Actions pelo commit persistido…</span>';
+    if (!evidence.correlated) {
+      const reason = evidence.error || evidence.reason || 'sem workflow para o commit';
+      return `<span>Não correlacionado · ${escapeHtml(reason)}</span>`;
+    }
+    const workflow = evidence.workflow || {};
+    const conclusion = workflow.conclusion || workflow.status || 'unknown';
+    const parts = [`<span>${escapeHtml(workflow.name || 'Workflow')} #${escapeHtml(workflow.run_number || workflow.id || '')} · ${escapeHtml(conclusion)}</span>`];
+    if (workflow.html_url) parts.push(`<a href="${escapeHtml(workflow.html_url)}" target="_blank" rel="noopener noreferrer">Abrir workflow</a>`);
+    const jobs = Array.isArray(evidence.jobs) ? evidence.jobs : [];
+    if (jobs.length) {
+      parts.push(`<ul class="task-workflow-jobs">${jobs.map(job => `<li>${escapeHtml(job.name)} · ${escapeHtml(job.conclusion || job.status || 'unknown')}</li>`).join('')}</ul>`);
+    }
+    return parts.join('');
+  }
+
   function detailMarkup(task) {
     const runnerVisible = canSeeRunner();
     const runnerValue = runnerVisible ? runnerLabel(runnerState) : 'restrito ao Super Admin';
@@ -165,7 +205,7 @@
         <div class="task-workflow-stage"><b>Execução</b>${executionStage(task)}</div>
         <div class="task-workflow-stage"><b>Commit / PR</b>${codeStage(task)}</div>
         <div class="task-workflow-stage"><b>Runner</b><span>${escapeHtml(runnerValue)} · ${escapeHtml(runnerDetail)}</span></div>
-        <div class="task-workflow-stage"><b>CI</b><span>Aguardando correlação determinística do workflow com o commit persistido; nenhum estado é presumido.</span></div>
+        <div class="task-workflow-stage"><b>CI</b>${ciStage(task)}</div>
         <div class="task-workflow-stage"><b>Deploy / Health</b><span>Será exibido somente após evidência correlacionada ao mesmo commit/deploy.</span></div>
       </div>`;
   }
@@ -175,6 +215,7 @@
     if (latest?.run_id && !runDetailCache.has(String(latest.run_id))) {
       try { await loadRunDetail(latest.run_id); } catch (_) { /* mantém estado desconhecido */ }
     }
+    if (latest?.run_id) await loadWorkflowEvidence(task.id);
     const detailRow = row.nextElementSibling;
     if (detailRow?.classList.contains('task-workflow-row')) {
       const cell = detailRow.querySelector('td');
@@ -250,6 +291,7 @@
 
   document.addEventListener('devpilot:feature-ready', event => {
     if (event.detail?.feature === 'tasks') {
+      workflowEvidenceCache.clear();
       void loadLatestRuns(true);
       scheduleEnhancement();
     }
