@@ -20,9 +20,6 @@
     example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
     voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js'],
     admin: ['token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js'],
-    // Keep first game entry minimal. Nothing else is allowed on this critical path.
-    game: ['game-shell.js', 'build-game.js'],
-    gameAdvanced: ['build-game-subphases.js', 'build-game-repair-mission.js', 'build-game-new-session.js', 'build-game-url-bonus.js', 'build-game-weapons.js'],
     audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
   });
 
@@ -128,7 +125,6 @@
 
   window.__devpilotLoadFeature = loadFeature;
   window.__devpilotFeatureState = featureState;
-  window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced');
 
   const navRoot = () => document.querySelector('.sidebar nav');
 
@@ -164,12 +160,15 @@
   function featureTarget(feature) {
     if (feature === 'profile') return document.querySelector('.nav[data-profile-view="1"], .nav[data-view="profile"]');
     if (feature === 'users') return Array.from(document.querySelectorAll('.sidebar nav .nav')).find(item => item.textContent?.trim() === 'Usuários');
-    if (feature === 'game') return document.querySelector('.nav[data-view="build-game"], .nav[data-view="game"], [data-build-game]');
     return null;
   }
 
   async function openPlaceholder(button, feature) {
     if (!button || button.dataset.devpilotBusy === '1') return;
+    if (feature === 'game') {
+      window.location.assign('/game/index.html');
+      return;
+    }
     const intentEpoch = navigationEpoch;
     const original = button.textContent.replace(/\s*·\s*carregando…?\s*$/u, '');
     button.dataset.devpilotBusy = '1';

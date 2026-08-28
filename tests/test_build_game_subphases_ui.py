@@ -4,20 +4,22 @@ from pathlib import Path
 SUBPHASES_JS = Path("app/static/build-game-subphases.js")
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
 FEATURE_LOADER_JS = Path("app/static/feature-loader.js")
+GAME_HTML = Path("app/static/game/index.html")
 VALIDATE_CI = Path("scripts/validate-ci.sh")
 
 
-def test_subphase_engine_is_loaded_only_with_explicit_game_bundle():
+def test_subphase_engine_is_not_owned_by_dashboard_feature_loader():
     analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
     loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
+    game_html = GAME_HTML.read_text(encoding="utf-8")
 
     assert "/assets/build-game.js" not in analytics
     assert "/assets/build-game-subphases.js" not in analytics
-    assert "game: [" in loader
-    assert "'build-game.js'" in loader
-    assert "'build-game-subphases.js'" in loader
-    assert loader.index("'build-game.js'") < loader.index("'build-game-subphases.js'")
-    assert "window.__devpilotLoadFeature = loadFeature" in loader
+    assert "game: [" not in loader
+    assert "'build-game.js'" not in loader
+    assert "'build-game-subphases.js'" not in loader
+    assert "/assets/build-game.js" in game_html
+    assert "/assets/feature-loader.js" not in game_html
 
 
 def test_real_failures_create_corrective_subphases():

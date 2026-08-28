@@ -4,12 +4,19 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REPAIR = ROOT / "app" / "static" / "build-game-repair-mission.js"
 LOADER = ROOT / "app" / "static" / "feature-loader.js"
+GAME_HTML = ROOT / "app" / "static" / "game" / "index.html"
 
 
-def test_repair_mission_is_loaded_with_game_bundle():
+def test_repair_mission_is_not_owned_by_dashboard_feature_loader():
     loader = LOADER.read_text(encoding="utf-8")
-    assert "build-game-repair-mission.js" in loader
-    assert loader.index("build-game-subphases.js") < loader.index("build-game-repair-mission.js")
+    game_html = GAME_HTML.read_text(encoding="utf-8")
+
+    assert "build-game-repair-mission.js" not in loader
+    assert "gameAdvanced:" not in loader
+    assert "window.__devpilotLoadGameAdvanced" not in loader
+    assert "/assets/build-game.js" in game_html
+    assert "/assets/feature-loader.js" not in game_html
+    assert REPAIR.is_file()
 
 
 def test_repair_mission_has_gated_delivery_pipeline():

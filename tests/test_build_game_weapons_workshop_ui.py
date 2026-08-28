@@ -3,19 +3,22 @@ from pathlib import Path
 
 TASK_ANALYTICS_JS = Path("app/static/task-analytics.js")
 FEATURE_LOADER_JS = Path("app/static/feature-loader.js")
+GAME_HTML = Path("app/static/game/index.html")
 WEAPONS_JS = Path("app/static/build-game-weapons.js")
 
 
-def test_weapons_workshop_is_loaded_only_by_explicit_advanced_game_bundle():
+def test_weapons_workshop_is_not_owned_by_dashboard_feature_loader():
     analytics = TASK_ANALYTICS_JS.read_text(encoding="utf-8")
     loader = FEATURE_LOADER_JS.read_text(encoding="utf-8")
+    game_html = GAME_HTML.read_text(encoding="utf-8")
 
     assert "build-game-weapons.js" not in analytics
-    assert "game: ['game-shell.js', 'build-game.js']" in loader
-    assert "gameAdvanced:" in loader
-    advanced_block = loader.split("gameAdvanced:", 1)[1].split("],", 1)[0]
-    assert "'build-game-weapons.js'" in advanced_block
-    assert "window.__devpilotLoadGameAdvanced = () => loadFeature('gameAdvanced')" in loader
+    assert "game: ['game-shell.js', 'build-game.js']" not in loader
+    assert "gameAdvanced:" not in loader
+    assert "'build-game-weapons.js'" not in loader
+    assert "window.__devpilotLoadGameAdvanced" not in loader
+    assert "/assets/build-game.js" in game_html
+    assert "/assets/feature-loader.js" not in game_html
     assert "addPlaceholder('game', 'Modo Jogo')" in loader
 
 

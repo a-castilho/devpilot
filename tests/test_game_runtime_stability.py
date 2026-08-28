@@ -48,9 +48,11 @@ def test_game_loader_refreshes_hud_after_real_render_without_dom_storm():
     assert "__devpilotGameStableWrapper" in js
 
 
-def test_game_entry_uses_explicit_shell_handoff():
+def test_game_entry_uses_full_document_navigation_instead_of_shell_handoff():
     js = ENTRY.read_text(encoding="utf-8")
-    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" in js
+    assert "const GAME_URL = '/game/index.html'" in js
+    assert "window.location.assign(GAME_URL)" in js
+    assert "window.DevPilotGameShell?.enter?." not in js
     assert "requestAnimationFrame(() => window.DevPilotGameShell?.sync?.())" not in js
 
 
