@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 
 MAX_ATTEMPTS = 3
@@ -44,10 +45,14 @@ def enqueue_index_job(engine: Engine, *, organization_id: str, project_id: str, 
 
 
 def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50) -> list[dict]:
+    """Read the optional RAG queue without making monitoring a core dependency.
+
+    RAG schema provisioning is intentionally fail-open. The Super Admin polling
+    endpoint follows the same contract: an unavailable optional schema is
+    represented as an empty queue instead of escaping as a generic HTTP 500.
+    """
     # The RAG schema is PostgreSQL/pgvector-only. Local SQLite deliberately skips
     # that additive schema so the DevPilot core can keep running with RAG disabled.
-    # Treat the unavailable queue as empty instead of querying a table that cannot
-    # exist and turning the Super Admin poll into repeated HTTP 500 responses.
     if engine.dialect.name != "postgresql":
         return []
 
@@ -57,18 +62,21 @@ def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50)
         clauses.append("project_id=:project_id")
         params["project_id"] = project_id
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
-    with engine.begin() as connection:
-        rows = connection.execute(
-            text(f"""
-                SELECT id, organization_id, project_id, source_type, source_id, status, attempts,
-                       last_error, started_at, completed_at, created_at, progress_done, progress_total
-                FROM rag_index_jobs
-                {where}
-                ORDER BY created_at DESC
-                LIMIT :limit
-            """),
-            params,
-        ).mappings().all()
+    try:
+        with engine.begin() as connection:
+            rows = connection.execute(
+                text(f"""
+                    SELECT id, organization_id, project_id, source_type, source_id, status, attempts,
+                           last_error, started_at, completed_at, created_at, progress_done, progress_total
+                    FROM rag_index_jobs
+                    {where}
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """),
+                params,
+            ).mappings().all()
+    except SQLAlchemyError:
+        return []
     return [dict(row) for row in rows]
 
 

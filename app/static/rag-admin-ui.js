@@ -2,259 +2,52 @@
   'use strict';
 
   const ROLE = 'SUPER_ADMIN';
-  const ragUiState = {overview: null, health: null, settings: null, projects: [], selectedProject: '', retrieval: null};
+  const s = {overview:null,health:null,settings:null,projects:[],selectedProject:'',retrieval:null,partialErrors:[]};
+  const html = v => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+  const isAdmin = () => String(state.currentUser?.role || '').toUpperCase() === ROLE;
+  const enabled = () => Boolean(s.settings?.enabled);
+  const pct = status => ['healthy','ok','ready'].includes(String(status||'').toLowerCase()) ? 100 : String(status||'').toLowerCase()==='degraded' ? 55 : 0;
+  const boolPct = values => values.length ? Math.round(values.filter(Boolean).length/values.length*100) : 0;
 
-  const html = value => String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-
-  const isSuperAdmin = () => String(state.currentUser?.role || '').toUpperCase() === ROLE;
-
-  function ensureStyles() {
-    if (document.getElementById('rag-admin-styles')) return;
-    const style = document.createElement('style');
-    style.id = 'rag-admin-styles';
-    style.textContent = `
-      .rag-admin-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}
-      .rag-card{border:1px solid var(--border,#26354a);border-radius:14px;padding:14px;min-width:0}
-      .rag-card strong{display:block;font-size:22px;margin-top:5px}.rag-card small{opacity:.7}
-      .rag-layout{display:grid;grid-template-columns:minmax(250px,.8fr) minmax(0,1.7fr);gap:16px;align-items:start}
-      .rag-list{display:grid;gap:8px}.rag-project{width:100%;text-align:left;border:1px solid var(--border,#26354a);border-radius:12px;background:transparent;color:inherit;padding:12px;cursor:pointer}
-      .rag-project.active{border-color:#36d399;box-shadow:inset 3px 0 #36d399}.rag-project small{display:block;opacity:.68;margin-top:4px}
-      .rag-actions{display:flex;gap:8px;flex-wrap:wrap}.rag-actions>*{min-width:120px}
-      .rag-health{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.rag-health-item{border:1px solid var(--border,#26354a);border-radius:12px;padding:10px}
-      .rag-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.rag-settings label{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border,#26354a);border-radius:10px;padding:10px}
-      .rag-retrieval{display:grid;gap:8px;margin-top:12px}.rag-chunk{border:1px solid var(--border,#26354a);border-radius:12px;padding:12px}.rag-chunk pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0;max-height:220px;overflow:auto}
-      .rag-query-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.rag-empty{padding:14px;border:1px dashed var(--border,#26354a);border-radius:12px;opacity:.75}
-      @media(max-width:900px){.rag-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rag-layout{grid-template-columns:1fr}.rag-health,.rag-settings{grid-template-columns:1fr}}
-      @media(max-width:560px){.rag-admin-grid{grid-template-columns:1fr}.rag-query-row{grid-template-columns:1fr}.rag-actions>*{flex:1 1 auto}}
-    `;
-    document.head.appendChild(style);
+  function styles(){
+    if(document.getElementById('rag-admin-styles')) return;
+    const el=document.createElement('style'); el.id='rag-admin-styles'; el.textContent=`
+      .rag-admin-grid,.rag-chart-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:16px}.rag-chart-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+      .rag-card,.rag-chart,.rag-health-item{border:1px solid var(--border,#26354a);border-radius:14px;padding:14px;min-width:0;background:rgba(255,255,255,.015)}.rag-card strong{display:block;font-size:22px;margin-top:5px}.rag-card small,.rag-chart p{opacity:.7}
+      .rag-layout{display:grid;grid-template-columns:minmax(240px,.72fr) minmax(0,1.8fr);gap:16px;align-items:start}.rag-list{display:grid;gap:8px}.rag-project{width:100%;text-align:left;border:1px solid var(--border,#26354a);border-radius:12px;background:transparent;color:inherit;padding:12px;cursor:pointer}.rag-project.active{border-color:#36d399;box-shadow:inset 3px 0 #36d399}.rag-project small{display:block;opacity:.68;margin-top:4px}
+      .rag-actions{display:flex;gap:8px;flex-wrap:wrap}.rag-actions>*{min-width:120px}.rag-health{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.rag-settings{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.rag-settings label{display:flex;justify-content:space-between;gap:12px;border:1px solid var(--border,#26354a);border-radius:10px;padding:10px}
+      .rag-bar-row{display:grid;grid-template-columns:90px 1fr auto;align-items:center;gap:8px;margin:8px 0;font-size:12px}.rag-bar-track,.rag-scorebar{height:9px;border-radius:999px;background:rgba(148,163,184,.14);overflow:hidden}.rag-bar,.rag-scorebar>span{display:block;height:100%;background:linear-gradient(90deg,#2dd4bf,#38bdf8)}.rag-chart-value{font-weight:700}.rag-status-note{padding:10px 12px;border-radius:12px;border:1px solid var(--border,#26354a);margin-bottom:12px;font-size:13px}.rag-status-note.info{border-color:#475569;background:rgba(71,85,105,.08)}.rag-status-note.error{border-color:#be123c}.rag-section{margin-top:18px}.rag-section details>summary{cursor:pointer;font-weight:700;margin-bottom:12px}.rag-query-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.rag-retrieval{display:grid;gap:8px;margin-top:12px}.rag-chunk{border:1px solid var(--border,#26354a);border-radius:12px;padding:12px}.rag-chunk pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:220px;overflow:auto}.rag-empty{padding:14px;border:1px dashed var(--border,#26354a);border-radius:12px;opacity:.75}
+      @media(max-width:900px){.rag-admin-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.rag-chart-grid,.rag-layout,.rag-health,.rag-settings{grid-template-columns:1fr}}@media(max-width:560px){.rag-card{padding:11px}.rag-card strong{font-size:18px}.rag-query-row{grid-template-columns:1fr}.rag-actions>*{flex:1 1 auto}.rag-project small:first-of-type{display:none}}
+    `; document.head.appendChild(el);
   }
 
-  function ensurePanel() {
-    if (!isSuperAdmin() || document.getElementById('rag-admin-view')) return;
-    ensureStyles();
-    const nav = document.querySelector('.sidebar nav');
-    const main = document.querySelector('main');
-    if (!nav || !main) return;
-
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'nav';
-    button.dataset.view = 'rag-admin';
-    button.dataset.superAdmin = 'true';
-    button.textContent = 'RAG / Conhecimento';
-    nav.insertBefore(button, nav.querySelector('[data-view="cloud-admin"]') || nav.querySelector('[data-view="reports"]') || null);
-
-    const section = document.createElement('section');
-    section.className = 'view';
-    section.id = 'rag-admin-view';
-    section.innerHTML = `
-      <div class="section-head">
-        <div><p>Controle da memória técnica, indexação, cache e recuperação contextual do DEVpilot.</p></div>
-        <button class="ghost" id="rag-refresh" type="button">Atualizar</button>
-      </div>
-      <div class="rag-admin-grid" id="rag-summary"></div>
-      <div class="rag-layout">
-        <article class="panel">
-          <div class="panel-title"><div><span class="eyebrow">SUPER ADMIN</span><h3>Projetos</h3></div></div>
-          <div class="rag-list" id="rag-project-list"><div class="rag-empty">Carregando projetos…</div></div>
-        </article>
-        <article class="panel">
-          <div class="panel-title"><div><span class="eyebrow">BASE DE CONHECIMENTO</span><h3 id="rag-project-title">Selecione um projeto</h3></div><span class="status" id="rag-status">—</span></div>
-          <div class="rag-actions">
-            <button class="primary" id="rag-index" type="button">Indexar / Atualizar</button>
-            <button class="ghost" id="rag-clear-cache" type="button">Limpar cache</button>
-          </div>
-          <div class="rag-health" id="rag-health"></div>
-          <div style="margin-top:18px">
-            <div class="panel-title"><div><span class="eyebrow">CONFIGURAÇÃO</span><h3>Recursos</h3></div></div>
-            <div class="rag-settings" id="rag-settings"></div>
-          </div>
-          <div style="margin-top:18px">
-            <div class="panel-title"><div><span class="eyebrow">TESTE</span><h3>Retrieval</h3></div></div>
-            <div class="rag-query-row"><input id="rag-query" maxlength="1000" placeholder="Ex.: como resolvemos o travamento do modo jogo?"><button class="primary" id="rag-retrieve" type="button">Consultar</button></div>
-            <div class="rag-retrieval" id="rag-retrieval"><div class="rag-empty">Faça uma consulta para visualizar as fontes recuperadas.</div></div>
-          </div>
-        </article>
-      </div>
-    `;
-    main.appendChild(section);
-
-    button.addEventListener('click', () => openView(button, section));
-    section.querySelector('#rag-refresh').addEventListener('click', () => loadAll(true));
-    section.querySelector('#rag-index').addEventListener('click', indexSelected);
-    section.querySelector('#rag-clear-cache').addEventListener('click', clearCache);
-    section.querySelector('#rag-retrieve').addEventListener('click', retrieve);
+  function panel(){
+    if(!isAdmin()||document.getElementById('rag-admin-view')) return; styles();
+    const nav=document.querySelector('.sidebar nav'),main=document.querySelector('main'); if(!nav||!main)return;
+    const b=document.createElement('button'); b.type='button'; b.className='nav'; b.dataset.view='rag-admin'; b.dataset.superAdmin='true'; b.textContent='RAG / Conhecimento'; nav.insertBefore(b,nav.querySelector('[data-view="cloud-admin"]')||nav.querySelector('[data-view="reports"]')||null);
+    const v=document.createElement('section'); v.className='view'; v.id='rag-admin-view'; v.innerHTML=`
+      <div class="section-head"><div><p>Saúde, cobertura, indexação e recuperação contextual em uma visão operacional.</p></div><button class="ghost" id="rag-refresh">Atualizar</button></div><div id="rag-load-note"></div><div class="rag-admin-grid" id="rag-summary"></div><div class="rag-chart-grid" id="rag-charts"></div>
+      <div class="rag-layout"><article class="panel"><div class="panel-title"><div><span class="eyebrow">PROJETO</span><h3>Base monitorada</h3></div></div><div class="rag-list" id="rag-project-list"></div></article>
+      <article class="panel"><div class="panel-title"><div><span class="eyebrow">BASE DE CONHECIMENTO</span><h3 id="rag-project-title">Selecione um projeto</h3></div><span class="status" id="rag-status">—</span></div><div class="rag-actions"><button class="primary" id="rag-enable">Ativar RAG</button><button class="primary" id="rag-index">Indexar agora</button><button class="ghost" id="rag-clear-cache">Limpar cache</button></div><div class="rag-health" id="rag-health"></div>
+      <div class="rag-section"><details><summary>Configuração avançada</summary><div class="rag-settings" id="rag-settings"></div></details></div><div class="rag-section"><div class="panel-title"><div><span class="eyebrow">TESTE</span><h3>Retrieval</h3></div></div><div class="rag-query-row"><input id="rag-query" maxlength="1000" placeholder="Ex.: como resolvemos o travamento do modo jogo?"><button class="primary" id="rag-retrieve">Consultar</button></div><div class="rag-retrieval" id="rag-retrieval"></div></div></article></div>`;
+    main.appendChild(v); b.onclick=()=>{document.querySelectorAll('.view').forEach(x=>x.classList.toggle('active',x===v));document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x===b));void loadAll();};
+    v.querySelector('#rag-refresh').onclick=()=>loadAll(true); v.querySelector('#rag-enable').onclick=activate; v.querySelector('#rag-index').onclick=indexSelected; v.querySelector('#rag-clear-cache').onclick=clearCache; v.querySelector('#rag-retrieve').onclick=retrieve;
   }
-
-  function openView(button, section) {
-    if (!isSuperAdmin()) return toast('Acesso exclusivo do Super Admin');
-    document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
-    document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
-    const title = document.getElementById('page-title');
-    if (title) title.textContent = 'RAG / Conhecimento';
-    void loadAll();
-  }
-
-  function selected() {
-    return ragUiState.projects.find(project => String(project.id) === String(ragUiState.selectedProject)) || null;
-  }
-
-  function renderSummary() {
-    const target = document.getElementById('rag-summary');
-    if (!target) return;
-    const health = ragUiState.health || {};
-    const settings = ragUiState.settings || {};
-    target.innerHTML = `
-      <div class="rag-card"><span class="eyebrow">RAG</span><strong>${settings.enabled ? 'ATIVO' : 'DESLIGADO'}</strong><small>estado global</small></div>
-      <div class="rag-card"><span class="eyebrow">SAÚDE</span><strong>${html(String(health.status || '—').toUpperCase())}</strong><small>serviço desacoplado</small></div>
-      <div class="rag-card"><span class="eyebrow">CACHE</span><strong>${settings.cache_enabled ? 'ATIVO' : 'OFF'}</strong><small>Redis</small></div>
-      <div class="rag-card"><span class="eyebrow">PROJETOS</span><strong>${ragUiState.projects.length}</strong><small>disponíveis para indexação</small></div>`;
-  }
-
-  function renderProjects() {
-    const target = document.getElementById('rag-project-list');
-    if (!target) return;
-    target.innerHTML = ragUiState.projects.map(project => `
-      <button type="button" class="rag-project ${String(project.id) === String(ragUiState.selectedProject) ? 'active' : ''}" data-rag-project="${html(project.id)}">
-        <strong>${html(project.name)}</strong><small>${html(project.repository_url || '')}</small><small>${html(project.default_branch || 'main')} · ${project.organization_id ? 'organização vinculada' : 'sem organização'}</small>
-      </button>`).join('') || '<div class="rag-empty">Nenhum projeto disponível.</div>';
-    target.querySelectorAll('[data-rag-project]').forEach(button => button.addEventListener('click', () => {
-      ragUiState.selectedProject = button.dataset.ragProject;
-      ragUiState.retrieval = null;
-      renderProjects();
-      renderProject();
-    }));
-  }
-
-  function renderProject() {
-    const project = selected();
-    const title = document.getElementById('rag-project-title');
-    const badge = document.getElementById('rag-status');
-    if (title) title.textContent = project?.name || 'Selecione um projeto';
-    if (badge) badge.textContent = project ? (project.organization_id ? 'PRONTO' : 'SEM ORGANIZAÇÃO') : '—';
-    document.getElementById('rag-index').disabled = !project?.organization_id;
-    document.getElementById('rag-clear-cache').disabled = !project?.organization_id;
-    document.getElementById('rag-retrieve').disabled = !project?.organization_id;
-    renderRetrieval();
-  }
-
-  function renderHealth() {
-    const target = document.getElementById('rag-health');
-    if (!target) return;
-    const health = ragUiState.health || {};
-    const repo = health.repository || {};
-    const cache = health.cache || {};
-    target.innerHTML = `
-      <div class="rag-health-item"><small>RAG</small><strong>${html(health.status || '—')}</strong></div>
-      <div class="rag-health-item"><small>Vector DB</small><strong>${html(repo.status || '—')}</strong></div>
-      <div class="rag-health-item"><small>Cache</small><strong>${html(cache.status || '—')}</strong></div>`;
-  }
-
-  function renderSettings() {
-    const target = document.getElementById('rag-settings');
-    if (!target) return;
-    const s = ragUiState.settings || {};
-    const toggles = [
-      ['enabled','RAG global'],['cache_enabled','Cache'],['git_enabled','Git'],['docs_enabled','Documentação'],['audit_enabled','Auditoria'],['tasks_enabled','Tarefas']
-    ];
-    target.innerHTML = toggles.map(([key,label]) => `<label><span>${label}</span><input type="checkbox" data-rag-setting="${key}" ${s[key] ? 'checked' : ''}></label>`).join('');
-    target.querySelectorAll('[data-rag-setting]').forEach(input => input.addEventListener('change', async () => {
-      input.disabled = true;
-      try {
-        ragUiState.settings = await api('/super-admin/rag/settings', {method:'PATCH', body:JSON.stringify({[input.dataset.ragSetting]: input.checked})});
-        toast('Configuração RAG atualizada');
-        await loadHealth();
-        renderSummary();
-        renderSettings();
-      } catch (error) {
-        input.checked = !input.checked;
-        toast(error.message);
-      } finally { input.disabled = false; }
-    }));
-  }
-
-  function renderRetrieval() {
-    const target = document.getElementById('rag-retrieval');
-    if (!target) return;
-    const result = ragUiState.retrieval;
-    if (!result) {
-      target.innerHTML = '<div class="rag-empty">Faça uma consulta para visualizar as fontes recuperadas.</div>';
-      return;
-    }
-    const chunks = Array.isArray(result.chunks) ? result.chunks : [];
-    target.innerHTML = `<div class="rag-card"><small>Modo ${html(result.mode)} · cache ${result.cache_hit ? 'hit' : 'miss'} · ${Number(result.retrieval_time_ms || 0).toFixed(1)} ms</small></div>` +
-      (chunks.map(chunk => `<div class="rag-chunk"><strong>${html(chunk.source_path || chunk.source_id || chunk.source_type)}</strong><small>${html(chunk.source_type)} · score ${Number(chunk.score || 0).toFixed(3)}</small><pre>${html(chunk.content)}</pre></div>`).join('') || '<div class="rag-empty">Nenhum trecho acima do limiar de similaridade.</div>');
-  }
-
-  async function loadHealth() {
-    ragUiState.health = await api('/super-admin/rag/health');
-    renderHealth();
-  }
-
-  async function loadAll(force = false) {
-    if (!isSuperAdmin()) return;
-    const view = document.getElementById('rag-admin-view');
-    if (!force && !view?.classList.contains('active')) return;
-    try {
-      const [overview, settings, health, projects] = await Promise.all([
-        api('/super-admin/rag/overview'), api('/super-admin/rag/settings'), api('/super-admin/rag/health'), api('/ui/projects?limit=100')
-      ]);
-      ragUiState.overview = overview;
-      ragUiState.settings = settings || {};
-      ragUiState.health = health || {};
-      ragUiState.projects = Array.isArray(projects) ? projects : [];
-      if (!ragUiState.selectedProject || !ragUiState.projects.some(item => String(item.id) === String(ragUiState.selectedProject))) {
-        ragUiState.selectedProject = ragUiState.projects[0]?.id || '';
-      }
-      renderSummary(); renderProjects(); renderProject(); renderHealth(); renderSettings();
-    } catch (error) { toast(error.message); }
-  }
-
-  async function indexSelected() {
-    const project = selected();
-    if (!project) return;
-    const button = document.getElementById('rag-index');
-    const original = button.textContent;
-    button.disabled = true; button.textContent = 'Indexando…';
-    try {
-      const result = await api(`/super-admin/rag/projects/${encodeURIComponent(project.id)}/index`, {method:'POST'});
-      toast(`RAG atualizado: ${result.indexed ?? 0} documento(s), ${result.skipped ?? 0} sem alteração`);
-      await loadHealth();
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; button.textContent = original; }
-  }
-
-  async function clearCache() {
-    const project = selected();
-    if (!project?.organization_id) return;
-    try {
-      await api(`/super-admin/rag/cache/${encodeURIComponent(project.organization_id)}/${encodeURIComponent(project.id)}`, {method:'DELETE'});
-      toast('Cache RAG do projeto limpo');
-    } catch (error) { toast(error.message); }
-  }
-
-  async function retrieve() {
-    const project = selected();
-    const input = document.getElementById('rag-query');
-    const query = String(input?.value || '').trim();
-    if (!project || !query) return toast('Digite uma consulta para testar o RAG');
-    const button = document.getElementById('rag-retrieve');
-    const original = button.textContent;
-    button.disabled = true; button.textContent = 'Consultando…';
-    try {
-      ragUiState.retrieval = await api(`/super-admin/rag/projects/${encodeURIComponent(project.id)}/retrieve`, {method:'POST', body:JSON.stringify({query})});
-      renderRetrieval();
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; button.textContent = original; }
-  }
-
-  function init() { ensurePanel(); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, {once:true}); else init();
-  document.addEventListener('devpilot:dashboard-revealed', init);
+  const selected=()=>s.projects.find(p=>String(p.id)===String(s.selectedProject))||null;
+  const bar=(label,value)=>{const n=Math.max(0,Math.min(100,Number(value||0)));return `<div class="rag-bar-row"><span>${html(label)}</span><div class="rag-bar-track"><span class="rag-bar" style="width:${n}%"></span></div><span class="rag-chart-value">${n}%</span></div>`;};
+  function render(){renderNote();renderSummary();renderCharts();renderProjects();renderProject();renderHealth();renderSettings();renderRetrieval();}
+  function renderNote(){const t=document.getElementById('rag-load-note');if(!t)return;if(s.partialErrors.length){t.innerHTML=`<div class="rag-status-note error"><strong>Carregamento parcial.</strong> ${html(s.partialErrors.join(' · '))}</div>`;return;}t.innerHTML=!enabled()?'<div class="rag-status-note info"><strong>RAG desativado por configuração.</strong> Ative quando quiser indexar e consultar a base de conhecimento. Isto não é uma falha do sistema.</div>':'';}
+  function renderSummary(){const t=document.getElementById('rag-summary');if(!t)return;const linked=s.projects.filter(p=>p.organization_id).length;const healthLabel=enabled()?String(s.health?.status||'—').toUpperCase():'NÃO AVALIADA';t.innerHTML=`<div class="rag-card"><span class="eyebrow">RAG</span><strong>${enabled()?'ATIVO':'DESATIVADO'}</strong><small>estado global</small></div><div class="rag-card"><span class="eyebrow">SAÚDE</span><strong>${html(healthLabel)}</strong><small>${enabled()?'serviço':'RAG inativo'}</small></div><div class="rag-card"><span class="eyebrow">CACHE</span><strong>${enabled()?(s.settings?.cache_enabled?'ATIVO':'OFF'):'NÃO AVALIADO'}</strong><small>Redis</small></div><div class="rag-card"><span class="eyebrow">COBERTURA</span><strong>${linked}/${s.projects.length}</strong><small>projetos vinculados</small></div>`;}
+  function renderCharts(){const t=document.getElementById('rag-charts');if(!t)return;const total=s.projects.length,linked=s.projects.filter(p=>p.organization_id).length,coverage=total?Math.round(linked/total*100):0;const keys=['enabled','cache_enabled','git_enabled','docs_enabled','audit_enabled','tasks_enabled'];const resources=boolPct(keys.map(k=>Boolean(s.settings?.[k])));const health=enabled()?`${bar('RAG',pct(s.health?.status))}${bar('Vector DB',pct(s.health?.repository?.status))}${bar('Cache',s.settings?.cache_enabled?pct(s.health?.cache?.status):0)}`:'<div class="rag-empty">Não avaliado enquanto o RAG estiver desativado.</div>';t.innerHTML=`<article class="rag-chart"><h4>Cobertura dos projetos</h4><p>Projetos vinculados à base.</p>${bar('Vinculados',coverage)}</article><article class="rag-chart"><h4>Saúde das dependências</h4><p>Estado técnico quando o RAG está ativo.</p>${health}</article><article class="rag-chart"><h4>Recursos habilitados</h4><p>Capacidades administrativas ligadas.</p>${bar('Ativos',resources)}</article>`;}
+  function renderProjects(){const t=document.getElementById('rag-project-list');if(!t)return;t.innerHTML=s.projects.map(p=>`<button class="rag-project ${String(p.id)===String(s.selectedProject)?'active':''}" data-id="${html(p.id)}"><strong>${html(p.name)}</strong><small>${html(p.repository_url||'')}</small><small>${html(p.default_branch||'main')} · ${p.organization_id?'organização vinculada':'sem organização'}</small></button>`).join('')||'<div class="rag-empty">Nenhum projeto disponível.</div>';t.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{s.selectedProject=b.dataset.id;s.retrieval=null;render();});}
+  function renderProject(){const p=selected(),badge=document.getElementById('rag-status'),title=document.getElementById('rag-project-title'),on=enabled();if(title)title.textContent=p?.name||'Selecione um projeto';if(badge)badge.textContent=!p?'—':!p.organization_id?'SEM ORGANIZAÇÃO':on?'PRONTO':'DESATIVADO';const enable=document.getElementById('rag-enable');if(enable)enable.hidden=on;document.getElementById('rag-index').disabled=!p?.organization_id||!on;document.getElementById('rag-clear-cache').disabled=!p?.organization_id;document.getElementById('rag-retrieve').disabled=!p?.organization_id||!on;}
+  function renderHealth(){const t=document.getElementById('rag-health');if(!t)return;if(!enabled()){t.innerHTML='<div class="rag-health-item"><small>RAG</small><strong>DESATIVADO</strong></div><div class="rag-health-item"><small>Vector DB</small><strong>NÃO AVALIADO</strong></div><div class="rag-health-item"><small>Cache</small><strong>NÃO AVALIADO</strong></div>';return;}t.innerHTML=`<div class="rag-health-item"><small>RAG</small><strong>${html(s.health?.status||'—')}</strong></div><div class="rag-health-item"><small>Vector DB</small><strong>${html(s.health?.repository?.status||'—')}</strong></div><div class="rag-health-item"><small>Cache</small><strong>${html(s.health?.cache?.status||(s.settings?.cache_enabled?'—':'disabled'))}</strong></div>`;}
+  function renderSettings(){const t=document.getElementById('rag-settings');if(!t)return;const toggles=[['enabled','RAG global'],['cache_enabled','Cache'],['git_enabled','Git'],['docs_enabled','Documentação'],['audit_enabled','Auditoria'],['tasks_enabled','Tarefas']];t.innerHTML=toggles.map(([k,l])=>`<label><span>${l}</span><input type="checkbox" data-setting="${k}" ${s.settings?.[k]?'checked':''}></label>`).join('');t.querySelectorAll('[data-setting]').forEach(i=>i.onchange=async()=>{i.disabled=true;try{s.settings=await api('/super-admin/rag/settings',{method:'PATCH',body:JSON.stringify({[i.dataset.setting]:i.checked})});try{s.health=await api('/super-admin/rag/health');}catch{}render();toast('Configuração RAG atualizada');}catch(e){i.checked=!i.checked;toast(e.message);}finally{i.disabled=false;}});}
+  function renderRetrieval(){const t=document.getElementById('rag-retrieval');if(!t)return;if(!s.retrieval){t.innerHTML='<div class="rag-empty">Faça uma consulta para visualizar as fontes recuperadas.</div>';return;}const chunks=Array.isArray(s.retrieval.chunks)?s.retrieval.chunks:[];t.innerHTML=chunks.map(c=>{const score=Math.max(0,Math.min(100,Math.round(Number(c.score||0)*100)));return `<div class="rag-chunk"><strong>${html(c.source_path||c.source_id||c.source_type)}</strong><small>${html(c.source_type)} · score ${Number(c.score||0).toFixed(3)}</small><div class="rag-scorebar"><span style="width:${score}%"></span></div><pre>${html(c.content)}</pre></div>`;}).join('')||'<div class="rag-empty">Nenhum trecho acima do limiar.</div>';}
+  async function activate(){try{s.settings=await api('/super-admin/rag/settings',{method:'PATCH',body:JSON.stringify({enabled:true})});try{s.health=await api('/super-admin/rag/health');}catch{}render();toast('RAG ativado');}catch(e){toast(e.message);}}
+  async function loadAll(force=false){if(!isAdmin())return;const view=document.getElementById('rag-admin-view');if(!force&&!view?.classList.contains('active'))return;const req=[['overview',api('/super-admin/rag/overview')],['settings',api('/super-admin/rag/settings')],['health',api('/super-admin/rag/health')],['projects',api('/ui/projects?limit=100')]];const settled=await Promise.allSettled(req.map(x=>x[1]));s.partialErrors=[];settled.forEach((r,i)=>{const k=req[i][0];if(r.status==='fulfilled'){if(k==='projects')s.projects=Array.isArray(r.value)?r.value:[];else s[k]=r.value||{};}else s.partialErrors.push(`${k}: ${r.reason?.message||'indisponível'}`);});if(!s.projects.some(p=>String(p.id)===String(s.selectedProject)))s.selectedProject=s.projects[0]?.id||'';render();}
+  async function indexSelected(){const p=selected();if(!p||!enabled())return;try{const r=await api(`/super-admin/rag/projects/${encodeURIComponent(p.id)}/index`,{method:'POST'});toast(`RAG atualizado: ${r.indexed??0} documento(s)`);await loadAll(true);}catch(e){toast(e.message);}}
+  async function clearCache(){const p=selected();if(!p?.organization_id)return;try{await api(`/super-admin/rag/cache/${encodeURIComponent(p.organization_id)}/${encodeURIComponent(p.id)}`,{method:'DELETE'});toast('Cache RAG do projeto limpo');}catch(e){toast(e.message);}}
+  async function retrieve(){const p=selected(),q=String(document.getElementById('rag-query')?.value||'').trim();if(!p||!q||!enabled())return;try{s.retrieval=await api(`/super-admin/rag/projects/${encodeURIComponent(p.id)}/retrieve`,{method:'POST',body:JSON.stringify({query:q})});renderRetrieval();}catch(e){toast(e.message);}}
+  function init(){panel();} if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();document.addEventListener('devpilot:dashboard-revealed',init);document.addEventListener('devpilot:feature-ready',e=>{if(e.detail?.feature==='admin')init();});
 })();
