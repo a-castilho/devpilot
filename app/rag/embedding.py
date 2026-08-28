@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import math
+import re
 from typing import Protocol
 
 import httpx
@@ -9,6 +12,54 @@ class EmbeddingProvider(Protocol):
     dimensions: int
 
     def embed(self, text: str) -> list[float]: ...
+
+
+class LocalHashEmbeddingProvider:
+    """Deterministic CPU-only embedding fallback with no external model or API key.
+
+    This uses feature hashing over normalized word tokens and character trigrams.
+    It is intentionally lightweight for constrained local hosts. It is not a neural
+    semantic embedding model, but it preserves useful lexical similarity and keeps
+    the RAG pipeline operational offline.
+    """
+
+    _token_re = re.compile(r"[\wÀ-ÿ]+", re.UNICODE)
+
+    def __init__(self, *, dimensions: int = 1536) -> None:
+        dimensions = int(dimensions)
+        if dimensions <= 0:
+            raise ValueError("Embedding dimensions must be positive")
+        self.dimensions = dimensions
+
+    @staticmethod
+    def _feature_hash(feature: str) -> tuple[int, float]:
+        digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
+        value = int.from_bytes(digest, "big", signed=False)
+        sign = -1.0 if value & 1 else 1.0
+        return value, sign
+
+    def embed(self, text: str) -> list[float]:
+        vector = [0.0] * self.dimensions
+        normalized = " ".join(self._token_re.findall(str(text).casefold()))
+        if not normalized:
+            return vector
+
+        words = normalized.split()
+        features: list[tuple[str, float]] = [(f"w:{word}", 1.0) for word in words]
+        compact = normalized.replace(" ", "_")
+        features.extend(
+            (f"c3:{compact[index:index + 3]}", 0.35)
+            for index in range(max(0, len(compact) - 2))
+        )
+
+        for feature, weight in features:
+            value, sign = self._feature_hash(feature)
+            vector[value % self.dimensions] += sign * weight
+
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm:
+            vector = [value / norm for value in vector]
+        return vector
 
 
 class OpenAIEmbeddingProvider:
