@@ -122,11 +122,26 @@ record pytest-all "$pytest_rc"
 if [[ "${DEVPILOT_RUN_BROWSER_E2E:-0}" == "1" ]]; then
   echo
   echo "=== browser-e2e ==="
-  "$PYTHON_CMD" -m pytest -q -m browser_e2e tests \
-    --disable-warnings --junitxml="$RESULT_DIR/browser-e2e.xml" \
-    2>&1 | tee "$RESULT_DIR/browser-e2e.log"
-  browser_rc=${PIPESTATUS[0]}
-  record browser-e2e "$browser_rc"
+
+  # Colete somente módulos E2E. Apontar pytest para tests/ inteiro faz a coleta
+  # importar testes unitários e módulos de aplicação antes do fixture E2E instalar
+  # o ambiente isolado, podendo reutilizar settings/engine do processo incorretos.
+  mapfile -d '' -t browser_e2e_files < <(
+    find tests -maxdepth 1 -type f -name '*_browser_e2e.py' -print0 | sort -z
+  )
+
+  if [[ "${#browser_e2e_files[@]}" -eq 0 ]]; then
+    echo "Nenhum arquivo *_browser_e2e.py encontrado; browser gate não pode ficar vazio." >&2
+    record browser-e2e 1
+  else
+    echo "Arquivos E2E selecionados:"
+    printf '  - %s\n' "${browser_e2e_files[@]}"
+    "$PYTHON_CMD" -m pytest -q -m browser_e2e "${browser_e2e_files[@]}" \
+      --disable-warnings --junitxml="$RESULT_DIR/browser-e2e.xml" \
+      2>&1 | tee "$RESULT_DIR/browser-e2e.log"
+    browser_rc=${PIPESTATUS[0]}
+    record browser-e2e "$browser_rc"
+  fi
 else
   echo
   echo "=== browser-e2e ==="
