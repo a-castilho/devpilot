@@ -74,7 +74,9 @@ def test_critical_quality_matrix_is_wired_without_replacing_full_suite():
     assert "run_focused_tests" in matrix
     assert "critical-quality-matrix.py" in test_all
     assert 'pytest -q -m "not browser_e2e"' in test_all
-    assert "-m browser_e2e tests" in test_all
+    assert "-name '*_browser_e2e.py'" in test_all
+    assert '"${browser_e2e_files[@]}"' in test_all
+    assert "-m browser_e2e tests" not in test_all
 
 
 def test_local_runtime_identifies_service_and_rejects_unknown_port_owner():
