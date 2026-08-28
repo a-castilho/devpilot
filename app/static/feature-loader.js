@@ -91,7 +91,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260826-3`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260828-1`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
