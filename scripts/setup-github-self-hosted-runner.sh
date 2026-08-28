@@ -82,21 +82,41 @@ fi
 log "Configurando variável DEVPILOT_RUNNER=${RUNNER_LABEL} no repositório..."
 gh variable set DEVPILOT_RUNNER --repo "$REPO" --body "$RUNNER_LABEL"
 
-if [[ -f "$PID_FILE" ]]; then
-  old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
-  if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
-    log "Runner já está ativo com PID $old_pid."
-  else
-    rm -f "$PID_FILE"
-  fi
+# A fonte autoritativa é o GitHub, não apenas o PID file local. Se o runner
+# registrado já está online (inclusive busy), iniciar outro listener com o mesmo
+# nome causa SessionConflictException e pode derrubar a sessão saudável.
+remote_runner_json="$(gh api "repos/${REPO}/actions/runners" --jq ".runners[] | select(.name == \"${RUNNER_NAME}\") | {status: .status, busy: .busy}" 2>/dev/null | head -n1 || true)"
+remote_status="$(printf '%s' "$remote_runner_json" | python3 -c 'import json,sys; raw=sys.stdin.read().strip(); print(json.loads(raw).get("status", "") if raw else "")' 2>/dev/null || true)"
+remote_busy="$(printf '%s' "$remote_runner_json" | python3 -c 'import json,sys; raw=sys.stdin.read().strip(); print(str(bool(json.loads(raw).get("busy", False))).lower() if raw else "false")' 2>/dev/null || true)"
+if [[ "$remote_status" == "online" ]]; then
+  log "Runner ${RUNNER_NAME} já está online no GitHub (busy=${remote_busy}); não iniciarei uma segunda sessão."
+  log "GitHub Actions pode usar a label ${RUNNER_LABEL}."
+  exit 0
 fi
 
-if [[ ! -f "$PID_FILE" ]]; then
-  : >"$LOG_FILE"
-  nohup ./run.sh >"$LOG_FILE" 2>&1 &
-  pid=$!
-  printf '%s\n' "$pid" >"$PID_FILE"
-  log "Runner iniciado em background com PID $pid."
+# Recupera um listener local já existente mesmo se o PID file tiver sido perdido
+# ou ficado obsoleto. Isso evita criar uma segunda sessão durante reconexões.
+listener_pid="$(ps -eo pid=,args= | awk -v listener="$RUNNER_DIR/bin/Runner.Listener" 'index($0, listener) {print $1; exit}')"
+if [[ "$listener_pid" =~ ^[0-9]+$ ]] && kill -0 "$listener_pid" 2>/dev/null; then
+  printf '%s\n' "$listener_pid" >"$PID_FILE"
+  log "Listener local já existe com PID $listener_pid; aguardando reconexão em vez de duplicar sessão."
+else
+  if [[ -f "$PID_FILE" ]]; then
+    old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ "$old_pid" =~ ^[0-9]+$ ]] && kill -0 "$old_pid" 2>/dev/null; then
+      log "Runner já está ativo com PID $old_pid."
+    else
+      rm -f "$PID_FILE"
+    fi
+  fi
+
+  if [[ ! -f "$PID_FILE" ]]; then
+    : >"$LOG_FILE"
+    nohup ./run.sh >"$LOG_FILE" 2>&1 &
+    pid=$!
+    printf '%s\n' "$pid" >"$PID_FILE"
+    log "Runner iniciado em background com PID $pid."
+  fi
 fi
 
 for _ in {1..20}; do
