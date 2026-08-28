@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Task, TaskStatus
+from app.rag.chat_context import build_chat_knowledge_context
 from app.security import require_access
 from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
@@ -59,7 +60,9 @@ def _mode_instructions(mode: ChatMode) -> str:
     common = (
         "Você conversa diretamente com o cliente dentro do DevPilot. "
         "Responda sempre em português do Brasil, de forma natural, objetiva e própria para ser falada em voz alta. "
-        "Use o projeto selecionado e o histórico somente como contexto. "
+        "Use o projeto selecionado, o histórico e o contexto de conhecimento fornecido somente como contexto. "
+        "Quando houver contexto RAG, trate-o como memória técnica recuperada e não como estado atual. "
+        "Quando houver contexto LIVE, trate-o como estado atual observado pelo servidor. "
         "Nunca invente que uma ação ocorreu. Evite Markdown, listas longas, URLs e blocos de código. "
         "Mantenha a resposta normalmente entre uma e quatro frases. "
     )
@@ -78,10 +81,13 @@ def _mode_instructions(mode: ChatMode) -> str:
     )
 
 
-def _conversation_input(payload: DevPilotChatRequest, project_context: str) -> str:
+def _conversation_input(payload: DevPilotChatRequest, project_context: str, knowledge_context: str) -> str:
     profile = CHAT_PROFILES[payload.mode]
     lines = [
         project_context,
+        "",
+        "Contexto de conhecimento do DEVpilot:",
+        knowledge_context or "Nenhum contexto adicional necessário.",
         "",
         f"Modo ativo: {payload.mode}. Perfil ativo: {profile}.",
         "Histórico recente da conversa:",
@@ -94,7 +100,6 @@ def _conversation_input(payload: DevPilotChatRequest, project_context: str) -> s
 
 
 def _chat_provider_order(providers: list[str]) -> list[str]:
-    """Keep interactive chat responsive by trying the local runtime first."""
     ordered: list[str] = []
     for provider in ["ollama", *providers]:
         normalized = str(provider or "").strip().lower()
@@ -113,7 +118,6 @@ def _stage_build_task(
 ) -> tuple[Task, bool]:
     intent = interpret_voice(transcript)
     prompt = f"{BUILD_MODE_MARKER}\n{transcript.strip()}"
-
     existing = db.scalar(
         select(Task)
         .where(
@@ -129,11 +133,10 @@ def _stage_build_task(
         return existing, False
 
     raw_title = str(intent.get("title") or transcript).strip()
-    title = f"Construção: {raw_title}"[:240]
     task = Task(
         workspace_id=workspace_id,
         project_id=project_id,
-        title=title,
+        title=f"Construção: {raw_title}"[:240],
         prompt=prompt,
         source="voice",
         status=TaskStatus.awaiting_approval,
@@ -160,8 +163,7 @@ def _stage_build_task(
 
 
 def _task_status_value(task: Task) -> str:
-    value = task.status
-    return str(getattr(value, "value", value))
+    return str(getattr(task.status, "value", task.status))
 
 
 @router.post("/chat")
@@ -175,6 +177,12 @@ async def devpilot_chat(
         raise HTTPException(422, "Selecione um projeto antes de usar o modo Construir.")
 
     project_context = _project_context(db, ws.id, payload.project_id)
+    knowledge = build_chat_knowledge_context(
+        db,
+        workspace_id=ws.id,
+        project_id=payload.project_id,
+        query=payload.transcript,
+    )
     user_id = user_id_from_actor(actor)
     budget_reason = budget_block_reason(
         db,
@@ -183,7 +191,7 @@ async def devpilot_chat(
         project_id=payload.project_id,
     )
 
-    input_text = _conversation_input(payload, project_context)
+    input_text = _conversation_input(payload, project_context, knowledge.text)
     instructions = _mode_instructions(payload.mode)
     provider_order = _chat_provider_order(_provider_order(db, ws.id))
     effective_order = list(provider_order)
@@ -207,30 +215,18 @@ async def devpilot_chat(
 
     result: dict | None = None
     attempts: list[dict] = []
-
     async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
         for provider in effective_order:
             if provider == "openai":
-                candidate, provider_attempts = await _try_openai_all(
-                    client, db, ws.id, input_text, instructions
-                )
+                candidate, provider_attempts = await _try_openai_all(client, db, ws.id, input_text, instructions)
             elif provider == "google":
-                candidate, provider_attempts = await _try_google(
-                    client, db, ws.id, input_text, instructions
-                )
+                candidate, provider_attempts = await _try_google(client, db, ws.id, input_text, instructions)
             elif provider == "anthropic":
-                candidate, provider_attempts = await _try_anthropic(
-                    client, db, ws.id, input_text, instructions
-                )
+                candidate, provider_attempts = await _try_anthropic(client, db, ws.id, input_text, instructions)
             elif provider == "custom":
-                candidate, provider_attempts = await _try_custom(
-                    client, db, ws.id, input_text, instructions
-                )
+                candidate, provider_attempts = await _try_custom(client, db, ws.id, input_text, instructions)
             else:
-                candidate, provider_attempts = await _try_ollama(
-                    client, input_text, instructions
-                )
-
+                candidate, provider_attempts = await _try_ollama(client, input_text, instructions)
             attempts.extend(provider_attempts)
             if candidate:
                 result = candidate
@@ -245,17 +241,10 @@ async def devpilot_chat(
                 actor=actor,
                 action="chat.failed",
                 outcome="blocked",
-                details={
-                    "mode": payload.mode,
-                    "profile": CHAT_PROFILES[payload.mode],
-                    "reason": budget_reason,
-                    "provider_order": effective_order,
-                    "attempts": attempts[-MAX_PROVIDER_ATTEMPTS_LOGGED:],
-                },
+                details={"mode": payload.mode, "reason": budget_reason},
             )
             db.commit()
             raise HTTPException(402, budget_reason)
-
         error = _provider_failure(attempts)
         record(
             db,
@@ -269,6 +258,7 @@ async def devpilot_chat(
                 "profile": CHAT_PROFILES[payload.mode],
                 "provider_order": effective_order,
                 "attempts": attempts[-MAX_PROVIDER_ATTEMPTS_LOGGED:],
+                "knowledge_mode": knowledge.mode.value,
             },
         )
         db.commit()
@@ -335,6 +325,10 @@ async def devpilot_chat(
             "history_items": len(payload.history),
             "task_id": execution["task_id"],
             "requires_approval": execution["requires_approval"],
+            "knowledge_mode": knowledge.mode.value,
+            "rag_used": bool(knowledge.sources),
+            "rag_cache_hit": knowledge.cache_hit,
+            "rag_sources": knowledge.sources,
         },
     )
     db.commit()
@@ -357,6 +351,12 @@ async def devpilot_chat(
         "fallback_used": fallback_used,
         "notice": notice,
         "providers_tried": attempted_providers,
+        "knowledge": {
+            "mode": knowledge.mode.value,
+            "rag_used": bool(knowledge.sources),
+            "cache_hit": knowledge.cache_hit,
+            "sources": knowledge.sources,
+        },
     }
     if usage:
         response_payload["token_usage"] = serialize_usage(usage)

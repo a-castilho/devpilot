@@ -29,6 +29,8 @@ from app.ollama_provider_routes import router as ollama_provider_router
 from app.product_delivery_routes import router as product_delivery_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
+from app.rag.schema import ensure_rag_schema
+from app.rag_admin_routes import router as rag_admin_router
 from app.super_admin_voice_routes import router as super_admin_voice_router
 from app.task_image_routes import router as task_image_router
 from app.task_run_routes import router as task_run_router
@@ -59,16 +61,11 @@ _SCRIPT_TAG_RE = re.compile(
 )
 _PREAUTH_SCRIPT_NAMES = {"acs-loader.js", "auth-ui.js"}
 
-# Boot autenticado deliberadamente mínimo e determinístico.
-# Nenhum módulo de domínio é carregado automaticamente após login.
 _CORE_AUTHENTICATED_SCRIPTS = [
     "app.js",
     "feature-loader.js",
 ]
 
-# Mantido como inventário de módulos opcionais para compatibilidade e auditoria.
-# O navegador NÃO percorre esta lista. O feature-loader carrega somente o bundle
-# explicitamente acionado pelo usuário.
 _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "consolidated-ui.js",
     "project-provisioning.js",
@@ -201,16 +198,12 @@ def _script_urls(names: list[str]) -> list[str]:
 
 
 def _safe_static_candidate(path: str) -> Path | None:
-    """Resolve a SPA path without allowing aliases outside STATIC or raw index.html."""
     try:
         static_root = STATIC.resolve(strict=True)
         candidate = (STATIC / path).resolve(strict=True)
         candidate.relative_to(static_root)
     except (OSError, ValueError):
         return None
-
-    # index.html is the authenticated SPA entry point. It must always pass through
-    # the shell-building path below, even when reached through a ../ alias or symlink.
     if candidate == static_root / "index.html":
         return None
     return candidate if candidate.is_file() else None
@@ -321,6 +314,7 @@ def _authenticated_script_loader() -> str:
 async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema(engine)
+    ensure_rag_schema(engine, embedding_dimensions=get_settings().rag_embedding_dimensions)
     embedded_worker: EmbeddedWorker | None = None
     if get_settings().embedded_worker:
         embedded_worker = EmbeddedWorker()
@@ -354,6 +348,7 @@ app.include_router(provider_models_router)
 app.include_router(super_admin_voice_router)
 app.include_router(cloud_admin_router)
 app.include_router(deploy_router)
+app.include_router(rag_admin_router)
 app.include_router(reports_router)
 app.include_router(telemetry_router)
 app.include_router(telemetry_replay_router)
@@ -365,7 +360,6 @@ app.include_router(token_usage_router)
 
 @app.get("/assets/index.html", include_in_schema=False)
 def assets_index_shell():
-    """Never expose the raw SPA index through the static mount."""
     return spa("index.html")
 
 
