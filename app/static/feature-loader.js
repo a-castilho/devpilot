@@ -13,6 +13,7 @@
     mobileShell: ['mobile-accordion-menu.js'],
     profile: ['profile.js'],
     users: ['users.js'],
+    organizations: ['organization-credentials.js', 'organization-normalization-ui.js'],
     providers: ['provider-models.js', 'provider-ollama.js'],
     projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
     reports: ['reports.js'],
@@ -94,7 +95,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260826-3`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260826-4`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -199,6 +200,7 @@
   }
 
   const TRIGGERS = [
+    ['.nav[data-view="organizations"]', 'organizations'],
     ['[data-project-builder-open]', 'projectBuilder'], ['[data-example-project]', 'example'],
     ['.nav[data-view="providers"]', 'providers'], ['.nav[data-view="reports"]', 'reports'],
     ['.nav[data-view="tasks"]', 'tasks'], ['#voice-hero, #voice-dock', 'voice'], ['.nav[data-view="audit"]', 'audit'],
