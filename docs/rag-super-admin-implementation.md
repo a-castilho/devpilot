@@ -114,3 +114,14 @@ Para ambiente com cerca de 4 GB de RAM:
 - Redis limitado;
 - `top_k` inicial de 3 a 5;
 - nenhuma dependência de modelo local.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
