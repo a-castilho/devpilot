@@ -32,11 +32,14 @@ def path_matches(path: str, patterns: list[str]) -> bool:
 
 
 def expand_files(patterns: list[str]) -> list[str]:
+    """Expand patterns against real files, including recursive ** contracts."""
     found: set[str] = set()
-    for pattern in patterns:
-        for candidate in ROOT.glob(pattern):
-            if candidate.is_file():
-                found.add(candidate.relative_to(ROOT).as_posix())
+    for candidate in ROOT.rglob("*"):
+        if not candidate.is_file() or ".git" in candidate.parts:
+            continue
+        relative = candidate.relative_to(ROOT).as_posix()
+        if path_matches(relative, patterns):
+            found.add(relative)
     return sorted(found)
 
 
