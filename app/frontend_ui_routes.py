@@ -9,6 +9,7 @@ from app.models import Project, Run, Task, TaskStatus, Workspace
 from app.schemas import TaskCreate
 from app.security import Principal, Role, require_access, require_roles
 from app.services.audit import record
+from app.services.bootstrap_admin_tasks import bootstrap_regulaai_radar_admin_task
 from app.services.policy import evaluate_task
 
 
@@ -117,10 +118,13 @@ def super_admin_task_summaries(
 ):
     """Return tasks owned by the current Super Admin, including latest PR link.
 
-    This endpoint intentionally does not expose other users' personal task feed.
-    It exists so platform-level implementation work appears in the Super Admin
-    panel with project, state, priority and delivery evidence.
+    Besides the normal persisted queue, the first access opportunistically imports
+    known historical platform work. The bootstrap is idempotent and does nothing
+    when the corresponding project is not provisioned yet.
     """
+    bootstrap_regulaai_radar_admin_task(db.get_bind())
+    db.expire_all()
+
     ws = _workspace(db)
     tasks = db.scalars(
         select(Task)

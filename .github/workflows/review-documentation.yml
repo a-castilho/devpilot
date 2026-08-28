@@ -2,7 +2,7 @@ name: Documentar revisões de PR
 
 on:
   pull_request_target:
-    types: [opened, edited, synchronize, reopened, ready_for_review, closed]
+    types: [opened, edited, reopened, ready_for_review, closed]
 
 permissions:
   contents: write
@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   sync-review-document:
-    # Follow the same configurable runner fallback required by the DevPilot
-    # engineering standard so the workflow remains portable across environments.
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    # API-only bookkeeping must not compete with policy/full-quality on the scarce
+    # self-hosted DevPilot runner. A dedicated override remains available if needed.
+    runs-on: ${{ vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão

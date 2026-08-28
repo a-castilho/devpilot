@@ -84,20 +84,35 @@ def test_policy_rejects_hidden_loaders_and_new_global_observers():
     assert "DYNAMIC_SCRIPT_PATTERN.search(added_source)" in source
 
 
-def test_workflows_have_runner_fallback_instead_of_hardcoded_hosted_runner():
+def test_resource_intensive_workflows_keep_self_hosted_fallback():
     critical = (
         "ci.yml",
         "compromisso-geral.yml",
         "deploy-homolog.yml",
         "issue-documentation.yml",
         "project-report.yml",
-        "review-documentation.yml",
         "vercel-cli-deploy.yml",
     )
     for name in critical:
         workflow = (WORKFLOWS / name).read_text(encoding="utf-8")
         assert "vars.DEVPILOT_RUNNER || 'ubuntu-latest'" in workflow, name
         assert "runs-on: ubuntu-latest" not in workflow, name
+
+
+def test_review_documentation_cannot_starve_quality_runner_or_churn_on_every_push():
+    workflow = (WORKFLOWS / "review-documentation.yml").read_text(encoding="utf-8")
+
+    assert "vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest'" in workflow
+    assert "runs-on: ubuntu-latest" not in workflow
+    assert "types: [opened, edited, reopened, ready_for_review, closed]" in workflow
+    assert "synchronize" not in workflow
+
+
+def test_review_reports_do_not_trigger_full_main_ci():
+    workflow = CI.read_text(encoding="utf-8")
+
+    assert "paths-ignore:" in workflow
+    assert '"docs/reviews/**"' in workflow
 
 
 def test_self_hosted_runner_bootstrap_is_private_and_does_not_echo_token():

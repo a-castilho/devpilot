@@ -1,0 +1,106 @@
+name: DevPilot PR Auto Repair
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: devpilot-pr-auto-repair-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    name: Repair failed PR CI
+    if: >-
+      ${{
+        vars.DEVPILOT_RUNNER != '' &&
+        (github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'timed_out') &&
+        github.event.workflow_run.head_branch != 'main' &&
+        github.event.workflow_run.head_branch != 'master' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER }}
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DEVPILOT_FAILED_RUN_ID: ${{ github.event.workflow_run.id }}
+      DEVPILOT_FAILED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      DEVPILOT_FAILED_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+      DEVPILOT_FAILED_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+
+    steps:
+      - name: Checkout failed PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - name: Verify self-hosted repair runtime
+        run: |
+          command -v python3
+          command -v git
+          command -v gh
+          command -v codex
+          python3 --version
+          codex --version
+
+      - name: Protect auto-repair control plane
+        run: |
+          git fetch --no-tags origin main
+          BASE="$(git merge-base origin/main HEAD)"
+          git diff --name-only --no-renames "$BASE"..HEAD > /tmp/devpilot-pr-files.txt
+          PROTECTED=(
+            ".devpilot/pr-auto-repair.json"
+            ".github/workflows/ci.yml"
+            ".github/workflows/pr-auto-repair.yml"
+            "scripts/pr_auto_repair.py"
+            "scripts/test-all.sh"
+            "scripts/check-engineering-standards.py"
+            "AGENTS.md"
+            "docs/ENGINEERING_STANDARD.md"
+          )
+          for path in "${PROTECTED[@]}"; do
+            if grep -Fxq "$path" /tmp/devpilot-pr-files.txt; then
+              echo "Auto-repair blocked: PR changes protected control-plane file $path" >&2
+              exit 78
+            fi
+          done
+
+          # workflow_run has write permission, so never execute controller code from
+          # the PR branch. Materialize the trusted controller from main in an ignored
+          # path whose location still resolves the repository root correctly.
+          printf '%s\n' 'scripts/.devpilot-pr-auto-repair-trusted.py' >> .git/info/exclude
+          git show origin/main:scripts/pr_auto_repair.py > scripts/.devpilot-pr-auto-repair-trusted.py
+
+      - name: Repair, validate and re-dispatch CI
+        run: |
+          python3 - <<'PY'
+          import importlib.util
+          from pathlib import Path
+
+          controller = Path("scripts/.devpilot-pr-auto-repair-trusted.py").resolve()
+          spec = importlib.util.spec_from_file_location("devpilot_pr_auto_repair_trusted", controller)
+          module = importlib.util.module_from_spec(spec)
+          assert spec.loader is not None
+          spec.loader.exec_module(module)
+          module.PROTECTED_PATHS.update({
+              "scripts/pr_auto_repair.py",
+              "tests/test_pr_auto_repair.py",
+          })
+          raise SystemExit(module.main())
+          PY
+
+      - name: Publish repair audit artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-auto-repair-${{ github.event.workflow_run.id }}-${{ github.run_attempt }}
+          path: .artifacts/pr-auto-repair/report.json
+          if-no-files-found: warn
+          retention-days: 30

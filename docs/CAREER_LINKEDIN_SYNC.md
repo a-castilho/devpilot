@@ -40,3 +40,13 @@ Em produção, configure uma callback HTTPS fixa terminando em `/api/career/link
 - `POST /api/career/linkedin/publish`
 
 A capability `profile_write` permanece `false` enquanto o aplicativo não possuir produto/permissões de escrita aprovados pelo LinkedIn. O DevPilot não chama endpoints de escrita não autorizados.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**

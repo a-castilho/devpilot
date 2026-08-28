@@ -24,13 +24,17 @@ O gate não deve ser removido para fazer um build passar; a implementação deve
 
 Uma alteração só é considerada pronta com os gates verdes. A branch `main` deve usar Pull Request e exigir `DevPilot policy` e `DevPilot quality` antes do merge. Mudanças normais de produto não devem entrar por push direto.
 
+Commits gerados automaticamente apenas em `docs/reviews/**` são documentação derivada e não executam novamente a suíte completa da `main`; qualquer commit que também altere código, configuração, workflow ou outra documentação continua disparando o CI normalmente.
+
 ## Continuidade do GitHub Actions
 
-Os workflows críticos não podem depender obrigatoriamente de minutos de runner hospedado. Todos usam `vars.DEVPILOT_RUNNER || 'ubuntu-latest'`: quando a variável não existe, continuam no runner padrão do GitHub; quando `DEVPILOT_RUNNER` aponta para um runner próprio, CI, documentação, relatório e deploy usam esse runner sem enfraquecer os gates.
+Workflows que executam validação, build, deploy ou comandos do projeto não podem depender obrigatoriamente de minutos de runner hospedado. Eles usam `vars.DEVPILOT_RUNNER || 'ubuntu-latest'`: quando a variável não existe, continuam no runner padrão do GitHub; quando `DEVPILOT_RUNNER` aponta para um runner próprio, o trabalho pesado usa esse runner sem enfraquecer os gates.
+
+Workflows de bookkeeping que apenas consultam a API do GitHub e escrevem metadados não devem competir com `DevPilot policy`/`DevPilot quality` pelo runner próprio escasso. `review-documentation.yml` usa `vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest'`; por padrão roda hospedado e pode receber um runner dedicado sem reutilizar implicitamente `DEVPILOT_RUNNER`. Atualizações intermediárias por `synchronize` não geram relatório versionado a cada push; o evento `closed` produz a visão final da PR.
 
 Runner próprio é permitido somente para repositório privado e deve usar uma label dedicada. O caminho padrão de instalação é `bash scripts/setup-github-self-hosted-runner.sh`. O script valida autenticação do `gh`, recusa repositório público, baixa o runner oficial, verifica checksum quando o release fornece digest, registra sem imprimir o token, configura `DEVPILOT_RUNNER` e confirma que o runner ficou online.
 
-Quando os minutos hospedados voltarem a estar disponíveis, remover a variável `DEVPILOT_RUNNER` retorna automaticamente os workflows para `ubuntu-latest`. Nunca remover `DevPilot policy` ou `DevPilot quality` como contorno para falta de minutos.
+Quando os minutos hospedados voltarem a estar disponíveis, remover a variável `DEVPILOT_RUNNER` retorna automaticamente os workflows pesados para `ubuntu-latest`. Nunca remover `DevPilot policy` ou `DevPilot quality` como contorno para falta de minutos.
 
 ## Runtime local
 
@@ -39,3 +43,14 @@ Quando os minutos hospedados voltarem a estar disponíveis, remover a variável 
 ## Critério de pronto
 
 Uma mudança está pronta quando política, compileall quando aplicável, sintaxe JavaScript, testes automatizados, validação manual do fluxo visível e CI estiverem aprovados. Regressões importantes devem gerar teste ou gate permanente sempre que tecnicamente viável.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
