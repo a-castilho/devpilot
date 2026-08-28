@@ -82,3 +82,14 @@ A automação via navegador permanece intencionalmente desativada.
 7. eventos auditáveis;
 8. sem automação de navegador;
 9. sem token do LinkedIn armazenado nesta fase.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

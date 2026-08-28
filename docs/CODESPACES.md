@@ -33,3 +33,14 @@ Não grave chaves reais no repositório. Para OpenAI ou outros provedores, use *
 ## Encerrar
 
 Quando terminar, pare o Codespace pelo GitHub. Isso interrompe o consumo da franquia de Codespaces; o código continua salvo no GitHub.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

@@ -36,3 +36,14 @@ Antes da implementação, o executor deve registrar um System Design conciso cob
 Nenhuma edição deve começar antes da conclusão do preflight de duplicidade e do System Design, ou da dispensa justificada para mudança SIMPLE.
 
 A regra também é incluída no `AGENTS.md` gerado pelo DevPilot para que os projetos analisados herdem o mesmo padrão de engenharia.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

@@ -43,3 +43,14 @@ Quando os minutos hospedados voltarem a estar disponíveis, remover a variável 
 ## Critério de pronto
 
 Uma mudança está pronta quando política, compileall quando aplicável, sintaxe JavaScript, testes automatizados, validação manual do fluxo visível e CI estiverem aprovados. Regressões importantes devem gerar teste ou gate permanente sempre que tecnicamente viável.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
