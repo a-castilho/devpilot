@@ -88,3 +88,14 @@ Considere aplicar uma desativação apenas quando todos estes pontos forem verda
 3. O ganho de memória é relevante em relação ao total disponível.
 4. Existe rollback conhecido e testado.
 5. Rede, DNS, áudio, Docker e DevPilot continuam operacionais.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
