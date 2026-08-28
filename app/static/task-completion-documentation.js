@@ -61,7 +61,6 @@
       button.dataset.taskDocumentation = task.id;
       button.textContent = 'Gerar documentação';
       button.title = 'Gera um Markdown com contexto, runs, evidências, validação e aprendizado desta tarefa concluída.';
-      button.addEventListener('click', () => void generateDocumentation(button));
       actionCell.appendChild(button);
     });
   }
@@ -76,7 +75,24 @@
     });
   };
 
-  new MutationObserver(schedule).observe(tableBody, {childList: true, subtree: true});
+  tableBody.addEventListener('click', event => {
+    const button = event.target.closest?.('[data-task-documentation]');
+    if (!button) return;
+    void generateDocumentation(button);
+  });
+
+  const originalRenderTasks = window.renderTasks;
+  if (typeof originalRenderTasks === 'function' && !originalRenderTasks.__devpilotDocumentationWrapped) {
+    const wrappedRenderTasks = function (...args) {
+      const result = originalRenderTasks.apply(this, args);
+      document.dispatchEvent(new CustomEvent('devpilot:tasks-rendered'));
+      return result;
+    };
+    wrappedRenderTasks.__devpilotDocumentationWrapped = true;
+    window.renderTasks = wrappedRenderTasks;
+  }
+
+  document.addEventListener('devpilot:tasks-rendered', schedule);
   document.addEventListener('devpilot:authenticated-ui-ready', schedule);
   schedule();
 })();
