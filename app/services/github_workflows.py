@@ -40,10 +40,10 @@ def _github_error(response: httpx.Response) -> RuntimeError:
     if response.status_code == 401:
         return RuntimeError("GitHub credential is invalid or expired")
     if response.status_code == 403:
-        return RuntimeError("GitHub credential does not have permission to read Actions")
+        return RuntimeError("GitHub credential does not have permission to read Actions or Deployments")
     if response.status_code == 404:
-        return RuntimeError("GitHub repository or Actions workflow is not visible to this credential")
-    return RuntimeError(f"GitHub Actions query failed with HTTP {response.status_code}")
+        return RuntimeError("GitHub repository or requested evidence is not visible to this credential")
+    return RuntimeError(f"GitHub evidence query failed with HTTP {response.status_code}")
 
 
 def fetch_workflow_evidence(
@@ -123,4 +123,75 @@ def fetch_workflow_evidence(
         "commit_sha": sha,
         "workflow": workflow,
         "jobs": normalized_jobs,
+    }
+
+
+def fetch_deployment_evidence(
+    repository_url: str,
+    commit_sha: str,
+    access_token: str | None = None,
+) -> dict[str, object]:
+    sha = str(commit_sha or "").strip()
+    if not sha:
+        return {"correlated": False, "reason": "missing_commit_sha", "deployment": None}
+
+    full_name = repository_full_name(repository_url)
+    headers = _headers(access_token)
+    with httpx.Client(timeout=20.0, follow_redirects=True, headers=headers) as client:
+        deployments_response = client.get(
+            f"https://api.github.com/repos/{full_name}/deployments",
+            params={"sha": sha, "per_page": 20},
+        )
+        if deployments_response.status_code >= 400:
+            raise _github_error(deployments_response)
+        deployments = deployments_response.json()
+        if not isinstance(deployments, list):
+            raise RuntimeError("GitHub returned an invalid deployments response")
+        exact = [item for item in deployments if str(item.get("sha") or "") == sha]
+        if not exact:
+            return {
+                "correlated": False,
+                "reason": "deployment_not_found_for_commit",
+                "repository": full_name,
+                "commit_sha": sha,
+                "deployment": None,
+            }
+
+        exact.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        selected = exact[0]
+        deployment_id = int(selected["id"])
+        statuses_response = client.get(
+            f"https://api.github.com/repos/{full_name}/deployments/{deployment_id}/statuses",
+            params={"per_page": 20},
+        )
+        if statuses_response.status_code >= 400:
+            raise _github_error(statuses_response)
+        statuses = statuses_response.json()
+        if not isinstance(statuses, list):
+            raise RuntimeError("GitHub returned an invalid deployment-status response")
+
+    statuses.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    latest_status = statuses[0] if statuses else {}
+    environment_url = str(latest_status.get("environment_url") or "")
+    deployment = {
+        "id": deployment_id,
+        "environment": str(selected.get("environment") or ""),
+        "description": str(selected.get("description") or ""),
+        "created_at": selected.get("created_at"),
+        "status": str(latest_status.get("state") or "unknown"),
+        "status_description": str(latest_status.get("description") or ""),
+        "environment_url": environment_url,
+        "log_url": str(latest_status.get("log_url") or ""),
+        "health": {
+            "verified": False,
+            "reason": "http_health_not_probed",
+            "url": f"{environment_url.rstrip('/')}/health" if environment_url else "",
+        },
+    }
+    return {
+        "correlated": True,
+        "reason": "exact_commit_sha",
+        "repository": full_name,
+        "commit_sha": sha,
+        "deployment": deployment,
     }
