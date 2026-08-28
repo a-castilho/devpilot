@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     linkedin_oauth_state_ttl_seconds: int = 600
 
     # RAG defaults are deliberately conservative for the 4 GB target host.
+    # When empty, RAG storage follows database_url for backward compatibility.
+    rag_database_url: str = ""
     rag_enabled: bool = False
     rag_cache_enabled: bool = True
     rag_git_enabled: bool = True
