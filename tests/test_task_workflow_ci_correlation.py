@@ -22,14 +22,28 @@ def test_workflow_service_correlates_only_exact_persisted_commit():
     assert "/actions/runs/{run_id}/jobs" in source
 
 
+def test_deployment_service_correlates_only_exact_persisted_commit():
+    source = (ROOT / "app/services/github_workflows.py").read_text()
+
+    assert 'f"https://api.github.com/repos/{full_name}/deployments"' in source
+    assert 'params={"sha": sha, "per_page": 20}' in source
+    assert 'str(item.get("sha") or "") == sha' in source
+    assert '"reason": "deployment_not_found_for_commit"' in source
+    assert "/deployments/{deployment_id}/statuses" in source
+    assert '"verified": False' in source
+    assert '"reason": "http_health_not_probed"' in source
+
+
 def test_task_workflow_route_uses_latest_run_and_project_credential():
     source = (ROOT / "app/workflow_observability_routes.py").read_text()
 
     assert '@router.get("/tasks/{task_id}/workflow-evidence")' in source
+    assert '@router.get("/tasks/{task_id}/deployment-evidence")' in source
     assert "Run.started_at.desc(), Run.attempt.desc()" in source
     assert "run.commit_sha" in source
     assert "Vault().decrypt" in source
     assert "fetch_workflow_evidence" in source
+    assert "fetch_deployment_evidence" in source
 
 
 def test_workflow_route_is_registered():
