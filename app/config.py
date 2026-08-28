@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     managed_trial_clouds_enabled: bool = True
     managed_trial_workspace_slug: str = "default"
     managed_trial_cloud_providers: str = "neon,render,vercel"
+    linkedin_client_id: str = ""
+    linkedin_client_secret_ciphertext: str = ""
+    linkedin_redirect_uri: str = ""
+    linkedin_scopes: str = "openid,profile,email"
+    linkedin_oauth_state_ttl_seconds: int = 600
 
     @property
     def git_hosts(self) -> set[str]:
@@ -39,6 +44,14 @@ class Settings(BaseSettings):
         return {
             item.strip().lower()
             for item in self.managed_trial_cloud_providers.split(",")
+            if item.strip()
+        }
+
+    @property
+    def linkedin_scope_set(self) -> set[str]:
+        return {
+            item.strip()
+            for item in self.linkedin_scopes.replace(" ", ",").split(",")
             if item.strip()
         }
 
