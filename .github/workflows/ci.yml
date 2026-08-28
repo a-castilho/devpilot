@@ -3,6 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/reviews/**"
   pull_request:
   workflow_dispatch:
 
