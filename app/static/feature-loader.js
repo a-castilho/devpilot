@@ -267,9 +267,36 @@
     initializeMobileShell();
   }
 
-  if (document.documentElement.classList.contains('devpilot-auth-pending')) document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
-  else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
-  else initializeAuthenticatedUi();
+  function authenticatedUiIsReady() {
+    const authModal = document.querySelector('#auth-modal');
+    return Boolean(localStorage.getItem('devpilot-token')) && (!authModal || authModal.open === false);
+  }
+
+  function maybeInitializeAuthenticatedUi() {
+    if (placeholdersInitialized || !authenticatedUiIsReady()) return;
+    initializeAuthenticatedUi();
+  }
+
+  function installAuthenticatedUiFallback() {
+    maybeInitializeAuthenticatedUi();
+    const authModal = document.querySelector('#auth-modal');
+    if (!authModal || placeholdersInitialized) return;
+    const observer = new MutationObserver(() => {
+      maybeInitializeAuthenticatedUi();
+      if (placeholdersInitialized) observer.disconnect();
+    });
+    observer.observe(authModal, {attributes: true, attributeFilter: ['open']});
+  }
+
+  if (document.documentElement.classList.contains('devpilot-auth-pending')) {
+    document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi, {once: true});
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', installAuthenticatedUiFallback, {once: true});
+    else installAuthenticatedUiFallback();
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
+  } else {
+    initializeAuthenticatedUi();
+  }
 
   window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => { if (event.matches) initializeMobileShell(); });
 })();
