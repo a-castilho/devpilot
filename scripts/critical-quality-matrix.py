@@ -20,6 +20,8 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG = ROOT / ".devpilot/quality-modules.json"
+BROWSER_MARKER = "pytest.mark.browser_e2e"
+BROWSER_FILE_SUFFIX = "_browser_e2e.py"
 
 
 class MatrixFailure(RuntimeError):
@@ -53,6 +55,19 @@ def load_config(path: Path = DEFAULT_CONFIG) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise MatrixFailure("matriz deve ser um objeto JSON")
     return data
+
+
+def validate_browser_contract_file(module_name: str, relative_path: str) -> None:
+    """Ensure a declared browser contract is collected by the dedicated E2E gate."""
+    if not relative_path.endswith(BROWSER_FILE_SUFFIX):
+        raise MatrixFailure(
+            f"{module_name}: browser E2E fora do padrão *{BROWSER_FILE_SUFFIX}: {relative_path}"
+        )
+    source = (ROOT / relative_path).read_text(encoding="utf-8")
+    if BROWSER_MARKER not in source:
+        raise MatrixFailure(
+            f"{module_name}: browser E2E sem marker browser_e2e: {relative_path}"
+        )
 
 
 def validate_config(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -99,6 +114,8 @@ def validate_config(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
             raise MatrixFailure(f"{name}: módulo ativo sem testes correspondentes")
         if module.get("browser_required") and active and not browser_files:
             raise MatrixFailure(f"{name}: browser_required sem E2E correspondente")
+        for browser_file in browser_files:
+            validate_browser_contract_file(name, browser_file)
 
         enriched = dict(module)
         enriched["active"] = active
@@ -110,11 +127,45 @@ def validate_config(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return by_name
 
 
+def guarded_path_owners(
+    config: dict[str, Any],
+    modules: dict[str, dict[str, Any]],
+    path: str,
+) -> list[str]:
+    if not path_matches(path, config["guard_patterns"]):
+        return []
+    return [
+        name
+        for name, module in modules.items()
+        if path_matches(path, list(module["source"]))
+    ]
+
+
+def validate_guarded_ownership(
+    config: dict[str, Any],
+    modules: dict[str, dict[str, Any]],
+    changed_paths: list[str],
+) -> None:
+    """Reject unowned critical paths even when the same diff is structural."""
+    for path in changed_paths:
+        if not path_matches(path, config["guard_patterns"]):
+            continue
+        if guarded_path_owners(config, modules, path):
+            continue
+        raise MatrixFailure(
+            f"arquivo crítico sem contrato de qualidade: {path}; adicione-o a quality-modules.json"
+        )
+
+
 def select_modules(
     config: dict[str, Any],
     modules: dict[str, dict[str, Any]],
     changed_paths: list[str],
 ) -> tuple[list[str], bool]:
+    # Ownership is an invariant, not a selection optimization. Validate it before
+    # the structural fast path so editing the matrix itself cannot bypass the guard.
+    validate_guarded_ownership(config, modules, changed_paths)
+
     structural = any(path_matches(path, config["structural_paths"]) for path in changed_paths)
     if structural:
         selected = sorted(name for name, module in modules.items() if module["active"])
@@ -126,17 +177,6 @@ def select_modules(
             watched = list(module["source"]) + list(module["tests"]) + list(module.get("browser_tests", []))
             if path_matches(path, watched):
                 selected.add(name)
-
-        if path_matches(path, config["guard_patterns"]):
-            owners = [
-                name
-                for name, module in modules.items()
-                if path_matches(path, list(module["source"]))
-            ]
-            if not owners:
-                raise MatrixFailure(
-                    f"arquivo crítico sem contrato de qualidade: {path}; adicione-o a quality-modules.json"
-                )
 
     return sorted(selected), False
 
