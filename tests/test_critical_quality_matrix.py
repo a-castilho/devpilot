@@ -61,6 +61,44 @@ def test_primary_critical_domains_have_browser_contracts():
     assert "tests/test_rag_browser_e2e.py" in modules["rag"]["browser_files"]
 
 
+def test_browser_contract_requires_browser_marker(tmp_path, monkeypatch):
+    matrix = load_matrix_module()
+    app_dir = tmp_path / "app"
+    tests_dir = tmp_path / "tests"
+    app_dir.mkdir()
+    tests_dir.mkdir()
+    (app_dir / "demo.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tests_dir / "test_demo.py").write_text("def test_demo(): assert True\n", encoding="utf-8")
+    browser = tests_dir / "test_demo_browser_e2e.py"
+    browser.write_text("import pytest\n\ndef test_browser(): assert True\n", encoding="utf-8")
+    monkeypatch.setattr(matrix, "ROOT", tmp_path)
+
+    config = {
+        "version": 1,
+        "structural_paths": [],
+        "guard_patterns": [],
+        "modules": [
+            {
+                "name": "demo",
+                "source": ["app/demo.py"],
+                "tests": ["tests/test_demo.py"],
+                "browser_tests": ["tests/test_demo_browser_e2e.py"],
+                "browser_required": True,
+            }
+        ],
+    }
+
+    with pytest.raises(matrix.MatrixFailure, match="sem marker browser_e2e"):
+        matrix.validate_config(config)
+
+    browser.write_text(
+        "import pytest\n\npytestmark = pytest.mark.browser_e2e\n\ndef test_browser(): assert True\n",
+        encoding="utf-8",
+    )
+    modules = matrix.validate_config(config)
+    assert modules["demo"]["browser_files"] == ["tests/test_demo_browser_e2e.py"]
+
+
 def test_game_change_selects_game_and_frontend_contracts():
     matrix = load_matrix_module()
     config = matrix.load_config(CONFIG)
@@ -156,6 +194,29 @@ def test_guarded_critical_path_without_owner_is_rejected():
 
     with pytest.raises(matrix.MatrixFailure, match="sem contrato de qualidade"):
         matrix.select_modules(config, modules, ["app/critical/new_feature.py"])
+
+
+def test_structural_change_cannot_bypass_guarded_ownership():
+    matrix = load_matrix_module()
+    config = {
+        "structural_paths": [".devpilot/quality-modules.json"],
+        "guard_patterns": ["app/critical/**"],
+    }
+    modules = {
+        "owned": {
+            "active": True,
+            "source": ["app/owned/**"],
+            "tests": ["tests/test_owned.py"],
+            "browser_tests": [],
+        }
+    }
+
+    with pytest.raises(matrix.MatrixFailure, match="sem contrato de qualidade"):
+        matrix.select_modules(
+            config,
+            modules,
+            [".devpilot/quality-modules.json", "app/critical/new_feature.py"],
+        )
 
 
 def test_report_contains_focused_and_browser_contracts():
