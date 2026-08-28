@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   sync-review-document:
-    # API-only bookkeeping must not compete with policy/full-quality on the scarce
-    # self-hosted DevPilot runner. A dedicated override remains available if needed.
-    runs-on: ${{ vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest' }}
+    # This workflow only performs GitHub API bookkeeping, so it should not depend
+    # on repository runner variables or the scarce self-hosted DevPilot runner.
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão
