@@ -1,4 +1,4 @@
-from app.task_documentation_routes import router
+from app.task_documentation_routes import _command_action, router
 
 
 def _route(path: str, method: str):
@@ -13,6 +13,17 @@ def test_orchestrator_routes_share_the_existing_authenticated_task_router():
     for action in ("next", "auto", "pause", "resume", "cancel", "archive"):
         assert len(_route(f"/api/tasks/{{task_id}}/{action}", "POST")) == 1
     assert len(_route("/api/tasks/{task_id}/orchestrator", "GET")) == 1
+    assert len(_route("/api/tasks/orchestrator/runtime", "GET")) == 1
+    assert len(_route("/api/tasks/{task_id}/command", "POST")) == 1
+
+
+def test_ui_chat_and_voice_commands_resolve_to_the_same_orchestrator_actions():
+    assert _command_action("Próximo") == "next"
+    assert _command_action("continuar automaticamente") == "auto_advance"
+    assert _command_action("parar") == "pause"
+    assert _command_action("retomar") == "resume"
+    assert _command_action("cancelar") == "cancel"
+    assert _command_action("excluir") == "archive"
 
 
 def test_worker_uses_atomic_claim_and_real_process_control():
@@ -48,5 +59,7 @@ def test_task_bundle_exposes_contextual_controls_without_eager_boot_change():
         assert label in source
     for learning_field in ("O que aconteceu", "Por que", "Conceito", "Observe", "Aprendizado"):
         assert learning_field in source
+    assert "/tasks/orchestrator/runtime" in source
+    assert "runtime?.state === 'archived'" in source
     assert "task-completion-documentation.js" in loader
     assert "task-completion-documentation.js" in loader.split("tasks:", 1)[1].split("],", 1)[0]
