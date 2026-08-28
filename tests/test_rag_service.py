@@ -1,7 +1,7 @@
 from app.rag.admin import RagAdminService
 from app.rag.chunking import RagChunker
 from app.rag.sanitizer import RagSanitizer
-from app.rag.service import RagQueryMode, RagQueryRouter, RagService, RagSettings
+from app.rag.service import RagQueryMode, RagQueryRouter, RagService, RagSettings, RetrievalChunk
 
 
 def test_rag_disabled_is_safe_default():
@@ -51,3 +51,29 @@ def test_super_admin_rejects_unsafe_worker_concurrency():
         assert "between 1 and 4" in str(exc)
     else:
         raise AssertionError("unsafe concurrency should fail")
+
+
+def test_retrieval_records_privacy_safe_telemetry():
+    class Repository:
+        def __init__(self):
+            self.events = []
+
+        def retrieve(self, **kwargs):
+            return [RetrievalChunk("c1", "documentation", "README.md", "README.md", "contexto", 0.91, {})]
+
+        def record_query(self, **kwargs):
+            self.events.append(kwargs)
+
+        def health(self):
+            return {"status": "healthy"}
+
+    repository = Repository()
+    service = RagService(settings=RagSettings(enabled=True, cache_enabled=False), repository=repository)
+    result = service.retrieve(organization_id="org-1", project_id="project-1", query="arquitetura do sistema")
+    assert len(result.chunks) == 1
+    assert len(repository.events) == 1
+    event = repository.events[0]
+    assert event["query_type"] == "RAG"
+    assert event["cache_hit"] is False
+    assert event["retrieved_chunks"] == 1
+    assert "query" in event
