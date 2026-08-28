@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import time
+import uuid
 from typing import Any
 
 from sqlalchemy import text
@@ -73,6 +75,45 @@ class PgVectorRagRepository:
                 )
             )
         return chunks
+
+    def record_query(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        query: str,
+        query_type: str,
+        cache_hit: bool,
+        retrieved_chunks: int,
+        retrieval_time_ms: float,
+    ) -> None:
+        query_hash = hashlib.sha256(" ".join(query.lower().split()).encode("utf-8")).hexdigest()
+        try:
+            with self.engine.begin() as connection:
+                connection.execute(
+                    text("""
+                        INSERT INTO rag_queries
+                        (id, organization_id, project_id, query_hash, query_type, cache_hit,
+                         retrieved_chunks, retrieval_time_ms, embedding_time_ms, total_time_ms)
+                        VALUES
+                        (:id, :organization_id, :project_id, :query_hash, :query_type, :cache_hit,
+                         :retrieved_chunks, :retrieval_time_ms, 0, :total_time_ms)
+                    """),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "organization_id": organization_id,
+                        "project_id": project_id,
+                        "query_hash": query_hash,
+                        "query_type": query_type,
+                        "cache_hit": bool(cache_hit),
+                        "retrieved_chunks": int(retrieved_chunks),
+                        "retrieval_time_ms": float(retrieval_time_ms),
+                        "total_time_ms": float(retrieval_time_ms),
+                    },
+                )
+        except Exception:
+            # Telemetry must never break retrieval.
+            return None
 
     def health(self) -> dict[str, Any]:
         started = time.perf_counter()
