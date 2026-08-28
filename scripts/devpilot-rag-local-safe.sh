@@ -54,8 +54,8 @@ else
   log "Embeddings: nenhuma API key disponível; usando fallback local CPU-only, sem custo externo."
 fi
 
-log "Reiniciando o DevPilot pelo fluxo local seguro..."
-bash scripts/devpilot-local-safe.sh
+log "Reiniciando o DevPilot pelo fluxo local seguro sem trocar o checkout da branch em teste..."
+DEVPILOT_SAFE_SKIP_UPDATE=1 bash scripts/devpilot-local-safe.sh
 
 if [[ -f "$RAG_PID_FILE" ]]; then
   OLD_PID="$(cat "$RAG_PID_FILE" 2>/dev/null || true)"
