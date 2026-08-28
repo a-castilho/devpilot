@@ -5,10 +5,16 @@ import { join } from 'node:path';
 const source = 'app/static';
 const output = '.vercel-static';
 const assetsOutput = join(output, 'assets');
+const gameOutput = join(output, 'game');
 
 rmSync(output, { recursive: true, force: true });
 mkdirSync(output, { recursive: true });
 cpSync(source, assetsOutput, { recursive: true });
+
+// The dashboard navigates to /game/index.html. Publish that document at the
+// matching root-level path instead of relying on the assets copy/fallback.
+mkdirSync(gameOutput, { recursive: true });
+cpSync(join(source, 'game', 'index.html'), join(gameOutput, 'index.html'));
 
 const scripts = [
   'telemetry-capture.js',

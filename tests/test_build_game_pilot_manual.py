@@ -9,10 +9,13 @@ def source(name: str) -> str:
     return (STATIC / name).read_text(encoding="utf-8")
 
 
-def test_pilot_manual_is_completely_absent_from_critical_game_loader():
+def test_pilot_manual_is_completely_absent_from_dashboard_loader():
     loader = source("feature-loader.js")
-    assert "game: ['game-shell.js', 'build-game.js']" in loader
+    game_html = source("game/index.html")
+    assert "game: ['game-shell.js', 'build-game.js']" not in loader
     assert "build-game-pilot-manual.js" not in loader
+    assert "/assets/build-game.js" in game_html
+    assert "/assets/feature-loader.js" not in game_html
     assert "gameManual" not in loader
     assert "requestGameManual" not in loader
 

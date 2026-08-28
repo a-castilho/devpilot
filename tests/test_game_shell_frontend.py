@@ -3,17 +3,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOADER = ROOT / "app" / "static" / "feature-loader.js"
+GAME_HTML = ROOT / "app" / "static" / "game" / "index.html"
 SHELL_JS = ROOT / "app" / "static" / "game-shell.js"
 SHELL_CSS = ROOT / "app" / "static" / "game-shell.css"
 BUILD_GAME = ROOT / "app" / "static" / "build-game.js"
 
 
-def test_game_bundle_loads_isolated_shell_before_engine():
-    js = LOADER.read_text(encoding="utf-8")
-    shell_pos = js.index("'game-shell.js'")
-    engine_pos = js.index("'build-game.js'")
-    assert shell_pos < engine_pos
-    assert "game: [" in js
+def test_standalone_game_document_loads_engine_without_dashboard_shell_bundle():
+    loader = LOADER.read_text(encoding="utf-8")
+    html = GAME_HTML.read_text(encoding="utf-8")
+    assert "'game-shell.js'" not in loader
+    assert "'build-game.js'" not in loader
+    assert "game: [" not in loader
+    assert '/assets/build-game.js' in html
+    assert '/assets/game/game-bootstrap.js' in html
+    assert '/assets/feature-loader.js' not in html
 
 
 def test_game_shell_moves_game_view_into_dedicated_stage_and_restores_it():
@@ -30,12 +34,7 @@ def test_game_shell_has_single_authoritative_mode_class_and_hud():
     js = SHELL_JS.read_text(encoding="utf-8")
     assert "document.body.classList.add('devpilot-game-mode')" in js
     assert "document.body.classList.remove('devpilot-game-mode')" in js
-    for marker in (
-        "data-game-hud-phase",
-        "data-game-hud-project",
-        "data-game-hud-xp",
-        "data-game-hud-progress",
-    ):
+    for marker in ("data-game-hud-phase", "data-game-hud-project", "data-game-hud-xp", "data-game-hud-progress"):
         assert marker in js
 
 
