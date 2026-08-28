@@ -19,6 +19,10 @@ def test_rag_schema_failure_does_not_escape_bootstrap():
     assert ensure_rag_schema(_BrokenEngine(), embedding_dimensions=1536) is False
 
 
+def test_rag_queue_monitoring_failure_does_not_escape_as_http_500():
+    assert list_jobs(_BrokenEngine(), project_id="project-1", limit=20) == []
+
+
 class _SqliteDialect:
     name = "sqlite"
 
