@@ -40,6 +40,49 @@ def _wait_health(
     raise AssertionError(f"DevPilot E2E server did not become healthy: {last_error}")
 
 
+def _install_e2e_rag_compat_schema(engine) -> None:
+    """Provide the non-vector RAG job table used by browser-only SQLite tests.
+
+    Production RAG schema provisioning is PostgreSQL/pgvector-only by design. The
+    browser matrix intentionally uses isolated SQLite to stay cheap on the low-RAM
+    runner, so create only the additive job table required by the Super Admin UI.
+    This does not emulate embeddings/vector search and cannot mask external RAG work.
+    """
+    if engine.dialect.name != "sqlite":
+        return
+
+    from sqlalchemy import text
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS rag_index_jobs (
+                    id VARCHAR(36) PRIMARY KEY,
+                    organization_id VARCHAR(36) NOT NULL,
+                    project_id VARCHAR(36) NOT NULL,
+                    source_type VARCHAR(40) NOT NULL,
+                    source_id VARCHAR(255),
+                    status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    started_at DATETIME,
+                    completed_at DATETIME,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    progress_done INTEGER NOT NULL DEFAULT 0,
+                    progress_total INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_rag_jobs_scope_status "
+                "ON rag_index_jobs (organization_id, project_id, status)"
+            )
+        )
+
+
 @pytest.fixture(scope="session")
 def e2e_server(tmp_path_factory):
     """Run one in-process DevPilot server for the complete browser E2E matrix.
@@ -72,7 +115,10 @@ def e2e_server(tmp_path_factory):
     # DB engine and runtime directories are bound to the E2E session.
     import uvicorn
 
+    from app.db import engine
     from app.main import app
+
+    _install_e2e_rag_compat_schema(engine)
 
     log_path = Path(os.getenv("DEVPILOT_TEST_RESULTS_DIR", ".artifacts/test-results")) / "browser-server.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
