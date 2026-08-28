@@ -25,8 +25,10 @@
     "app/*linux*.py",
     "app/*cloud*.py",
     "app/*deploy*.py",
-    "app/*rag*.py",
+    "app/rag_*.py",
+    "app/*_rag.py",
     "app/rag/**",
+    "app/services/rag_*.py",
     "app/services/alternating_flow.py",
     "app/services/executor.py",
     "app/services/git_reader.py",
@@ -37,7 +39,8 @@
     "app/static/game/**",
     "app/static/super-admin*.js",
     "app/static/linux-*.js",
-    "app/static/*rag*.js"
+    "app/static/rag-*.js",
+    "app/static/rag/**"
   ],
   "modules": [
     {
@@ -58,7 +61,8 @@
       ],
       "browser_tests": [
         "tests/test_game_browser_e2e.py"
-      ]
+      ],
+      "browser_required": true
     },
     {
       "name": "tasks_worker",
@@ -95,7 +99,8 @@
       ],
       "browser_tests": [
         "tests/test_game_browser_e2e.py"
-      ]
+      ],
+      "browser_required": true
     },
     {
       "name": "super_admin",
@@ -116,8 +121,11 @@
       "name": "rag",
       "source": [
         "app/rag/**",
-        "app/*rag*.py",
-        "app/static/*rag*.js"
+        "app/rag_*.py",
+        "app/*_rag.py",
+        "app/services/rag_*.py",
+        "app/static/rag-*.js",
+        "app/static/rag/**"
       ],
       "tests": [
         "tests/test_rag*.py"
@@ -125,6 +133,7 @@
       "browser_tests": [
         "tests/test_rag_browser_e2e.py"
       ],
+      "browser_required": true,
       "activate_when_source_exists": true
     },
     {
@@ -195,7 +204,8 @@
       ],
       "browser_tests": [
         "tests/test_game_browser_e2e.py"
-      ]
+      ],
+      "browser_required": true
     }
   ]
 }
