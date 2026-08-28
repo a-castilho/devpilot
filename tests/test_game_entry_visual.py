@@ -33,10 +33,11 @@ def test_game_entry_keeps_game_bundle_lazy_and_uses_response_manager():
     assert "window.DevPilotResponses?.error" in js
 
 
-def test_game_entry_explicitly_hands_off_to_game_shell():
+def test_game_entry_hands_navigation_to_single_shell_owner():
     entry = ENTRY_JS.read_text(encoding="utf-8")
     shell = SHELL_JS.read_text(encoding="utf-8")
-    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" in entry
+    assert "target.click();" in entry
+    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" not in entry
     assert "window.DevPilotGameShell = Object.freeze" in shell
     assert "enter: enterGame" in shell
     assert "exit: exitGame" in shell

@@ -109,7 +109,11 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             headless=True,
             args=["--enable-precise-memory-info", "--disable-dev-shm-usage"],
         )
-        context = browser.new_context(viewport={"width": 1280, "height": 800})
+        context = browser.new_context(
+            viewport={"width": 412, "height": 915},
+            is_mobile=True,
+            has_touch=True,
+        )
         page = context.new_page()
 
         page.on("pageerror", lambda exc: page_errors.append(str(exc)))
@@ -160,7 +164,9 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             )
             assert project.get("id")
 
-            page.get_by_role("button", name="Modo Jogo", exact=True).click()
+            game_entry = page.locator("[data-open-game-entry]")
+            game_entry.wait_for(state="visible", timeout=10_000)
+            game_entry.click()
             page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
             page.wait_for_function(
                 "() => document.body.classList.contains('devpilot-game-mode')",
@@ -177,6 +183,12 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                 page.wait_for_timeout(100)
             assert task_posts == 1, f"expected exactly one phase task POST, got {task_posts}"
 
+            initial_runtime = page.evaluate(
+                "() => window.DevPilotGameShell?.metrics?.() || null"
+            )
+            assert initial_runtime is not None, "game runtime metrics unavailable"
+            assert initial_runtime["baseLoads"] >= 1, "base game was never loaded"
+
             initial_heap = page.evaluate(
                 "() => performance.memory?.usedJSHeapSize ?? null"
             )
@@ -188,11 +200,9 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                     "() => !document.body.classList.contains('devpilot-game-mode')",
                     timeout=5_000,
                 )
-                nav = page.locator(
-                    '.sidebar nav .nav[data-view="build-game"], .sidebar nav .nav[data-view="game"]'
-                ).first
-                nav.wait_for(state="visible", timeout=5_000)
-                nav.click()
+                game_entry = page.locator("[data-open-game-entry]")
+                game_entry.wait_for(state="visible", timeout=5_000)
+                game_entry.click()
                 page.wait_for_function(
                     "() => document.body.classList.contains('devpilot-game-mode')",
                     timeout=8_000,
@@ -200,17 +210,28 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                 page.wait_for_timeout(250)
 
             page.wait_for_timeout(1500)
+            final_runtime = page.evaluate(
+                "() => window.DevPilotGameShell?.metrics?.() || null"
+            )
             final_heap = page.evaluate(
                 "() => performance.memory?.usedJSHeapSize ?? null"
             )
             extra_requests = len(api_requests) - initial_request_count
 
+            assert final_runtime is not None, "game runtime metrics unavailable after reentry"
+            assert final_runtime["baseLoads"] == initial_runtime["baseLoads"], (
+                "returning to game reloaded the base runtime: "
+                f"{initial_runtime['baseLoads']} -> {final_runtime['baseLoads']}"
+            )
+            assert final_runtime["resumes"] >= initial_runtime["resumes"] + 3, (
+                "expected three lightweight game resumes without base reload"
+            )
             assert not page_errors, f"JavaScript errors during game lifecycle: {page_errors}"
             assert not server_errors, f"HTTP 5xx during game lifecycle: {server_errors}"
-            assert extra_requests <= 30, f"possible request storm: {extra_requests} API requests after initial game entry"
+            assert extra_requests <= 12, f"possible request storm: {extra_requests} API requests after initial game entry"
             if initial_heap is not None and final_heap is not None:
                 growth = final_heap - initial_heap
-                assert growth < 64 * 1024 * 1024, f"possible browser memory leak: heap grew by {growth} bytes"
+                assert growth < 48 * 1024 * 1024, f"possible browser memory leak: heap grew by {growth} bytes"
         except Exception:
             page.screenshot(path=str(artifact_dir / "game-browser-e2e-failure.png"), full_page=True)
             raise

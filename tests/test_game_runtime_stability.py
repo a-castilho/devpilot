@@ -21,10 +21,21 @@ def test_internal_game_render_cannot_reenter_shell_through_view_observer():
     assert "subtree" not in observer_block.split("viewObserver.observe", 1)[1]
 
 
+def test_cosmetic_view_class_changes_do_not_trigger_game_navigation_transition():
+    js = SHELL.read_text(encoding="utf-8")
+    observer_block = js[js.index("function watchView(view)"):js.index("function captureBaseLoader()")]
+    assert "observedViewActive = view.classList.contains('active')" in observer_block
+    assert "const nextActive = view.classList.contains('active')" in observer_block
+    assert "if (nextActive === observedViewActive) return;" in observer_block
+    assert "observedViewActive = nextActive" in observer_block
+    assert "if (nextActive) enterGame(view)" in observer_block
+
+
 def test_enter_is_idempotent_and_emits_entered_only_for_real_transition():
     js = SHELL.read_text(encoding="utf-8")
     enter_block = js[js.index("function enterGame"):js.index("function restoreView")]
     assert "const alreadyActive" in enter_block
+    assert "if (alreadyActive)" in enter_block
     assert "if (!alreadyActive)" in enter_block
     assert "METRICS.enters += 1" in enter_block
     assert "events.emit('entered'" in enter_block
@@ -34,6 +45,7 @@ def test_exit_is_idempotent_and_does_not_repeat_exit_event():
     js = SHELL.read_text(encoding="utf-8")
     exit_block = js[js.index("function exitGame"):js.index("function sync()")]
     assert "const wasActive" in exit_block
+    assert "if (!wasActive) return true;" in exit_block
     assert "if (wasActive)" in exit_block
     assert "METRICS.exits += 1" in exit_block
 
@@ -48,9 +60,10 @@ def test_game_loader_refreshes_hud_after_real_render_without_dom_storm():
     assert "__devpilotGameStableWrapper" in js
 
 
-def test_game_entry_uses_explicit_shell_handoff():
+def test_game_entry_uses_navigation_and_leaves_shell_as_single_owner():
     js = ENTRY.read_text(encoding="utf-8")
-    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" in js
+    assert "target.click();" in js
+    assert "window.DevPilotGameShell?.enter?.(document.getElementById('build-game-view'))" not in js
     assert "requestAnimationFrame(() => window.DevPilotGameShell?.sync?.())" not in js
 
 

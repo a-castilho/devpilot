@@ -20,6 +20,7 @@
   let originalParent = null;
   let originalNextSibling = null;
   let viewObserver = null;
+  let observedViewActive = null;
   let activeView = null;
   let loadBuildGameWrapped = false;
   let feedbackWired = false;
@@ -123,6 +124,11 @@
       && root.hidden === false
       && view.parentNode === slot;
 
+    if (alreadyActive) {
+      refresh(view);
+      return true;
+    }
+
     if (!originalParent) {
       originalParent = view.parentNode;
       originalNextSibling = view.nextSibling;
@@ -151,6 +157,7 @@
     const root = document.getElementById(ROOT_ID);
     const view = activeView || document.getElementById(VIEW_ID);
     const wasActive = document.body.classList.contains('devpilot-game-mode');
+    if (!wasActive) return true;
     restoreView(view);
     if (root) root.hidden = true;
     document.body.classList.remove('devpilot-game-mode');
@@ -191,10 +198,14 @@
 
   function watchView(view) {
     if (!view || viewObserver) return;
+    observedViewActive = view.classList.contains('active');
     viewObserver = new MutationObserver(records => {
       if (!records.some(record => record.type === 'attributes' && record.attributeName === 'class')) return;
+      const nextActive = view.classList.contains('active');
+      if (nextActive === observedViewActive) return;
+      observedViewActive = nextActive;
       METRICS.classTransitions += 1;
-      if (view.classList.contains('active')) enterGame(view);
+      if (nextActive) enterGame(view);
       else if (document.body.classList.contains('devpilot-game-mode')) exitGame();
     });
     viewObserver.observe(view, {attributes: true, attributeFilter: ['class']});
