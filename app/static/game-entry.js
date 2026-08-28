@@ -62,7 +62,15 @@
     if (!(button instanceof HTMLButtonElement) || button.disabled) return;
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
-    window.location.assign(GAME_URL);
+    window.DevPilotResponses?.loading?.('Abrindo Modo Jogo isolado…', {timeout: 4000});
+    try {
+      window.DevPilotResponses?.success?.('Modo Jogo pronto. Abrindo runtime isolado.');
+      window.location.assign(GAME_URL);
+    } catch (error) {
+      button.disabled = false;
+      button.removeAttribute('aria-busy');
+      window.DevPilotResponses?.error?.(error?.message || 'Falha ao abrir o Modo Jogo.');
+    }
   }
 
   function boot() {
