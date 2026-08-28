@@ -8,15 +8,6 @@
     document.head.appendChild(responses);
   }
 
-  function ensureGameEntry() {
-    if (window.__devpilotGameEntryReady || document.querySelector('script[data-game-entry="1"]')) return;
-    const script = document.createElement('script');
-    script.src = '/assets/game-entry.js?v=20260825-1';
-    script.defer = true;
-    script.dataset.gameEntry = '1';
-    document.head.appendChild(script);
-  }
-
   function ensureMobileRouteOverrides() {
     if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
     const style = document.createElement('style');
@@ -78,7 +69,6 @@
 
   function mountMobileMenu() {
     ensureResponseManager();
-    ensureGameEntry();
     ensureMobileRouteOverrides();
     if (window.innerWidth > 900) return false;
     if (document.querySelector('.mobile-simple-nav')) return true;
