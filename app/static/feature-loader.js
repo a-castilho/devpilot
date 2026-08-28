@@ -17,7 +17,7 @@
     projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
     reports: ['reports.js'],
     taskModal: ['task-modal.js'],
-    tasks: ['task-analytics.js', 'system-tests.js'],
+    tasks: ['task-analytics.js', 'task-completion-documentation.js', 'system-tests.js'],
     example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
     voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js'],
     admin: ['super-admin-task-panel.js', 'token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js', 'rag-admin-ui.js', 'rag-jobs-ui.js'],
