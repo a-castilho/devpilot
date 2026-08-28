@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 
 class RagMetricsService:
@@ -13,19 +14,22 @@ class RagMetricsService:
     def overview(self) -> dict[str, Any]:
         if self.engine.dialect.name != "postgresql":
             return self._empty()
-        with self.engine.connect() as connection:
-            row = connection.execute(text("""
-                SELECT
-                  (SELECT COUNT(*) FROM rag_documents WHERE deleted_at IS NULL) AS documents,
-                  (SELECT COUNT(*) FROM rag_chunks) AS chunks,
-                  (SELECT COUNT(*) FROM rag_index_jobs WHERE status='pending') AS jobs_pending,
-                  (SELECT COUNT(*) FROM rag_index_jobs WHERE status='processing') AS jobs_processing,
-                  (SELECT COUNT(*) FROM rag_index_jobs WHERE status='failed') AS jobs_failed,
-                  (SELECT COUNT(*) FROM rag_queries) AS queries_total,
-                  (SELECT COUNT(*) FROM rag_queries WHERE cache_hit) AS cache_hits,
-                  (SELECT COALESCE(AVG(retrieval_time_ms),0) FROM rag_queries) AS avg_retrieval_ms,
-                  (SELECT COALESCE(SUM(retrieved_chunks),0) FROM rag_queries) AS chunks_retrieved
-            """)).mappings().one()
+        try:
+            with self.engine.connect() as connection:
+                row = connection.execute(text("""
+                    SELECT
+                      (SELECT COUNT(*) FROM rag_documents WHERE deleted_at IS NULL) AS documents,
+                      (SELECT COUNT(*) FROM rag_chunks) AS chunks,
+                      (SELECT COUNT(*) FROM rag_index_jobs WHERE status='pending') AS jobs_pending,
+                      (SELECT COUNT(*) FROM rag_index_jobs WHERE status='processing') AS jobs_processing,
+                      (SELECT COUNT(*) FROM rag_index_jobs WHERE status='failed') AS jobs_failed,
+                      (SELECT COUNT(*) FROM rag_queries) AS queries_total,
+                      (SELECT COUNT(*) FROM rag_queries WHERE cache_hit) AS cache_hits,
+                      (SELECT COALESCE(AVG(retrieval_time_ms),0) FROM rag_queries) AS avg_retrieval_ms,
+                      (SELECT COALESCE(SUM(retrieved_chunks),0) FROM rag_queries) AS chunks_retrieved
+                """)).mappings().one()
+        except SQLAlchemyError:
+            return self._empty()
         result = {key: (float(value) if key == "avg_retrieval_ms" else int(value or 0)) for key, value in row.items()}
         total = result["queries_total"]
         result["cache_hit_rate"] = round((result["cache_hits"] / total * 100.0) if total else 0.0, 2)
@@ -35,20 +39,23 @@ class RagMetricsService:
         if self.engine.dialect.name != "postgresql":
             return {**self._empty(), "organization_id": organization_id, "project_id": project_id}
         params = {"organization_id": organization_id, "project_id": project_id}
-        with self.engine.connect() as connection:
-            row = connection.execute(text("""
-                SELECT
-                  (SELECT COUNT(*) FROM rag_documents WHERE organization_id=:organization_id AND project_id=:project_id AND deleted_at IS NULL) AS documents,
-                  (SELECT COUNT(*) FROM rag_chunks WHERE organization_id=:organization_id AND project_id=:project_id) AS chunks,
-                  (SELECT COALESCE(SUM(token_count),0) FROM rag_chunks WHERE organization_id=:organization_id AND project_id=:project_id) AS indexed_tokens,
-                  (SELECT COUNT(*) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id) AS queries_total,
-                  (SELECT COUNT(*) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id AND cache_hit) AS cache_hits,
-                  (SELECT COALESCE(AVG(retrieval_time_ms),0) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id) AS avg_retrieval_ms,
-                  (SELECT COALESCE(SUM(retrieved_chunks),0) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id) AS chunks_retrieved,
-                  (SELECT COUNT(*) FROM rag_index_jobs WHERE organization_id=:organization_id AND project_id=:project_id AND status='pending') AS jobs_pending,
-                  (SELECT COUNT(*) FROM rag_index_jobs WHERE organization_id=:organization_id AND project_id=:project_id AND status='processing') AS jobs_processing,
-                  (SELECT COUNT(*) FROM rag_index_jobs WHERE organization_id=:organization_id AND project_id=:project_id AND status='failed') AS jobs_failed
-            """), params).mappings().one()
+        try:
+            with self.engine.connect() as connection:
+                row = connection.execute(text("""
+                    SELECT
+                      (SELECT COUNT(*) FROM rag_documents WHERE organization_id=:organization_id AND project_id=:project_id AND deleted_at IS NULL) AS documents,
+                      (SELECT COUNT(*) FROM rag_chunks WHERE organization_id=:organization_id AND project_id=:project_id) AS chunks,
+                      (SELECT COALESCE(SUM(token_count),0) FROM rag_chunks WHERE organization_id=:organization_id AND project_id=:project_id) AS indexed_tokens,
+                      (SELECT COUNT(*) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id) AS queries_total,
+                      (SELECT COUNT(*) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id AND cache_hit) AS cache_hits,
+                      (SELECT COALESCE(AVG(retrieval_time_ms),0) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id) AS avg_retrieval_ms,
+                      (SELECT COALESCE(SUM(retrieved_chunks),0) FROM rag_queries WHERE organization_id=:organization_id AND project_id=:project_id) AS chunks_retrieved,
+                      (SELECT COUNT(*) FROM rag_index_jobs WHERE organization_id=:organization_id AND project_id=:project_id AND status='pending') AS jobs_pending,
+                      (SELECT COUNT(*) FROM rag_index_jobs WHERE organization_id=:organization_id AND project_id=:project_id AND status='processing') AS jobs_processing,
+                      (SELECT COUNT(*) FROM rag_index_jobs WHERE organization_id=:organization_id AND project_id=:project_id AND status='failed') AS jobs_failed
+                """), params).mappings().one()
+        except SQLAlchemyError:
+            return {**self._empty(), "organization_id": organization_id, "project_id": project_id}
         result = {key: (float(value) if key == "avg_retrieval_ms" else int(value or 0)) for key, value in row.items()}
         total = result["queries_total"]
         result["cache_hit_rate"] = round((result["cache_hits"] / total * 100.0) if total else 0.0, 2)
