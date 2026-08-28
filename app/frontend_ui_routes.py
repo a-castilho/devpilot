@@ -43,6 +43,20 @@ def _task_summary(row, *, project_name: str = "", pull_request_url: str = "") ->
     }
 
 
+def _project_summary(row) -> dict:
+    return {
+        "id": row.id,
+        "organization_id": row.organization_id,
+        "name": row.name,
+        "slug": row.slug,
+        "description": row.description,
+        "repository_url": row.repository_url,
+        "default_branch": row.default_branch,
+        "status": row.status,
+        "created_at": row.created_at,
+    }
+
+
 def _game_prompt_metadata(prompt: str | None) -> str:
     lines = [_GAME_MARKER]
     wanted = {label: "" for label in _GAME_METADATA_LABELS}
@@ -60,45 +74,48 @@ def _game_prompt_metadata(prompt: str | None) -> str:
 @router.get("/projects")
 def project_summaries(
     limit: int = Query(50, ge=1, le=100),
+    include_project_id: str | None = None,
     db: Session = Depends(get_db),
 ):
     """Small project payload for navigation and selectors.
 
     Deliberately excludes agents_md and codex_config, both Text columns that can
     become large enough to stall the browser when every project is serialized
-    immediately after login.
+    immediately after login. ``include_project_id`` preserves a previously
+    selected project even when it falls outside the first lightweight page.
     """
     ws = _workspace(db)
-    rows = db.execute(
-        select(
-            Project.id,
-            Project.organization_id,
-            Project.name,
-            Project.slug,
-            Project.description,
-            Project.repository_url,
-            Project.default_branch,
-            Project.status,
-            Project.created_at,
-        )
-        .where(Project.workspace_id == ws.id)
-        .order_by(Project.created_at.desc())
-        .limit(limit)
-    ).all()
-    return [
-        {
-            "id": row.id,
-            "organization_id": row.organization_id,
-            "name": row.name,
-            "slug": row.slug,
-            "description": row.description,
-            "repository_url": row.repository_url,
-            "default_branch": row.default_branch,
-            "status": row.status,
-            "created_at": row.created_at,
-        }
-        for row in rows
-    ]
+    project_columns = (
+        Project.id,
+        Project.organization_id,
+        Project.name,
+        Project.slug,
+        Project.description,
+        Project.repository_url,
+        Project.default_branch,
+        Project.status,
+        Project.created_at,
+    )
+    rows = list(
+        db.execute(
+            select(*project_columns)
+            .where(Project.workspace_id == ws.id)
+            .order_by(Project.created_at.desc())
+            .limit(limit)
+        ).all()
+    )
+    if include_project_id and not any(
+        str(row.id) == str(include_project_id) for row in rows
+    ):
+        selected = db.execute(
+            select(*project_columns).where(
+                Project.workspace_id == ws.id,
+                Project.id == include_project_id,
+            )
+        ).first()
+        if selected:
+            rows.append(selected)
+    return [_project_summary(row) for row in rows]
 
 
 @router.get("/tasks")
