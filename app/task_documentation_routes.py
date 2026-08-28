@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,11 +15,17 @@ from app.db import get_db
 from app.models import Project, Run, Task, TaskStatus, Workspace
 from app.security import require_access
 from app.services.audit import record
-from app.services.task_orchestrator import TaskOrchestrator, runtime_view
+from app.services.task_orchestrator import TASK_RUNTIME, TaskOrchestrator, runtime_view
 from app.task_run_routes import sanitize_payload, sanitize_text
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
+TaskCommandChannel = Literal["ui", "chat", "voice", "api"]
+
+
+class TaskCommandRequest(BaseModel):
+    command: str = Field(min_length=1, max_length=120)
+    channel: TaskCommandChannel = "api"
 
 
 def _workspace_id(db: Session) -> str:
@@ -34,15 +43,46 @@ def _task_or_404(db: Session, task_id: str) -> Task:
     return task
 
 
-def _orchestrate(db: Session, task_id: str, action: str):
+def _orchestrate(db: Session, task_id: str, action: str, actor: str):
     _task_or_404(db, task_id)
-    orchestrator = TaskOrchestrator(db, actor="owner")
+    orchestrator = TaskOrchestrator(db, actor=actor)
     try:
         return getattr(orchestrator, action)(task_id)
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except RuntimeError as error:
         raise HTTPException(409, str(error)) from error
+
+
+def _normalize_command(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    return " ".join("".join(char for char in text if not unicodedata.combining(char)).casefold().split())
+
+
+def _command_action(value: str) -> str:
+    command = _normalize_command(value)
+    aliases = {
+        "proximo": "next",
+        "next": "next",
+        "continuar": "next",
+        "continuar automaticamente": "auto_advance",
+        "automatico": "auto_advance",
+        "auto": "auto_advance",
+        "parar": "pause",
+        "pausar": "pause",
+        "pause": "pause",
+        "retomar": "resume",
+        "resume": "resume",
+        "cancelar": "cancel",
+        "cancel": "cancel",
+        "excluir": "archive",
+        "arquivar": "archive",
+        "archive": "archive",
+    }
+    action = aliases.get(command)
+    if not action:
+        raise HTTPException(422, "Unsupported task command")
+    return action
 
 
 def _safe_filename(value: str) -> str:
@@ -155,44 +195,104 @@ def build_task_documentation(task: Task, project: Project | None, runs: list[Run
     return "\n".join(lines)
 
 
+@router.get("/tasks/orchestrator/runtime")
+def task_orchestrator_runtime(db: Session = Depends(get_db)):
+    workspace_id = _workspace_id(db)
+    task_ids = select(Task.id).where(Task.workspace_id == workspace_id)
+    rows = db.execute(
+        select(TASK_RUNTIME).where(TASK_RUNTIME.c.task_id.in_(task_ids))
+    ).mappings().all()
+    return {
+        "states": {
+            str(row["task_id"]): {
+                "state": str(row["state"]),
+                "auto_advance": bool(row["auto_advance"]),
+                "last_action": str(row["last_action"] or ""),
+                "last_message": str(row["last_message"] or ""),
+            }
+            for row in rows
+        }
+    }
+
+
 @router.get("/tasks/{task_id}/orchestrator")
 def task_orchestrator_state(task_id: str, db: Session = Depends(get_db)):
     task = _task_or_404(db, task_id)
     return runtime_view(db, task)
 
 
+@router.post("/tasks/{task_id}/command")
+def task_command(
+    task_id: str,
+    payload: TaskCommandRequest,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    action = _command_action(payload.command)
+    channel_actor = f"{actor}:{payload.channel}"
+    return _orchestrate(db, task_id, action, channel_actor)
+
+
 @router.post("/tasks/{task_id}/next")
-def task_next(task_id: str, db: Session = Depends(get_db)):
-    return _orchestrate(db, task_id, "next")
+def task_next(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    return _orchestrate(db, task_id, "next", actor)
 
 
 @router.post("/tasks/{task_id}/auto")
-def task_auto(task_id: str, db: Session = Depends(get_db)):
-    return _orchestrate(db, task_id, "auto_advance")
+def task_auto(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    return _orchestrate(db, task_id, "auto_advance", actor)
 
 
 @router.post("/tasks/{task_id}/pause")
-def task_pause(task_id: str, db: Session = Depends(get_db)):
-    return _orchestrate(db, task_id, "pause")
+def task_pause(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    return _orchestrate(db, task_id, "pause", actor)
 
 
 @router.post("/tasks/{task_id}/resume")
-def task_resume(task_id: str, db: Session = Depends(get_db)):
-    return _orchestrate(db, task_id, "resume")
+def task_resume(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    return _orchestrate(db, task_id, "resume", actor)
 
 
 @router.post("/tasks/{task_id}/cancel")
-def task_cancel(task_id: str, db: Session = Depends(get_db)):
-    return _orchestrate(db, task_id, "cancel")
+def task_cancel(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    return _orchestrate(db, task_id, "cancel", actor)
 
 
 @router.post("/tasks/{task_id}/archive")
-def task_archive(task_id: str, db: Session = Depends(get_db)):
-    return _orchestrate(db, task_id, "archive")
+def task_archive(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    return _orchestrate(db, task_id, "archive", actor)
 
 
 @router.post("/tasks/{task_id}/documentation")
-def generate_task_documentation(task_id: str, db: Session = Depends(get_db)):
+def generate_task_documentation(
+    task_id: str,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
     task = _task_or_404(db, task_id)
     if task.status != TaskStatus.completed:
         raise HTTPException(409, "Documentation can only be generated for completed tasks")
@@ -209,7 +309,7 @@ def generate_task_documentation(task_id: str, db: Session = Depends(get_db)):
         workspace_id=task.workspace_id,
         project_id=task.project_id,
         task_id=task.id,
-        actor="owner",
+        actor=actor,
         action="task.documentation_generated",
         outcome="success",
         details={"filename": filename, "run_count": len(runs), "format": "markdown"},
