@@ -16,6 +16,7 @@
     providers: ['provider-models.js', 'provider-ollama.js'],
     projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
     reports: ['reports.js'],
+    taskModal: ['task-modal.js'],
     tasks: ['task-analytics.js', 'system-tests.js'],
     example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
     voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js'],
@@ -199,8 +200,9 @@
 
   const TRIGGERS = [
     ['[data-project-builder-open]', 'projectBuilder'], ['[data-example-project]', 'example'],
-    ['.nav[data-view="providers"]', 'providers'], ['.nav[data-view="reports"]', 'reports'],
-    ['.nav[data-view="tasks"]', 'tasks'], ['#voice-hero, #voice-dock', 'voice'], ['.nav[data-view="audit"]', 'audit'],
+    ['[data-open="task-modal"]', 'taskModal'], ['.nav[data-view="providers"]', 'providers'],
+    ['.nav[data-view="reports"]', 'reports'], ['.nav[data-view="tasks"]', 'tasks'],
+    ['#voice-hero, #voice-dock', 'voice'], ['.nav[data-view="audit"]', 'audit'],
   ];
 
   function matchFeatureTrigger(target) {

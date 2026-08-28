@@ -9,6 +9,17 @@
 
   if (!form || !mode || !context) return;
 
+  const approvalInput = form.querySelector('input[name="requires_approval"]');
+  const approvalLabel = approvalInput?.closest('label');
+
+  function applyApprovalByExceptionDefault() {
+    if (approvalInput) approvalInput.checked = false;
+    if (approvalLabel) {
+      approvalLabel.lastChild.textContent = ' Exigir aprovação manual mesmo para ação segura';
+      approvalLabel.title = 'Push, merge, deploy, produção, dependências, ações destrutivas e credenciais continuam exigindo aprovação automaticamente.';
+    }
+  }
+
   const modes = {
     'analysis-read-only': {
       title: 'Análise assistida pelo AgentOS',
@@ -49,6 +60,7 @@
   }
 
   mode.addEventListener('change', refreshMode);
+  applyApprovalByExceptionDefault();
   refreshMode();
 
   form.addEventListener('submit', () => {
@@ -62,7 +74,10 @@
   }, true);
 
   form.addEventListener('reset', () => {
-    window.setTimeout(refreshMode, 0);
+    window.setTimeout(() => {
+      applyApprovalByExceptionDefault();
+      refreshMode();
+    }, 0);
   });
 
   // A classificação visual segue o mesmo contrato do worker: uma ação nunca
