@@ -221,7 +221,19 @@
     const target = document.querySelector('#system-map-content');
     if (target) target.classList.add('loading');
     try {
-      render(await api('/api/super-admin/voice/system-map'));
+      const [systemMap, runner] = await Promise.all([
+        api('/api/super-admin/voice/system-map'),
+        api('/api/voice/runner-status'),
+      ]);
+      systemMap.warnings = Array.isArray(systemMap.warnings) ? systemMap.warnings : [];
+      if (runner.status === 'offline') {
+        systemMap.warnings.unshift(`GitHub Actions Runner ${runner.label || 'devpilot-ci'} offline — CI e PRs podem permanecer aguardando.`);
+      } else if (runner.status === 'unknown') {
+        systemMap.warnings.unshift(`Status do GitHub Actions Runner ${runner.label || 'devpilot-ci'} não pôde ser confirmado neste host.`);
+      } else if (!runner.service_enabled) {
+        systemMap.warnings.unshift(`GitHub Actions Runner ${runner.label || 'devpilot-ci'} está ativo, mas o reinício automático não está habilitado.`);
+      }
+      render(systemMap);
     } catch (error) {
       if (target) target.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
     } finally {
