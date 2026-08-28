@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 
 from app.config import get_settings
-from app.db import engine
+from app.db import engine as core_engine
 
 from .cache import RedisRagCache
+from .db import get_rag_engine
 from .embedding import OpenAIEmbeddingProvider
 from .service import NullRagCache, NullRagRepository, RagService, RagSettings
 from .settings_store import load_runtime_settings
 from .vector_repository import PgVectorRagRepository
+
+
+def _embedding_api_key() -> str:
+    settings = get_settings()
+    return settings.rag_embedding_api_key.strip() or os.getenv("OPENAI_API_KEY", "").strip()
 
 
 def _rag_settings() -> RagSettings:
@@ -30,7 +37,7 @@ def _rag_settings() -> RagSettings:
         "index_batch_size": settings.rag_index_batch_size,
         "index_worker_concurrency": settings.rag_index_worker_concurrency,
     }
-    values.update({key: value for key, value in load_runtime_settings(engine).items() if key in values})
+    values.update({key: value for key, value in load_runtime_settings(core_engine).items() if key in values})
     return RagSettings(**values)
 
 
@@ -47,14 +54,16 @@ def get_rag_service() -> RagService:
             cache = NullRagCache()
 
     repository = NullRagRepository()
-    if engine.dialect.name == "postgresql" and settings.rag_embedding_api_key.strip():
+    rag_engine = get_rag_engine()
+    api_key = _embedding_api_key()
+    if rag_engine.dialect.name == "postgresql" and api_key:
         embedder = OpenAIEmbeddingProvider(
-            api_key=settings.rag_embedding_api_key,
+            api_key=api_key,
             model=settings.rag_embedding_model,
             base_url=settings.rag_embedding_base_url,
             dimensions=settings.rag_embedding_dimensions,
         )
-        repository = PgVectorRagRepository(engine, embedder)
+        repository = PgVectorRagRepository(rag_engine, embedder)
 
     return RagService(settings=rag_settings, repository=repository, cache=cache)
 
@@ -66,10 +75,12 @@ def reload_rag_service() -> RagService:
 
 def get_rag_embedder() -> OpenAIEmbeddingProvider | None:
     settings = get_settings()
-    if engine.dialect.name != "postgresql" or not settings.rag_embedding_api_key.strip():
+    rag_engine = get_rag_engine()
+    api_key = _embedding_api_key()
+    if rag_engine.dialect.name != "postgresql" or not api_key:
         return None
     return OpenAIEmbeddingProvider(
-        api_key=settings.rag_embedding_api_key,
+        api_key=api_key,
         model=settings.rag_embedding_model,
         base_url=settings.rag_embedding_base_url,
         dimensions=settings.rag_embedding_dimensions,
