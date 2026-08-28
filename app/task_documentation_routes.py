@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import json
+import re
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.db import get_db
+from app.models import Project, Run, Task, TaskStatus, Workspace
+from app.security import require_access
+from app.services.audit import record
+from app.task_run_routes import sanitize_payload, sanitize_text
+
+
+router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
+
+
+def _workspace_id(db: Session) -> str:
+    workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
+    if not workspace_id:
+        raise HTTPException(404, "Workspace not found")
+    return workspace_id
+
+
+def _safe_filename(value: str) -> str:
+    normalized = re.sub(r"[^a-zA-Z0-9._-]+", "-", str(value or "task").strip()).strip("-._")
+    return (normalized or "task")[:90]
+
+
+def _run_payload(run: Run) -> dict:
+    try:
+        raw = json.loads(run.logs or "{}")
+    except (TypeError, ValueError):
+        raw = {"raw": run.logs or ""}
+    payload = sanitize_payload(raw)
+    return payload if isinstance(payload, dict) else {"result": payload}
+
+
+def _run_evidence(run: Run) -> list[str]:
+    payload = _run_payload(run)
+    evidence: list[str] = []
+    for key in ("summary", "client_report"):
+        value = sanitize_text(str(payload.get(key) or "")).strip()
+        if value and value not in evidence:
+            evidence.append(value)
+    if run.summary:
+        summary = sanitize_text(run.summary).strip()
+        if summary and summary not in evidence:
+            evidence.append(summary)
+    if run.commit_sha:
+        evidence.append(f"Commit: `{sanitize_text(run.commit_sha)}`")
+    if run.pull_request_url:
+        evidence.append(f"Pull request: {sanitize_text(run.pull_request_url)}")
+    return evidence
+
+
+def build_task_documentation(task: Task, project: Project | None, runs: list[Run]) -> str:
+    title = sanitize_text(task.title or "Tarefa concluída")
+    project_name = sanitize_text(project.name if project else "Projeto indisponível")
+    prompt = sanitize_text(task.prompt or "").strip()
+    completed_runs = [run for run in runs if str(run.status).lower() == "success"]
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    lines = [
+        f"# Implementação concluída — {title}",
+        "",
+        "> Documento gerado pelo DevPilot a partir do histórico real da tarefa, execuções e evidências registradas.",
+        "",
+        "## Identificação",
+        "",
+        f"- Projeto: **{project_name}**",
+        f"- Tarefa: `{task.id}`",
+        f"- Status: **{task.status.value if isinstance(task.status, TaskStatus) else task.status}**",
+        f"- Origem: `{sanitize_text(task.source or '')}`",
+        f"- Branch: `{sanitize_text(task.branch_name or '') or 'não registrada'}`",
+        f"- Gerado em: `{generated_at}`",
+        "",
+        "## Objetivo e contexto",
+        "",
+        prompt or "Contexto original não registrado.",
+        "",
+        "## Resultado da implementação",
+        "",
+    ]
+
+    if not runs:
+        lines.append("Nenhuma execução foi registrada para esta tarefa.")
+    else:
+        for index, run in enumerate(runs, start=1):
+            started = run.started_at.isoformat() if run.started_at else "não registrado"
+            finished = run.finished_at.isoformat() if run.finished_at else "não registrado"
+            lines.extend(
+                [
+                    f"### Execução {index}",
+                    "",
+                    f"- Run: `{run.id}`",
+                    f"- Tentativa: `{run.attempt}`",
+                    f"- Status: **{sanitize_text(run.status)}**",
+                    f"- Início: `{started}`",
+                    f"- Fim: `{finished}`",
+                ]
+            )
+            evidence = _run_evidence(run)
+            if evidence:
+                lines.extend(["", "**Evidências:**", ""])
+                lines.extend(f"- {item}" for item in evidence)
+            lines.append("")
+
+    lines.extend(
+        [
+            "## Validação",
+            "",
+            (
+                f"A tarefa possui **{len(completed_runs)} execução(ões) bem-sucedida(s)** registrada(s). "
+                "A conclusão deste documento não substitui os gates técnicos de teste, revisão, CI ou deploy do projeto."
+            ),
+            "",
+            "## Aprendizado para o usuário",
+            "",
+            "- O histórico acima mostra a sequência real de execução e as evidências usadas para considerar a tarefa concluída.",
+            "- Commits, pull requests e relatórios aparecem somente quando foram efetivamente registrados pelo executor.",
+            "- Uma nova alteração posterior deve gerar uma nova execução ou tarefa, preservando a rastreabilidade deste fechamento.",
+            "",
+            "## Próximos passos",
+            "",
+            "1. Revisar as evidências e confirmar se o resultado atende ao objetivo original.",
+            "2. Registrar aprendizado ou observações complementares quando necessário.",
+            "3. Avançar para a próxima tarefa/missão do projeto somente pelos controles do orquestrador.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+@router.post("/tasks/{task_id}/documentation")
+def generate_task_documentation(task_id: str, db: Session = Depends(get_db)):
+    workspace_id = _workspace_id(db)
+    task = db.scalar(select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id))
+    if not task:
+        raise HTTPException(404, "Task not found")
+    if task.status != TaskStatus.completed:
+        raise HTTPException(409, "Documentation can only be generated for completed tasks")
+
+    project = db.get(Project, task.project_id)
+    runs = db.scalars(
+        select(Run).where(Run.task_id == task.id).order_by(Run.started_at, Run.attempt)
+    ).all()
+    markdown = build_task_documentation(task, project, list(runs))
+    filename = f"task-{_safe_filename(task.title)}-{task.id[:8]}.md"
+
+    record(
+        db,
+        workspace_id=task.workspace_id,
+        project_id=task.project_id,
+        task_id=task.id,
+        actor="owner",
+        action="task.documentation_generated",
+        outcome="success",
+        details={"filename": filename, "run_count": len(runs), "format": "markdown"},
+    )
+    db.commit()
+
+    return {
+        "task_id": task.id,
+        "filename": filename,
+        "format": "markdown",
+        "content": markdown,
+        "generated_at": datetime.now(timezone.utc),
+    }
