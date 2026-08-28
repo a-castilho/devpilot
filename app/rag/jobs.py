@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import SQLAlchemyError
 
 
 MAX_ATTEMPTS = 3
@@ -44,24 +45,37 @@ def enqueue_index_job(engine: Engine, *, organization_id: str, project_id: str, 
 
 
 def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50) -> list[dict]:
+    """Read the optional RAG queue without making monitoring a core dependency.
+
+    RAG schema provisioning is intentionally fail-open. The Super Admin polling
+    endpoint must follow the same contract: an unavailable optional schema is
+    represented as an empty queue instead of leaking a database exception as a
+    generic HTTP 500 and repeatedly breaking the dashboard.
+    """
+    if engine.dialect.name != "postgresql":
+        return []
+
     clauses = []
     params: dict = {"limit": max(1, min(int(limit), 100))}
     if project_id:
         clauses.append("project_id=:project_id")
         params["project_id"] = project_id
     where = "WHERE " + " AND ".join(clauses) if clauses else ""
-    with engine.begin() as connection:
-        rows = connection.execute(
-            text(f"""
-                SELECT id, organization_id, project_id, source_type, source_id, status, attempts,
-                       last_error, started_at, completed_at, created_at, progress_done, progress_total
-                FROM rag_index_jobs
-                {where}
-                ORDER BY created_at DESC
-                LIMIT :limit
-            """),
-            params,
-        ).mappings().all()
+    try:
+        with engine.begin() as connection:
+            rows = connection.execute(
+                text(f"""
+                    SELECT id, organization_id, project_id, source_type, source_id, status, attempts,
+                           last_error, started_at, completed_at, created_at, progress_done, progress_total
+                    FROM rag_index_jobs
+                    {where}
+                    ORDER BY created_at DESC
+                    LIMIT :limit
+                """),
+                params,
+            ).mappings().all()
+    except SQLAlchemyError:
+        return []
     return [dict(row) for row in rows]
 
 
