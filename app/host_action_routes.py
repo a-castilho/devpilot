@@ -9,6 +9,7 @@ from app.security import require_access, require_super_admin
 from app.services.audit import record
 from app.services.host_actions import queue_host_action
 from app.services.intent import interpret_voice
+from app.services.runner_status import runner_status
 
 
 router = APIRouter(prefix="/api/voice", dependencies=[Depends(require_access)])
@@ -21,6 +22,12 @@ def workspace(db: Session) -> Workspace:
         db.add(item)
         db.flush()
     return item
+
+
+@router.get("/runner-status")
+def github_actions_runner_status(actor: str = Depends(require_super_admin)):
+    del actor
+    return runner_status()
 
 
 @router.post("/system-actions", status_code=202)
