@@ -25,6 +25,7 @@ PY
 
 "$PYTHON_CMD" -m compileall -q app
 "$PYTHON_CMD" scripts/check-engineering-standards.py --changed
+"$PYTHON_CMD" scripts/critical-quality-matrix.py
 
 node --check app/static/app.js
 node --check app/static/auth-ui.js
