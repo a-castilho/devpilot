@@ -15,6 +15,21 @@ def test_game_document_is_isolated_from_dashboard_feature_loader():
     assert 'class="sidebar"' not in html
 
 
+def test_standalone_game_bounds_initial_task_payload_before_bootstrap():
+    html = (STATIC / "game" / "index.html").read_text(encoding="utf-8")
+    guard = (STATIC / "game" / "task-payload-guard.js").read_text(encoding="utf-8")
+
+    build_index = html.index('/assets/build-game.js')
+    guard_index = html.index('/assets/game/task-payload-guard.js')
+    bootstrap_index = html.index('/assets/game/game-bootstrap.js')
+
+    assert build_index < guard_index < bootstrap_index
+    assert "const GAME_TASK_LIMIT = 100" in guard
+    assert "requestPath.startsWith('/tasks?')" in guard
+    assert "requestPath.includes('limit=500')" in guard
+    assert "replace(/([?&]limit=)500\\b/" in guard
+
+
 def test_dashboard_game_placeholder_navigates_instead_of_lazy_loading_game_bundle():
     loader = (STATIC / "feature-loader.js").read_text(encoding="utf-8")
 
