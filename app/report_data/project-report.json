@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-08-27T20:47:34.729023+00:00",
+  "generated_at": "2026-08-28T11:16:29.709801+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -328,6 +328,13 @@
       "title": "Revisão PR #17 — fix: tornar reconhecimento de voz compatível no mobile",
       "source": "docs/reviews/pr-17.md",
       "content": "# Revisão PR #17 — fix: tornar reconhecimento de voz compatível no mobile\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Merged\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `fix/voice-recognition-mobile`\n- **Atualizada em:** 2026-08-20T16:36:29Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/17\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 3\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/main.py` (+2/-0)\n- `app/static/voice-local-update.js` (+228/-20)\n- `app/voice_transcription_routes.py` (+157/-0)\n\n## Descrição e evidências da PR\n\nCorrige a falha genérica de reconhecimento de voz no mobile.\n\n- mantém Web Speech como primeira tentativa;\n- mostra o erro real (`network`, permissão, ausência de fala etc.);\n- adiciona fallback com `MediaRecorder` + transcrição no backend;\n[conteúdo sensível omitido]\n- limita áudio a 15 MB e não grava a transcrição na auditoria;\n- preserva o comando automático `atualizar local`;\n- informa explicitamente quando HTTP em IP da LAN bloqueia acesso ao microfone.\n\nValidação local de sintaxe feita para Python e JavaScript antes do commit.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge.\n\n<!-- COMPROMISSO-GERAL-A-CASTILHO -->\n\n---\n\n## Compromisso Geral\n\n**Sempre na melhor prática. No caminho do bem maior.**\n\n**Ir até o fim sem sair do caminho, seja ele qual for.**"
+    },
+    {
+      "id": "docs-reviews-pr-156",
+      "category": "Revisões",
+      "title": "Revisão PR #156 — feat: RAG foundation and Super Admin controls",
+      "source": "docs/reviews/pr-156.md",
+      "content": "# Revisão PR #156 — feat: RAG foundation and Super Admin controls\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Aberta\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `feat/rag-super-admin`\n- **Atualizada em:** 2026-08-28T11:06:29Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/156\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 7\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/rag/__init__.py` (+10/-0)\n- `app/rag/admin.py` (+76/-0)\n- `app/rag/chunking.py` (+41/-0)\n- `app/rag/sanitizer.py` (+46/-0)\n- `app/rag/service.py` (+225/-0)\n- `docs/rag-super-admin-implementation.md` (+116/-0)\n- `tests/test_rag_service.py` (+53/-0)\n\n## Descrição e evidências da PR\n\n## Escopo\n\nImplementa a fundação desacoplada do RAG e os controles administrativos seguros para o Super Admin.\n\n### Incluído\n- bounded context `app/rag`\n- `RagService` desacoplado de pgvector/Redis/provider\n- `RagQueryRouter` com modos NO_RAG/RAG/LIVE/RAG_LIVE\n- defaults seguros e feature settings\n- `RagSanitizer`\n- chunker low-RAM\n- `RagAdminService` com limites seguros para configuração\n- testes unitários iniciais\n- documentação consolidada de implementação\n\n### Próximas integrações nesta mesma linha\n- persistência pgvector/migrations\n- Redis adapter\n- adapters Git/docs\n- API FastAPI do Super Admin\n- frontend do painel RAG\n- métricas/auditoria\n\nO DEVpilot permanece funcional com RAG desativado.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
     },
     {
       "id": "docs-reviews-pr-155",
