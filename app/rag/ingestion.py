@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from datetime import datetime, timezone
+from typing import Callable
 
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -23,20 +24,26 @@ class RagIndexer:
         self.sanitizer = RagSanitizer()
         self.source = GitRagSource()
 
-    def index_project(self, project: Project) -> dict:
+    def index_project(self, project: Project, progress: Callable[[int, int], None] | None = None) -> dict:
         if not project.organization_id:
             raise ValueError("Project must belong to an organization before RAG indexing")
         indexed = 0
         skipped = 0
         failed = 0
-        for path in self.source.list_files(project):
+        paths = self.source.list_files(project)
+        total = len(paths)
+        if progress:
+            progress(0, total)
+        for position, path in enumerate(paths, start=1):
             try:
                 changed = self.index_file(project, path)
                 indexed += 1 if changed else 0
                 skipped += 0 if changed else 1
             except Exception:
                 failed += 1
-        return {"project_id": project.id, "indexed": indexed, "skipped": skipped, "failed": failed}
+            if progress:
+                progress(position, total)
+        return {"project_id": project.id, "indexed": indexed, "skipped": skipped, "failed": failed, "total": total}
 
     def index_file(self, project: Project, path: str) -> bool:
         raw = self.source.read(project, path)
