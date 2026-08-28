@@ -93,7 +93,7 @@
     const host = healthHost();
     if (!host) return;
     if (!canSeeRunner()) {
-      host.innerHTML = '<strong>Esteira de execução</strong><small>Acompanhe o estado real de cada tarefa. Informações de infraestrutura do runner ficam restritas ao Super Admin.</small>';
+      host.innerHTML = '<strong>Esteira de execução</strong><small>Acompanhe o estado real de cada tarefa; nenhum estado é presumido. Informações de infraestrutura do runner ficam restritas ao Super Admin.</small>';
       return;
     }
     const tone = runnerTone(runnerState);
