@@ -1,9 +1,0 @@
-{
-  "enabled": true,
-  "allow_branch_push": true,
-  "allow_merge": false,
-  "max_attempts": 3,
-  "require_open_pull_request": true,
-  "require_same_repository": true,
-  "require_full_validation": true
-}
