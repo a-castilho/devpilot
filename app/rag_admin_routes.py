@@ -32,6 +32,25 @@ def _metrics() -> RagMetricsService:
     return RagMetricsService(engine)
 
 
+def _require_index_backend() -> None:
+    if engine.dialect.name != "postgresql":
+        raise HTTPException(
+            status_code=409,
+            detail="Indexação RAG indisponível neste runtime: configure PostgreSQL com pgvector.",
+        )
+
+    rag = get_rag_service()
+    if not rag.settings.enabled:
+        raise HTTPException(status_code=409, detail="Ative o RAG global antes de indexar.")
+
+    repository_status = str((rag.health().get("repository") or {}).get("status") or "").lower()
+    if repository_status not in {"healthy", "ok"}:
+        raise HTTPException(
+            status_code=503,
+            detail="Backend vetorial RAG indisponível. Verifique PostgreSQL/pgvector antes de indexar.",
+        )
+
+
 @router.get("/overview")
 def overview() -> dict[str, Any]:
     data = _admin().overview()
@@ -101,6 +120,7 @@ def index_project(
         raise HTTPException(status_code=404, detail="Project not found")
     if not project.organization_id:
         raise HTTPException(status_code=409, detail="Project must belong to an organization")
+    _require_index_backend()
     job = enqueue_index_job(
         engine,
         organization_id=project.organization_id,
