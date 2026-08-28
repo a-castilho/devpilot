@@ -58,3 +58,42 @@ def test_rag_reuses_general_openai_vault_credential_without_exposing_secret():
     assert "or _stored_openai_api_key()" in runtime
     assert "embedding_key_configured" in script
     assert "grep -Eq '^(DEVPILOT_RAG_EMBEDDING_API_KEY|OPENAI_API_KEY)" not in script
+
+
+def test_local_hash_embeddings_are_deterministic_normalized_and_dimensioned():
+    from app.rag.embedding import LocalHashEmbeddingProvider
+
+    provider = LocalHashEmbeddingProvider(dimensions=64)
+    first = provider.embed("DevPilot tarefas e projetos")
+    second = provider.embed("DevPilot tarefas e projetos")
+
+    assert first == second
+    assert len(first) == 64
+    assert any(value != 0.0 for value in first)
+    assert abs(sum(value * value for value in first) - 1.0) < 1e-9
+
+
+def test_local_hash_embeddings_preserve_lexical_similarity():
+    from app.rag.embedding import LocalHashEmbeddingProvider
+
+    provider = LocalHashEmbeddingProvider(dimensions=256)
+    base = provider.embed("fila de tarefas do projeto devpilot")
+    related = provider.embed("tarefas do projeto devpilot na fila")
+    unrelated = provider.embed("receita de bolo com chocolate")
+
+    def dot(left, right):
+        return sum(a * b for a, b in zip(left, right, strict=True))
+
+    assert dot(base, related) > dot(base, unrelated)
+
+
+def test_runtime_falls_back_to_local_embeddings_without_api_key():
+    from pathlib import Path
+
+    runtime = Path("app/rag/runtime.py").read_text(encoding="utf-8")
+    script = Path("scripts/devpilot-rag-local-safe.sh").read_text(encoding="utf-8")
+
+    assert "LocalHashEmbeddingProvider" in runtime
+    assert "return LocalHashEmbeddingProvider" in runtime
+    assert "fallback local CPU-only" in script
+    assert "nenhuma credencial OpenAI disponível" not in script
