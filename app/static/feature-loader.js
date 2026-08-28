@@ -10,7 +10,7 @@
   let navigationEpoch = 0;
 
   const FEATURE_BUNDLES = Object.freeze({
-    mobileShell: ['mobile-accordion-menu.js'],
+    mobileShell: ['mobile-accordion-menu.js', 'game-entry.js'],
     profile: ['profile.js'],
     users: ['users.js'],
     providers: ['provider-models.js', 'provider-ollama.js'],
@@ -91,7 +91,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260828-1`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260828-2`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
