@@ -3,8 +3,12 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
+from sqlalchemy import select
+
 from app.config import get_settings
-from app.db import engine as core_engine
+from app.db import SessionLocal, engine as core_engine
+from app.models import ProviderCredential, Workspace
+from app.services.vault import Vault
 
 from .cache import RedisRagCache
 from .db import get_rag_engine
@@ -14,9 +18,46 @@ from .settings_store import load_runtime_settings
 from .vector_repository import PgVectorRagRepository
 
 
+def _stored_openai_api_key() -> str:
+    """Resolve the enabled OpenAI credential from the default workspace vault.
+
+    The secret never leaves the backend and is only decrypted in memory for the
+    embedding request. Fail closed to an empty value when the workspace, credential,
+    or vault key is unavailable.
+    """
+    try:
+        with SessionLocal() as db:
+            workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
+            if not workspace_id:
+                return ""
+            item = db.scalar(
+                select(ProviderCredential)
+                .where(
+                    ProviderCredential.workspace_id == workspace_id,
+                    ProviderCredential.provider == "openai",
+                    ProviderCredential.enabled.is_(True),
+                )
+                .order_by(ProviderCredential.created_at.desc())
+                .limit(1)
+            )
+            if not item:
+                return ""
+            return Vault().decrypt(item.encrypted_secret).strip()
+    except (RuntimeError, ValueError):
+        return ""
+
+
 def _embedding_api_key() -> str:
     settings = get_settings()
-    return settings.rag_embedding_api_key.strip() or os.getenv("OPENAI_API_KEY", "").strip()
+    return (
+        settings.rag_embedding_api_key.strip()
+        or os.getenv("OPENAI_API_KEY", "").strip()
+        or _stored_openai_api_key()
+    )
+
+
+def embedding_key_configured() -> bool:
+    return bool(_embedding_api_key())
 
 
 def _rag_settings() -> RagSettings:
