@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     linkedin_oauth_state_ttl_seconds: int = 600
 
     # RAG defaults are deliberately conservative for the 4 GB target host.
+    # When empty, RAG storage follows database_url for backward compatibility.
+    rag_database_url: str = ""
     rag_enabled: bool = False
     rag_cache_enabled: bool = True
     rag_git_enabled: bool = True
@@ -52,7 +54,6 @@ class Settings(BaseSettings):
     rag_index_worker_concurrency: int = 1
     rag_embedding_dimensions: int = 1536
     rag_embedding_model: str = "text-embedding-3-small"
-    rag_embedding_api_key: str = ""
     rag_embedding_base_url: str = "https://api.openai.com/v1"
     redis_url: str = ""
 

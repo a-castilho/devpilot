@@ -2,14 +2,65 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+
 from app.config import get_settings
-from app.db import engine
+from app.db import SessionLocal, engine as core_engine
+from app.models import ProviderCredential, Workspace
+from app.services.vault import Vault
 
 from .cache import RedisRagCache
-from .embedding import OpenAIEmbeddingProvider
+from .db import get_rag_engine
+from .embedding import EmbeddingProvider, LocalHashEmbeddingProvider, OpenAIEmbeddingProvider
 from .service import NullRagCache, NullRagRepository, RagService, RagSettings
 from .settings_store import load_runtime_settings
 from .vector_repository import PgVectorRagRepository
+
+
+def _stored_openai_api_key() -> str:
+    """Resolve the enabled OpenAI credential from the default workspace vault."""
+    try:
+        with SessionLocal() as db:
+            workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
+            if not workspace_id:
+                return ""
+            item = db.scalar(
+                select(ProviderCredential)
+                .where(
+                    ProviderCredential.workspace_id == workspace_id,
+                    ProviderCredential.provider == "openai",
+                    ProviderCredential.enabled.is_(True),
+                )
+                .order_by(ProviderCredential.created_at.desc())
+                .limit(1)
+            )
+            if not item:
+                return ""
+            return Vault().decrypt(item.encrypted_secret).strip()
+    except (RuntimeError, ValueError, SQLAlchemyError):
+        return ""
+
+
+def _embedding_api_key() -> str:
+    return _stored_openai_api_key()
+
+
+def embedding_key_configured() -> bool:
+    return bool(_embedding_api_key())
+
+
+def _embedding_provider() -> EmbeddingProvider:
+    settings = get_settings()
+    api_key = _embedding_api_key()
+    if api_key:
+        return OpenAIEmbeddingProvider(
+            api_key=api_key,
+            model=settings.rag_embedding_model,
+            base_url=settings.rag_embedding_base_url,
+            dimensions=settings.rag_embedding_dimensions,
+        )
+    return LocalHashEmbeddingProvider(dimensions=settings.rag_embedding_dimensions)
 
 
 def _rag_settings() -> RagSettings:
@@ -30,7 +81,7 @@ def _rag_settings() -> RagSettings:
         "index_batch_size": settings.rag_index_batch_size,
         "index_worker_concurrency": settings.rag_index_worker_concurrency,
     }
-    values.update({key: value for key, value in load_runtime_settings(engine).items() if key in values})
+    values.update({key: value for key, value in load_runtime_settings(core_engine).items() if key in values})
     return RagSettings(**values)
 
 
@@ -47,14 +98,9 @@ def get_rag_service() -> RagService:
             cache = NullRagCache()
 
     repository = NullRagRepository()
-    if engine.dialect.name == "postgresql" and settings.rag_embedding_api_key.strip():
-        embedder = OpenAIEmbeddingProvider(
-            api_key=settings.rag_embedding_api_key,
-            model=settings.rag_embedding_model,
-            base_url=settings.rag_embedding_base_url,
-            dimensions=settings.rag_embedding_dimensions,
-        )
-        repository = PgVectorRagRepository(engine, embedder)
+    rag_engine = get_rag_engine()
+    if rag_engine.dialect.name == "postgresql":
+        repository = PgVectorRagRepository(rag_engine, _embedding_provider())
 
     return RagService(settings=rag_settings, repository=repository, cache=cache)
 
@@ -64,13 +110,8 @@ def reload_rag_service() -> RagService:
     return get_rag_service()
 
 
-def get_rag_embedder() -> OpenAIEmbeddingProvider | None:
-    settings = get_settings()
-    if engine.dialect.name != "postgresql" or not settings.rag_embedding_api_key.strip():
+def get_rag_embedder() -> EmbeddingProvider | None:
+    rag_engine = get_rag_engine()
+    if rag_engine.dialect.name != "postgresql":
         return None
-    return OpenAIEmbeddingProvider(
-        api_key=settings.rag_embedding_api_key,
-        model=settings.rag_embedding_model,
-        base_url=settings.rag_embedding_base_url,
-        dimensions=settings.rag_embedding_dimensions,
-    )
+    return _embedding_provider()
