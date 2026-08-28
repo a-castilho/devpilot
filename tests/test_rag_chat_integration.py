@@ -24,3 +24,10 @@ def test_chat_context_keeps_live_and_rag_separate():
     assert "Estado atual do" in source
     assert "organization_id=project.organization_id" in source
     assert "project_id=project.id" in source
+
+
+def test_chat_context_degrades_when_rag_retrieval_fails():
+    source = Path("app/rag/chat_context.py").read_text(encoding="utf-8")
+    assert "except Exception as exc" in source
+    assert "RAG retrieval unavailable" in source
+    assert "o chat continua sem contexto histórico adicional" in source
