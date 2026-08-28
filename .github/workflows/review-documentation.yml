@@ -2,7 +2,7 @@ name: Documentar revisões de PR
 
 on:
   pull_request_target:
-    types: [opened, edited, synchronize, reopened, ready_for_review, closed]
+    types: [opened, edited, reopened, ready_for_review, closed]
 
 permissions:
   contents: write
@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   sync-review-document:
-    # This job only calls GitHub APIs and writes a markdown report. Keep it off the
-    # scarce self-hosted DevPilot runner so policy/full-quality jobs are never starved.
-    runs-on: ubuntu-latest
+    # API-only bookkeeping must not compete with policy/full-quality on the scarce
+    # self-hosted DevPilot runner. A dedicated override remains available if needed.
+    runs-on: ${{ vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão
