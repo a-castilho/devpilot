@@ -41,7 +41,7 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
 
         try:
             page.goto(e2e_server, wait_until="domcontentloaded", timeout=20_000)
-            page.locator("#auth-email").fill("e2e-game@devpilot.local")
+            page.locator("#auth-email").fill("e2e-admin@devpilot.local")
             page.locator("#auth-password").fill("DevPilot-E2E-Password-2026")
             page.locator("#auth-submit").click()
             page.wait_for_function("() => Boolean(localStorage.getItem('devpilot-token'))", timeout=15_000)
