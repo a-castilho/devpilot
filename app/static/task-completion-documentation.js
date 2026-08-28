@@ -157,6 +157,28 @@
     });
   }
 
+  let runtimeSyncInFlight = false;
+  async function syncRuntimeVisibility() {
+    if (runtimeSyncInFlight) return;
+    runtimeSyncInFlight = true;
+    try {
+      const payload = await api('/tasks/orchestrator/runtime');
+      const states = payload?.states || {};
+      [...tableBody.querySelectorAll('tr.task-main-row')].forEach((row, index) => {
+        const task = taskByRow(row, index);
+        const runtime = task ? states[String(task.id)] : null;
+        const archived = runtime?.state === 'archived';
+        row.toggleAttribute('hidden', archived);
+        if (archived) row.dataset.taskArchived = '1';
+        else delete row.dataset.taskArchived;
+      });
+    } catch (error) {
+      console.warn('[DevPilot] Falha ao sincronizar estado do orquestrador', error);
+    } finally {
+      runtimeSyncInFlight = false;
+    }
+  }
+
   let scheduled = false;
   const schedule = () => {
     if (scheduled) return;
@@ -164,6 +186,7 @@
     window.requestAnimationFrame(() => {
       scheduled = false;
       enhanceTasks();
+      void syncRuntimeVisibility();
     });
   };
 
