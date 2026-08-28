@@ -5,8 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Project, Task, Workspace
-from app.security import require_access
+from app.models import Project, Run, Task, TaskStatus, Workspace
+from app.schemas import TaskCreate
+from app.security import Principal, Role, require_access, require_roles
+from app.services.audit import record
+from app.services.policy import evaluate_task
 
 
 router = APIRouter(prefix="/api/ui", dependencies=[Depends(require_access)])
@@ -17,6 +20,23 @@ def _workspace(db: Session) -> Workspace:
     if not item:
         raise HTTPException(503, "Workspace not initialized")
     return item
+
+
+def _task_summary(row, *, project_name: str = "", pull_request_url: str = "") -> dict:
+    return {
+        "id": row.id,
+        "project_id": row.project_id,
+        "project_name": project_name,
+        "title": row.title,
+        "source": row.source,
+        "status": row.status,
+        "priority": row.priority,
+        "requires_approval": row.requires_approval,
+        "approved_at": row.approved_at,
+        "pull_request_url": pull_request_url,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
 
 
 @router.get("/projects")
@@ -86,21 +106,101 @@ def task_summaries(
     if project_id:
         query = query.where(Task.project_id == project_id)
     rows = db.execute(query.order_by(Task.created_at.desc()).limit(limit)).all()
-    return [
-        {
-            "id": row.id,
-            "project_id": row.project_id,
-            "title": row.title,
-            "source": row.source,
-            "status": row.status,
-            "priority": row.priority,
-            "requires_approval": row.requires_approval,
-            "approved_at": row.approved_at,
-            "created_at": row.created_at,
-            "updated_at": row.updated_at,
+    return [_task_summary(row) for row in rows]
+
+
+@router.get("/super-admin/tasks")
+def super_admin_task_summaries(
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(require_roles(Role.SUPER_ADMIN)),
+):
+    """Return tasks owned by the current Super Admin, including latest PR link.
+
+    This endpoint intentionally does not expose other users' personal task feed.
+    It exists so platform-level implementation work appears in the Super Admin
+    panel with project, state, priority and delivery evidence.
+    """
+    ws = _workspace(db)
+    tasks = db.scalars(
+        select(Task)
+        .where(
+            Task.workspace_id == ws.id,
+            Task.owner_user_id == principal.user_id,
+        )
+        .order_by(Task.updated_at.desc(), Task.created_at.desc())
+        .limit(limit)
+    ).all()
+
+    project_ids = {task.project_id for task in tasks}
+    projects = {}
+    if project_ids:
+        projects = {
+            item.id: item.name
+            for item in db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
         }
-        for row in rows
-    ]
+
+    output = []
+    for task in tasks:
+        latest_run = db.scalar(
+            select(Run)
+            .where(Run.task_id == task.id)
+            .order_by(Run.attempt.desc(), Run.started_at.desc())
+            .limit(1)
+        )
+        output.append(
+            _task_summary(
+                task,
+                project_name=projects.get(task.project_id, ""),
+                pull_request_url=(latest_run.pull_request_url if latest_run else ""),
+            )
+        )
+    return output
+
+
+@router.post("/super-admin/tasks", status_code=201)
+def create_super_admin_task(
+    payload: TaskCreate,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(require_roles(Role.SUPER_ADMIN)),
+):
+    """Create an auditable task explicitly owned by the current Super Admin."""
+    ws = _workspace(db)
+    project = db.scalar(
+        select(Project).where(
+            Project.id == payload.project_id,
+            Project.workspace_id == ws.id,
+        )
+    )
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    decision = evaluate_task(payload.prompt, payload.requires_approval)
+    item = Task(
+        workspace_id=ws.id,
+        owner_user_id=principal.user_id,
+        project_id=payload.project_id,
+        title=payload.title,
+        prompt=payload.prompt,
+        source=payload.source,
+        priority=payload.priority,
+        requires_approval=decision.requires_approval,
+        status=(TaskStatus.awaiting_approval if decision.requires_approval else TaskStatus.queued),
+    )
+    db.add(item)
+    db.flush()
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=item.project_id,
+        task_id=item.id,
+        actor=principal.actor,
+        action="super_admin.task_created",
+        details={"source": item.source, "approval_reasons": decision.reasons},
+    )
+    db.commit()
+    db.refresh(item)
+    return _task_summary(item, project_name=project.name)
 
 
 @router.get("/tasks/{task_id}")
