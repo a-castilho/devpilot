@@ -152,7 +152,7 @@ class TaskCreate(BaseModel):
     prompt: str = Field(min_length=5, max_length=100_000)
     source: str = Field(default="dashboard", pattern=r"^(dashboard|voice|api)$")
     priority: int = Field(default=50, ge=0, le=100)
-    requires_approval: bool = True
+    requires_approval: bool = False
 
 
 class VoiceCommand(BaseModel):
