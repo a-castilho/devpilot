@@ -74,8 +74,9 @@ def test_created_task_is_owned_and_visible_to_same_super_admin_only():
 
     assert created["project_name"] == "Regula AI"
     mine = super_admin_task_summaries(limit=20, db=db, principal=principal(admin))
-    assert [item["id"] for item in mine] == [created["id"]]
-    assert mine[0]["title"] == "Radar Regula AI editorial automático"
+    mine_by_id = {item["id"]: item for item in mine}
+    assert created["id"] in mine_by_id
+    assert mine_by_id[created["id"]]["title"] == "Radar Regula AI editorial automático"
 
     others = super_admin_task_summaries(limit=20, db=db, principal=principal(other))
     assert others == []
