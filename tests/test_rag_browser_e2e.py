@@ -57,7 +57,15 @@ def test_super_admin_can_open_rag_and_read_health_without_external_calls(e2e_ser
             admin_placeholder = page.locator('[data-devpilot-feature-placeholder="admin"]')
             admin_placeholder.wait_for(state="visible", timeout=10_000)
             admin_placeholder.click()
-            page.wait_for_selector('script[src*="rag-admin-ui.js"]', timeout=15_000)
+            page.wait_for_selector(
+                'script[src*="rag-admin-ui.js"]',
+                state="attached",
+                timeout=15_000,
+            )
+            page.wait_for_function(
+                "() => document.querySelector('script[src*=\"rag-admin-ui.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
+                timeout=15_000,
+            )
             page.wait_for_function("() => Boolean(document.getElementById('rag-admin-view'))", timeout=15_000)
 
             rag_nav = page.locator('.nav[data-view="rag-admin"]')
