@@ -20,6 +20,18 @@ Novos `MutationObserver` globais em módulos comuns são proibidos. Preferir eve
 
 O gate não deve ser removido para fazer um build passar; a implementação deve ser corrigida.
 
+## Matriz de qualidade por módulo crítico
+
+`.devpilot/quality-modules.json` é o contrato declarativo entre áreas críticas, seus arquivos de implementação, testes focados e E2E de navegador. `scripts/critical-quality-matrix.py` valida esse contrato, identifica os módulos afetados pelo diff e executa a bateria focada antes da suíte completa quando `DEVPILOT_RUN_CRITICAL_MATRIX=1`.
+
+A matriz cobre autenticação, tarefas/worker, Modo Jogo, Super Admin, RAG, GitHub, Linux, cloud/deploy e frontend. Um módulo ativo deve possuir ao menos um teste automatizado correspondente. Um domínio opcional pode permanecer inativo somente enquanto seu código-fonte não existir; quando o código passa a existir, o contrato de testes torna-se obrigatório automaticamente.
+
+Arquivos críticos protegidos por `guard_patterns` não podem surgir sem pertencer a algum módulo declarado. Mudanças estruturais — runtime principal, banco/configuração, CI, Docker, build/deploy, política e a própria matriz — selecionam todos os módulos ativos para o gate focado.
+
+O gate focado é adicional. Ele nunca substitui `pytest` completo, validação de build, sintaxe ou E2E. Sua finalidade é falhar cedo e fornecer diagnóstico por domínio sem reduzir a proteção global.
+
+E2E de navegador usam o marker pytest `browser_e2e` e o padrão de nome `*_browser_e2e.py`. O CI coleta somente esses arquivos e ainda filtra pelo marker. Isso evita importar a suíte unitária inteira no processo do navegador antes que o fixture instale banco, settings e diretórios E2E isolados. Um novo E2E crítico entra automaticamente na etapa de navegador ao seguir esse contrato.
+
 ## CI e main
 
 Uma alteração só é considerada pronta com os gates verdes. A branch `main` deve usar Pull Request e exigir `DevPilot policy` e `DevPilot quality` antes do merge. Mudanças normais de produto não devem entrar por push direto.
@@ -42,7 +54,7 @@ Quando os minutos hospedados voltarem a estar disponíveis, remover a variável 
 
 ## Critério de pronto
 
-Uma mudança está pronta quando política, compileall quando aplicável, sintaxe JavaScript, testes automatizados, validação manual do fluxo visível e CI estiverem aprovados. Regressões importantes devem gerar teste ou gate permanente sempre que tecnicamente viável.
+Uma mudança está pronta quando política, matriz crítica, compileall quando aplicável, sintaxe JavaScript, testes automatizados, E2E aplicáveis, validação manual do fluxo visível e CI estiverem aprovados. Regressões importantes devem gerar teste ou gate permanente sempre que tecnicamente viável.
 
 <!-- COMPROMISSO-GERAL-A-CASTILHO -->
 

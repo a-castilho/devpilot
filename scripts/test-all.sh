@@ -7,7 +7,7 @@ cd "$ROOT"
 RESULT_DIR="${DEVPILOT_TEST_RESULTS_DIR:-.artifacts/test-results}"
 export DEVPILOT_TEST_RESULTS_DIR="$RESULT_DIR"
 mkdir -p "$RESULT_DIR"
-rm -f "$RESULT_DIR"/*.log "$RESULT_DIR"/*.xml "$RESULT_DIR"/summary.txt "$RESULT_DIR"/*.png
+rm -f "$RESULT_DIR"/*.log "$RESULT_DIR"/*.xml "$RESULT_DIR"/*.json "$RESULT_DIR"/summary.txt "$RESULT_DIR"/*.png
 
 if [[ -n "${PYTHON_BIN:-}" ]]; then
   PYTHON_CMD="$PYTHON_BIN"
@@ -50,6 +50,18 @@ run_logged() {
 run_logged python-version "$PYTHON_CMD" -c 'import sys; print(sys.executable, sys.version); raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'
 run_logged python-compile "$PYTHON_CMD" -m compileall -q app
 run_logged engineering-standards "$PYTHON_CMD" scripts/check-engineering-standards.py --changed
+
+matrix_args=(
+  scripts/critical-quality-matrix.py
+  --report "$RESULT_DIR/critical-quality-matrix.json"
+)
+if [[ "${DEVPILOT_RUN_CRITICAL_MATRIX:-0}" == "1" ]]; then
+  matrix_args+=(--run)
+fi
+if [[ -n "${DEVPILOT_POLICY_BASE:-}" ]]; then
+  matrix_args+=(--base "$DEVPILOT_POLICY_BASE")
+fi
+run_logged critical-quality-matrix "$PYTHON_CMD" "${matrix_args[@]}"
 
 run_logged javascript bash -c '
   set -o pipefail
@@ -109,17 +121,32 @@ record pytest-all "$pytest_rc"
 
 if [[ "${DEVPILOT_RUN_BROWSER_E2E:-0}" == "1" ]]; then
   echo
-  echo "=== game-browser-e2e ==="
-  "$PYTHON_CMD" -m pytest -q -m browser_e2e tests/test_game_browser_e2e.py \
-    --disable-warnings --junitxml="$RESULT_DIR/game-browser-e2e.xml" \
-    2>&1 | tee "$RESULT_DIR/game-browser-e2e.log"
-  browser_rc=${PIPESTATUS[0]}
-  record game-browser-e2e "$browser_rc"
+  echo "=== browser-e2e ==="
+
+  # Colete somente módulos E2E. Apontar pytest para tests/ inteiro faz a coleta
+  # importar testes unitários e módulos de aplicação antes do fixture E2E instalar
+  # o ambiente isolado, podendo reutilizar settings/engine do processo incorretos.
+  mapfile -d '' -t browser_e2e_files < <(
+    find tests -maxdepth 1 -type f -name '*_browser_e2e.py' -print0 | sort -z
+  )
+
+  if [[ "${#browser_e2e_files[@]}" -eq 0 ]]; then
+    echo "Nenhum arquivo *_browser_e2e.py encontrado; browser gate não pode ficar vazio." >&2
+    record browser-e2e 1
+  else
+    echo "Arquivos E2E selecionados:"
+    printf '  - %s\n' "${browser_e2e_files[@]}"
+    "$PYTHON_CMD" -m pytest -q -m browser_e2e "${browser_e2e_files[@]}" \
+      --disable-warnings --junitxml="$RESULT_DIR/browser-e2e.xml" \
+      2>&1 | tee "$RESULT_DIR/browser-e2e.log"
+    browser_rc=${PIPESTATUS[0]}
+    record browser-e2e "$browser_rc"
+  fi
 else
   echo
-  echo "=== game-browser-e2e ==="
-  echo "SKIP local: defina DEVPILOT_RUN_BROWSER_E2E=1 para executar Chromium E2E."
-  printf 'SKIP  game-browser-e2e (opt-in local; obrigatório no CI)\n' | tee -a "$RESULT_DIR/summary.txt"
+  echo "=== browser-e2e ==="
+  echo "SKIP local: defina DEVPILOT_RUN_BROWSER_E2E=1 para executar os E2E de navegador."
+  printf 'SKIP  browser-e2e (opt-in local; obrigatório no CI)\n' | tee -a "$RESULT_DIR/summary.txt"
 fi
 
 {

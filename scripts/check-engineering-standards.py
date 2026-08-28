@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import os
 from pathlib import Path
 import re
@@ -25,9 +26,23 @@ ACS_LOADER = ROOT / "app/static/acs-loader.js"
 FEATURE_LOADER = ROOT / "app/static/feature-loader.js"
 AGENTS = ROOT / "AGENTS.md"
 VALIDATE_CI = ROOT / "scripts/validate-ci.sh"
+TEST_ALL = ROOT / "scripts/test-all.sh"
+QUALITY_MATRIX = ROOT / "scripts/critical-quality-matrix.py"
+QUALITY_MODULES = ROOT / ".devpilot/quality-modules.json"
 
 EXPECTED_PREAUTH = {"acs-loader.js", "auth-ui.js"}
 EXPECTED_CORE = ["app.js", "feature-loader.js"]
+EXPECTED_CRITICAL_MODULES = {
+    "auth",
+    "tasks_worker",
+    "game",
+    "super_admin",
+    "rag",
+    "github",
+    "linux",
+    "cloud_deploy",
+    "frontend",
+}
 
 DYNAMIC_SCRIPT_PATTERN = re.compile(
     r"(?:createElement\s*\(\s*['\"]script['\"]|"
@@ -133,13 +148,61 @@ def check_loader_invariants() -> None:
         fail("ACS loader deve permanecer não bloqueante (pointerEvents = none).")
 
 
+def check_quality_matrix_contract() -> None:
+    if not QUALITY_MATRIX.is_file():
+        fail("scripts/critical-quality-matrix.py é obrigatório.")
+    if not QUALITY_MODULES.is_file():
+        fail(".devpilot/quality-modules.json é obrigatório.")
+
+    try:
+        config = json.loads(read(QUALITY_MODULES))
+    except json.JSONDecodeError as exc:
+        fail(f"quality-modules.json inválido: {exc}")
+
+    names = {
+        item.get("name")
+        for item in config.get("modules", [])
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    }
+    missing = EXPECTED_CRITICAL_MODULES - names
+    if config.get("version") != 1:
+        fail("quality-modules.json deve permanecer em version=1.")
+    if missing:
+        fail(f"matriz perdeu módulos críticos: {', '.join(sorted(missing))}")
+
+    validate = read(VALIDATE_CI)
+    test_all = read(TEST_ALL)
+    if "critical-quality-matrix.py" not in validate:
+        fail("validate-ci.sh não valida a matriz de módulos críticos.")
+    if "critical-quality-matrix.py" not in test_all:
+        fail("test-all.sh não executa a matriz de módulos críticos.")
+    browser_contract = (
+        "-name '*_browser_e2e.py'",
+        '"${browser_e2e_files[@]}"',
+        "-m browser_e2e",
+    )
+    if any(token not in test_all for token in browser_contract):
+        fail(
+            "test-all.sh deve descobrir apenas arquivos *_browser_e2e.py e filtrá-los "
+            "pelo marker browser_e2e."
+        )
+    if "-m browser_e2e tests" in test_all:
+        fail(
+            "test-all.sh não pode coletar tests/ inteiro no browser gate; isso contamina "
+            "o ambiente E2E com imports de testes unitários."
+        )
+
+
 def check_standard_is_wired() -> None:
     agents = read(AGENTS)
     validate = read(VALIDATE_CI)
     if "## Reliability and regression prevention standard" not in agents:
         fail("AGENTS.md não contém o padrão obrigatório de confiabilidade/regressão.")
+    if "## Critical module quality matrix" not in agents:
+        fail("AGENTS.md não contém a política da matriz de módulos críticos.")
     if "check-engineering-standards.py" not in validate:
         fail("validate-ci.sh não executa o gate de padrões de engenharia.")
+    check_quality_matrix_contract()
 
 
 def resolve_base(explicit: str | None) -> str | None:
@@ -163,7 +226,17 @@ def resolve_base(explicit: str | None) -> str | None:
 
 def changed_added_lines(base: str) -> dict[str, list[str]]:
     result = subprocess.run(
-        ["git", "diff", "--unified=0", f"{base}...HEAD", "--", "app", "scripts", "AGENTS.md"],
+        [
+            "git",
+            "diff",
+            "--unified=0",
+            f"{base}...HEAD",
+            "--",
+            "app",
+            "scripts",
+            ".devpilot",
+            "AGENTS.md",
+        ],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -236,7 +309,9 @@ def main() -> int:
         print(f"[policy] ERRO: {exc}", file=sys.stderr)
         return 1
 
-    print("[policy] OK: boot mínimo, features sob demanda e prevenção de regressão preservados.")
+    print(
+        "[policy] OK: boot mínimo, features sob demanda, matriz crítica e prevenção de regressão preservados."
+    )
     return 0
 
 

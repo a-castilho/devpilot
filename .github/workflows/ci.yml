@@ -74,6 +74,7 @@ jobs:
     timeout-minutes: 35
     env:
       DEVPILOT_RUN_BROWSER_E2E: "1"
+      DEVPILOT_RUN_CRITICAL_MATRIX: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -125,7 +126,7 @@ jobs:
         if: ${{ vars.DEVPILOT_RUNNER }}
         run: python3 -m playwright install chromium
 
-      - name: Run complete validation including browser game E2E
+      - name: Run complete validation including critical matrix and browser E2E
         run: |
           if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then export PYTHON_BIN="$(command -v python3)"; fi
           bash scripts/test-all.sh
