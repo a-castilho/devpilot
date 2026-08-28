@@ -137,7 +137,7 @@
       if (status === 'running') {
         actionCell.appendChild(actionButton('Parar', 'pause', task.id));
         actionCell.appendChild(actionButton('Cancelar', 'cancel', task.id));
-      } else if (status !== 'completed') {
+      } else if (String(task.status) !== 'completed') {
         actionCell.appendChild(actionButton('Próximo', 'next', task.id));
         actionCell.appendChild(actionButton('Continuar automaticamente', 'auto', task.id));
         actionCell.appendChild(actionButton('Retomar', 'resume', task.id));
