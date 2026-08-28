@@ -176,8 +176,21 @@ def check_quality_matrix_contract() -> None:
         fail("validate-ci.sh não valida a matriz de módulos críticos.")
     if "critical-quality-matrix.py" not in test_all:
         fail("test-all.sh não executa a matriz de módulos críticos.")
-    if "-m browser_e2e tests" not in test_all:
-        fail("test-all.sh deve descobrir todos os browser E2E pelo marker browser_e2e.")
+    browser_contract = (
+        "-name '*_browser_e2e.py'",
+        '"${browser_e2e_files[@]}"',
+        "-m browser_e2e",
+    )
+    if any(token not in test_all for token in browser_contract):
+        fail(
+            "test-all.sh deve descobrir apenas arquivos *_browser_e2e.py e filtrá-los "
+            "pelo marker browser_e2e."
+        )
+    if "-m browser_e2e tests" in test_all:
+        fail(
+            "test-all.sh não pode coletar tests/ inteiro no browser gate; isso contamina "
+            "o ambiente E2E com imports de testes unitários."
+        )
 
 
 def check_standard_is_wired() -> None:
