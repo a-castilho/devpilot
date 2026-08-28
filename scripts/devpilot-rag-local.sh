@@ -68,7 +68,7 @@ for _ in $(seq 1 40); do
     break
   fi
   sleep 1
- done
+done
 
 docker compose -f "$COMPOSE_FILE" exec -T rag-postgres pg_isready -U devpilot -d devpilot_rag >/dev/null
 [[ "$(docker compose -f "$COMPOSE_FILE" exec -T rag-redis redis-cli ping)" == "PONG" ]] || { log "ERRO: Redis RAG não respondeu PONG."; exit 1; }
@@ -80,10 +80,13 @@ export DEVPILOT_RAG_ENABLED="${DEVPILOT_RAG_ENABLED:-1}"
 log "Inicializando schema RAG isolado..."
 "$ROOT/.venv/bin/python" -c 'from app.config import get_settings; from app.rag.database import rag_engine; from app.rag.schema import ensure_rag_schema; assert rag_engine is not None; assert ensure_rag_schema(rag_engine, embedding_dimensions=get_settings().rag_embedding_dimensions)'
 
+log "Validando provedor de embeddings sem expor credenciais..."
+"$ROOT/.venv/bin/python" -c 'from app.rag.runtime import get_rag_embedder; import sys; sys.exit(0) if get_rag_embedder() is not None else sys.exit("Configure DEVPILOT_RAG_EMBEDDING_API_KEY no .env ou OPENAI_API_KEY no ambiente.")'
+
 log "Atualizando/reiniciando o DevPilot com o backend RAG isolado..."
 bash "$ROOT/scripts/devpilot-local-safe.sh"
 
 start_rag_worker
 
 log "RAG local pronto: PostgreSQL/pgvector=127.0.0.1:55432 Redis=127.0.0.1:56379"
-log "Se a chave de embeddings estiver configurada, Indexar / Atualizar já pode processar a fila."
+log "Indexar / Atualizar já pode enfileirar e processar documentos no banco vetorial isolado."
