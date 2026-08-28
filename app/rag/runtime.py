@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import get_settings
 from app.db import SessionLocal, engine as core_engine
@@ -38,17 +38,12 @@ def _stored_openai_api_key() -> str:
             if not item:
                 return ""
             return Vault().decrypt(item.encrypted_secret).strip()
-    except (RuntimeError, ValueError):
+    except (RuntimeError, ValueError, SQLAlchemyError):
         return ""
 
 
 def _embedding_api_key() -> str:
-    settings = get_settings()
-    return (
-        settings.rag_embedding_api_key.strip()
-        or os.getenv("OPENAI_API_KEY", "").strip()
-        or _stored_openai_api_key()
-    )
+    return _stored_openai_api_key()
 
 
 def embedding_key_configured() -> bool:
