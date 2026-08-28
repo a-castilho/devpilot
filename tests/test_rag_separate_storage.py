@@ -44,3 +44,17 @@ def test_local_rag_setup_is_bound_to_loopback():
     assert "DEVPILOT_RAG_DATABASE_URL" in script
     assert "docker compose up -d postgres" in script
     assert "app.rag_worker_entry" in script
+
+
+def test_rag_reuses_general_openai_vault_credential_without_exposing_secret():
+    from pathlib import Path
+
+    runtime = Path("app/rag/runtime.py").read_text(encoding="utf-8")
+    script = Path("scripts/devpilot-rag-local-safe.sh").read_text(encoding="utf-8")
+
+    assert "ProviderCredential.provider == \"openai\"" in runtime
+    assert "ProviderCredential.enabled.is_(True)" in runtime
+    assert "Vault().decrypt(item.encrypted_secret)" in runtime
+    assert "or _stored_openai_api_key()" in runtime
+    assert "embedding_key_configured" in script
+    assert "grep -Eq '^(DEVPILOT_RAG_EMBEDDING_API_KEY|OPENAI_API_KEY)" not in script
