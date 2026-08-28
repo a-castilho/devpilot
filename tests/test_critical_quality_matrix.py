@@ -37,10 +37,28 @@ def test_quality_matrix_declares_all_critical_domains():
         "frontend",
     } <= set(modules)
     assert modules["auth"]["active"] is True
+    assert modules["tasks_worker"]["active"] is True
     assert modules["game"]["active"] is True
+    assert modules["super_admin"]["active"] is True
     assert modules["frontend"]["active"] is True
     assert modules["rag"]["activate_when_source_exists"] is True
     assert modules["rag"]["browser_required"] is True
+
+
+def test_primary_critical_domains_have_browser_contracts():
+    matrix = load_matrix_module()
+    config = matrix.load_config(CONFIG)
+    modules = matrix.validate_config(config)
+
+    shared = "tests/test_critical_flows_browser_e2e.py"
+    assert modules["auth"]["browser_required"] is True
+    assert shared in modules["auth"]["browser_files"]
+    assert modules["tasks_worker"]["browser_required"] is True
+    assert shared in modules["tasks_worker"]["browser_files"]
+    assert modules["super_admin"]["browser_required"] is True
+    assert shared in modules["super_admin"]["browser_files"]
+    assert "tests/test_game_browser_e2e.py" in modules["game"]["browser_files"]
+    assert "tests/test_rag_browser_e2e.py" in modules["rag"]["browser_files"]
 
 
 def test_game_change_selects_game_and_frontend_contracts():
@@ -72,6 +90,36 @@ def test_auth_change_selects_auth_contract():
 
     assert structural is False
     assert "auth" in selected
+
+
+def test_task_change_selects_task_worker_contract():
+    matrix = load_matrix_module()
+    config = matrix.load_config(CONFIG)
+    modules = matrix.validate_config(config)
+
+    selected, structural = matrix.select_modules(
+        config,
+        modules,
+        ["app/task_run_routes.py"],
+    )
+
+    assert structural is False
+    assert "tasks_worker" in selected
+
+
+def test_super_admin_change_selects_admin_contract():
+    matrix = load_matrix_module()
+    config = matrix.load_config(CONFIG)
+    modules = matrix.validate_config(config)
+
+    selected, structural = matrix.select_modules(
+        config,
+        modules,
+        ["app/super_admin_voice_routes.py"],
+    )
+
+    assert structural is False
+    assert "super_admin" in selected
 
 
 def test_structural_change_selects_every_active_module():
@@ -129,5 +177,6 @@ def test_report_contains_focused_and_browser_contracts():
     )
 
     assert "tests/test_game_browser_e2e.py" in report["browser_e2e_contracts"]
+    assert "tests/test_critical_flows_browser_e2e.py" in report["browser_e2e_contracts"]
     assert "tests/test_build_game_ui.py" in report["focused_tests"]
     assert "tests/test_frontend_runtime_circuit_breaker.py" in report["focused_tests"]
