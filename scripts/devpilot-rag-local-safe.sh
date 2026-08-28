@@ -48,10 +48,11 @@ if not found:
 path.write_text("\n".join(updated).rstrip() + "\n", encoding="utf-8")
 PY
 
-if ! grep -Eq '^(DEVPILOT_RAG_EMBEDDING_API_KEY|OPENAI_API_KEY)=.+' "$ENV_FILE"; then
-  log "ERRO: falta uma chave de embeddings. Configure DEVPILOT_RAG_EMBEDDING_API_KEY ou OPENAI_API_KEY no .env."
+if ! "$ROOT/.venv/bin/python" -c 'from app.rag.runtime import embedding_key_configured; raise SystemExit(0 if embedding_key_configured() else 1)'; then
+  log "ERRO: nenhuma credencial OpenAI disponível para embeddings. Configure a conexão OpenAI geral no DevPilot ou DEVPILOT_RAG_EMBEDDING_API_KEY/OPENAI_API_KEY no .env."
   exit 2
 fi
+log "Credencial de embeddings disponível (RAG específica, OPENAI_API_KEY ou conexão OpenAI geral do Vault)."
 
 log "Reiniciando o DevPilot pelo fluxo local seguro..."
 bash scripts/devpilot-local-safe.sh
