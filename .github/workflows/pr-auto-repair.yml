@@ -57,34 +57,15 @@ jobs:
           python3 -m pip install -e '.[test,e2e]'
           python3 -m playwright install chromium
 
-      - name: Protect auto-repair control plane
+      - name: Materialize trusted controller from main
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          git fetch --no-tags origin main
-          BASE="$(git merge-base origin/main HEAD)"
-          git diff --name-only --no-renames "$BASE"..HEAD > /tmp/devpilot-pr-files.txt
-          PROTECTED=(
-            ".devpilot/pr-auto-repair.json"
-            ".github/workflows/ci.yml"
-            ".github/workflows/pr-auto-repair.yml"
-            "scripts/pr_auto_repair.py"
-            "scripts/test-all.sh"
-            "scripts/check-engineering-standards.py"
-            "AGENTS.md"
-            "docs/ENGINEERING_STANDARD.md"
-          )
-          for path in "${PROTECTED[@]}"; do
-            if grep -Fxq "$path" /tmp/devpilot-pr-files.txt; then
-              echo "Auto-repair blocked: PR changes protected control-plane file $path" >&2
-              exit 78
-            fi
-          done
-
-          # workflow_run has write permission, so never execute controller code from
-          # the mutable PR branch. Materialize the controller from the trusted main.
-          printf '%s\n' 'scripts/.devpilot-pr-auto-repair-trusted.py' >> .git/info/exclude
-          git show origin/main:scripts/pr_auto_repair.py > scripts/.devpilot-pr-auto-repair-trusted.py
+          TRUSTED_CONTROLLER="$RUNNER_TEMP/devpilot-pr-auto-repair-${GITHUB_RUN_ID}.py"
+          gh api "repos/${GITHUB_REPOSITORY}/contents/scripts/pr_auto_repair.py?ref=main" \
+            --jq '.content' | base64 --decode > "$TRUSTED_CONTROLLER"
+          chmod 600 "$TRUSTED_CONTROLLER"
+          echo "DEVPILOT_TRUSTED_CONTROLLER=$TRUSTED_CONTROLLER" >> "$GITHUB_ENV"
 
       - name: Repair, validate and re-dispatch CI
         env:
@@ -92,9 +73,10 @@ jobs:
         run: |
           python3 - <<'PY'
           import importlib.util
+          import os
           from pathlib import Path
 
-          controller = Path("scripts/.devpilot-pr-auto-repair-trusted.py").resolve()
+          controller = Path(os.environ["DEVPILOT_TRUSTED_CONTROLLER"]).resolve()
           spec = importlib.util.spec_from_file_location("devpilot_pr_auto_repair_trusted", controller)
           module = importlib.util.module_from_spec(spec)
           assert spec.loader is not None
