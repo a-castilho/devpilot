@@ -6,9 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import engine, get_db
+from app.db import engine as core_engine, get_db
 from app.models import Project
 from app.rag.admin import RagAdminService
+from app.rag.db import get_rag_engine
 from app.rag.jobs import enqueue_index_job, list_jobs, retry_job
 from app.rag.metrics import RagMetricsService
 from app.rag.runtime import get_rag_service, reload_rag_service
@@ -29,14 +30,15 @@ def _admin() -> RagAdminService:
 
 
 def _metrics() -> RagMetricsService:
-    return RagMetricsService(engine)
+    return RagMetricsService(get_rag_engine())
 
 
 def _require_index_backend() -> None:
-    if engine.dialect.name != "postgresql":
+    rag_engine = get_rag_engine()
+    if rag_engine.dialect.name != "postgresql":
         raise HTTPException(
             status_code=409,
-            detail="Indexação RAG indisponível neste runtime: configure PostgreSQL com pgvector.",
+            detail="Indexação RAG indisponível neste runtime: configure DEVPILOT_RAG_DATABASE_URL com PostgreSQL + pgvector.",
         )
 
     rag = get_rag_service()
@@ -47,7 +49,7 @@ def _require_index_backend() -> None:
     if repository_status not in {"healthy", "ok"}:
         raise HTTPException(
             status_code=503,
-            detail="Backend vetorial RAG indisponível. Verifique PostgreSQL/pgvector antes de indexar.",
+            detail="Backend vetorial RAG indisponível. Verifique PostgreSQL/pgvector e a chave de embeddings.",
         )
 
 
@@ -96,7 +98,7 @@ def update_settings(
         updated = _admin().update_settings(changes)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    save_runtime_settings(engine, updated)
+    save_runtime_settings(core_engine, updated)
     reload_rag_service()
     record(
         db,
@@ -122,7 +124,7 @@ def index_project(
         raise HTTPException(status_code=409, detail="Project must belong to an organization")
     _require_index_backend()
     job = enqueue_index_job(
-        engine,
+        get_rag_engine(),
         organization_id=project.organization_id,
         project_id=project.id,
     )
@@ -141,7 +143,7 @@ def index_project(
 
 @router.get("/jobs")
 def jobs(project_id: str | None = None, limit: int = Query(default=50, ge=1, le=100)) -> list[dict]:
-    return list_jobs(engine, project_id=project_id, limit=limit)
+    return list_jobs(get_rag_engine(), project_id=project_id, limit=limit)
 
 
 @router.post("/jobs/{job_id}/retry")
@@ -150,7 +152,7 @@ def retry(
     db: Session = Depends(get_db),
     principal: Principal = Depends(session_principal),
 ) -> dict[str, Any]:
-    job = retry_job(engine, job_id)
+    job = retry_job(get_rag_engine(), job_id)
     if not job:
         raise HTTPException(status_code=409, detail="Job cannot be retried")
     record(
