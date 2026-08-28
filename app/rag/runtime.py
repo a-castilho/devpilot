@@ -3,9 +3,12 @@ from __future__ import annotations
 from functools import lru_cache
 
 from app.config import get_settings
+from app.db import engine
 
 from .cache import RedisRagCache
+from .embedding import OpenAIEmbeddingProvider
 from .service import NullRagCache, NullRagRepository, RagService, RagSettings
+from .vector_repository import PgVectorRagRepository
 
 
 @lru_cache
@@ -35,7 +38,29 @@ def get_rag_service() -> RagService:
         except RuntimeError:
             cache = NullRagCache()
 
-    # The vector repository is connected in the next ingestion/retrieval phase.
-    # Keeping the null adapter here preserves graceful degradation until an
-    # embedding provider is explicitly configured.
-    return RagService(settings=rag_settings, repository=NullRagRepository(), cache=cache)
+    repository = NullRagRepository()
+    if (
+        engine.dialect.name == "postgresql"
+        and settings.rag_embedding_api_key.strip()
+    ):
+        embedder = OpenAIEmbeddingProvider(
+            api_key=settings.rag_embedding_api_key,
+            model=settings.rag_embedding_model,
+            base_url=settings.rag_embedding_base_url,
+            dimensions=settings.rag_embedding_dimensions,
+        )
+        repository = PgVectorRagRepository(engine, embedder)
+
+    return RagService(settings=rag_settings, repository=repository, cache=cache)
+
+
+def get_rag_embedder() -> OpenAIEmbeddingProvider | None:
+    settings = get_settings()
+    if engine.dialect.name != "postgresql" or not settings.rag_embedding_api_key.strip():
+        return None
+    return OpenAIEmbeddingProvider(
+        api_key=settings.rag_embedding_api_key,
+        model=settings.rag_embedding_model,
+        base_url=settings.rag_embedding_base_url,
+        dimensions=settings.rag_embedding_dimensions,
+    )
