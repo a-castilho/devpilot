@@ -27,6 +27,12 @@
     "app/*deploy*.py",
     "app/*rag*.py",
     "app/rag/**",
+    "app/services/alternating_flow.py",
+    "app/services/executor.py",
+    "app/services/git_reader.py",
+    "app/services/github_*.py",
+    "app/services/ollama_git_context.py",
+    "app/services/linux_*.py",
     "app/static/*game*.js",
     "app/static/game/**",
     "app/static/super-admin*.js",
@@ -60,6 +66,8 @@
         "app/*task*.py",
         "app/*worker*.py",
         "app/embedded_worker.py",
+        "app/services/alternating_flow.py",
+        "app/services/executor.py",
         "app/static/task-*.js",
         "app/static/tasks-*.js"
       ],
@@ -124,6 +132,9 @@
       "source": [
         "app/*github*.py",
         "app/*git*.py",
+        "app/services/git_reader.py",
+        "app/services/github_*.py",
+        "app/services/ollama_git_context.py",
         "app/static/*github*.js",
         "app/static/*git*.js"
       ],
@@ -138,6 +149,8 @@
       "name": "linux",
       "source": [
         "app/*linux*.py",
+        "app/linux_agent/**",
+        "app/services/linux_*.py",
         "app/static/linux-*.js",
         "scripts/install-linux-agent.sh"
       ],
