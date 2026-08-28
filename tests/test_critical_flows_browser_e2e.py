@@ -123,7 +123,11 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             admin_placeholder = page.locator('[data-devpilot-feature-placeholder="admin"]')
             admin_placeholder.wait_for(state="visible", timeout=10_000)
             admin_placeholder.click()
-            page.wait_for_selector('script[src*="super-admin-task-panel.js"]', timeout=15_000)
+            page.wait_for_selector(
+                'script[src*="super-admin-task-panel.js"]',
+                state="attached",
+                timeout=15_000,
+            )
             page.wait_for_function(
                 "() => document.querySelector('script[src*=\"super-admin-task-panel.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
                 timeout=15_000,
