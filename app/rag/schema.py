@@ -15,6 +15,13 @@ def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> No
     statements = [
         "CREATE EXTENSION IF NOT EXISTS vector",
         """
+        CREATE TABLE IF NOT EXISTS rag_runtime_settings (
+            key VARCHAR(40) PRIMARY KEY,
+            value JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS rag_documents (
             id VARCHAR(36) PRIMARY KEY,
             organization_id VARCHAR(36) NOT NULL,
