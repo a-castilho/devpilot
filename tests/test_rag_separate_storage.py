@@ -97,3 +97,15 @@ def test_runtime_falls_back_to_local_embeddings_without_api_key():
     assert "return LocalHashEmbeddingProvider" in runtime
     assert "fallback local CPU-only" in script
     assert "nenhuma credencial OpenAI disponível" not in script
+
+
+def test_rag_feature_branch_restart_does_not_merge_main_into_checkout():
+    from pathlib import Path
+
+    rag_script = Path("scripts/devpilot-rag-local-safe.sh").read_text(encoding="utf-8")
+    safe_script = Path("scripts/devpilot-local-safe.sh").read_text(encoding="utf-8")
+
+    assert "DEVPILOT_SAFE_SKIP_UPDATE=1 bash scripts/devpilot-local-safe.sh" in rag_script
+    assert 'DEVPILOT_SAFE_SKIP_UPDATE:-0' in safe_script
+    assert 'VALIDATION_BASE="${DEVPILOT_SAFE_VALIDATION_BASE:-origin/main}"' in safe_script
+    assert 'git merge --ff-only origin/main' in safe_script
