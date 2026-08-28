@@ -23,6 +23,17 @@ router = APIRouter(
     dependencies=[Depends(require_super_admin)],
 )
 
+RAG_STORAGE_UNAVAILABLE_MESSAGE = "RAG indisponível — PostgreSQL não configurado"
+
+
+def _rag_storage_available() -> bool:
+    return engine.dialect.name == "postgresql"
+
+
+def _require_rag_storage() -> None:
+    if not _rag_storage_available():
+        raise HTTPException(status_code=503, detail=RAG_STORAGE_UNAVAILABLE_MESSAGE)
+
 
 def _admin() -> RagAdminService:
     return RagAdminService(get_rag_service())
@@ -33,11 +44,7 @@ def _metrics() -> RagMetricsService:
 
 
 def _require_index_backend() -> None:
-    if engine.dialect.name != "postgresql":
-        raise HTTPException(
-            status_code=409,
-            detail="Indexação RAG indisponível neste runtime: configure PostgreSQL com pgvector.",
-        )
+    _require_rag_storage()
 
     rag = get_rag_service()
     if not rag.settings.enabled:
@@ -140,8 +147,20 @@ def index_project(
 
 
 @router.get("/jobs")
-def jobs(project_id: str | None = None, limit: int = Query(default=50, ge=1, le=100)) -> list[dict]:
-    return list_jobs(engine, project_id=project_id, limit=limit)
+def jobs(project_id: str | None = None, limit: int = Query(default=50, ge=1, le=100)) -> dict[str, Any]:
+    if not _rag_storage_available():
+        return {
+            "available": False,
+            "reason": "postgresql_required",
+            "message": RAG_STORAGE_UNAVAILABLE_MESSAGE,
+            "jobs": [],
+        }
+    return {
+        "available": True,
+        "reason": None,
+        "message": None,
+        "jobs": list_jobs(engine, project_id=project_id, limit=limit),
+    }
 
 
 @router.post("/jobs/{job_id}/retry")
@@ -150,6 +169,7 @@ def retry(
     db: Session = Depends(get_db),
     principal: Principal = Depends(session_principal),
 ) -> dict[str, Any]:
+    _require_rag_storage()
     job = retry_job(engine, job_id)
     if not job:
         raise HTTPException(status_code=409, detail="Job cannot be retried")
