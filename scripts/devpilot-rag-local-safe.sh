@@ -36,7 +36,7 @@ else
 fi
 
 log "Reiniciando o DevPilot pelo fluxo local seguro sem trocar o checkout da branch em teste..."
-DEVPILOT_SAFE_KEEP_CHECKOUT=1 bash scripts/devpilot-local-safe.sh
+DEVPILOT_SAFE_SKIP_UPDATE=1 bash scripts/devpilot-local-safe.sh
 
 if [[ -f "$RAG_PID_FILE" ]]; then
   OLD_PID="$(cat "$RAG_PID_FILE" 2>/dev/null || true)"
