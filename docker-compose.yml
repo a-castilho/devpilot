@@ -16,6 +16,7 @@ services:
     env_file: .env
     environment:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_REDIS_URL: redis://redis:6379/0
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
       DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
@@ -30,6 +31,8 @@ services:
       - ${HOME}/.local/share/devpilot-linux-agent/runtime:/runtime/linux-agent
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       host-actions-init:
         condition: service_completed_successfully
@@ -54,6 +57,7 @@ services:
     env_file: .env
     environment:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_REDIS_URL: redis://redis:6379/0
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
       DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
@@ -63,12 +67,14 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       host-actions-init:
         condition: service_completed_successfully
     restart: unless-stopped
 
   postgres:
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: devpilot
       POSTGRES_USER: devpilot
@@ -80,6 +86,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 
 volumes:
   devpilot_data:
