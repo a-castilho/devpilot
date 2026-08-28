@@ -29,6 +29,32 @@ class Settings(BaseSettings):
     managed_trial_clouds_enabled: bool = True
     managed_trial_workspace_slug: str = "default"
     managed_trial_cloud_providers: str = "neon,render,vercel"
+    linkedin_client_id: str = ""
+    linkedin_client_secret_ciphertext: str = ""
+    linkedin_redirect_uri: str = ""
+    linkedin_scopes: str = "openid,profile,email"
+    linkedin_oauth_state_ttl_seconds: int = 600
+
+    # RAG defaults are deliberately conservative for the 4 GB target host.
+    rag_enabled: bool = False
+    rag_cache_enabled: bool = True
+    rag_git_enabled: bool = True
+    rag_docs_enabled: bool = True
+    rag_audit_enabled: bool = False
+    rag_tasks_enabled: bool = False
+    rag_logs_enabled: bool = False
+    rag_top_k: int = 5
+    rag_similarity_threshold: float = 0.70
+    rag_cache_ttl_seconds: int = 900
+    rag_chunk_size_tokens: int = 500
+    rag_chunk_overlap_tokens: int = 50
+    rag_index_batch_size: int = 10
+    rag_index_worker_concurrency: int = 1
+    rag_embedding_dimensions: int = 1536
+    rag_embedding_model: str = "text-embedding-3-small"
+    rag_embedding_api_key: str = ""
+    rag_embedding_base_url: str = "https://api.openai.com/v1"
+    redis_url: str = ""
 
     @property
     def git_hosts(self) -> set[str]:
@@ -39,6 +65,14 @@ class Settings(BaseSettings):
         return {
             item.strip().lower()
             for item in self.managed_trial_cloud_providers.split(",")
+            if item.strip()
+        }
+
+    @property
+    def linkedin_scope_set(self) -> set[str]:
+        return {
+            item.strip()
+            for item in self.linkedin_scopes.replace(" ", ",").split(",")
             if item.strip()
         }
 

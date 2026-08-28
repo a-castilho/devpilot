@@ -15,6 +15,9 @@ from app.services.policy import evaluate_task
 
 router = APIRouter(prefix="/api/ui", dependencies=[Depends(require_access)])
 
+_GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
+_GAME_METADATA_LABELS = ("PARTIDA", "FASE", "OBJETIVO")
+
 
 def _workspace(db: Session) -> Workspace:
     item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
@@ -38,6 +41,20 @@ def _task_summary(row, *, project_name: str = "", pull_request_url: str = "") ->
         "created_at": row.created_at,
         "updated_at": row.updated_at,
     }
+
+
+def _game_prompt_metadata(prompt: str | None) -> str:
+    lines = [_GAME_MARKER]
+    wanted = {label: "" for label in _GAME_METADATA_LABELS}
+    for raw_line in str(prompt or "").splitlines():
+        line = raw_line.strip()
+        for label in _GAME_METADATA_LABELS:
+            prefix = f"{label}:"
+            if not wanted[label] and line.startswith(prefix):
+                wanted[label] = line
+                break
+    lines.extend(value for value in wanted.values() if value)
+    return "\n".join(lines)
 
 
 @router.get("/projects")
@@ -229,3 +246,47 @@ def task_detail(task_id: str, db: Session = Depends(get_db)):
         "created_at": item.created_at,
         "updated_at": item.updated_at,
     }
+
+
+@router.get("/game-tasks")
+def game_task_summaries(
+    project_id: str,
+    limit: int = Query(24, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Compact game history for constrained browsers.
+
+    The normal Task model carries the full execution prompt, which can be several
+    kilobytes per phase. The game only needs its marker and three metadata lines
+    to reconstruct progression, so this endpoint avoids serializing unrelated
+    tasks and strips the large mission body before it reaches the browser.
+    """
+    ws = _workspace(db)
+    rows = db.execute(
+        select(
+            Task.id,
+            Task.project_id,
+            Task.title,
+            Task.prompt,
+            Task.status,
+            Task.created_at,
+        )
+        .where(
+            Task.workspace_id == ws.id,
+            Task.project_id == project_id,
+            Task.title.like("[Jogo]%"),
+        )
+        .order_by(Task.created_at.desc())
+        .limit(limit)
+    ).all()
+    return [
+        {
+            "id": row.id,
+            "project_id": row.project_id,
+            "title": row.title,
+            "prompt": _game_prompt_metadata(row.prompt),
+            "status": row.status,
+            "created_at": row.created_at,
+        }
+        for row in rows
+    ]

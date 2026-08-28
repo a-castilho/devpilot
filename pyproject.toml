@@ -18,6 +18,7 @@ devpilot = "app.cli:main"
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.2,<4"]
+rag = ["redis>=6,<7"]
 test = ["pytest>=8.4,<9", "pytest-cov>=6.2,<7"]
 e2e = ["playwright>=1.48,<2"]
 

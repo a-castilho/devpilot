@@ -1,87 +1,45 @@
 # Career / LinkedIn Sync
 
-## Objetivo
+O Career Sync mantém um perfil canônico derivado do currículo, compara esse perfil com um baseline do LinkedIn e exige aprovação antes de exportar ou tentar qualquer publicação oficial.
 
-O Career Sync transforma um currículo em uma representação canônica de perfil profissional, calcula diferenças em relação ao estado conhecido do LinkedIn e exige aprovação explícita antes de gerar um pacote de sincronização.
+## Fluxo
 
-O currículo é a fonte de verdade. O módulo não usa Selenium, Playwright, extensões de navegador ou automação de interface do LinkedIn.
+CV -> perfil canônico -> baseline LinkedIn -> diff -> aprovação -> exportação / API oficial quando disponível.
 
-## Fluxo atual
+A integração OAuth usa apenas endpoints oficiais do LinkedIn. Não existe automação por Selenium/Playwright, armazenamento de senha do LinkedIn ou simulação de sucesso de publicação.
 
-```text
-DOCX / TXT / Markdown
-        |
-        v
-CV parser
-        |
-        v
-CareerProfile canônico
-        |
-        +--> headline
-        +--> about
-        +--> experience[]
-        +--> skills[]
-        +--> projects[]
-        +--> education[]
-        +--> languages[]
-        |
-        v
-LinkedIn baseline
-        |
-        v
-Diff
-        |
-        v
-Aprovação humana
-        |
-        v
-Pacote JSON aprovado
-```
+## Segurança OAuth
 
-## Integração com o DevPilot
+- O `state` é assinado por HMAC e possui TTL.
+- Cada início de OAuth cria um nonce persistido e de uso único em `linkedin_oauth_states`.
+- O nonce é vinculado a um cookie HttpOnly específico da callback; outro navegador não consegue concluir o fluxo iniciado por uma sessão diferente.
+- O registro de state é consumido antes da troca do authorization code, impedindo replay.
+- Access/refresh tokens são cifrados pelo `Vault` antes da persistência.
+- O client secret do aplicativo não fica em claro na configuração: `DEVPILOT_LINKEDIN_CLIENT_SECRET_CIPHERTEXT` deve conter um valor previamente cifrado pelo mesmo Vault/`DEVPILOT_ENCRYPTION_KEY` da instância.
 
-- autenticação e roles existentes;
-- persistência por `workspace_id` e `user_id` na tabela `career_profiles`;
-- auditoria com `career.cv.imported`, `career.linkedin.baseline_updated` e `career.linkedin.sync_approved`;
-- nova opção `Career / LinkedIn` na interface;
-- aprovação invalidada quando currículo ou baseline muda;
-- SHA-256 do currículo para impedir aprovação de uma versão diferente da revisada.
+## Configuração
+
+- `DEVPILOT_LINKEDIN_CLIENT_ID`
+- `DEVPILOT_LINKEDIN_CLIENT_SECRET_CIPHERTEXT`
+- `DEVPILOT_LINKEDIN_REDIRECT_URI`
+- `DEVPILOT_LINKEDIN_SCOPES=openid,profile,email`
+- `DEVPILOT_LINKEDIN_OAUTH_STATE_TTL_SECONDS=600`
+
+Em produção, configure uma callback HTTPS fixa terminando em `/api/career/linkedin/oauth/callback` e cadastre exatamente a mesma URI no LinkedIn Developer Portal.
 
 ## Endpoints
 
-- `GET /api/career` — perfil, baseline, diff e status.
-- `POST /api/career/cv/import` — upload DOCX/TXT/Markdown.
-- `PUT /api/career/linkedin/baseline` — estado conhecido do LinkedIn.
-- `POST /api/career/linkedin/approve` — congela a versão revisada.
-- `GET /api/career/linkedin/export` — pacote final aprovado.
+- `GET /api/career`
+- `POST /api/career/cv/import`
+- `PUT /api/career/linkedin/baseline`
+- `POST /api/career/linkedin/approve`
+- `GET /api/career/linkedin/export`
+- `GET /api/career/linkedin/oauth/start`
+- `GET /api/career/linkedin/oauth/callback`
+- `DELETE /api/career/linkedin/oauth`
+- `POST /api/career/linkedin/publish`
 
-O parser DOCX usa apenas biblioteca padrão (`zipfile` + XML), sem dependência adicional.
-
-## Publicação automática
-
-O modo operacional atual é `approval_and_export`. A API de perfil do LinkedIn e as APIs de edição de perfil exigem acesso aprovado pelo LinkedIn. Quando esse acesso existir, um adapter oficial poderá consumir o mesmo `approved_profile_json`, sem refazer parser, diff, aprovação, auditoria ou UI.
-
-A automação via navegador permanece intencionalmente desativada.
-
-## Arquivos
-
-- `app/career_models.py`
-- `app/career_routes.py`
-- `app/services/career_sync.py`
-- `app/static/career-linkedin.js`
-- `tests/test_career_sync.py`
-
-## Segurança
-
-1. currículo limitado a 4 MB;
-2. formatos explicitamente permitidos;
-3. segregação por usuário/workspace;
-4. escrita restrita por role;
-5. aprovação explícita;
-6. consistência via SHA-256;
-7. eventos auditáveis;
-8. sem automação de navegador;
-9. sem token do LinkedIn armazenado nesta fase.
+A capability `profile_write` permanece `false` enquanto o aplicativo não possuir produto/permissões de escrita aprovados pelo LinkedIn. O DevPilot não chama endpoints de escrita não autorizados.
 
 <!-- COMPROMISSO-GERAL-A-CASTILHO -->
 
@@ -92,4 +50,3 @@ A automação via navegador permanece intencionalmente desativada.
 **Sempre na melhor prática. No caminho do bem maior.**
 
 **Ir até o fim sem sair do caminho, seja ele qual for.**
-

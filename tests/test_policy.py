@@ -4,6 +4,7 @@ os.environ.setdefault("DEVPILOT_BOOTSTRAP_TOKEN", "test-token-with-at-least-32-c
 
 import pytest
 
+from app.schemas import TaskCreate
 from app.services.intent import interpret_voice
 from app.services.policy import evaluate_task, normalize_repository_url, validate_repository_url
 
@@ -58,10 +59,57 @@ def test_git_url_uses_portuguese_format_error():
         normalize_repository_url("github.com/company/project/tree/main")
 
 
-def test_high_risk_task_requires_approval():
-    decision = evaluate_task("Faça deploy em produção", requested_approval=False)
+def test_safe_local_task_is_pre_authorized():
+    decision = evaluate_task(
+        "Edite o arquivo local, rode pytest, lint e build e faça um commit local reversível.",
+        requested_approval=False,
+    )
+    assert decision.requires_approval is False
+    assert decision.reasons == ()
+
+
+def test_task_schema_defaults_to_approval_by_exception():
+    payload = TaskCreate(
+        project_id="project-1",
+        title="Corrigir teste local",
+        prompt="Corrija o teste e valide localmente.",
+    )
+    assert payload.requires_approval is False
+
+
+def test_explicit_manual_approval_is_preserved():
+    decision = evaluate_task("Rode os testes locais", requested_approval=True)
     assert decision.requires_approval is True
-    assert "deploy" in decision.reasons
+    assert decision.reasons == ()
+
+
+@pytest.mark.parametrize(
+    ("prompt", "reason"),
+    [
+        ("Faça git push da branch", "push"),
+        ("Faça merge do PR", "merge"),
+        ("Faça deploy da aplicação", "deploy"),
+        ("Atualize o serviço em produção", "production"),
+        ("Execute npm install para trocar dependências", "dependency"),
+        ("Delete os dados antigos", "destructive"),
+        ("Execute DROP TABLE users", "destructive"),
+        ("Faça uma migration destrutiva com drop da coluna", "destructive-migration"),
+        ("Rotacione a credencial da API", "credential"),
+    ],
+)
+def test_high_risk_boundaries_require_approval(prompt, reason):
+    decision = evaluate_task(prompt, requested_approval=False)
+    assert decision.requires_approval is True
+    assert reason in decision.reasons
+
+
+def test_reversible_local_migration_is_not_blocked_by_word_alone():
+    decision = evaluate_task(
+        "Crie uma migration local reversível que adiciona uma coluna nullable e rode os testes.",
+        requested_approval=False,
+    )
+    assert decision.requires_approval is False
+    assert "destructive-migration" not in decision.reasons
 
 
 def test_voice_intent_preserves_transcript_and_project_hint():

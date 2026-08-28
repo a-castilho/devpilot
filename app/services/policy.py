@@ -5,20 +5,62 @@ from urllib.parse import urlparse
 from app.config import get_settings
 
 
-HIGH_RISK_WORDS = {
-    "deploy",
-    "produção",
-    "production",
-    "merge",
-    "push",
-    "delete",
-    "deletar",
-    "drop",
-    "migrate",
-    "migração",
-    "dependency",
-    "dependência",
-}
+HIGH_RISK_PATTERNS = (
+    (
+        "push",
+        re.compile(r"\b(?:git\s+)?push\b|\bforce[- ]?push\b", re.IGNORECASE),
+    ),
+    (
+        "merge",
+        re.compile(r"\bmerge\b|\bmescl(?:ar|e|agem)\b", re.IGNORECASE),
+    ),
+    (
+        "deploy",
+        re.compile(r"\bdeploy(?:ment)?\b|\bpublic(?:ar|ação)\b", re.IGNORECASE),
+    ),
+    (
+        "production",
+        re.compile(r"\bproduç(?:ão|ao)\b|\bproduction\b|\bprod\b", re.IGNORECASE),
+    ),
+    (
+        "dependency",
+        re.compile(
+            r"\bdepend(?:ency|encies|ência|encias)\b|"
+            r"\b(?:pip|npm|pnpm|yarn|composer)\s+(?:install|add|remove|update|upgrade)\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "destructive",
+        re.compile(
+            r"\b(?:delete|deletar|apagar|drop|truncate)\b|"
+            r"\breset\s+--hard\b|\brm\s+-rf\b|\bforce[- ]?push\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "destructive-migration",
+        re.compile(
+            r"\b(?:migration|migrate|migraç(?:ão|ao))\b[^\n]{0,80}"
+            r"\b(?:drop|delete|truncate|destrutiv|irrevers)\w*\b|"
+            r"\b(?:drop|delete|truncate|destrutiv|irrevers)\w*\b[^\n]{0,80}"
+            r"\b(?:migration|migrate|migraç(?:ão|ao))\b",
+            re.IGNORECASE,
+        ),
+    ),
+    (
+        "credential",
+        re.compile(
+            r"\b(?:secret|secrets|segredo|segredos|credential|credentials|credencial|credenciais|"
+            r"api[-_ ]?key|token|password|senha)\b[^\n]{0,60}"
+            r"\b(?:alter|trocar|rotate|rotacion|revog|delet|apag|exclu|expor|mostrar|print)\w*\b|"
+            r"\b(?:alter|trocar|rotate|rotacion|revog|delet|apag|exclu|expor|mostrar|print)\w*\b"
+            r"[^\n]{0,60}\b(?:secret|secrets|segredo|segredos|credential|credentials|credencial|"
+            r"credenciais|api[-_ ]?key|token|password|senha)\b",
+            re.IGNORECASE,
+        ),
+    ),
+)
 
 REPOSITORY_SHORTHAND = re.compile(
     r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
@@ -105,7 +147,16 @@ def validate_repository_url(url: str) -> None:
     normalize_repository_url(url)
 
 
-def evaluate_task(prompt: str, requested_approval: bool) -> PolicyDecision:
-    lowered = prompt.lower()
-    hits = tuple(sorted(word for word in HIGH_RISK_WORDS if word in lowered))
-    return PolicyDecision(requires_approval=requested_approval or bool(hits), reasons=hits)
+def evaluate_task(prompt: str, requested_approval: bool = False) -> PolicyDecision:
+    """Apply approval-by-exception to a task.
+
+    Local, auditable and reversible work is pre-authorized. Explicit user opt-in or
+    any high-risk boundary still requires approval before execution.
+    """
+    reasons = tuple(
+        name for name, pattern in HIGH_RISK_PATTERNS if pattern.search(str(prompt or ""))
+    )
+    return PolicyDecision(
+        requires_approval=bool(requested_approval or reasons),
+        reasons=reasons,
+    )
