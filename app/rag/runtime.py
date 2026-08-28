@@ -12,19 +12,14 @@ from app.services.vault import Vault
 
 from .cache import RedisRagCache
 from .db import get_rag_engine
-from .embedding import OpenAIEmbeddingProvider
+from .embedding import EmbeddingProvider, LocalHashEmbeddingProvider, OpenAIEmbeddingProvider
 from .service import NullRagCache, NullRagRepository, RagService, RagSettings
 from .settings_store import load_runtime_settings
 from .vector_repository import PgVectorRagRepository
 
 
 def _stored_openai_api_key() -> str:
-    """Resolve the enabled OpenAI credential from the default workspace vault.
-
-    The secret never leaves the backend and is only decrypted in memory for the
-    embedding request. Fail closed to an empty value when the workspace, credential,
-    or vault key is unavailable.
-    """
+    """Resolve the enabled OpenAI credential from the default workspace vault."""
     try:
         with SessionLocal() as db:
             workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
@@ -58,6 +53,19 @@ def _embedding_api_key() -> str:
 
 def embedding_key_configured() -> bool:
     return bool(_embedding_api_key())
+
+
+def _embedding_provider() -> EmbeddingProvider:
+    settings = get_settings()
+    api_key = _embedding_api_key()
+    if api_key:
+        return OpenAIEmbeddingProvider(
+            api_key=api_key,
+            model=settings.rag_embedding_model,
+            base_url=settings.rag_embedding_base_url,
+            dimensions=settings.rag_embedding_dimensions,
+        )
+    return LocalHashEmbeddingProvider(dimensions=settings.rag_embedding_dimensions)
 
 
 def _rag_settings() -> RagSettings:
@@ -96,15 +104,8 @@ def get_rag_service() -> RagService:
 
     repository = NullRagRepository()
     rag_engine = get_rag_engine()
-    api_key = _embedding_api_key()
-    if rag_engine.dialect.name == "postgresql" and api_key:
-        embedder = OpenAIEmbeddingProvider(
-            api_key=api_key,
-            model=settings.rag_embedding_model,
-            base_url=settings.rag_embedding_base_url,
-            dimensions=settings.rag_embedding_dimensions,
-        )
-        repository = PgVectorRagRepository(rag_engine, embedder)
+    if rag_engine.dialect.name == "postgresql":
+        repository = PgVectorRagRepository(rag_engine, _embedding_provider())
 
     return RagService(settings=rag_settings, repository=repository, cache=cache)
 
@@ -114,15 +115,8 @@ def reload_rag_service() -> RagService:
     return get_rag_service()
 
 
-def get_rag_embedder() -> OpenAIEmbeddingProvider | None:
-    settings = get_settings()
+def get_rag_embedder() -> EmbeddingProvider | None:
     rag_engine = get_rag_engine()
-    api_key = _embedding_api_key()
-    if rag_engine.dialect.name != "postgresql" or not api_key:
+    if rag_engine.dialect.name != "postgresql":
         return None
-    return OpenAIEmbeddingProvider(
-        api_key=api_key,
-        model=settings.rag_embedding_model,
-        base_url=settings.rag_embedding_base_url,
-        dimensions=settings.rag_embedding_dimensions,
-    )
+    return _embedding_provider()
