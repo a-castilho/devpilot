@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -10,6 +11,9 @@ from app.models import Project, Task, TaskStatus
 
 from .runtime import get_rag_service
 from .service import RagQueryMode, RetrievalResult
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -26,23 +30,12 @@ def _live_context(db: Session, workspace_id: str, project_id: str | None) -> str
         task_filters.append(Task.project_id == project_id)
 
     total = db.scalar(select(func.count(Task.id)).where(*task_filters)) or 0
-    queued = db.scalar(
-        select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.queued)
-    ) or 0
-    running = db.scalar(
-        select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.running)
-    ) or 0
-    blocked = db.scalar(
-        select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.blocked)
-    ) or 0
-    failed = db.scalar(
-        select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.failed)
-    ) or 0
+    queued = db.scalar(select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.queued)) or 0
+    running = db.scalar(select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.running)) or 0
+    blocked = db.scalar(select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.blocked)) or 0
+    failed = db.scalar(select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.failed)) or 0
     awaiting = db.scalar(
-        select(func.count(Task.id)).where(
-            *task_filters,
-            Task.status == TaskStatus.awaiting_approval,
-        )
+        select(func.count(Task.id)).where(*task_filters, Task.status == TaskStatus.awaiting_approval)
     ) or 0
 
     scope = f"projeto {project_id}" if project_id else "workspace atual"
@@ -93,14 +86,19 @@ def build_chat_knowledge_context(
     if mode in {RagQueryMode.RAG, RagQueryMode.RAG_LIVE} and project_id:
         project = db.scalar(select(Project).where(Project.id == project_id))
         if project and project.organization_id:
-            result = rag.retrieve(
-                organization_id=project.organization_id,
-                project_id=project.id,
-                query=query,
-            )
-            rag_text, sources = _rag_context(result)
-            parts.append(rag_text)
-            cache_hit = result.cache_hit
+            try:
+                result = rag.retrieve(
+                    organization_id=project.organization_id,
+                    project_id=project.id,
+                    query=query,
+                )
+            except Exception as exc:
+                logger.warning("RAG retrieval unavailable for project %s: %s", project.id, type(exc).__name__)
+                parts.append("Memória RAG temporariamente indisponível; o chat continua sem contexto histórico adicional.")
+            else:
+                rag_text, sources = _rag_context(result)
+                parts.append(rag_text)
+                cache_hit = result.cache_hit
         else:
             parts.append("Memória RAG indisponível: projeto sem organização vinculada.")
     elif mode in {RagQueryMode.RAG, RagQueryMode.RAG_LIVE}:
