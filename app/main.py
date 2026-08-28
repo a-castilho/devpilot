@@ -44,6 +44,7 @@ from app.version import __version__
 from app.voice_all_provider_routes import router as voice_conversation_router
 from app.voice_speech_routes import router as voice_speech_router
 from app.voice_transcription_routes import router as voice_transcription_router
+from app.workflow_observability_routes import router as workflow_observability_router
 from app.db import Base, engine
 from app.services.ollama_voice_bridge import install_voice_ollama_bridge
 from app.services.schema import ensure_runtime_schema
@@ -343,6 +344,7 @@ app.include_router(linux_router)
 app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
+app.include_router(workflow_observability_router)
 app.include_router(task_documentation_router)
 app.include_router(task_image_router)
 app.include_router(project_provisioning_router)
