@@ -271,18 +271,17 @@
 
   const authModal = document.querySelector('#auth-modal');
   const authenticatedUiVisible = () => Boolean(localStorage.getItem('devpilot-token')) && (!authModal || authModal.open === false);
+  const initializeIfAuthenticated = () => {
+    if (authenticatedUiVisible()) initializeAuthenticatedUi();
+  };
 
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
     document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi);
-    if (authenticatedUiVisible()) initializeAuthenticatedUi();
-    if (authModal) {
-      const observer = new MutationObserver(() => {
-        if (authenticatedUiVisible()) {
-          initializeAuthenticatedUi();
-          observer.disconnect();
-        }
-      });
-      observer.observe(authModal, {attributes: true, attributeFilter: ['open']});
+    authModal?.addEventListener('close', initializeIfAuthenticated);
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once: true});
+    } else {
+      initializeIfAuthenticated();
     }
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
