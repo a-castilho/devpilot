@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     rag_index_batch_size: int = 10
     rag_index_worker_concurrency: int = 1
     rag_embedding_dimensions: int = 1536
+    rag_embedding_model: str = "text-embedding-3-small"
+    rag_embedding_api_key: str = ""
+    rag_embedding_base_url: str = "https://api.openai.com/v1"
     redis_url: str = ""
 
     @property
