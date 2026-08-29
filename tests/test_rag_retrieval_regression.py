@@ -116,6 +116,45 @@ def test_disabled_optional_cache_does_not_degrade_healthy_rag():
     assert service.health()["cache"]["status"] == "disabled"
 
 
+def test_cache_outage_is_fail_open_for_retrieval_and_invalidation():
+    chunk = RetrievalChunk("c1", "documentation", "README.md", "README.md", "contexto", 0.91, {})
+
+    class Repository:
+        def retrieve(self, **kwargs):
+            return [chunk]
+
+        def record_query(self, **kwargs):
+            return None
+
+        def health(self):
+            return {"status": "healthy", "backend": "fake"}
+
+    class BrokenCache:
+        def get(self, key):
+            raise ConnectionError("redis down")
+
+        def set(self, key, value, ttl_seconds):
+            raise ConnectionError("redis down")
+
+        def invalidate_project(self, organization_id, project_id):
+            raise ConnectionError("redis down")
+
+        def health(self):
+            return {"status": "degraded", "backend": "redis"}
+
+    service = RagService(
+        settings=RagSettings(enabled=True, cache_enabled=True),
+        repository=Repository(),
+        cache=BrokenCache(),
+    )
+    result = service.retrieve(organization_id="org", project_id="project", query="arquitetura")
+
+    assert result.chunks == [chunk]
+    assert result.cache_hit is False
+    service.invalidate_project(organization_id="org", project_id="project")
+    assert service.health()["status"] == "degraded"
+
+
 def test_cache_key_changes_when_embedding_provider_changes():
     class Repository:
         signature = "provider-a"
