@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -17,6 +21,29 @@ router = APIRouter(prefix="/api/ui", dependencies=[Depends(require_access)])
 
 _GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
 _GAME_METADATA_LABELS = ("PARTIDA", "FASE", "OBJETIVO")
+_MAX_VISUAL_IDENTITY_PROJECTS = 50
+_MAX_PROJECT_LOGO_LENGTH = 160_000
+_DEFAULT_PROJECT_ACCENT = "#2dd4a8"
+_ALLOWED_LOGO_DATA_PREFIXES = (
+    "data:image/png;base64,",
+    "data:image/jpeg;base64,",
+    "data:image/webp;base64,",
+)
+
+
+class ProjectVisualIdentityUpdate(BaseModel):
+    logo: str = Field(default="", max_length=_MAX_PROJECT_LOGO_LENGTH)
+    accent: str = Field(default=_DEFAULT_PROJECT_ACCENT, pattern=r"^#[0-9a-fA-F]{6}$")
+
+    @field_validator("logo")
+    @classmethod
+    def validate_logo(cls, value: str) -> str:
+        normalized = str(value or "").strip()
+        if not normalized:
+            return ""
+        if normalized.startswith("https://") or normalized.startswith(_ALLOWED_LOGO_DATA_PREFIXES):
+            return normalized
+        raise ValueError("Use upload PNG/JPG/WebP ou URL HTTPS para o logo")
 
 
 def _workspace(db: Session) -> Workspace:
@@ -54,6 +81,30 @@ def _project_summary(row) -> dict:
         "default_branch": row.default_branch,
         "status": row.status,
         "created_at": row.created_at,
+    }
+
+
+def _codex_config(raw: str | None) -> dict:
+    try:
+        value = json.loads(raw or "{}")
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _visual_identity(raw: str | None) -> dict:
+    identity = _codex_config(raw).get("visual_identity")
+    identity = identity if isinstance(identity, dict) else {}
+    logo = str(identity.get("logo") or "")
+    if len(logo) > _MAX_PROJECT_LOGO_LENGTH:
+        logo = ""
+    accent = str(identity.get("accent") or _DEFAULT_PROJECT_ACCENT)
+    if len(accent) != 7 or not accent.startswith("#") or any(char not in "0123456789abcdefABCDEF" for char in accent[1:]):
+        accent = _DEFAULT_PROJECT_ACCENT
+    return {
+        "logo": logo,
+        "accent": accent,
+        "updated_at": str(identity.get("updated_at") or ""),
     }
 
 
@@ -116,6 +167,71 @@ def project_summaries(
         if selected:
             rows.append(selected)
     return [_project_summary(row) for row in rows]
+
+
+@router.get("/project-identities")
+def project_visual_identities(
+    ids: str = Query("", max_length=4_000),
+    db: Session = Depends(get_db),
+):
+    """Return only visual identity for the bounded set visible in Projects.
+
+    The heavy ``codex_config`` Text value is read server-side only for the explicit
+    project IDs currently rendered, and is never sent to the browser.
+    """
+    ws = _workspace(db)
+    project_ids = list(dict.fromkeys(value.strip() for value in ids.split(",") if value.strip()))
+    if len(project_ids) > _MAX_VISUAL_IDENTITY_PROJECTS:
+        raise HTTPException(422, f"No máximo {_MAX_VISUAL_IDENTITY_PROJECTS} projetos por consulta")
+    if not project_ids:
+        return []
+    rows = db.execute(
+        select(Project.id, Project.codex_config).where(
+            Project.workspace_id == ws.id,
+            Project.id.in_(project_ids),
+        )
+    ).all()
+    return [
+        {"project_id": row.id, **_visual_identity(row.codex_config)}
+        for row in rows
+    ]
+
+
+@router.patch("/projects/{project_id}/visual-identity")
+def update_project_visual_identity(
+    project_id: str,
+    payload: ProjectVisualIdentityUpdate,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(require_roles(Role.OWNER, Role.ADMIN)),
+):
+    """Update only a project's visual identity while preserving current config."""
+    ws = _workspace(db)
+    item = db.scalar(
+        select(Project)
+        .where(Project.id == project_id, Project.workspace_id == ws.id)
+        .with_for_update()
+    )
+    if not item:
+        raise HTTPException(404, "Project not found")
+
+    config = _codex_config(item.codex_config)
+    identity = {
+        "logo": payload.logo,
+        "accent": payload.accent.lower(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    config["visual_identity"] = identity
+    item.codex_config = json.dumps(config, ensure_ascii=False)
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=item.id,
+        actor=principal.actor,
+        action="project.visual_identity_updated",
+        details={"has_logo": bool(identity["logo"]), "accent": identity["accent"]},
+    )
+    db.commit()
+    return {"project_id": item.id, **identity}
 
 
 @router.get("/tasks")
