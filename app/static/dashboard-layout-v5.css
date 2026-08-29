@@ -1,0 +1,164 @@
+/* DevPilot dashboard layout v5 — compact-desktop regression contract.
+ *
+ * v4 remains the shared responsive foundation. This layer owns the compact desktop
+ * contract that depends on the real authenticated header actions and runtime task
+ * columns. It intentionally keeps horizontal overflow inside data surfaces instead
+ * of shrinking words, controls, or the document viewport.
+ */
+@import url('/assets/dashboard-layout-v2.css?v=20260829-2');
+
+/* Page titles are navigation labels. Never split them inside a word. */
+main>header h1 {
+  overflow-wrap:normal!important;
+  word-break:normal!important;
+  hyphens:none;
+}
+
+/* Data overflow belongs to the component, never to the document. */
+main,
+main>header,
+.view,
+.table-wrap {
+  min-width:0;
+  max-width:100%;
+}
+
+@media (min-width:901px) and (max-width:1180px) {
+  /* Runtime can append Fluxo and authenticated actions. Size against that real
+     composition instead of the five-column static HTML skeleton. */
+  #tasks-view .panel.table-wrap {
+    width:100%!important;
+    max-width:100%!important;
+    overflow-x:auto!important;
+    overflow-y:visible!important;
+    overscroll-behavior-x:contain;
+    scrollbar-gutter:stable;
+  }
+
+  #tasks-view .table-wrap table {
+    width:max-content!important;
+    min-width:1180px!important;
+    table-layout:auto!important;
+  }
+
+  #tasks-view .table-wrap th:first-child,
+  #tasks-view .table-wrap tbody tr.task-main-row>td:first-child {
+    min-width:320px!important;
+  }
+
+  #tasks-view .table-wrap th:nth-child(2),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(2) {
+    min-width:130px!important;
+  }
+
+  #tasks-view .table-wrap th:nth-child(3),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(3) {
+    min-width:170px!important;
+  }
+
+  #tasks-view .table-wrap th:nth-child(4),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(4) {
+    min-width:110px!important;
+  }
+
+  #tasks-view .table-wrap th:nth-child(5),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5) {
+    min-width:160px!important;
+  }
+
+  #tasks-view .table-wrap th[data-task-flow-header],
+  #tasks-view .table-wrap tbody tr.task-main-row>td.task-flow-cell {
+    min-width:260px!important;
+    width:260px!important;
+  }
+
+  #tasks-view .task-flow-cell,
+  #tasks-view .task-flow-cell button,
+  #tasks-view .task-flow-cell a,
+  #tasks-view .task-flow-button,
+  #tasks-view .approve,
+  #tasks-view td button,
+  #tasks-view td a {
+    white-space:nowrap!important;
+    word-break:normal!important;
+    overflow-wrap:normal!important;
+  }
+}
+
+/* 1024-class viewport: header becomes two deliberate lanes. The title owns the
+   first lane; authenticated actions own the second. No control competes with the
+   title for inline width and no action is silently hidden. */
+@media (min-width:901px) and (max-width:1080px) {
+  :root {
+    --dp-header-height:124px;
+  }
+
+  main>header {
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    grid-template-rows:auto auto;
+    align-items:center!important;
+    align-content:center!important;
+    justify-content:stretch!important;
+    gap:8px!important;
+    min-height:var(--dp-header-height)!important;
+    padding-block:12px!important;
+  }
+
+  main>header>div:first-child {
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    flex:none!important;
+  }
+
+  main>header .eyebrow {
+    margin:0!important;
+  }
+
+  main>header h1 {
+    width:100%!important;
+    max-width:100%!important;
+    margin-top:2px!important;
+    white-space:nowrap!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis;
+  }
+
+  main>header .header-actions {
+    display:flex!important;
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    margin:0!important;
+    flex:none!important;
+    flex-wrap:nowrap!important;
+    justify-content:flex-start!important;
+    gap:8px!important;
+    overflow-x:auto!important;
+    overflow-y:hidden!important;
+    overscroll-behavior-x:contain;
+    scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  main>header .header-actions::-webkit-scrollbar {
+    display:none;
+  }
+
+  main>header .header-actions>* {
+    flex:0 0 auto!important;
+    min-width:max-content;
+    white-space:nowrap!important;
+  }
+
+  /* Sticky table headings begin below the full two-lane header. */
+  th {
+    top:var(--dp-header-height)!important;
+  }
+
+  .project-builder-aside,
+  .report-list {
+    top:calc(var(--dp-header-height) + 16px)!important;
+  }
+}
