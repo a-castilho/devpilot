@@ -15,8 +15,7 @@ concurrency:
 jobs:
   sync-review-document:
     # Keep review documentation isolated from the scarce DevPilot quality runner.
-    # DEVPILOT_DOCS_RUNNER may select a dedicated runner; otherwise use GitHub-hosted.
-    runs-on: ${{ vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão
