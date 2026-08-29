@@ -13,7 +13,7 @@ def test_task_runtime_panel_uses_full_width_details_row():
     assert "function panelHostFor(mainRow, taskId)" in script
     assert "task-orchestrator-panel-host" in script
     assert "detailsRowFor(row)?.toggleAttribute('hidden', archived)" in script
-    assert "row?.lastElementChild" in script  # fallback only when details row is unavailable
+    assert "mainRow?.lastElementChild" in script  # fallback only when details row is unavailable
 
 
 def test_task_actions_are_grouped_and_use_distinct_action_classes():
@@ -22,9 +22,8 @@ def test_task_actions_are_grouped_and_use_distinct_action_classes():
     assert "task-orchestrator-actions" in script
     assert "task-actions-cell" in script
     assert "task-action-${action}" in script
-    assert "Continuar auto" in script
+    assert "Continuar automaticamente" in script
     assert "Arquivar" in script
-    assert "Continuar automaticamente" not in script
 
 
 def test_task_learning_is_structured_instead_of_one_long_sentence():
