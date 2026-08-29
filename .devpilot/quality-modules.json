@@ -202,6 +202,7 @@
         "vercel.json"
       ],
       "tests": [
+        "tests/test_dashboard_layout_v2.py",
         "tests/test_frontend_runtime_circuit_breaker.py",
         "tests/test_progressive_frontend_boot.py",
         "tests/test_spa_static_path_isolation.py",
@@ -209,6 +210,7 @@
         "tests/test_profile_ui_integrity.py"
       ],
       "browser_tests": [
+        "tests/test_compact_layout_browser_e2e.py",
         "tests/test_critical_flows_browser_e2e.py",
         "tests/test_game_browser_e2e.py",
         "tests/test_rag_browser_e2e.py"
