@@ -40,6 +40,16 @@ def test_text_chat_allows_rich_detailed_answers():
     assert "Preserve quebras de linha" in instructions
 
 
+def test_chat_is_online_pt_br_and_never_requires_an_external_app():
+    instructions = _mode_instructions("planning", "chat")
+
+    assert "chat online do DevPilot" in instructions
+    assert "Use exclusivamente português do Brasil" in instructions
+    assert "Nunca exija, sugira ou peça" in instructions
+    assert "instale, baixe ou abra outro aplicativo" in instructions
+    assert "a conversa acontece integralmente neste chat online" in instructions
+
+
 def test_voice_style_remains_concise_and_spoken():
     instructions = _mode_instructions("planning", "voice")
 
@@ -80,6 +90,7 @@ def test_chat_ui_has_two_explicit_mode_buttons_and_persists_selection():
     assert "Planejamento" in source
     assert "Construir" in source
     assert "localStorage.setItem(CHAT_MODE_STORAGE_KEY" in source
+    assert "Online · Português (Brasil)" in source
 
 
 def test_chat_sends_mode_project_history_and_response_style():
