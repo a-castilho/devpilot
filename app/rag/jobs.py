@@ -45,14 +45,7 @@ def enqueue_index_job(engine: Engine, *, organization_id: str, project_id: str, 
 
 
 def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50) -> list[dict]:
-    """Read the optional RAG queue without making monitoring a core dependency.
-
-    RAG schema provisioning is intentionally fail-open. The Super Admin polling
-    endpoint follows the same contract: an unavailable optional schema is
-    represented as an empty queue instead of escaping as a generic HTTP 500.
-    """
-    # The RAG schema is PostgreSQL/pgvector-only. Local SQLite deliberately skips
-    # that additive schema so the DevPilot core can keep running with RAG disabled.
+    """Read the optional RAG queue without making monitoring a core dependency."""
     if engine.dialect.name != "postgresql":
         return []
 
@@ -67,7 +60,8 @@ def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50)
             rows = connection.execute(
                 text(f"""
                     SELECT id, organization_id, project_id, source_type, source_id, status, attempts,
-                           last_error, started_at, completed_at, created_at, progress_done, progress_total
+                           last_error, started_at, completed_at, created_at, progress_done, progress_total,
+                           indexed_files, skipped_files, failed_files, chunks_indexed
                     FROM rag_index_jobs
                     {where}
                     ORDER BY created_at DESC
@@ -85,9 +79,10 @@ def retry_job(engine: Engine, job_id: str) -> dict | None:
         row = connection.execute(
             text("""
                 UPDATE rag_index_jobs
-                SET status='pending', last_error=NULL, started_at=NULL, completed_at=NULL
+                SET status='pending', last_error=NULL, started_at=NULL, completed_at=NULL,
+                    progress_done=0, indexed_files=0, skipped_files=0, failed_files=0, chunks_indexed=0
                 WHERE id=:id AND status='failed' AND attempts < :max_attempts
-                RETURNING id, status, attempts
+                RETURNING id, project_id, status, attempts
             """),
             {"id": job_id, "max_attempts": MAX_ATTEMPTS},
         ).mappings().first()
@@ -112,7 +107,8 @@ def claim_next_job(engine: Engine) -> dict | None:
         connection.execute(
             text("""
                 UPDATE rag_index_jobs
-                SET status='processing', attempts=attempts+1, started_at=NOW(), last_error=NULL
+                SET status='processing', attempts=attempts+1, started_at=NOW(), completed_at=NULL, last_error=NULL,
+                    indexed_files=0, skipped_files=0, failed_files=0, chunks_indexed=0
                 WHERE id=:id
             """),
             {"id": row["id"]},
@@ -130,16 +126,33 @@ def update_progress(engine: Engine, job_id: str, *, done: int, total: int) -> No
         )
 
 
-def complete_job(engine: Engine, job_id: str) -> None:
+def _result_stats(result: dict | None) -> dict[str, int]:
+    result = result or {}
+    return {
+        "indexed": max(0, int(result.get("indexed") or 0)),
+        "skipped": max(0, int(result.get("skipped") or 0)),
+        "failed": max(0, int(result.get("failed") or 0)),
+        "chunks": max(0, int(result.get("chunks_indexed") or 0)),
+    }
+
+
+def complete_job(engine: Engine, job_id: str, *, result: dict | None = None) -> None:
+    stats = _result_stats(result)
     with engine.begin() as connection:
         connection.execute(
-            text("UPDATE rag_index_jobs SET status='completed', completed_at=NOW(), last_error=NULL WHERE id=:id"),
-            {"id": job_id},
+            text("""
+                UPDATE rag_index_jobs
+                SET status='completed', completed_at=NOW(), last_error=NULL,
+                    indexed_files=:indexed, skipped_files=:skipped, failed_files=:failed, chunks_indexed=:chunks
+                WHERE id=:id
+            """),
+            {"id": job_id, **stats},
         )
 
 
-def fail_job(engine: Engine, job_id: str, error: str) -> None:
+def fail_job(engine: Engine, job_id: str, error: str, *, result: dict | None = None) -> None:
     message = str(error or "RAG indexing failed")[-4000:]
+    stats = _result_stats(result)
     with engine.begin() as connection:
         attempts = connection.execute(
             text("SELECT attempts FROM rag_index_jobs WHERE id=:id"), {"id": job_id}
@@ -148,8 +161,10 @@ def fail_job(engine: Engine, job_id: str, error: str) -> None:
         connection.execute(
             text("""
                 UPDATE rag_index_jobs
-                SET status=:status, last_error=:error, completed_at=CASE WHEN :status='failed' THEN NOW() ELSE NULL END
+                SET status=:status, last_error=:error,
+                    completed_at=CASE WHEN :status='failed' THEN NOW() ELSE NULL END,
+                    indexed_files=:indexed, skipped_files=:skipped, failed_files=:failed, chunks_indexed=:chunks
                 WHERE id=:id
             """),
-            {"id": job_id, "status": status, "error": message},
+            {"id": job_id, "status": status, "error": message, **stats},
         )
