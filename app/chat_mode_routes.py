@@ -14,6 +14,7 @@ from app.rag.chat_context import build_chat_knowledge_context
 from app.security import require_access
 from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
+from app.services.chat_http_client import ChatProviderClient, chat_output_token_limit
 from app.services.intent import interpret_voice
 from app.services.token_usage import (
     record_usage,
@@ -209,6 +210,7 @@ async def devpilot_chat(
 
     input_text = _conversation_input(payload, project_context, knowledge.text)
     instructions = _mode_instructions(payload.mode, payload.response_style)
+    output_token_limit = chat_output_token_limit(payload.response_style)
     provider_order = _chat_provider_order(_provider_order(db, ws.id))
     effective_order = list(provider_order)
 
@@ -232,7 +234,10 @@ async def devpilot_chat(
 
     result: dict | None = None
     attempts: list[dict] = []
-    async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
+    async with ChatProviderClient(
+        timeout=httpx.Timeout(45.0, connect=10.0),
+        output_token_limit=output_token_limit,
+    ) as client:
         for provider in effective_order:
             if provider == "openai":
                 candidate, provider_attempts = await _try_openai_all(client, db, ws.id, input_text, instructions)
@@ -345,6 +350,7 @@ async def devpilot_chat(
             "profile": CHAT_PROFILES[payload.mode],
             "provider": provider,
             "model": selected_model,
+            "output_token_limit": output_token_limit,
             "fallback_used": fallback_used,
             "history_items": len(payload.history),
             "task_id": execution["task_id"],
@@ -373,6 +379,7 @@ async def devpilot_chat(
         "execution": execution,
         "provider": provider,
         "model": selected_model,
+        "output_token_limit": output_token_limit,
         "fallback_used": fallback_used,
         "notice": notice,
         "providers_tried": attempted_providers,
