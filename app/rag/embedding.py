@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -12,6 +12,33 @@ class EmbeddingProvider(Protocol):
     dimensions: int
 
     def embed(self, text: str) -> list[float]: ...
+    def info(self) -> dict[str, Any]: ...
+
+
+def embedding_info(provider: EmbeddingProvider) -> dict[str, Any]:
+    resolver = getattr(provider, "info", None)
+    if callable(resolver):
+        data = dict(resolver())
+    else:
+        data = {
+            "provider": provider.__class__.__name__.lower(),
+            "model": provider.__class__.__name__,
+            "dimensions": int(provider.dimensions),
+            "semantic": None,
+        }
+    data.setdefault("dimensions", int(provider.dimensions))
+    data["signature"] = embedding_signature(provider, info=data)
+    return data
+
+
+def embedding_signature(provider: EmbeddingProvider, *, info: dict[str, Any] | None = None) -> str:
+    data = info or {
+        "provider": provider.__class__.__name__.lower(),
+        "model": provider.__class__.__name__,
+        "dimensions": int(provider.dimensions),
+    }
+    raw = f"{data.get('provider', '')}:{data.get('model', '')}:{int(data.get('dimensions') or provider.dimensions)}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
 class LocalHashEmbeddingProvider:
@@ -24,12 +51,22 @@ class LocalHashEmbeddingProvider:
     """
 
     _token_re = re.compile(r"[\wÀ-ÿ]+", re.UNICODE)
+    model = "feature-hash-v1"
 
     def __init__(self, *, dimensions: int = 1536) -> None:
         dimensions = int(dimensions)
         if dimensions <= 0:
             raise ValueError("Embedding dimensions must be positive")
         self.dimensions = dimensions
+
+    def info(self) -> dict[str, Any]:
+        return {
+            "provider": "local_hash",
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "semantic": False,
+            "offline": True,
+        }
 
     @staticmethod
     def _feature_hash(feature: str) -> tuple[int, float]:
@@ -81,6 +118,15 @@ class OpenAIEmbeddingProvider:
         self.base_url = base_url.rstrip("/")
         self.dimensions = int(dimensions)
         self.timeout_seconds = float(timeout_seconds)
+
+    def info(self) -> dict[str, Any]:
+        return {
+            "provider": "openai",
+            "model": self.model,
+            "dimensions": self.dimensions,
+            "semantic": True,
+            "offline": False,
+        }
 
     def embed(self, text: str) -> list[float]:
         payload = {"model": self.model, "input": text, "dimensions": self.dimensions}
