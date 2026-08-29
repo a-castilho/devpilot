@@ -61,8 +61,10 @@ def test_installer_is_idempotent_and_neutralizes_legacy_alias_conflicts(tmp_path
             "--rcfile",
             str(bashrc),
             "-ic",
-            "type -t atualizar-local; type -t atualizar; "
-            "type -t reconstruir-sistema; type -t reconstruir",
+            "printf 'DP_ATUALIZAR_LOCAL=%s\\n' \"$(type -t atualizar-local)\"; "
+            "printf 'DP_ATUALIZAR=%s\\n' \"$(type -t atualizar)\"; "
+            "printf 'DP_RECONSTRUIR_SISTEMA=%s\\n' \"$(type -t reconstruir-sistema)\"; "
+            "printf 'DP_RECONSTRUIR=%s\\n' \"$(type -t reconstruir)\"",
         ],
         env=env,
         check=True,
@@ -70,7 +72,17 @@ def test_installer_is_idempotent_and_neutralizes_legacy_alias_conflicts(tmp_path
         text=True,
     )
 
-    assert result.stdout.splitlines() == ["function", "function", "function", "function"]
+    shell_types = {
+        line
+        for line in result.stdout.splitlines()
+        if line.startswith("DP_")
+    }
+    assert shell_types == {
+        "DP_ATUALIZAR_LOCAL=function",
+        "DP_ATUALIZAR=function",
+        "DP_RECONSTRUIR_SISTEMA=function",
+        "DP_RECONSTRUIR=function",
+    }
 
 
 def test_installer_validates_candidate_before_replacing_bashrc():
