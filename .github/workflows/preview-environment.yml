@@ -26,18 +26,23 @@ jobs:
         github.event.pull_request.head.repo.full_name == github.repository &&
         contains(github.event.pull_request.labels.*.name, 'preview')
       )
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'self-hosted' }}
     timeout-minutes: 20
     steps:
       - name: Checkout da revisão
         uses: actions/checkout@v4
 
-      - name: Validar runtime disponível
+      - name: Validar runner persistente e runtime disponível
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT:-}" != "self-hosted" ]]; then
+            echo "O preview requer runner persistente; GitHub-hosted encerraria a URL junto com o job."
+            exit 1
+          fi
           command -v docker >/dev/null
           command -v curl >/dev/null
+          command -v openssl >/dev/null
           docker version --format '{{.Server.Version}}'
 
       - name: Construir runtime do preview
