@@ -42,3 +42,21 @@ def test_super_admin_voice_has_visible_loading_and_retry_states():
     assert "voice-admin-retry" in script
     assert "Tentar novamente" in script
     assert "cache: 'no-store'" in script
+
+
+def test_super_admin_voice_has_operational_charts_and_connection_management():
+    script = Path(STATIC / "super-admin-voice.js").read_text(encoding="utf-8")
+    styles = Path(STATIC / "super-admin-voice.css").read_text(encoding="utf-8")
+
+    assert "renderUsageChart" in script
+    assert "renderOutcomeChart" in script
+    assert "voice-admin-donut" in script
+    assert "voice-admin-bar-track" in script
+    assert "GERENCIAMENTO" in script
+    assert "/enabled`" in script
+    assert "/models`" in script
+    assert "method: 'DELETE'" in script
+    assert "Salvar alterações" in script
+    assert ".voice-admin-view{width:100%!important;max-width:none!important" in styles
+    assert ".voice-admin-charts" in styles
+    assert "@media(max-width:760px)" in styles
