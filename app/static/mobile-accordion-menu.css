@@ -51,3 +51,219 @@
 }
 
 @media(prefers-reduced-motion:reduce){.mobile-simple-item:active{transform:none}.dp-response-balloon{transition:none}}
+
+/*
+ * Responsive navigation/layout correction — 2026-08-29.
+ * dashboard-layout-v2 deliberately converted 901–1180px into a permanent icon
+ * rail and hid .sidebar-collapse-toggle. That made the menu impossible to open
+ * at common notebook/tablet widths (including 1024px). The rules below restore
+ * the existing simplified-nav.js open/close state instead of introducing a
+ * second navigation implementation.
+ */
+@media (min-width:901px) {
+  .sidebar {
+    overflow:visible!important;
+  }
+
+  .sidebar>nav {
+    min-height:0;
+    overflow-y:auto!important;
+    overflow-x:hidden!important;
+  }
+
+  .sidebar-collapse-toggle {
+    display:grid!important;
+    place-items:center!important;
+    top:18px!important;
+    right:-14px!important;
+    width:30px!important;
+    height:30px!important;
+    min-height:30px!important;
+    padding:0!important;
+    border:1px solid rgba(255,255,255,.12)!important;
+    border-radius:9px!important;
+    background:#17212b!important;
+    color:#d8e2ec!important;
+    box-shadow:0 8px 24px rgba(0,0,0,.32)!important;
+    z-index:95!important;
+  }
+
+  .sidebar-collapse-toggle:hover {
+    border-color:rgba(53,229,209,.34)!important;
+    background:#1c2a36!important;
+    color:#fff!important;
+  }
+}
+
+@media (min-width:901px) and (max-width:1180px) {
+  :root {
+    --dp-sidebar-responsive-open:238px;
+  }
+
+  html:not(.sidebar-collapsed) .shell {
+    grid-template-columns:var(--dp-sidebar-responsive-open) minmax(0,1fr)!important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar {
+    width:var(--dp-sidebar-responsive-open)!important;
+    min-width:var(--dp-sidebar-responsive-open)!important;
+    padding:8px!important;
+  }
+
+  html:not(.sidebar-collapsed) .brand {
+    justify-content:flex-start!important;
+    width:100%!important;
+    min-height:48px!important;
+    padding:7px 8px!important;
+    gap:10px!important;
+  }
+
+  html:not(.sidebar-collapsed) .brand>span:last-child,
+  html:not(.sidebar-collapsed) .nav-group-label,
+  html:not(.sidebar-collapsed) .nav-group-caret,
+  html:not(.sidebar-collapsed) .system-card>div {
+    display:block!important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar-search {
+    display:block!important;
+    margin:8px 0 6px!important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar>nav {
+    display:flex!important;
+    flex-direction:column!important;
+    align-items:stretch!important;
+    gap:5px!important;
+    width:100%!important;
+    margin-top:8px!important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar>nav>.nav {
+    display:block!important;
+    width:100%!important;
+    min-width:0!important;
+    height:auto!important;
+    min-height:42px!important;
+    margin:0!important;
+    padding:10px 12px!important;
+    border-left:0!important;
+    font-size:13px!important;
+    line-height:1.3!important;
+    text-align:left!important;
+  }
+
+  html:not(.sidebar-collapsed) .nav-group-toggle {
+    display:grid!important;
+    place-items:initial!important;
+    grid-template-columns:24px minmax(0,1fr) 16px!important;
+    width:100%!important;
+    min-width:0!important;
+    height:auto!important;
+    min-height:42px!important;
+    margin:0!important;
+    padding:10px 12px!important;
+    gap:8px!important;
+    font-size:13px!important;
+    text-align:left!important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar>nav>.nav[data-nav-group] {
+    width:calc(100% - 18px)!important;
+    margin-left:18px!important;
+    padding:9px 10px 9px 13px!important;
+    border-left:1px solid rgba(53,229,209,.20)!important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar>nav>.nav::before {
+    width:auto!important;
+    font-size:0!important;
+  }
+
+  html:not(.sidebar-collapsed) .system-card {
+    justify-content:flex-start!important;
+    width:100%!important;
+    min-height:48px!important;
+    margin-inline:0!important;
+    padding:10px!important;
+  }
+
+  html.sidebar-collapsed .sidebar-collapse-toggle {
+    right:-14px!important;
+  }
+
+  .view {
+    padding-inline:clamp(14px,2vw,22px)!important;
+  }
+
+  .overview-grid {
+    grid-template-columns:minmax(0,1fr)!important;
+    gap:16px!important;
+  }
+
+  .quick-grid {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    gap:10px!important;
+  }
+
+  .quick-action {
+    min-width:0!important;
+    width:100%!important;
+    grid-template-columns:42px minmax(0,1fr)!important;
+    align-items:center!important;
+    text-align:left!important;
+  }
+
+  .quick-action>span,
+  .quick-action strong,
+  .quick-action small {
+    min-width:0!important;
+    white-space:normal!important;
+    word-break:normal!important;
+    overflow-wrap:break-word!important;
+  }
+
+  #recent-tasks .list-row {
+    grid-template-columns:minmax(0,1fr) auto!important;
+  }
+
+  #recent-tasks .list-row>div {
+    min-width:0!important;
+  }
+
+  #recent-tasks .list-row strong {
+    display:block!important;
+    max-width:100%!important;
+    overflow:hidden!important;
+    text-overflow:ellipsis!important;
+    white-space:nowrap!important;
+  }
+}
+
+@media (max-width:900px) {
+  .overview-grid {
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+
+  .quick-grid {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+
+  .quick-action,
+  .quick-action>span {
+    min-width:0!important;
+  }
+
+  .quick-action strong,
+  .quick-action small {
+    white-space:normal!important;
+    word-break:normal!important;
+    overflow-wrap:break-word!important;
+  }
+}
+
+@media (max-width:520px) {
+  .quick-grid {
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+}
