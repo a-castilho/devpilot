@@ -4,14 +4,15 @@
   const STYLE_ID = 'devpilot-project-identity-style';
   const DIALOG_ID = 'devpilot-project-logo-dialog';
   const MODE_KEY = 'devpilot-project-card-skin-v1';
-  const CACHE_KEY = 'devpilot-project-identity-cache-v1';
+  const CACHE_KEY = 'devpilot-project-identity-cache-v2';
   const MAX_FILE_BYTES = 3 * 1024 * 1024;
   const MAX_LOGO_LENGTH = 160000;
+  const MAX_VISIBLE_IDENTITIES = 50;
   const MANAGEMENT_ROLES = new Set(['SUPER_ADMIN', 'OWNER', 'ADMIN']);
 
-  let fullProjectsPromise = null;
   let editor = null;
   let uploadedLogo = '';
+  let hydrationSequence = 0;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
@@ -42,7 +43,7 @@
     try {
       if (typeof toast === 'function') return toast(message);
     } catch (_) {
-      // Keep project navigation usable even if the global toaster is unavailable.
+      // Keep navigation available if the global toaster is unavailable.
     }
     console.info(`[DevPilot] ${message}`);
   }
@@ -54,7 +55,8 @@
     const response = await fetch(`/api${path}`, {...options, headers, cache: 'no-store'});
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new Error(typeof data?.detail === 'string' ? data.detail : 'Falha na operação');
+      const detail = typeof data?.detail === 'string' ? data.detail : 'Falha na operação';
+      throw new Error(detail);
     }
     return data;
   }
@@ -63,46 +65,28 @@
     return safeObject(localStorage.getItem(CACHE_KEY));
   }
 
+  function normalizedIdentity(identity) {
+    const accent = /^#[0-9a-f]{6}$/i.test(String(identity?.accent || '')) ? String(identity.accent) : '#2dd4a8';
+    return {
+      logo: String(identity?.logo || ''),
+      accent,
+      updated_at: String(identity?.updated_at || ''),
+    };
+  }
+
   function cachedIdentity(projectId) {
-    return safeObject(identityCache()[projectId]);
+    return normalizedIdentity(identityCache()[projectId]);
   }
 
   function cacheIdentity(projectId, identity) {
+    if (!projectId) return;
     const cache = identityCache();
-    cache[projectId] = {
-      logo: String(identity?.logo || ''),
-      accent: /^#[0-9a-f]{6}$/i.test(String(identity?.accent || '')) ? identity.accent : '#2dd4a8',
-      updated_at: String(identity?.updated_at || ''),
-    };
+    cache[projectId] = normalizedIdentity(identity);
     try {
       localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
     } catch (_) {
-      // The server remains the source of truth if local storage is unavailable.
+      // Server state remains authoritative when storage is restricted.
     }
-  }
-
-  function projectConfig(project) {
-    return safeObject(project?.codex_config);
-  }
-
-  function projectIdentity(project) {
-    const identity = safeObject(projectConfig(project).visual_identity);
-    return {
-      logo: String(identity.logo || ''),
-      accent: /^#[0-9a-f]{6}$/i.test(String(identity.accent || '')) ? identity.accent : '#2dd4a8',
-      updated_at: String(identity.updated_at || ''),
-    };
-  }
-
-  async function fullProjects(force = false) {
-    if (force) fullProjectsPromise = null;
-    if (!fullProjectsPromise) {
-      fullProjectsPromise = apiRequest('/projects').then(items => Array.isArray(items) ? items : []).catch(error => {
-        fullProjectsPromise = null;
-        throw error;
-      });
-    }
-    return fullProjectsPromise;
   }
 
   function projectId(card) {
@@ -115,11 +99,43 @@
   }
 
   function projectName(card) {
-    return String(card?.querySelector('h3')?.textContent || 'Projeto').trim();
+    return String(card?.querySelector('.project-identity-copy h3')?.textContent || card?.querySelector('h3')?.textContent || 'Projeto').trim();
   }
 
   function initials(name) {
     return (String(name || 'Projeto').trim().split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('') || 'P').toUpperCase();
+  }
+
+  function hashProject(value) {
+    let hash = 2166136261;
+    for (const char of String(value || 'project')) {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function shipMarkup(id, accent) {
+    const hash = hashProject(id);
+    const energy = 72 + (hash % 27);
+    const shield = 60 + ((hash >>> 5) % 39);
+    const ready = 68 + ((hash >>> 10) % 31);
+    return `
+      <div class="project-ship-hangar" aria-label="Nave do projeto">
+        <span class="project-ship-label">NAVE DO PROJETO</span>
+        <div class="project-ship-stage" style="--project-ship-accent:${escapeHtml(accent)}">
+          <svg class="project-ship" viewBox="0 0 220 92" role="img" aria-label="Nave tecnológica do projeto">
+            <defs><linearGradient id="ship-${escapeHtml(id)}" x1="0" x2="1"><stop stop-color="${escapeHtml(accent)}"/><stop offset="1" stop-color="#3d7cff"/></linearGradient></defs>
+            <path d="M34 54 78 34 105 12 134 34 188 54 147 63 126 81 95 81 74 63Z" fill="#071522" stroke="url(#ship-${escapeHtml(id)})" stroke-width="3"/>
+            <path d="M88 47 105 25 124 47 116 62H96Z" fill="url(#ship-${escapeHtml(id)})" opacity=".7"/>
+            <path d="M55 57 82 50 73 66Z" fill="${escapeHtml(accent)}" opacity=".65"/><path d="m157 50 26 7-19 9Z" fill="#3d7cff" opacity=".65"/>
+            <circle cx="105" cy="51" r="6" fill="#e9ffff"/><circle cx="105" cy="51" r="12" fill="none" stroke="${escapeHtml(accent)}" opacity=".45"/>
+          </svg>
+          <div class="project-ship-stats">
+            <span><b>${energy}%</b> energia</span><span><b>${shield}%</b> escudo</span><span><b>${ready}%</b> pronto</span>
+          </div>
+        </div>
+      </div>`;
   }
 
   function logoMarkup(name, identity, editable) {
@@ -167,19 +183,27 @@
       #projects-list .project-card-actions .analyze{border-color:#286751!important;background:#0b2b21!important;color:#83f2c4!important}
       #projects-list .project-card-actions [data-project-task]{border-color:#255b7a!important;background:#0b2030!important;color:#9bd8ff!important}
       #projects-list .project-card-actions .delete-project{border-color:#732c34!important;background:#291116!important;color:#ff8993!important}
+      #projects-list .project-skin-action::before{content:attr(data-project-action-icon);font-size:12px;margin-right:5px}
 
-      html[data-project-card-skin="professional"] #projects-view .project-visual-overview,html[data-project-card-skin="professional"] #projects-list .project-ship-hangar{display:none!important}
-      html[data-project-card-skin="professional"] #projects-list .project-card.project-ship-card{border-color:#263b47!important;background:linear-gradient(155deg,#0e1922,#091219 72%)!important;box-shadow:0 12px 30px #0004,inset 0 1px 0 #ffffff08!important}
-      html[data-project-card-skin="professional"] #projects-list .project-card.project-ship-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--project-accent,#2dd4a8) 45%,#334957)!important}
-      html[data-project-card-skin="professional"] #projects-list .project-card-actions button.project-ship-action{font-size:11px!important}
-      html[data-project-card-skin="professional"] #projects-list .project-card-actions button.project-ship-action::before{font-size:12px!important}
+      .project-ship-hangar{display:none}
+      html[data-project-card-skin="professional"] #projects-list .project-card{border-color:#263b47!important;background:linear-gradient(155deg,#0e1922,#091219 72%)!important;box-shadow:0 12px 30px #0004,inset 0 1px 0 #ffffff08!important}
+      html[data-project-card-skin="professional"] #projects-list .project-card:hover{transform:translateY(-2px);border-color:color-mix(in srgb,var(--project-accent,#2dd4a8) 45%,#334957)!important}
 
       html[data-project-card-skin="game"] #projects-list .project-logo-control,html[data-project-card-skin="game"] #projects-list .project-logo-static{display:none!important}
-      html[data-project-card-skin="game"] #projects-list .project-identity-head{grid-template-columns:minmax(0,1fr);margin-bottom:4px}
-      html[data-project-card-skin="game"] #projects-list .project-identity-copy h3{color:#dcfff2;font-size:16px}
-      html[data-project-card-skin="game"] #projects-list .project-card-actions{grid-template-columns:repeat(auto-fit,minmax(38px,1fr));gap:5px;margin-top:7px}
-      html[data-project-card-skin="game"] #projects-list .project-card-actions button.project-ship-action{min-height:34px!important;padding:5px!important;font-size:0!important}
-      html[data-project-card-skin="game"] #projects-list .project-card-actions button.project-ship-action::before{margin:0!important;font-size:14px!important}
+      html[data-project-card-skin="game"] #projects-list .project-identity-head{grid-template-columns:minmax(0,1fr);margin-bottom:3px}
+      html[data-project-card-skin="game"] #projects-list .project-identity-copy h3{color:#dcfff2;font-size:16px;text-transform:uppercase;letter-spacing:.04em}
+      html[data-project-card-skin="game"] #projects-list .project-card{position:relative;border-color:#185848!important;background:radial-gradient(circle at 50% 12%,#12364a 0,#0a1724 42%,#071018 100%)!important;box-shadow:0 12px 34px #0008,inset 0 1px 0 #57ffd51d!important}
+      html[data-project-card-skin="game"] #projects-list .project-card::after{content:"";position:absolute;inset:0;pointer-events:none;border-radius:inherit;background-image:radial-gradient(#ffffff25 1px,transparent 1px);background-size:24px 24px;mask-image:linear-gradient(to bottom,#0007,transparent 48%)}
+      html[data-project-card-skin="game"] #projects-list .project-ship-hangar{position:relative;z-index:1;display:block;margin:5px 0 9px;padding:8px;border:1px solid color-mix(in srgb,var(--project-accent,#2dd4a8) 38%,#153245);border-radius:12px;background:#06101ab8}
+      html[data-project-card-skin="game"] #projects-list .project-ship-label{display:block;margin-bottom:2px;color:#69cbb3;font-size:8px;font-weight:900;letter-spacing:.15em}
+      html[data-project-card-skin="game"] #projects-list .project-ship-stage{display:grid;grid-template-columns:minmax(0,1fr) 70px;align-items:center;gap:7px}
+      html[data-project-card-skin="game"] #projects-list .project-ship{display:block;width:100%;max-height:84px;filter:drop-shadow(0 0 12px color-mix(in srgb,var(--project-ship-accent) 40%,transparent))}
+      html[data-project-card-skin="game"] #projects-list .project-ship-stats{display:grid;gap:4px;color:#80a5b6;font-size:7px;text-transform:uppercase}
+      html[data-project-card-skin="game"] #projects-list .project-ship-stats span{display:grid;padding:4px 5px;border:1px solid #1c3b4b;border-radius:6px;background:#061019}
+      html[data-project-card-skin="game"] #projects-list .project-ship-stats b{color:#dfffee;font-size:9px}
+      html[data-project-card-skin="game"] #projects-list .project-card-actions{position:relative;z-index:1;grid-template-columns:repeat(auto-fit,minmax(38px,1fr));gap:5px;margin-top:7px}
+      html[data-project-card-skin="game"] #projects-list .project-card-actions button.project-skin-action{min-height:34px!important;padding:5px!important;font-size:0!important}
+      html[data-project-card-skin="game"] #projects-list .project-card-actions button.project-skin-action::before{margin:0!important;font-size:15px!important}
       html[data-project-card-skin="game"] #projects-list .project-card>p{min-height:1.4em;max-height:1.4em;-webkit-line-clamp:1}
 
       #${DIALOG_ID}{width:min(520px,calc(100vw - 28px));max-height:calc(100dvh - 28px);padding:0;overflow:auto;border:1px solid #304958;border-radius:18px;background:#0a151e;color:#eaf3f7;box-shadow:0 30px 90px #000c}
@@ -214,6 +238,7 @@
         #projects-view #projects-list.cards{grid-template-columns:minmax(0,1fr)!important;gap:11px!important}
         #projects-view #projects-list>.project-card{padding:13px!important}
         #projects-list .project-card-actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+        html[data-project-card-skin="game"] #projects-list .project-ship-stage{grid-template-columns:minmax(0,1fr) 76px}
         #${DIALOG_ID} .project-logo-grid{grid-template-columns:1fr}
         #${DIALOG_ID} .project-logo-preview{width:94px;height:94px;border-radius:18px}
         #${DIALOG_ID} .project-logo-actions{grid-template-columns:1fr 1fr}
@@ -254,25 +279,60 @@
     setMode(localStorage.getItem(MODE_KEY) || 'professional');
   }
 
+  function actionIcon(button) {
+    if (button.matches('.analyze')) return '◈';
+    if (button.matches('[data-project-task]')) return '✦';
+    if (button.matches('.delete-project')) return '×';
+    const label = String(button.textContent || '').toLowerCase();
+    if (label.includes('teste')) return '✓';
+    return '›';
+  }
+
+  function decorateAction(button) {
+    const label = String(button.textContent || '').trim();
+    button.classList.add('project-skin-action');
+    button.dataset.projectActionIcon = actionIcon(button);
+    if (label && !button.title) button.title = label;
+    if (label && !button.getAttribute('aria-label')) button.setAttribute('aria-label', label);
+  }
+
+  function bindLogoButton(button, card) {
+    if (!button?.matches('.project-logo-control')) return;
+    button.addEventListener('click', () => void openEditor(card));
+  }
+
   function renderIdentity(card, identity) {
     const id = projectId(card);
     const name = projectName(card);
+    const normalized = normalizedIdentity(identity);
     if (id) card.dataset.projectId = id;
-    card.style.setProperty('--project-accent', identity?.accent || '#2dd4a8');
+    card.style.setProperty('--project-accent', normalized.accent);
     const existing = card.querySelector('.project-logo-control,.project-logo-static');
     if (!existing) return;
     const holder = document.createElement('div');
-    holder.innerHTML = logoMarkup(name, identity, canManage());
+    holder.innerHTML = logoMarkup(name, normalized, canManage());
     const replacement = holder.firstElementChild;
     existing.replaceWith(replacement);
-    if (replacement?.matches('.project-logo-control')) replacement.addEventListener('click', () => void openEditor(card));
+    bindLogoButton(replacement, card);
+  }
+
+  function ensureShip(card) {
+    if (card.querySelector(':scope>.project-ship-hangar')) return;
+    const id = projectId(card) || projectName(card);
+    const identity = cachedIdentity(id);
+    const holder = document.createElement('div');
+    holder.innerHTML = shipMarkup(id, identity.accent);
+    const ship = holder.firstElementChild;
+    const description = card.querySelector(':scope>p');
+    if (description) description.insertAdjacentElement('afterend', ship);
+    else card.querySelector('.project-identity-head')?.insertAdjacentElement('afterend', ship);
   }
 
   function enhanceCard(card) {
     const id = projectId(card);
     const title = card.querySelector('h3');
     if (!title) return;
-    const name = projectName(card);
+    const name = String(title.textContent || 'Projeto').trim();
     if (id) card.dataset.projectId = id;
 
     if (!card.querySelector('.project-identity-head')) {
@@ -288,9 +348,11 @@
       const logo = logoHolder.firstElementChild;
       head.append(logo, copy);
       card.insertBefore(head, card.firstChild);
-      card.style.setProperty('--project-accent', cachedIdentity(id).accent || '#2dd4a8');
-      if (logo?.matches('.project-logo-control')) logo.addEventListener('click', () => void openEditor(card));
+      card.style.setProperty('--project-accent', cachedIdentity(id).accent);
+      bindLogoButton(logo, card);
     }
+
+    ensureShip(card);
 
     let actions = card.querySelector(':scope>.project-card-actions');
     if (!actions) {
@@ -300,11 +362,7 @@
     }
     const actionSource = card.querySelector('.list-row>div:last-child');
     if (actionSource) Array.from(actionSource.querySelectorAll('button')).forEach(button => actions.appendChild(button));
-    actions.querySelectorAll('button').forEach(button => {
-      const label = String(button.textContent || '').trim();
-      if (label && !button.title) button.title = label;
-      if (label && !button.getAttribute('aria-label')) button.setAttribute('aria-label', label);
-    });
+    actions.querySelectorAll('button').forEach(decorateAction);
   }
 
   function enhanceProjects() {
@@ -326,27 +384,39 @@
   }
 
   async function hydrateIdentities() {
-    const cards = Array.from(document.querySelectorAll('#projects-list>.project-card'));
-    if (!cards.length) return;
+    const cards = Array.from(document.querySelectorAll('#projects-list>.project-card')).slice(0, MAX_VISIBLE_IDENTITIES);
+    const ids = cards.map(projectId).filter(Boolean);
+    if (!ids.length) return;
+    const sequence = ++hydrationSequence;
     try {
-      const projects = await fullProjects();
-      const byId = new Map(projects.map(project => [String(project.id), project]));
+      const identities = await apiRequest(`/ui/project-identities?ids=${encodeURIComponent(ids.join(','))}`);
+      if (sequence !== hydrationSequence || !Array.isArray(identities)) return;
+      const byId = new Map(identities.map(identity => [String(identity.project_id), identity]));
       cards.forEach(card => {
         const id = projectId(card);
-        const project = byId.get(id);
-        if (!project) return;
-        const identity = projectIdentity(project);
+        const identity = byId.get(id);
+        if (!identity) return;
         cacheIdentity(id, identity);
         renderIdentity(card, identity);
+        const ship = card.querySelector(':scope>.project-ship-hangar');
+        if (ship) {
+          ship.remove();
+          ensureShip(card);
+        }
       });
     } catch (_) {
-      // Lightweight cards still work if the optional identity hydration fails.
+      // Cached identity keeps the project list functional if optional hydration fails.
     }
   }
 
   function preview(dialog, logo, name) {
     const target = dialog.querySelector('.project-logo-preview');
     target.innerHTML = logo ? `<img src="${escapeHtml(logo)}" alt="Prévia do logo">` : `<span>${escapeHtml(initials(name))}</span>`;
+  }
+
+  function setDialogBusy(dialog, busy) {
+    dialog.dataset.saving = busy ? '1' : '0';
+    dialog.querySelectorAll('button,input').forEach(control => { control.disabled = busy; });
   }
 
   function ensureDialog() {
@@ -365,13 +435,15 @@
             <label class="project-logo-color"><span>Cor de destaque</span><input id="project-logo-accent" type="color" value="#2dd4a8"></label>
           </div>
         </div>
-        <p class="project-logo-hint">PNG, JPG ou WebP até 3 MB. O upload é reduzido antes de salvar. No estilo Profissional aparece como logo; no estilo Jogo o projeto é representado pela nave.</p>
+        <p class="project-logo-hint">PNG, JPG ou WebP até 3 MB. O upload é reduzido antes de salvar. No estilo Profissional aparece como logo; no estilo Jogo o projeto é representado por uma nave.</p>
         <div class="project-logo-actions"><button type="button" class="remove">Remover logo</button><button type="button" class="cancel">Cancelar</button><button type="button" class="save">Salvar identidade</button></div>
       </div>`;
     document.body.appendChild(dialog);
-    dialog.querySelector('.project-logo-close').addEventListener('click', () => dialog.close());
-    dialog.querySelector('.cancel').addEventListener('click', () => dialog.close());
+    dialog.querySelector('.project-logo-close').addEventListener('click', () => { if (dialog.dataset.saving !== '1') dialog.close(); });
+    dialog.querySelector('.cancel').addEventListener('click', () => { if (dialog.dataset.saving !== '1') dialog.close(); });
+    dialog.addEventListener('cancel', event => { if (dialog.dataset.saving === '1') event.preventDefault(); });
     dialog.addEventListener('close', () => {
+      if (dialog.dataset.saving === '1') return;
       editor = null;
       uploadedLogo = '';
       dialog.querySelector('#project-logo-file').value = '';
@@ -436,47 +508,53 @@
     if (!id) return;
     const dialog = ensureDialog();
     const name = projectName(card);
+    const identity = cachedIdentity(id);
     editor = {card, id, name};
     uploadedLogo = '';
-    const identity = cachedIdentity(id);
     dialog.querySelector('.project-logo-head h2').textContent = `Logo · ${name}`;
     dialog.querySelector('#project-logo-url').value = identity.logo.startsWith('https://') ? identity.logo : '';
-    dialog.querySelector('#project-logo-accent').value = identity.accent || '#2dd4a8';
+    dialog.querySelector('#project-logo-accent').value = identity.accent;
     preview(dialog, identity.logo, name);
     dialog.showModal();
   }
 
   async function saveIdentity(removeLogo) {
     if (!editor) return;
+    const operation = {id: editor.id, card: editor.card, name: editor.name};
     const dialog = ensureDialog();
-    const buttons = dialog.querySelectorAll('.project-logo-actions button');
-    buttons.forEach(button => { button.disabled = true; });
+    const url = String(dialog.querySelector('#project-logo-url').value || '').trim();
+    const existing = cachedIdentity(operation.id);
+    const logo = removeLogo ? '' : (uploadedLogo || url || existing.logo || '');
+    if (logo && !logo.startsWith('data:image/') && !logo.startsWith('https://')) {
+      notify('Use upload de imagem ou uma URL HTTPS.');
+      return;
+    }
+    if (logo.length > MAX_LOGO_LENGTH) {
+      notify('Logo acima do limite permitido.');
+      return;
+    }
+    const accent = String(dialog.querySelector('#project-logo-accent').value || '#2dd4a8');
+    setDialogBusy(dialog, true);
     try {
-      const projects = await fullProjects();
-      const project = projects.find(item => String(item.id) === editor.id);
-      if (!project) throw new Error('Projeto não encontrado.');
-      const config = projectConfig(project);
-      const previous = safeObject(config.visual_identity);
-      const url = String(dialog.querySelector('#project-logo-url').value || '').trim();
-      const logo = removeLogo ? '' : (uploadedLogo || url || previous.logo || '');
-      if (logo && !logo.startsWith('data:image/') && !logo.startsWith('https://')) throw new Error('Use upload de imagem ou uma URL HTTPS.');
-      if (logo.length > MAX_LOGO_LENGTH) throw new Error('Logo acima do limite permitido.');
-      const identity = {
-        logo,
-        accent: String(dialog.querySelector('#project-logo-accent').value || '#2dd4a8'),
-        updated_at: new Date().toISOString(),
-      };
-      const codexConfig = {...config, visual_identity: {...previous, ...identity}};
-      await apiRequest(`/projects/${encodeURIComponent(editor.id)}`, {method: 'PATCH', body: JSON.stringify({codex_config: codexConfig})});
-      cacheIdentity(editor.id, identity);
-      renderIdentity(editor.card, identity);
-      await fullProjects(true);
-      dialog.close();
+      const identity = await apiRequest(`/ui/projects/${encodeURIComponent(operation.id)}/visual-identity`, {
+        method: 'PATCH',
+        body: JSON.stringify({logo, accent}),
+      });
+      cacheIdentity(operation.id, identity);
+      if (operation.card?.isConnected) {
+        renderIdentity(operation.card, identity);
+        const ship = operation.card.querySelector(':scope>.project-ship-hangar');
+        ship?.remove();
+        ensureShip(operation.card);
+      }
+      if (editor?.id === operation.id) {
+        setDialogBusy(dialog, false);
+        dialog.close();
+      }
       notify(removeLogo ? 'Logo removido do projeto.' : 'Identidade visual salva.');
     } catch (error) {
+      if (editor?.id === operation.id) setDialogBusy(dialog, false);
       notify(error.message || 'Não foi possível salvar a identidade visual.');
-    } finally {
-      buttons.forEach(button => { button.disabled = false; });
     }
   }
 
