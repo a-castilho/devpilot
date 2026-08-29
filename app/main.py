@@ -59,19 +59,19 @@ _SCRIPT_SRC_RE = re.compile(
     r'(?P<prefix><script\s+src="/assets/(?P<name>[^"?]+\.js))(?:\?v=[^"]+)?(?P<suffix>"[^>]*></script>)'
 )
 _SCRIPT_TAG_RE = re.compile(
-    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^"]*)?"[^>]*></script>',
+    r'\s*<script\s+[^>]*src="/assets/(?P<name>[^"?]+\.js)(?:\?[^\"]*)?"[^>]*></script>',
     re.IGNORECASE,
 )
 _PREAUTH_SCRIPT_NAMES = {"acs-loader.js", "auth-ui.js"}
 
 _CORE_AUTHENTICATED_SCRIPTS = [
     "app.js",
-    "project-delete-ui.js",
     "feature-loader.js",
 ]
 
 _DEFERRED_AUTHENTICATED_SCRIPTS = [
     "consolidated-ui.js",
+    "project-delete-ui.js",
     "project-provisioning.js",
     "project-builder.js",
     "project-description-profile.js",
