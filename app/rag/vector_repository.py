@@ -77,6 +77,7 @@ class PgVectorRagRepository:
         literal = "[" + ",".join(f"{value:.10f}" for value in vector) + "]"
         provider = self.embedding_info()
         signature = str(provider["signature"])
+        allow_legacy = provider.get("provider") == "local_hash"
         threshold_clause = "" if similarity_threshold is None else "AND 1 - (c.embedding <=> CAST(:embedding AS vector)) >= :threshold"
         statement = text(
             f"""
@@ -90,7 +91,7 @@ class PgVectorRagRepository:
               AND c.embedding IS NOT NULL
               AND (
                     c.metadata->>'embedding_signature' = :embedding_signature
-                    OR NOT (c.metadata ? 'embedding_signature')
+                    OR (:allow_legacy AND NOT (c.metadata ? 'embedding_signature'))
                   )
               {threshold_clause}
             ORDER BY c.embedding <=> CAST(:embedding AS vector)
@@ -102,6 +103,7 @@ class PgVectorRagRepository:
             "project_id": project_id,
             "embedding": literal,
             "embedding_signature": signature,
+            "allow_legacy": bool(allow_legacy),
             "limit": int(top_k),
         }
         if similarity_threshold is not None:
@@ -134,7 +136,9 @@ class PgVectorRagRepository:
         return chunks
 
     def index_state(self, *, organization_id: str, project_id: str) -> dict[str, Any]:
-        signature = str(self.embedding_info()["signature"])
+        provider = self.embedding_info()
+        signature = str(provider["signature"])
+        allow_legacy = provider.get("provider") == "local_hash"
         statement = text(
             """
             SELECT
@@ -166,13 +170,17 @@ class PgVectorRagRepository:
         compatible = int(row["compatible"] or 0)
         legacy = int(row["legacy"] or 0)
         foreign = int(row["foreign"] or 0)
+        reindex_required = total > 0 and compatible == 0 and (
+            foreign > 0 or (legacy > 0 and not allow_legacy)
+        )
         return {
             "total_vectors": total,
             "compatible_vectors": compatible,
             "legacy_vectors": legacy,
             "foreign_vectors": foreign,
+            "legacy_compatible": bool(allow_legacy),
             "embedding_signature": signature,
-            "reindex_required": total > 0 and compatible == 0 and legacy == 0 and foreign > 0,
+            "reindex_required": reindex_required,
         }
 
     def record_query(
@@ -211,7 +219,6 @@ class PgVectorRagRepository:
                     },
                 )
         except Exception:
-            # Telemetry must never break retrieval.
             return None
 
     def health(self) -> dict[str, Any]:
