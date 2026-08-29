@@ -184,7 +184,8 @@
       const task = taskInfo(row);
       if (!task.id || !DELETABLE_TASK_STATUSES.has(task.status)) return;
 
-      const actions = row.lastElementChild;
+      const actionCell = row.lastElementChild;
+      const actions = actionCell?.querySelector('[data-task-orchestrator-actions]') || actionCell;
       if (!actions) return;
       if (actions.textContent.trim() === '—') actions.textContent = '';
 
