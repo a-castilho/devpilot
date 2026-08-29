@@ -3,6 +3,7 @@ from pathlib import Path
 
 DASHBOARD_CSS = Path("app/static/dashboard-layout-v2.css")
 MOBILE_MENU_CSS = Path("app/static/mobile-accordion-menu.css")
+MOBILE_HOTFIX_CSS = Path("app/static/mobile-hotfix.css")
 WORKFLOW_UI = Path("app/static/task-workflow-observability.js")
 
 
@@ -42,6 +43,14 @@ def test_compact_desktop_uses_icon_rail_instead_of_wide_sidebar():
     assert "width:var(--dp-sidebar-compact)!important" in css
     assert ".sidebar-collapse-toggle" in css
     assert "display:none!important" in css
+
+
+def test_legacy_mobile_hotfix_no_longer_owns_compact_desktop_geometry():
+    css = MOBILE_HOTFIX_CSS.read_text(encoding="utf-8")
+
+    assert "Desktop/tablet geometry is owned by dashboard-layout-v2.css." in css
+    assert "@media (min-width: 901px) and (max-width: 1180px)" not in css
+    assert "table-layout: fixed !important" not in css
 
 
 def test_compact_desktop_task_table_scrolls_internally_without_crushing_columns():
