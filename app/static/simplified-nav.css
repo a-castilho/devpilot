@@ -200,6 +200,258 @@
   }
 }
 
+/* Layout completion: consistent surfaces, accessible controls and a compact
+ * ChatGPT-style desktop sidebar without changing the progressive boot flow. */
+:root {
+  --devpilot-content-max: 1680px;
+  --devpilot-radius-sm: 10px;
+  --devpilot-radius-md: 14px;
+  --devpilot-focus: 0 0 0 3px rgba(53, 229, 209, .18);
+}
+
+html {
+  color-scheme: dark;
+  scroll-behavior: smooth;
+}
+
+body {
+  overflow-x: hidden;
+}
+
+main {
+  width: 100%;
+  max-width: var(--devpilot-content-max);
+  margin-inline: auto;
+}
+
+button,
+[role="button"],
+a,
+input,
+textarea,
+select,
+summary {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+  box-shadow: var(--devpilot-focus);
+}
+
+button:disabled,
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: .58;
+}
+
+.primary,
+.ghost,
+.voice,
+.link {
+  min-height: 40px;
+  transition: transform .14s ease, filter .14s ease, background-color .14s ease, border-color .14s ease;
+}
+
+.primary:hover,
+.ghost:hover,
+.voice:hover,
+.link:hover {
+  filter: brightness(1.08);
+}
+
+.primary:active,
+.ghost:active,
+.voice:active,
+.link:active {
+  transform: translateY(1px);
+}
+
+.panel,
+.metric,
+.project-card,
+.builder-card,
+dialog {
+  backdrop-filter: blur(12px);
+}
+
+.table-wrap {
+  scrollbar-gutter: stable;
+}
+
+th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+}
+
+tbody tr {
+  transition: background-color .14s ease;
+}
+
+tbody tr:hover {
+  background: rgba(53, 229, 209, .035);
+}
+
+textarea {
+  resize: vertical;
+}
+
+@media (min-width: 901px) {
+  .shell,
+  .sidebar,
+  .brand,
+  .system-card,
+  .sidebar > nav > .nav,
+  .nav-group-toggle {
+    transition: width .2s ease, grid-template-columns .2s ease, padding .2s ease, gap .2s ease;
+  }
+
+  .sidebar-collapse-toggle {
+    position: absolute;
+    z-index: 4;
+    top: 15px;
+    right: 8px;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--devpilot-sidebar-muted);
+    cursor: pointer;
+  }
+
+  .sidebar-collapse-toggle:hover {
+    background: var(--devpilot-sidebar-hover);
+    color: #fff;
+  }
+
+  .sidebar-collapse-toggle span {
+    font-size: 22px;
+    line-height: 1;
+  }
+
+  html.sidebar-collapsed .shell {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  html.sidebar-collapsed .sidebar {
+    width: 72px;
+  }
+
+  html.sidebar-collapsed .brand {
+    width: 40px;
+    padding-inline: 5px;
+  }
+
+  html.sidebar-collapsed .brand > span:last-child,
+  html.sidebar-collapsed .sidebar-search,
+  html.sidebar-collapsed .sidebar-search-empty,
+  html.sidebar-collapsed .nav-group-label,
+  html.sidebar-collapsed .nav-group-caret,
+  html.sidebar-collapsed .system-card > div {
+    display: none !important;
+  }
+
+  html.sidebar-collapsed .sidebar > nav {
+    margin-top: 16px;
+    overflow-x: hidden;
+  }
+
+  html.sidebar-collapsed .sidebar > nav > .nav,
+  html.sidebar-collapsed .nav-group-toggle {
+    display: grid;
+    place-items: center;
+    grid-template-columns: 1fr;
+    width: 40px;
+    min-width: 40px;
+    margin-inline: auto;
+    padding: 8px;
+    gap: 0;
+    font-size: 0;
+  }
+
+  html.sidebar-collapsed .sidebar > nav > .nav::before,
+  html.sidebar-collapsed .nav-group-icon {
+    width: 22px;
+    font-size: 17px;
+  }
+
+  html.sidebar-collapsed .sidebar > nav > .nav[data-nav-group] {
+    padding: 8px;
+  }
+
+  html.sidebar-collapsed .system-card {
+    justify-content: center;
+    width: 40px;
+    min-height: 40px;
+    margin-inline: auto;
+    padding: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .sidebar-collapse-toggle {
+    display: none !important;
+  }
+
+  main {
+    max-width: none;
+  }
+
+  button,
+  [role="button"],
+  input,
+  textarea,
+  select {
+    min-height: 44px;
+  }
+
+  .view.active {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .metrics {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .hero,
+  .panel,
+  .metric,
+  .project-card,
+  .builder-card {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .header-actions,
+  .hero-actions,
+  .section-head {
+    width: 100%;
+  }
+
+  .header-actions > *,
+  .hero-actions > *,
+  .section-head > .primary {
+    flex: 1 1 auto;
+  }
+}
+
 /* ChatGPT-like desktop sidebar shell.
  * Functional behavior remains owned by simplified-nav.js: search, collapsible
  * groups, active-view synchronization, SUPER_ADMIN gating and late nav items.

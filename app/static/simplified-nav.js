@@ -61,6 +61,37 @@
   emptyState.textContent = 'Nenhuma funcionalidade encontrada.';
   nav.insertAdjacentElement('afterend', emptyState);
 
+  const SIDEBAR_COLLAPSED_KEY = 'devpilot-sidebar-collapsed';
+  const sidebarToggle = document.createElement('button');
+  sidebarToggle.type = 'button';
+  sidebarToggle.className = 'sidebar-collapse-toggle';
+  sidebarToggle.innerHTML = '<span aria-hidden="true">‹</span>';
+  sidebarToggle.setAttribute('aria-label', 'Recolher menu lateral');
+  sidebarToggle.setAttribute('title', 'Recolher menu lateral');
+  sidebar.insertBefore(sidebarToggle, search);
+
+  function setSidebarCollapsed(collapsed, {persist = true} = {}) {
+    const isCollapsed = Boolean(collapsed) && window.matchMedia('(min-width: 901px)').matches;
+    document.documentElement.classList.toggle('sidebar-collapsed', isCollapsed);
+    sidebarToggle.setAttribute('aria-expanded', String(!isCollapsed));
+    sidebarToggle.setAttribute('aria-label', isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral');
+    sidebarToggle.setAttribute('title', isCollapsed ? 'Expandir menu lateral' : 'Recolher menu lateral');
+    sidebarToggle.querySelector('span').textContent = isCollapsed ? '›' : '‹';
+    if (persist) localStorage.setItem(SIDEBAR_COLLAPSED_KEY, isCollapsed ? 'true' : 'false');
+  }
+
+  sidebarToggle.addEventListener('click', () => {
+    setSidebarCollapsed(!document.documentElement.classList.contains('sidebar-collapsed'));
+  });
+
+  const desktopMedia = window.matchMedia('(min-width: 901px)');
+  const syncSidebarViewport = () => {
+    const preferred = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+    setSidebarCollapsed(desktopMedia.matches && preferred, {persist: false});
+  };
+  desktopMedia.addEventListener?.('change', syncSidebarViewport);
+  syncSidebarViewport();
+
   function isSuperAdmin() {
     return roleResolved && currentRole === 'SUPER_ADMIN';
   }
