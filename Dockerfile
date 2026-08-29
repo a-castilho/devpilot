@@ -38,12 +38,24 @@ WORKDIR /app
 # The worker executes Git and Codex inside this image. Keep the runtime lean:
 # Debian installs only the small native tools needed at runtime. espeak-ng is
 # used on demand as the no-API fallback when Chromium/Brave exposes Web Speech
-# but cannot actually synthesize audio on Linux.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git espeak-ng \
-    && git --version \
-    && espeak-ng --version \
-    && rm -rf /var/lib/apt/lists/*
+# but cannot actually synthesize audio on Linux. The self-hosted runner may
+# temporarily lose DNS, so retry the complete apt refresh/install transaction.
+RUN set -eux; \
+    installed=0; \
+    for attempt in 1 2 3 4; do \
+        echo "APT dependency install attempt ${attempt}/4"; \
+        rm -rf /var/lib/apt/lists/*; \
+        if apt-get update -o Acquire::Retries=3 \
+            && apt-get install -y --no-install-recommends ca-certificates git espeak-ng; then \
+            installed=1; \
+            break; \
+        fi; \
+        sleep $((attempt * 15)); \
+    done; \
+    [ "$installed" = "1" ]; \
+    git --version; \
+    espeak-ng --version; \
+    rm -rf /var/lib/apt/lists/*
 
 COPY --from=codex-cli /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex-cli /usr/local/lib/node_modules/@openai /usr/local/lib/node_modules/@openai
