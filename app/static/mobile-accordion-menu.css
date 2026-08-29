@@ -1,3 +1,5 @@
+@import url('/assets/dashboard-layout-v2.css?v=20260829-1');
+
 .mobile-simple-nav,.mobile-simple-backdrop,.mobile-simple-sheet{display:none}
 
 .dp-response-stack{position:fixed;z-index:120;right:18px;top:18px;display:grid;gap:10px;width:min(420px,calc(100vw - 36px));pointer-events:none}
