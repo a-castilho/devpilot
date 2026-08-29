@@ -27,7 +27,7 @@ jobs:
         contains(github.event.pull_request.labels.*.name, 'preview')
       )
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - name: Checkout da revisão
         uses: actions/checkout@v4
@@ -36,11 +36,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import fastapi, sqlalchemy, uvicorn
-          print('Runtime Python disponível para preview.')
-          PY
+          command -v docker >/dev/null
           command -v curl >/dev/null
+          docker version --format '{{.Server.Version}}'
+
+      - name: Construir runtime do preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t "devpilot-preview:${GITHUB_RUN_ID}" .
 
       - name: Preparar cloudflared
         id: cloudflared
@@ -82,63 +86,58 @@ jobs:
 
           BASE_DIR="/tmp/devpilot-preview-${PREVIEW_KEY}"
           STATE_FILE="$BASE_DIR/state"
+          CONTAINER_NAME="devpilot-preview-${PREVIEW_KEY}"
 
           if [[ -f "$STATE_FILE" ]]; then
-            # A nova revisão substitui o preview anterior da mesma PR/ref.
-            while read -r old_pid; do
-              [[ "$old_pid" =~ ^[0-9]+$ ]] && kill "$old_pid" 2>/dev/null || true
-            done < "$STATE_FILE"
+            OLD_TUNNEL_PID="$(sed -n 's/^tunnel_pid=//p' "$STATE_FILE" | head -n1)"
+            [[ "$OLD_TUNNEL_PID" =~ ^[0-9]+$ ]] && kill "$OLD_TUNNEL_PID" 2>/dev/null || true
           fi
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
           rm -rf "$BASE_DIR"
           mkdir -p "$BASE_DIR/data/repositories" "$BASE_DIR/runtime/host-actions"
 
           PORT=$((18080 + (GITHUB_RUN_ID % 1000)))
           EMAIL="preview-admin@devpilot.local"
-          PASSWORD="$(python3 - <<'PY'
-          import secrets
-          print(secrets.token_urlsafe(18))
-          PY
-          )"
-          AUTH_SECRET="$(python3 - <<'PY'
-          import secrets
-          print(secrets.token_urlsafe(48))
-          PY
-          )"
-
-          DB_URL="sqlite:///$BASE_DIR/data/devpilot.db"
+          PASSWORD="$(openssl rand -hex 18)"
+          AUTH_SECRET="$(openssl rand -hex 48)"
+          BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
           APP_LOG="$BASE_DIR/app.log"
           TUNNEL_LOG="$BASE_DIR/tunnel.log"
 
-          nohup env -u RUNNER_TRACKING_ID \
-            DEVPILOT_ENV=preview \
-            DEVPILOT_DATABASE_URL="$DB_URL" \
-            DEVPILOT_DATA_DIR="$BASE_DIR/data" \
-            DEVPILOT_REPOSITORIES_DIR="$BASE_DIR/data/repositories" \
-            DEVPILOT_HOST_ACTIONS_DIR="$BASE_DIR/runtime/host-actions" \
-            DEVPILOT_AUTH_SECRET="$AUTH_SECRET" \
-            DEVPILOT_EXECUTION_ENABLED=false \
-            DEVPILOT_EMBEDDED_WORKER=false \
-            PYTHONPATH="$GITHUB_WORKSPACE" \
-            python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
-            >"$APP_LOG" 2>&1 < /dev/null &
-          APP_PID=$!
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            -p "127.0.0.1:${PORT}:8080" \
+            -e DEVPILOT_ENV=preview \
+            -e DEVPILOT_DATABASE_URL="sqlite:////data/devpilot.db" \
+            -e DEVPILOT_DATA_DIR=/data \
+            -e DEVPILOT_REPOSITORIES_DIR=/data/repositories \
+            -e DEVPILOT_HOST_ACTIONS_DIR=/data/host-actions \
+            -e DEVPILOT_AUTH_SECRET="$AUTH_SECRET" \
+            -e DEVPILOT_BOOTSTRAP_TOKEN="$BOOTSTRAP_TOKEN" \
+            -e DEVPILOT_EXECUTION_ENABLED=false \
+            -e DEVPILOT_EMBEDDED_WORKER=false \
+            -v "$BASE_DIR/data:/data" \
+            "devpilot-preview:${GITHUB_RUN_ID}" >/dev/null
 
           healthy=0
-          for _ in $(seq 1 40); do
+          for _ in $(seq 1 60); do
             if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
               healthy=1
               break
             fi
-            if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
+            if ! docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then break; fi
             sleep 1
           done
           if [[ "$healthy" != "1" ]]; then
+            docker logs "$CONTAINER_NAME" >"$APP_LOG" 2>&1 || true
             cat "$APP_LOG" || true
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
             exit 1
           fi
 
           curl -fsS -X POST "http://127.0.0.1:$PORT/api/auth/bootstrap" \
             -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $BOOTSTRAP_TOKEN" \
             --data "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
             >/dev/null
 
@@ -156,15 +155,19 @@ jobs:
           done
           if [[ -z "$URL" ]]; then
             cat "$TUNNEL_LOG" || true
-            kill "$APP_PID" "$TUNNEL_PID" 2>/dev/null || true
+            kill "$TUNNEL_PID" 2>/dev/null || true
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
             exit 1
           fi
 
-          printf '%s\n%s\n' "$APP_PID" "$TUNNEL_PID" > "$STATE_FILE"
+          {
+            echo "container=$CONTAINER_NAME"
+            echo "tunnel_pid=$TUNNEL_PID"
+          } > "$STATE_FILE"
 
           # O preview continua vivo depois que o job termina, mas possui TTL rígido.
           nohup env -u RUNNER_TRACKING_ID bash -c \
-            "sleep $((TTL * 60)); kill $APP_PID $TUNNEL_PID 2>/dev/null || true; rm -rf '$BASE_DIR'" \
+            "sleep $((TTL * 60)); kill $TUNNEL_PID 2>/dev/null || true; docker rm -f '$CONTAINER_NAME' >/dev/null 2>&1 || true; rm -rf '$BASE_DIR'" \
             >/dev/null 2>&1 < /dev/null &
 
           EXPIRES_AT="$(date -u -d "+${TTL} minutes" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || true)"
