@@ -14,9 +14,9 @@ concurrency:
 
 jobs:
   sync-review-document:
-    # This workflow only performs GitHub API bookkeeping, so it should not depend
-    # on repository runner variables or the scarce self-hosted DevPilot runner.
-    runs-on: ubuntu-latest
+    # Keep review documentation isolated from the scarce DevPilot quality runner.
+    # DEVPILOT_DOCS_RUNNER may select a dedicated runner; otherwise use GitHub-hosted.
+    runs-on: ${{ vars.DEVPILOT_DOCS_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão
