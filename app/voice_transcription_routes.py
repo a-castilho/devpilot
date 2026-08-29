@@ -26,8 +26,9 @@ from app.services.vault import Vault
 router = APIRouter(prefix="/api")
 
 MAX_AUDIO_BYTES = 15 * 1024 * 1024
-OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 GOOGLE_INLINE_AUDIO_MAX_BYTES = 13 * 1024 * 1024
+OPENAI_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
+GROQ_TRANSCRIPTION_MODELS = ("whisper-large-v3-turbo", "whisper-large-v3")
 GOOGLE_FALLBACK_MODELS = (
     "gemini-3.6-flash",
     "gemini-3.5-flash",
@@ -64,11 +65,7 @@ def _workspace(db: Session) -> Workspace:
     return item
 
 
-def _provider_credentials(
-    db: Session,
-    workspace_id: str,
-    provider: str,
-) -> list[ProviderCredential]:
+def _provider_credentials(db: Session, workspace_id: str, provider: str) -> list[ProviderCredential]:
     return list(
         db.scalars(
             select(ProviderCredential)
@@ -92,28 +89,13 @@ def _decrypt_secret(item: ProviderCredential) -> str:
 def _dedupe(values: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
-    for value in values:
-        value = value.strip()
+    for raw in values:
+        value = str(raw or "").strip()
         if not value or value in seen:
             continue
         seen.add(value)
         result.append(value)
     return result
-
-
-def _openai_api_keys(db: Session, workspace_id: str) -> list[str]:
-    keys = [os.getenv("OPENAI_API_KEY", "").strip()]
-    keys.extend(_decrypt_secret(item) for item in _provider_credentials(db, workspace_id, "openai"))
-    return _dedupe(keys)
-
-
-def _google_api_keys(db: Session, workspace_id: str) -> list[str]:
-    keys = [
-        os.getenv("GEMINI_API_KEY", "").strip(),
-        os.getenv("GOOGLE_API_KEY", "").strip(),
-    ]
-    keys.extend(_decrypt_secret(item) for item in _provider_credentials(db, workspace_id, "google"))
-    return _dedupe(keys)
 
 
 def _stored_models(item: ProviderCredential) -> list[str]:
@@ -124,6 +106,48 @@ def _stored_models(item: ProviderCredential) -> list[str]:
     if not isinstance(values, list):
         return []
     return [str(value).strip() for value in values if str(value).strip()]
+
+
+def _openai_api_keys(db: Session, workspace_id: str) -> list[str]:
+    keys = [os.getenv("OPENAI_API_KEY", "").strip()]
+    keys.extend(_decrypt_secret(item) for item in _provider_credentials(db, workspace_id, "openai"))
+    return _dedupe(keys)
+
+
+def _google_api_keys(db: Session, workspace_id: str) -> list[str]:
+    keys = [os.getenv("GEMINI_API_KEY", "").strip(), os.getenv("GOOGLE_API_KEY", "").strip()]
+    keys.extend(_decrypt_secret(item) for item in _provider_credentials(db, workspace_id, "google"))
+    return _dedupe(keys)
+
+
+def _is_groq_connection(item: ProviderCredential) -> bool:
+    identity = f"{item.provider} {getattr(item, 'label', '')}".lower()
+    models = " ".join(_stored_models(item)).lower()
+    return "groq" in identity or (item.provider == "custom" and "whisper" in models)
+
+
+def _groq_candidates(db: Session, workspace_id: str) -> list[tuple[str, list[str], str]]:
+    candidates: list[tuple[str, list[str], str]] = []
+    env_key = os.getenv("GROQ_API_KEY", "").strip()
+    if env_key:
+        env_models = [
+            value.strip()
+            for value in os.getenv("DEVPILOT_VOICE_GROQ_TRANSCRIPTION_MODELS", "").split(",")
+            if value.strip()
+        ]
+        candidates.append((env_key, _dedupe([*env_models, *GROQ_TRANSCRIPTION_MODELS]), "env"))
+
+    for provider in ("groq", "custom"):
+        for item in _provider_credentials(db, workspace_id, provider):
+            if not _is_groq_connection(item):
+                continue
+            secret = _decrypt_secret(item)
+            if not secret:
+                continue
+            configured = [model for model in _stored_models(item) if "whisper" in model.lower()]
+            models = _dedupe([*configured, *GROQ_TRANSCRIPTION_MODELS])
+            candidates.append((secret, models, str(getattr(item, "id", ""))))
+    return candidates
 
 
 def _google_model_score(model: str) -> tuple[int, str]:
@@ -164,43 +188,89 @@ def _filename(filename: str | None, content_type: str) -> str:
     if filename:
         return filename
     extensions = {
-        "audio/webm": "webm",
-        "audio/ogg": "ogg",
-        "audio/mp4": "m4a",
-        "audio/mpeg": "mp3",
-        "audio/wav": "wav",
-        "audio/x-wav": "wav",
-        "audio/aac": "aac",
-        "audio/3gpp": "3gp",
-        "audio/3gpp2": "3g2",
+        "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "m4a",
+        "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+        "audio/aac": "aac", "audio/3gpp": "3gp", "audio/3gpp2": "3g2",
     }
     return f"voice.{extensions.get(content_type, 'webm')}"
 
 
 def _provider_error(provider: str, statuses: list[int]) -> ProviderTranscriptionError:
     if 429 in statuses:
-        return ProviderTranscriptionError(
-            provider,
-            429,
-            f"Limite de transcrição do provedor {provider} atingido.",
-        )
+        return ProviderTranscriptionError(provider, 429, f"Limite de transcrição do provedor {provider} atingido.")
     if statuses and all(status in {401, 403} for status in statuses):
-        return ProviderTranscriptionError(
-            provider,
-            503,
-            f"A credencial de transcrição do provedor {provider} não está válida.",
-        )
-    if 400 in statuses or 415 in statuses or 422 in statuses:
-        return ProviderTranscriptionError(
-            provider,
-            422,
-            f"O provedor {provider} não conseguiu processar este áudio.",
-        )
-    return ProviderTranscriptionError(
-        provider,
-        502,
-        f"O serviço de transcrição do provedor {provider} está temporariamente indisponível.",
-    )
+        return ProviderTranscriptionError(provider, 503, f"A credencial de transcrição do provedor {provider} não está válida.")
+    if any(status in {400, 415, 422} for status in statuses):
+        return ProviderTranscriptionError(provider, 422, f"O provedor {provider} não conseguiu processar este áudio.")
+    return ProviderTranscriptionError(provider, 502, f"O serviço de transcrição do provedor {provider} está temporariamente indisponível.")
+
+
+async def _transcribe_openai_compatible(
+    client: httpx.AsyncClient,
+    *,
+    provider: str,
+    endpoint: str,
+    payload: bytes,
+    filename: str,
+    content_type: str,
+    api_key: str,
+    models: list[str],
+) -> tuple[str, str, dict]:
+    statuses: list[int] = []
+    files = {"file": (filename, payload, content_type)}
+    for model in models:
+        try:
+            response = await client.post(
+                endpoint,
+                headers={"Authorization": f"Bearer {api_key}"},
+                data={"model": model, "language": "pt"},
+                files=files,
+            )
+        except httpx.HTTPError:
+            statuses.append(502)
+            continue
+        if response.status_code >= 400:
+            statuses.append(response.status_code)
+            continue
+        try:
+            data = response.json()
+        except ValueError:
+            statuses.append(502)
+            continue
+        text = str(data.get("text", "")).strip() if isinstance(data, dict) else ""
+        if text:
+            raw_usage = data.get("usage") if isinstance(data, dict) else None
+            return text, model, raw_usage if isinstance(raw_usage, dict) else {}
+        statuses.append(422)
+    raise _provider_error(provider, statuses)
+
+
+async def _transcribe_groq(
+    client: httpx.AsyncClient,
+    *,
+    payload: bytes,
+    filename: str,
+    content_type: str,
+    candidates: list[tuple[str, list[str], str]],
+) -> tuple[str, str, dict]:
+    if not candidates:
+        raise ProviderTranscriptionError("groq", 503, "Nenhuma conexão Groq/Whisper ativa está disponível para transcrição.")
+    statuses: list[int] = []
+    for api_key, models, _connection_id in candidates:
+        try:
+            return await _transcribe_openai_compatible(
+                client,
+                provider="groq",
+                endpoint="https://api.groq.com/openai/v1/audio/transcriptions",
+                payload=payload,
+                filename=filename,
+                content_type=content_type,
+                api_key=api_key,
+                models=models,
+            )
+        except ProviderTranscriptionError as error:
+            statuses.append(error.status_code)
+    raise _provider_error("groq", statuses)
 
 
 async def _transcribe_openai(
@@ -212,88 +282,23 @@ async def _transcribe_openai(
     api_keys: list[str],
 ) -> tuple[str, str, dict]:
     if not api_keys:
-        raise ProviderTranscriptionError(
-            "openai",
-            503,
-            "Nenhuma credencial OpenAI ativa está disponível para transcrição.",
-        )
-
+        raise ProviderTranscriptionError("openai", 503, "Nenhuma credencial OpenAI ativa está disponível para transcrição.")
     statuses: list[int] = []
-    files = {"file": (filename, payload, content_type)}
-    data = {"model": OPENAI_TRANSCRIPTION_MODEL, "language": "pt"}
-
     for api_key in api_keys:
         try:
-            response = await client.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                data=data,
-                files=files,
+            return await _transcribe_openai_compatible(
+                client,
+                provider="openai",
+                endpoint="https://api.openai.com/v1/audio/transcriptions",
+                payload=payload,
+                filename=filename,
+                content_type=content_type,
+                api_key=api_key,
+                models=[OPENAI_TRANSCRIPTION_MODEL],
             )
-        except httpx.HTTPError:
-            statuses.append(502)
-            continue
-
-        if response.status_code >= 400:
-            statuses.append(response.status_code)
-            continue
-
-        try:
-            response_payload = response.json()
-            text = str(response_payload.get("text", "")).strip()
-        except (ValueError, AttributeError):
-            statuses.append(502)
-            continue
-        if text:
-            raw_usage = response_payload.get("usage")
-            return (
-                text,
-                OPENAI_TRANSCRIPTION_MODEL,
-                raw_usage if isinstance(raw_usage, dict) else {},
-            )
-        statuses.append(422)
-
+        except ProviderTranscriptionError as error:
+            statuses.append(error.status_code)
     raise _provider_error("openai", statuses)
-
-
-def _google_response_text(response_or_payload: httpx.Response | dict) -> str:
-    try:
-        payload = (
-            response_or_payload.json()
-            if isinstance(response_or_payload, httpx.Response)
-            else response_or_payload
-        )
-    except ValueError:
-        return ""
-    if not isinstance(payload, dict):
-        return ""
-
-    candidates = payload.get("candidates") or []
-    collected: list[str] = []
-    if isinstance(candidates, list):
-        for candidate in candidates:
-            if not isinstance(candidate, dict):
-                continue
-            content = candidate.get("content") or {}
-            parts = content.get("parts") or [] if isinstance(content, dict) else []
-            if not isinstance(parts, list):
-                continue
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                value = part.get("text")
-                if isinstance(value, str) and value.strip():
-                    collected.append(value.strip())
-        if collected:
-            return " ".join(collected).strip()
-
-    # Defensive support for provider-compatible gateways and future Gemini
-    # envelopes that expose the generated text directly.
-    for key in ("text", "output_text", "response"):
-        value = payload.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return ""
 
 
 def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
@@ -303,7 +308,21 @@ def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
         return "", {}
     if not isinstance(payload, dict):
         return "", {}
-    text = _google_response_text(payload)
+    collected: list[str] = []
+    for candidate in payload.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content") or {}
+        for part in content.get("parts") or [] if isinstance(content, dict) else []:
+            if isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"].strip():
+                collected.append(part["text"].strip())
+    text = " ".join(collected).strip()
+    if not text:
+        for key in ("text", "output_text", "response"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                text = value.strip()
+                break
     usage = payload.get("usageMetadata")
     return text, usage if isinstance(usage, dict) else {}
 
@@ -316,102 +335,52 @@ async def _transcribe_google(
     api_keys: list[str],
     models: list[str],
 ) -> tuple[str, str, dict]:
-    if not api_keys:
-        raise ProviderTranscriptionError(
-            "google",
-            503,
-            "Nenhuma credencial Google ativa está disponível para fallback de transcrição.",
-        )
-    if not models:
-        raise ProviderTranscriptionError(
-            "google",
-            503,
-            "Nenhum modelo Google compatível está disponível para fallback de transcrição.",
-        )
-
+    if not api_keys or not models:
+        raise ProviderTranscriptionError("google", 503, "Nenhuma configuração Google compatível está disponível para transcrição.")
     audio_base64 = base64.b64encode(payload).decode("ascii")
     request_payload = {
-        "contents": [
-            {
-                "parts": [
-                    {
-                        "text": (
-                            "Transcreva este áudio em português do Brasil. "
-                            "Retorne somente a fala transcrita, sem comentários, "
-                            "sem Markdown e sem explicar a tarefa."
-                        )
-                    },
-                    {
-                        "inlineData": {
-                            "mimeType": content_type,
-                            "data": audio_base64,
-                        }
-                    },
-                ]
-            }
-        ],
+        "contents": [{"parts": [
+            {"text": "Transcreva este áudio em português do Brasil. Retorne somente a fala transcrita, sem comentários e sem Markdown."},
+            {"inlineData": {"mimeType": content_type, "data": audio_base64}},
+        ]}],
         "generationConfig": {"temperature": 0},
     }
     statuses: list[int] = []
-
     for api_key in api_keys:
         for model in models:
-            url = (
-                "https://generativelanguage.googleapis.com/v1beta/models/"
-                f"{quote(model, safe='')}:generateContent"
-            )
+            url = "https://generativelanguage.googleapis.com/v1beta/models/" + quote(model, safe="") + ":generateContent"
             try:
-                response = await client.post(
-                    url,
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": api_key,
-                    },
-                    json=request_payload,
-                )
+                response = await client.post(url, headers={"Accept": "application/json", "Content-Type": "application/json", "x-goog-api-key": api_key}, json=request_payload)
             except httpx.HTTPError:
                 statuses.append(502)
                 continue
-
             if response.status_code >= 400:
                 statuses.append(response.status_code)
                 continue
-
             text, usage = _google_response_data(response)
             if text:
-                # A successful Gemini response is terminal. Never preserve a
-                # previous OpenAI quota failure as the final request outcome.
                 return text, model, usage
             statuses.append(422)
-
     raise _provider_error("google", statuses)
 
 
-def _final_failure(
-    primary: ProviderTranscriptionError,
-    fallback: ProviderTranscriptionError | None,
-) -> HTTPException:
-    if fallback is None:
-        if primary.status_code == 429:
-            return HTTPException(
-                429,
-                "Limite de transcrição atingido. Digite o comando abaixo ou "
-                "configure um provedor Google para fallback automático.",
-            )
-        return HTTPException(primary.status_code, primary.message)
+def _provider_order(has_groq: bool, has_openai: bool, has_google: bool) -> list[str]:
+    configured = [value.strip().lower() for value in os.getenv("DEVPILOT_VOICE_TRANSCRIPTION_PROVIDER_ORDER", "").split(",") if value.strip()]
+    supported = {"groq", "openai", "google"}
+    available = {"groq": has_groq, "openai": has_openai, "google": has_google}
+    order = [value for value in configured if value in supported and available.get(value)]
+    for provider in ("groq", "openai", "google"):
+        if available[provider] and provider not in order:
+            order.append(provider)
+    return order
 
-    if primary.status_code == 429:
-        return HTTPException(
-            429,
-            "Limite da OpenAI atingido e o fallback Google não conseguiu concluir a "
-            "transcrição. Digite o comando abaixo ou revise as credenciais dos provedores.",
-        )
-    return HTTPException(
-        fallback.status_code,
-        "Os provedores de transcrição configurados não conseguiram processar o áudio. "
-        "Digite o comando abaixo ou revise Modelos de IA.",
-    )
+
+def _final_failure(errors: list[ProviderTranscriptionError]) -> HTTPException:
+    if not errors:
+        return HTTPException(503, "Nenhum provedor de transcrição está configurado. Revise Modelos de IA.")
+    status = 429 if any(error.status_code == 429 for error in errors) else errors[-1].status_code
+    attempted = ", ".join(error.provider for error in errors)
+    return HTTPException(status, f"Os provedores de transcrição ({attempted}) não conseguiram processar o áudio. Revise Modelos de IA ou tente novamente.")
 
 
 @router.post("/voice/transcriptions")
@@ -431,66 +400,43 @@ async def transcribe_voice(
     if len(payload) > MAX_AUDIO_BYTES:
         raise HTTPException(413, "Áudio muito grande. Grave um comando mais curto.")
 
+    filename = _filename(audio.filename, content_type)
+    groq_candidates = _groq_candidates(db, ws.id)
     openai_keys = _openai_api_keys(db, ws.id)
     google_keys = _google_api_keys(db, ws.id)
     google_models = _google_model_candidates(db, ws.id) if google_keys else []
+    order = _provider_order(bool(groq_candidates), bool(openai_keys), bool(google_keys and len(payload) <= GOOGLE_INLINE_AUDIO_MAX_BYTES))
 
     provider = ""
     model = ""
     text = ""
     usage_payload: dict = {}
-    primary_error: ProviderTranscriptionError | None = None
-    fallback_error: ProviderTranscriptionError | None = None
+    errors: list[ProviderTranscriptionError] = []
 
     async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
-        try:
-            text, model, usage_payload = await _transcribe_openai(
-                client,
-                payload=payload,
-                filename=_filename(audio.filename, content_type),
-                content_type=content_type,
-                api_keys=openai_keys,
-            )
-            provider = "openai"
-        except ProviderTranscriptionError as error:
-            primary_error = error
-
-        if not text and google_keys and len(payload) <= GOOGLE_INLINE_AUDIO_MAX_BYTES:
+        for candidate in order:
             try:
-                text, model, usage_payload = await _transcribe_google(
-                    client,
-                    payload=payload,
-                    content_type=content_type,
-                    api_keys=google_keys,
-                    models=google_models,
-                )
+                if candidate == "groq":
+                    text, model, usage_payload = await _transcribe_groq(client, payload=payload, filename=filename, content_type=content_type, candidates=groq_candidates)
+                elif candidate == "openai":
+                    text, model, usage_payload = await _transcribe_openai(client, payload=payload, filename=filename, content_type=content_type, api_keys=openai_keys)
+                else:
+                    text, model, usage_payload = await _transcribe_google(client, payload=payload, content_type=content_type, api_keys=google_keys, models=google_models)
                 if text:
-                    provider = "google"
-                    fallback_error = None
+                    provider = candidate
+                    break
             except ProviderTranscriptionError as error:
-                fallback_error = error
+                errors.append(error)
 
     if not text:
-        record(
-            db,
-            workspace_id=ws.id,
-            actor=actor,
-            action="voice.transcription_failed",
-            outcome="failed",
-            details={
-                "openai_status": primary_error.status_code if primary_error else None,
-                "google_attempted": bool(google_keys) and len(payload) <= GOOGLE_INLINE_AUDIO_MAX_BYTES,
-                "google_status": fallback_error.status_code if fallback_error else None,
-                "bytes": len(payload),
-                "content_type": content_type,
-            },
-        )
+        record(db, workspace_id=ws.id, actor=actor, action="voice.transcription_failed", outcome="failed", details={
+            "attempts": [{"provider": error.provider, "status": error.status_code} for error in errors],
+            "provider_order": order,
+            "bytes": len(payload),
+            "content_type": content_type,
+        })
         db.commit()
-        raise _final_failure(
-            primary_error
-            or ProviderTranscriptionError("openai", 502, "Falha de transcrição."),
-            fallback_error,
-        )
+        raise _final_failure(errors)
 
     usage = record_usage(
         db,
@@ -501,26 +447,23 @@ async def transcribe_voice(
         operation="voice.transcription",
         counts=token_counts_from_usage(usage_payload),
     )
-    record(
-        db,
-        workspace_id=ws.id,
-        actor=actor,
-        action="voice.transcribed",
-        details={
-            "provider": provider,
-            "model": model,
-            "fallback": provider != "openai",
-            "openai_status": primary_error.status_code if primary_error else None,
-            "bytes": len(payload),
-            "content_type": content_type,
-        },
-    )
+    record(db, workspace_id=ws.id, actor=actor, action="voice.transcribed", details={
+        "provider": provider,
+        "model": model,
+        "fallback": bool(order) and provider != order[0],
+        "provider_order": order,
+        "attempts": [{"provider": error.provider, "status": error.status_code} for error in errors],
+        "bytes": len(payload),
+        "content_type": content_type,
+    })
     db.commit()
+
     result = {
         "text": text,
         "provider": provider,
         "model": model,
-        "fallback": provider != "openai",
+        "fallback": bool(order) and provider != order[0],
+        "provider_order": order,
     }
     if usage:
         result["token_usage"] = serialize_usage(usage)
