@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.config import get_settings
-from app.db import SessionLocal, engine as core_engine
+from app.db import SessionLocal
 from app.models import ProviderCredential, Workspace
 from app.services.vault import Vault
 
@@ -81,7 +81,10 @@ def _rag_settings() -> RagSettings:
         "index_batch_size": settings.rag_index_batch_size,
         "index_worker_concurrency": settings.rag_index_worker_concurrency,
     }
-    values.update({key: value for key, value in load_runtime_settings(core_engine).items() if key in values})
+    # Runtime settings belong to the same storage used by documents, chunks and
+    # index jobs. This keeps RAG configuration persistent even when the DevPilot
+    # core database is SQLite and RAG uses PostgreSQL/pgvector separately.
+    values.update({key: value for key, value in load_runtime_settings(get_rag_engine()).items() if key in values})
     return RagSettings(**values)
 
 
