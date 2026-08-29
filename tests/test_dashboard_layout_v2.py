@@ -49,17 +49,18 @@ def test_compact_desktop_task_table_scrolls_internally_without_crushing_columns(
     compact = css.split("@media (min-width:901px) and (max-width:1180px)", 1)[1].split(
         "@media (max-width:900px)", 1
     )[0]
+    task_rules = compact.split("/* Keep task columns readable.", 1)[1]
 
-    assert "#tasks-view .panel.table-wrap" in compact
-    assert "overflow-x:auto!important" in compact
-    assert "min-width:980px!important" in compact
-    assert "table-layout:auto!important" in compact
-    assert "white-space:nowrap!important" in compact
-    assert "overflow-wrap:normal!important" in compact
-    assert "table-layout:fixed!important" not in compact
-    assert "overflow-x:hidden!important" not in compact
-    assert "#tasks-view .table-wrap tbody tr.task-main-row>td::before" in compact
-    assert "content:none!important" in compact
+    assert "#tasks-view .panel.table-wrap" in task_rules
+    assert "overflow-x:auto!important" in task_rules
+    assert "min-width:980px!important" in task_rules
+    assert "table-layout:auto!important" in task_rules
+    assert "white-space:nowrap!important" in task_rules
+    assert "overflow-wrap:normal!important" in task_rules
+    assert "table-layout:fixed!important" not in task_rules
+    assert "overflow-x:hidden!important" not in task_rules
+    assert "#tasks-view .table-wrap tbody tr.task-main-row>td::before" in task_rules
+    assert "content:none!important" in task_rules
 
 
 def test_compact_desktop_supports_runtime_added_flow_column():
