@@ -25,14 +25,18 @@ def test_rag_engine_can_use_separate_database(monkeypatch, tmp_path):
         rag_db.get_rag_engine.cache_clear()
 
 
-def test_rag_routes_keep_core_settings_and_vector_jobs_separate():
+def test_rag_routes_keep_runtime_settings_and_vector_jobs_on_rag_storage():
     from pathlib import Path
 
-    source = Path("app/rag_admin_routes.py").read_text(encoding="utf-8")
-    assert "engine as core_engine" in source
-    assert "save_runtime_settings(core_engine, updated)" in source
-    assert "enqueue_index_job(\n        get_rag_engine()," in source
-    assert "list_jobs(get_rag_engine()" in source
+    routes = Path("app/rag_admin_routes.py").read_text(encoding="utf-8")
+    runtime = Path("app/rag/runtime.py").read_text(encoding="utf-8")
+
+    assert "engine as core_engine" not in routes
+    assert "save_runtime_settings(get_rag_engine(), updated)" in routes
+    assert "load_runtime_settings(get_rag_engine())" in runtime
+    assert "load_runtime_settings(core_engine)" not in runtime
+    assert "enqueue_index_job(\n        get_rag_engine()," in routes
+    assert "list_jobs(get_rag_engine()" in routes
 
 
 def test_local_rag_setup_is_bound_to_loopback_without_polluting_shared_env():
