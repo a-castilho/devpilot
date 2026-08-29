@@ -58,7 +58,7 @@ jobs:
           PY
 
       - name: Enforce engineering standard
-        run: python3 scripts/check-engineering-standards.py --changed
+        run: python scripts/check-engineering-standards.py --changed
 
   quality:
     name: DevPilot full quality
