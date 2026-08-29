@@ -29,14 +29,7 @@
 
     button.addEventListener('click', async () => {
       if (button.disabled) return;
-      const queued = Array.isArray(state?.tasks)
-        ? state.tasks.filter(task => String(task?.status || '').toLowerCase() === 'queued').length
-        : 0;
-      if (!queued) {
-        toast('Não há tarefas paradas na fila carregada');
-        return;
-      }
-      if (!window.confirm(`Excluir as tarefas paradas que nunca iniciaram?\n\nAções já executadas e tarefas com histórico de execução serão preservadas.`)) return;
+      if (!window.confirm(`Excluir todas as tarefas paradas que nunca iniciaram?\n\nAções já executadas e tarefas com histórico de execução serão preservadas.`)) return;
 
       const original = button.textContent;
       button.disabled = true;
