@@ -31,3 +31,20 @@ def test_chat_context_degrades_when_rag_retrieval_fails():
     assert "except Exception as exc" in source
     assert "RAG retrieval unavailable" in source
     assert "o chat continua sem contexto histórico adicional" in source
+
+
+def test_compose_enables_rag_for_chat_runtime():
+    source = Path("docker-compose.yml").read_text(encoding="utf-8")
+    app_section = source.split("\n  app:\n", 1)[1].split("\n  cloudflared:\n", 1)[0]
+    assert 'DEVPILOT_RAG_ENABLED: "true"' in app_section
+    assert "DEVPILOT_RAG_DATABASE_URL:" in app_section
+    assert "DEVPILOT_REDIS_URL:" in app_section
+
+
+def test_compose_runs_single_rag_index_worker():
+    source = Path("docker-compose.yml").read_text(encoding="utf-8")
+    assert source.count("\n  rag-worker:\n") == 1
+    rag_worker = source.split("\n  rag-worker:\n", 1)[1].split("\n  postgres:\n", 1)[0]
+    assert 'command: ["python", "-m", "app.rag_worker_entry"]' in rag_worker
+    assert 'DEVPILOT_RAG_ENABLED: "true"' in rag_worker
+    assert "DEVPILOT_RAG_DATABASE_URL:" in rag_worker
