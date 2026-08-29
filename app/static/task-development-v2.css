@@ -1,0 +1,235 @@
+/* Desenvolvimento · tarefas responsivas
+ * Mantém a tabela legível em desktop compacto e transforma o conteúdo de
+ * execução/aprendizado em blocos próprios, sem esmagar a coluna de ações.
+ */
+
+#tasks-view .task-actions-cell {
+  min-width:300px!important;
+}
+
+#tasks-view .task-orchestrator-actions {
+  display:flex;
+  align-items:center;
+  align-content:flex-start;
+  flex-wrap:wrap;
+  gap:7px;
+  width:100%;
+  min-width:0;
+}
+
+#tasks-view .task-orchestrator-actions > button,
+#tasks-view .task-orchestrator-actions > a,
+#tasks-view .task-actions-cell > button,
+#tasks-view .task-actions-cell > a {
+  width:auto!important;
+  min-width:0!important;
+  min-height:34px!important;
+  margin:0!important;
+  padding:7px 10px!important;
+  line-height:1.15!important;
+  white-space:nowrap!important;
+}
+
+#tasks-view .task-action-next,
+#tasks-view .task-action-resume {
+  border-color:rgba(24,183,122,.42)!important;
+  background:rgba(24,183,122,.12)!important;
+  color:#7ee8bb!important;
+}
+
+#tasks-view .task-action-auto {
+  border-color:rgba(79,148,255,.35)!important;
+  background:rgba(46,105,190,.12)!important;
+  color:#9fc5ff!important;
+}
+
+#tasks-view .task-action-archive,
+#tasks-view .task-action-cancel,
+#tasks-view .delete-task {
+  border-color:rgba(255,101,119,.38)!important;
+  background:rgba(127,29,29,.10)!important;
+  color:#ff8996!important;
+}
+
+#tasks-view .task-instructions-row > td {
+  background:rgba(255,255,255,.012);
+}
+
+#tasks-view .task-instructions-row [data-task-instructions] {
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:10px;
+  min-width:0;
+}
+
+#tasks-view .task-orchestrator-panel-host {
+  width:100%;
+  min-width:0;
+}
+
+#tasks-view .task-orchestrator-panel {
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  width:100%;
+  min-width:0;
+  margin-top:2px;
+  padding:14px;
+  border:1px solid rgba(255,255,255,.085);
+  border-radius:12px;
+  background:linear-gradient(145deg,rgba(18,30,42,.96),rgba(12,21,30,.96));
+}
+
+#tasks-view .task-runtime-summary {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  min-width:0;
+}
+
+#tasks-view .task-runtime-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  padding:7px 9px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:9px;
+  background:rgba(255,255,255,.025);
+}
+
+#tasks-view .task-runtime-chip small {
+  color:#8fa0b2;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+
+#tasks-view .task-runtime-chip strong {
+  min-width:0;
+  font-size:12px;
+  font-weight:750;
+  overflow-wrap:anywhere;
+}
+
+#tasks-view .task-runtime-chip.blocked {
+  border-color:rgba(255,170,72,.32);
+  background:rgba(163,91,23,.10);
+}
+
+#tasks-view .task-runtime-message {
+  margin:0;
+  padding:10px 12px;
+  border-left:3px solid rgba(24,183,122,.45);
+  border-radius:0 8px 8px 0;
+  background:rgba(24,183,122,.05);
+  color:#c8d5df;
+  overflow-wrap:anywhere;
+}
+
+#tasks-view .task-learning-section {
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+  min-width:0;
+}
+
+#tasks-view .task-learning-title {
+  font-size:12px;
+  letter-spacing:.04em;
+  text-transform:uppercase;
+}
+
+#tasks-view .task-learning-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
+  gap:8px;
+  min-width:0;
+}
+
+#tasks-view .task-learning-item {
+  min-width:0;
+  padding:10px 11px;
+  border:1px solid rgba(255,255,255,.065);
+  border-radius:10px;
+  background:rgba(255,255,255,.018);
+}
+
+#tasks-view .task-learning-item small {
+  display:block;
+  margin-bottom:4px;
+  color:#8fa0b2;
+  font-size:10px;
+  font-weight:800;
+  letter-spacing:.07em;
+  text-transform:uppercase;
+}
+
+#tasks-view .task-learning-item p {
+  margin:0;
+  color:#dbe5ec;
+  line-height:1.45;
+  overflow-wrap:anywhere;
+}
+
+/* Notebook/tablet com menu aberto: preserva colunas e rola somente a tabela. */
+@media (min-width:901px) and (max-width:1180px) {
+  #tasks-view .panel.table-wrap {
+    overflow-x:auto!important;
+    overflow-y:visible!important;
+  }
+
+  #tasks-view .table-wrap table {
+    min-width:1060px!important;
+    table-layout:auto!important;
+  }
+
+  #tasks-view .table-wrap th:nth-child(5),
+  #tasks-view .table-wrap tbody tr.task-main-row > td:nth-child(5),
+  #tasks-view .task-actions-cell {
+    min-width:300px!important;
+  }
+}
+
+/* No modo cartão existente, ações e aprendizado ocupam a largura útil. */
+@media (max-width:900px) {
+  #tasks-view .task-actions-cell {
+    min-width:0!important;
+  }
+
+  #tasks-view .task-orchestrator-actions {
+    gap:6px;
+  }
+
+  #tasks-view .task-orchestrator-actions > button,
+  #tasks-view .task-orchestrator-actions > a,
+  #tasks-view .task-actions-cell > button,
+  #tasks-view .task-actions-cell > a {
+    flex:0 1 auto;
+  }
+
+  #tasks-view .task-learning-grid {
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+}
+
+@media (max-width:560px) {
+  #tasks-view .task-orchestrator-actions > button,
+  #tasks-view .task-orchestrator-actions > a,
+  #tasks-view .task-actions-cell > button,
+  #tasks-view .task-actions-cell > a {
+    flex:1 1 calc(50% - 6px);
+    justify-content:center;
+    text-align:center;
+  }
+
+  #tasks-view .task-runtime-chip {
+    flex:1 1 100%;
+  }
+
+  #tasks-view .task-learning-grid {
+    grid-template-columns:1fr;
+  }
+}
