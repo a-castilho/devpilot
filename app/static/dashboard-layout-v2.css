@@ -1,4 +1,4 @@
-/* DevPilot dashboard layout v3 — authoritative responsive foundation.
+/* DevPilot dashboard layout v4 — authoritative responsive foundation.
  * Consolidates desktop, compact desktop/tablet and mobile layout behavior.
  * Legacy component styles remain loaded, but this file owns geometry and breakpoints.
  */
@@ -73,6 +73,7 @@ main>header {
   align-items:center;
   justify-content:space-between;
   gap:16px;
+  min-width:0;
 }
 
 main>header>div:first-child { min-width:0; }
@@ -90,6 +91,8 @@ main>header h1 {
   align-items:center;
   gap:8px;
   flex:0 0 auto;
+  min-width:0;
+  flex-wrap:wrap;
 }
 
 .header-actions .primary,
@@ -97,6 +100,7 @@ main>header h1 {
   display:inline-flex!important;
   align-items:center;
   justify-content:center;
+  white-space:nowrap;
 }
 
 .view {
@@ -256,6 +260,7 @@ dialog,
   gap:12px;
   padding-bottom:14px;
   border-bottom:1px solid var(--dashboard-border);
+  flex-wrap:wrap;
 }
 
 .panel .list>* { border-color:var(--dashboard-border); }
@@ -264,7 +269,12 @@ dialog,
   background:rgba(255,255,255,.025)!important;
 }
 
-.primary,.ghost,.voice,.link,button { min-height:40px; border-radius:10px; }
+.primary,.ghost,.voice,.link,button {
+  min-height:40px;
+  border-radius:10px;
+  word-break:normal;
+  overflow-wrap:normal;
+}
 .primary {
   border-color:transparent;
   background:#137c57;
@@ -293,6 +303,7 @@ textarea { resize:vertical; }
   background:var(--dashboard-surface)!important;
   box-shadow:none!important;
   scrollbar-gutter:stable;
+  -webkit-overflow-scrolling:touch;
 }
 
 table {
@@ -307,6 +318,7 @@ th,td {
   text-align:left;
   font-size:13px;
   line-height:1.45;
+  word-break:normal;
 }
 
 th {
@@ -318,7 +330,12 @@ th {
   font-size:11px;
   letter-spacing:.04em;
   text-transform:uppercase;
+  white-space:nowrap;
+  overflow-wrap:normal;
 }
+
+td { overflow-wrap:break-word; }
+.table-wrap button,.table-wrap .link,.table-wrap a { white-space:nowrap; }
 
 tbody tr { border-top:1px solid var(--dashboard-border); }
 tbody tr:hover { background:rgba(24,183,122,.045); }
@@ -398,7 +415,7 @@ dialog {
   html.sidebar-collapsed .sidebar { width:72px; }
 }
 
-/* Compact desktop / tablet: fixed icon rail. No 220px sidebar squeezing content. */
+/* Compact desktop / tablet: fixed icon rail with internally scrollable data surfaces. */
 @media (min-width:901px) and (max-width:1180px) {
   :root {
     --dp-header-height:72px;
@@ -512,17 +529,34 @@ dialog {
   .metrics { grid-template-columns:repeat(2,minmax(0,1fr)); }
   .grid-two { grid-template-columns:1fr; }
 
-  /* Restore the task list as a real five-column table on compact desktop. */
+  main>header {
+    align-items:flex-start;
+    flex-wrap:wrap;
+  }
+
+  main>header>div:first-child {
+    flex:1 1 260px;
+  }
+
+  main>header .header-actions {
+    flex:1 1 420px;
+    justify-content:flex-end;
+  }
+
+  /* Keep task columns readable. Runtime features may append columns such as
+     Fluxo, so no fixed five-column percentage map is allowed here. */
   #tasks-view .panel.table-wrap {
     padding:0!important;
-    overflow-x:hidden!important;
+    max-width:100%;
+    overflow-x:auto!important;
+    overflow-y:visible!important;
   }
 
   #tasks-view .table-wrap table {
     display:table!important;
     width:100%!important;
-    min-width:0!important;
-    table-layout:fixed!important;
+    min-width:980px!important;
+    table-layout:auto!important;
   }
 
   #tasks-view .table-wrap thead { display:table-header-group!important; }
@@ -530,11 +564,22 @@ dialog {
   #tasks-view .table-wrap tbody tr { display:table-row!important; }
   #tasks-view .table-wrap tbody td { display:table-cell!important; }
 
+  #tasks-view .table-wrap th,
   #tasks-view .table-wrap tbody tr.task-main-row>td {
-    min-width:0!important;
-    padding:11px 9px!important;
+    width:auto!important;
+    min-width:120px!important;
+    padding:11px 10px!important;
+    word-break:normal!important;
+  }
+
+  #tasks-view .table-wrap th {
+    white-space:nowrap!important;
+    overflow-wrap:normal!important;
+  }
+
+  #tasks-view .table-wrap tbody tr.task-main-row>td {
     white-space:normal!important;
-    overflow-wrap:anywhere;
+    overflow-wrap:break-word!important;
   }
 
   #tasks-view .table-wrap tbody tr.task-main-row>td::before {
@@ -542,11 +587,18 @@ dialog {
     display:none!important;
   }
 
-  #tasks-view th:nth-child(1),#tasks-view td:nth-child(1) { width:40%; }
-  #tasks-view th:nth-child(2),#tasks-view td:nth-child(2) { width:16%; }
-  #tasks-view th:nth-child(3),#tasks-view td:nth-child(3) { width:18%; }
-  #tasks-view th:nth-child(4),#tasks-view td:nth-child(4) { width:11%; text-align:center; }
-  #tasks-view th:nth-child(5),#tasks-view td:nth-child(5) { width:15%; text-align:right; }
+  #tasks-view .table-wrap th:first-child,
+  #tasks-view .table-wrap tbody tr.task-main-row>td:first-child { min-width:280px!important; }
+  #tasks-view .table-wrap th:nth-child(2),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(2) { min-width:130px!important; }
+  #tasks-view .table-wrap th:nth-child(3),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(3) { min-width:160px!important; }
+  #tasks-view .table-wrap th:nth-child(4),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(4) { min-width:110px!important; text-align:center; }
+  #tasks-view .table-wrap th:nth-child(5),
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5) { min-width:140px!important; }
+  #tasks-view .table-wrap th[data-task-flow-header],
+  #tasks-view .table-wrap tbody tr.task-main-row>td.task-flow-cell { min-width:150px!important; }
 
   #tasks-view .task-instructions-row {
     display:table-row!important;
@@ -555,16 +607,23 @@ dialog {
     background:transparent!important;
   }
 
-  #tasks-view .task-instructions-row>td {
+  #tasks-view .task-instructions-row>td,
+  #tasks-view .task-workflow-row>td {
     display:table-cell!important;
     width:auto!important;
-    padding:8px 9px 14px!important;
+    min-width:0!important;
+    padding:8px 10px 14px!important;
   }
 
-  #tasks-view .status {
-    max-width:100%;
-    white-space:normal!important;
-    line-height:1.2;
+  #tasks-view .status,
+  #tasks-view .task-flow-button,
+  #tasks-view .approve,
+  #tasks-view td button,
+  #tasks-view td a {
+    max-width:none;
+    white-space:nowrap!important;
+    word-break:normal!important;
+    overflow-wrap:normal!important;
   }
 }
 
@@ -719,7 +778,8 @@ dialog {
     overflow:auto;
   }
 
-  /* Task list becomes semantic cards with the correct five labels. */
+  /* Task list becomes semantic cards. Base columns and runtime extensions share
+     the same label pattern instead of relying on a fixed column count. */
   #tasks-view .panel.table-wrap {
     padding:10px!important;
     overflow:visible!important;
@@ -781,16 +841,26 @@ dialog {
   #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(3)::before { content:'Status'!important; }
   #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(4)::before { content:'Prioridade'!important; }
   #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5)::before { content:'Ação'!important; }
+  #tasks-view .table-wrap tbody tr.task-main-row>td.task-flow-cell::before { content:'Fluxo'!important; }
 
-  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5) {
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5),
+  #tasks-view .table-wrap tbody tr.task-main-row>td.task-flow-cell {
     display:flex!important;
     align-items:flex-start;
     gap:6px;
     flex-wrap:wrap;
   }
 
-  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5)::before {
+  #tasks-view .table-wrap tbody tr.task-main-row>td:nth-child(5)::before,
+  #tasks-view .table-wrap tbody tr.task-main-row>td.task-flow-cell::before {
     flex:0 0 100%;
+  }
+
+  #tasks-view .task-workflow-row,
+  #tasks-view .task-workflow-row>td {
+    display:block!important;
+    width:100%!important;
+    min-width:0!important;
   }
 
   #tasks-view .task-instructions-row {
