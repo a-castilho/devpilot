@@ -1,8 +1,16 @@
 from pathlib import Path
 
 
+DASHBOARD_HTML = Path("app/static/index.html")
 DASHBOARD_CSS = Path("app/static/dashboard-layout-v2.css")
 MOBILE_MENU_CSS = Path("app/static/mobile-accordion-menu.css")
+
+
+def test_overview_primary_cta_opens_project_builder_not_task_modal():
+    html = DASHBOARD_HTML.read_text(encoding="utf-8")
+
+    assert '<button class="primary" type="button" data-project-builder-open>Criar projeto</button>' in html
+    assert 'data-open="task-modal">Criar desenvolvimento</button>' not in html
 
 
 def test_dashboard_v2_is_loaded_from_existing_layout_stack():
