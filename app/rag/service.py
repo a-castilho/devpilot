@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import re
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any, Protocol
 
@@ -53,6 +53,11 @@ class RetrievalResult:
     chunks: list[RetrievalChunk]
     cache_hit: bool = False
     retrieval_time_ms: float = 0.0
+    configured_threshold: float = 0.0
+    effective_threshold: float = 0.0
+    embedding: dict[str, Any] = field(default_factory=dict)
+    candidates: list[RetrievalChunk] = field(default_factory=list)
+    index_state: dict[str, Any] = field(default_factory=dict)
 
 
 class RagRepository(Protocol):
@@ -90,7 +95,7 @@ class NullRagCache:
         return None
 
     def health(self) -> dict[str, Any]:
-        return {"status": "disabled", "backend": "null"}
+        return {"status": "disabled", "backend": "null", "optional": True}
 
 
 class RagQueryRouter:
@@ -118,13 +123,58 @@ class RagService:
         self.cache = cache or NullRagCache()
         self.router = router or RagQueryRouter()
 
-    def retrieve(self, *, organization_id: str, project_id: str, query: str) -> RetrievalResult:
+    def embedding_info(self) -> dict[str, Any]:
+        resolver = getattr(self.repository, "embedding_info", None)
+        if callable(resolver):
+            try:
+                return dict(resolver())
+            except Exception:
+                return {}
+        health = self.repository.health()
+        return dict(health.get("embedding") or {})
+
+    def effective_threshold(self) -> float:
+        configured = float(self.settings.similarity_threshold)
+        resolver = getattr(self.repository, "effective_threshold", None)
+        if callable(resolver):
+            try:
+                return float(resolver(configured))
+            except Exception:
+                return configured
+        return configured
+
+    def index_state(self, *, organization_id: str, project_id: str) -> dict[str, Any]:
+        resolver = getattr(self.repository, "index_state", None)
+        if not callable(resolver):
+            return {}
+        try:
+            return dict(resolver(organization_id=organization_id, project_id=project_id))
+        except Exception as error:
+            return {"status": "error", "detail": str(error)[:300]}
+
+    def retrieve(self, *, organization_id: str, project_id: str, query: str, diagnostic: bool = False) -> RetrievalResult:
         mode = self.router.classify(query)
+        configured_threshold = float(self.settings.similarity_threshold)
+        effective_threshold = self.effective_threshold()
+        embedding = self.embedding_info()
         if not self.settings.enabled or mode in {RagQueryMode.NO_RAG, RagQueryMode.LIVE}:
-            return RetrievalResult(mode=mode, chunks=[])
+            return RetrievalResult(
+                mode=mode,
+                chunks=[],
+                configured_threshold=configured_threshold,
+                effective_threshold=effective_threshold,
+                embedding=embedding,
+            )
 
         started = time.perf_counter()
-        cache_key = self._cache_key(organization_id, project_id, query)
+        cache_key = self._cache_key(
+            organization_id,
+            project_id,
+            query,
+            effective_threshold=effective_threshold,
+            embedding=embedding,
+            diagnostic=diagnostic,
+        )
         if self.settings.cache_enabled:
             cached = self.cache.get(cache_key)
             if cached is not None:
@@ -146,9 +196,34 @@ class RagService:
             project_id=project_id,
             query=query,
             top_k=self.settings.top_k,
-            similarity_threshold=self.settings.similarity_threshold,
+            similarity_threshold=effective_threshold,
         )
-        result = RetrievalResult(mode=mode, chunks=chunks, retrieval_time_ms=(time.perf_counter() - started) * 1000.0)
+        candidates = list(chunks)
+        if diagnostic and len(candidates) < self.settings.top_k:
+            diagnostician = getattr(self.repository, "retrieve_candidates", None)
+            if callable(diagnostician):
+                try:
+                    candidates = list(
+                        diagnostician(
+                            organization_id=organization_id,
+                            project_id=project_id,
+                            query=query,
+                            top_k=self.settings.top_k,
+                        )
+                    )
+                except Exception:
+                    candidates = list(chunks)
+
+        result = RetrievalResult(
+            mode=mode,
+            chunks=chunks,
+            retrieval_time_ms=(time.perf_counter() - started) * 1000.0,
+            configured_threshold=configured_threshold,
+            effective_threshold=effective_threshold,
+            embedding=embedding,
+            candidates=candidates,
+            index_state=self.index_state(organization_id=organization_id, project_id=project_id),
+        )
         self._record_query_safely(
             organization_id=organization_id,
             project_id=project_id,
@@ -178,17 +253,44 @@ class RagService:
         if not self.settings.enabled:
             return {"status": "disabled", "enabled": False}
         repository = self.repository.health()
-        cache = self.cache.health() if self.settings.cache_enabled else {"status": "disabled"}
+        cache = self.cache.health() if self.settings.cache_enabled else {"status": "disabled", "optional": True}
         degraded = repository.get("status") not in {"healthy", "ok"}
-        if self.settings.cache_enabled and cache.get("status") not in {"healthy", "ok"}:
+        cache_status = str(cache.get("status") or "").lower()
+        if self.settings.cache_enabled and cache_status in {"error", "degraded", "unhealthy"}:
             degraded = True
-        return {"status": "degraded" if degraded else "healthy", "enabled": True, "repository": repository, "cache": cache}
+        return {
+            "status": "degraded" if degraded else "healthy",
+            "enabled": True,
+            "repository": repository,
+            "cache": cache,
+            "embedding": self.embedding_info(),
+            "retrieval": {
+                "configured_threshold": float(self.settings.similarity_threshold),
+                "effective_threshold": self.effective_threshold(),
+                "top_k": int(self.settings.top_k),
+            },
+        }
 
     def overview(self) -> dict[str, Any]:
         return {"settings": self.settings.public_dict(), "health": self.health()}
 
-    def _cache_key(self, organization_id: str, project_id: str, query: str) -> str:
+    def _cache_key(
+        self,
+        organization_id: str,
+        project_id: str,
+        query: str,
+        *,
+        effective_threshold: float | None = None,
+        embedding: dict[str, Any] | None = None,
+        diagnostic: bool = False,
+    ) -> str:
         normalized = " ".join(query.lower().split())
-        retrieval_config = f"top_k={self.settings.top_k};threshold={self.settings.similarity_threshold:.12g}"
+        threshold = self.effective_threshold() if effective_threshold is None else float(effective_threshold)
+        provider = embedding if embedding is not None else self.embedding_info()
+        signature = str(provider.get("signature") or provider.get("model") or provider.get("provider") or "unknown")
+        retrieval_config = (
+            f"top_k={self.settings.top_k};threshold={threshold:.12g};"
+            f"embedding={signature};diagnostic={int(bool(diagnostic))}"
+        )
         digest = hashlib.sha256(f"{retrieval_config}\n{normalized}".encode("utf-8")).hexdigest()
         return f"rag:retrieval:{organization_id}:{project_id}:{digest}"
