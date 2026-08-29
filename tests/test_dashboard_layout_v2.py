@@ -2,15 +2,23 @@ from pathlib import Path
 
 
 DASHBOARD_CSS = Path("app/static/dashboard-layout-v2.css")
+DASHBOARD_V5_CSS = Path("app/static/dashboard-layout-v5.css")
 MOBILE_MENU_CSS = Path("app/static/mobile-accordion-menu.css")
 MOBILE_HOTFIX_CSS = Path("app/static/mobile-hotfix.css")
 WORKFLOW_UI = Path("app/static/task-workflow-observability.js")
 
 
-def test_dashboard_v2_is_loaded_from_existing_layout_stack():
+def test_dashboard_v5_is_loaded_from_existing_layout_stack():
     mobile_css = MOBILE_MENU_CSS.read_text(encoding="utf-8")
 
-    assert mobile_css.startswith("@import url('/assets/dashboard-layout-v2.css?v=20260829-1');")
+    assert mobile_css.startswith("@import url('/assets/dashboard-layout-v5.css?v=20260829-1');")
+
+
+def test_dashboard_v5_extends_authoritative_v4_foundation():
+    css = DASHBOARD_V5_CSS.read_text(encoding="utf-8")
+
+    assert "@import url('/assets/dashboard-layout-v2.css?v=20260829-2');" in css
+    assert "compact-desktop regression contract" in css
 
 
 def test_dashboard_v4_normalizes_primary_surfaces_and_main_geometry():
@@ -72,6 +80,19 @@ def test_compact_desktop_task_table_scrolls_internally_without_crushing_columns(
     assert "content:none!important" in task_rules
 
 
+def test_compact_desktop_v5_sizes_against_real_runtime_columns():
+    css = DASHBOARD_V5_CSS.read_text(encoding="utf-8")
+
+    assert "@media (min-width:901px) and (max-width:1180px)" in css
+    assert "overflow-x:auto!important" in css
+    assert "width:max-content!important" in css
+    assert "min-width:1180px!important" in css
+    assert "table-layout:auto!important" in css
+    assert "min-width:320px!important" in css
+    assert "min-width:260px!important" in css
+    assert "width:260px!important" in css
+
+
 def test_compact_desktop_supports_runtime_added_flow_column():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
     workflow = WORKFLOW_UI.read_text(encoding="utf-8")
@@ -81,6 +102,22 @@ def test_compact_desktop_supports_runtime_added_flow_column():
     assert "#tasks-view .table-wrap th[data-task-flow-header]" in css
     assert "td.task-flow-cell" in css
     assert "min-width:150px!important" in css
+
+
+def test_1024_header_uses_two_lanes_and_never_breaks_page_title_inside_word():
+    css = DASHBOARD_V5_CSS.read_text(encoding="utf-8")
+
+    assert "@media (min-width:901px) and (max-width:1080px)" in css
+    assert "--dp-header-height:124px" in css
+    assert "grid-template-rows:auto auto" in css
+    assert "main>header h1" in css
+    assert "overflow-wrap:normal!important" in css
+    assert "word-break:normal!important" in css
+    assert "white-space:nowrap!important" in css
+    assert "main>header .header-actions" in css
+    assert "flex-wrap:nowrap!important" in css
+    assert "overflow-x:auto!important" in css
+    assert "justify-content:flex-start!important" in css
 
 
 def test_mobile_task_cards_use_base_labels_and_runtime_flow_label():
@@ -120,6 +157,7 @@ def test_dashboard_is_responsive_from_desktop_to_small_mobile():
 
 def test_header_and_table_controls_keep_readable_words():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
+    v5 = DASHBOARD_V5_CSS.read_text(encoding="utf-8")
 
     assert "flex-wrap:wrap" in css
     assert "word-break:normal" in css
@@ -127,14 +165,17 @@ def test_header_and_table_controls_keep_readable_words():
     assert ".table-wrap button,.table-wrap .link,.table-wrap a { white-space:nowrap; }" in css
     assert "th {" in css
     assert "white-space:nowrap" in css
+    assert "hyphens:none" in v5
 
 
 def test_sticky_content_respects_global_header_height():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
+    v5 = DASHBOARD_V5_CSS.read_text(encoding="utf-8")
 
     assert "--dp-header-height:78px" in css
     assert "top:var(--dp-header-height)" in css
     assert "top:calc(var(--dp-header-height) + 16px)!important" in css
+    assert "th {\n    top:var(--dp-header-height)!important;" in v5
 
 
 def test_dashboard_preserves_accessibility_and_readability():
