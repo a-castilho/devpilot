@@ -140,7 +140,7 @@ def _stage_build_task(
         .where(
             Task.workspace_id == workspace_id,
             Task.project_id == project_id,
-            Task.source == "chat",
+            Task.source == "voice",
             Task.status == TaskStatus.awaiting_approval,
             Task.prompt == prompt,
         )
@@ -155,7 +155,7 @@ def _stage_build_task(
         project_id=project_id,
         title=f"Construção: {raw_title}"[:240],
         prompt=prompt,
-        source="chat",
+        source="voice",
         status=TaskStatus.awaiting_approval,
         requires_approval=True,
         priority=80,
