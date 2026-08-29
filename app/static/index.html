@@ -42,26 +42,58 @@
       </header>
 
       <section class="view active" id="overview-view">
-        <div class="hero">
-          <div><span class="pill">AUTOMAÇÃO AUDITÁVEL</span><h2>Transforme uma ideia em software.<br><em>Por texto ou por voz.</em></h2><p>Orquestre projetos, agentes, revisões e Git em um só fluxo — com você no controle de cada ação crítica.</p><div class="hero-actions"><button class="primary" data-open="task-modal">Criar desenvolvimento</button><button class="voice" id="voice-hero">● Falar com o DevPilot</button></div></div>
-          <div class="pulse-card"><div class="pulse-orb"><span></span></div><strong>Assistente disponível</strong><small>Toque para iniciar um comando de voz</small></div>
-        </div>
-        <article class="consultant-promo" aria-label="DevPilot consultor de desenvolvimento">
-          <div class="consultant-promo-icon" aria-hidden="true">✦</div>
-          <div class="consultant-promo-copy">
-            <span class="eyebrow">CONSULTORIA TÉCNICA CONTÍNUA</span>
-            <h3>DevPilot é seu consultor de desenvolvimento.</h3>
-            <p>Mais que executar tarefas: analisa o projeto, identifica problemas e riscos, recomenda melhorias, prioriza soluções e acompanha a implementação com boas práticas.</p>
+        <section class="command-center" aria-labelledby="command-center-title">
+          <div class="command-center-copy">
+            <span class="eyebrow">CENTRAL DO USUÁRIO · TEMPO REAL</span>
+            <h2 id="command-center-title">Tudo o que está acontecendo, em um só lugar.</h2>
+            <p id="overview-summary">Carregando o estado dos seus projetos e desenvolvimentos…</p>
+            <div class="overview-actions">
+              <button class="primary" data-open="task-modal">+ Novo desenvolvimento</button>
+              <button class="voice" id="voice-hero">● Falar com o DevPilot</button>
+              <button class="ghost" data-view="projects">Ver projetos</button>
+            </div>
           </div>
-          <div class="consultant-promo-flow" aria-label="Fluxo de consultoria">
-            <span>Análise</span><i>→</i><span>Diagnóstico</span><i>→</i><span>Recomendação</span><i>→</i><span>Implementação</span>
+          <aside class="attention-card" id="attention-card" aria-live="polite">
+            <span class="attention-icon">↻</span>
+            <div><small>PRÓXIMA AÇÃO</small><strong>Atualizando operação…</strong><p>Aguarde um instante.</p></div>
+          </aside>
+        </section>
+
+        <div class="metrics overview-metrics" id="metrics"></div>
+
+        <section class="operations-strip" aria-label="Resumo do fluxo">
+          <div class="operation-heading">
+            <div><span class="eyebrow">FLUXO DE DESENVOLVIMENTO</span><h3>Progresso das tarefas recentes</h3></div>
+            <strong id="completion-rate">0%</strong>
           </div>
-        </article>
-        <div class="metrics" id="metrics"></div>
-        <div class="grid-two">
-          <article class="panel"><div class="panel-title"><div><span class="eyebrow">FLUXO AO VIVO</span><h3>Desenvolvimento em andamento</h3></div><button class="link" data-view="tasks">Ver todos</button></div><div id="recent-tasks" class="list"></div></article>
-          <article class="panel"><div class="panel-title"><div><span class="eyebrow">INTELIGÊNCIA</span><h3>Radar de melhorias</h3></div></div><div class="insight warning"><b>!</b><div><strong>Aprovações pendentes</strong><p>Revise tarefas antes de liberar alterações no código.</p></div></div><div class="insight"><b>↗</b><div><strong>Mudanças menores, mais segurança</strong><p>O DevPilot cria uma branch por tarefa para facilitar revisão e rollback.</p></div></div></article>
+          <div class="progress-track"><span id="completion-bar"></span></div>
+          <div class="status-breakdown" id="status-breakdown"></div>
+        </section>
+
+        <div class="overview-grid">
+          <article class="panel activity-panel">
+            <div class="panel-title">
+              <div><span class="eyebrow">AGORA</span><h3>Atividade recente</h3></div>
+              <button class="link" data-view="tasks">Ver tudo</button>
+            </div>
+            <div id="recent-tasks" class="list"></div>
+          </article>
+
+          <article class="panel quick-panel">
+            <div class="panel-title"><div><span class="eyebrow">ATALHOS</span><h3>Acesse rapidamente</h3></div></div>
+            <div class="quick-grid">
+              <button type="button" class="quick-action" data-view="projects"><b>▦</b><span><strong>Projetos</strong><small>Repositórios e análises</small></span></button>
+              <button type="button" class="quick-action" data-view="tasks"><b>✓</b><span><strong>Desenvolvimento</strong><small>Fila, aprovações e resultados</small></span></button>
+              <button type="button" class="quick-action" data-view="reports"><b>≣</b><span><strong>Relatórios</strong><small>Documentação e decisões</small></span></button>
+              <button type="button" class="quick-action" data-view="audit"><b>⌁</b><span><strong>Auditoria</strong><small>Histórico verificável</small></span></button>
+            </div>
+          </article>
         </div>
+
+        <section class="system-overview" aria-label="Estado do sistema">
+          <div><span class="live-dot"></span><span><strong>DevPilot conectado</strong><small>Dashboard alimentado pelas APIs reais do sistema</small></span></div>
+          <button class="link" id="overview-refresh" type="button">Atualizar agora</button>
+        </section>
       </section>
 
       <section class="view" id="organizations-view"><div class="section-head"><div><p>Conecte organizações GitHub e sincronize repositórios. As credenciais ficam sob gestão administrativa do DevPilot.</p></div><button class="primary" data-open="organization-modal">+ Nova organização</button></div><div class="cards" id="organizations-list"></div></section>
