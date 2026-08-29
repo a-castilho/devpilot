@@ -22,6 +22,8 @@ export DEVPILOT_HOME="$HOME/Documents/devpilot"
 export DEVPILOT_URL="http://127.0.0.1:8080"
 
 # Funções em vez de aliases: funcionam também depois de `source ~/.bashrc`.
+subir-projeto() { bash "$DEVPILOT_HOME/scripts/subir-projeto.sh" "$@"; }
+subir() { subir-projeto "$@"; }
 atualizar-local() {
   bash "$DEVPILOT_HOME/scripts/atualizar-local.sh" "$@"
   local rc=$?
@@ -46,12 +48,15 @@ cat "$TMP" > "$RC_FILE"
 rm -f "$TMP"
 
 chmod +x \
+  "$HOME/Documents/devpilot/scripts/subir-projeto.sh" \
   "$HOME/Documents/devpilot/scripts/atualizar-local.sh" \
   "$HOME/Documents/devpilot/scripts/reconstruir-sistema.sh" \
   "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.sh" \
   "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.py" 2>/dev/null || true
 
 echo "Comandos instalados:"
+echo "  subir-projeto"
+echo "  subir"
 echo "  atualizar-local"
 echo "  atualizar"
 echo "  reconstruir-sistema"
