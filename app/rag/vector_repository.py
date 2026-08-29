@@ -9,14 +9,27 @@ from typing import Any
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from .embedding import EmbeddingProvider
+from .embedding import EmbeddingProvider, embedding_info
 from .service import RetrievalChunk
+
+
+LOCAL_HASH_SIMILARITY_CAP = 0.12
 
 
 class PgVectorRagRepository:
     def __init__(self, engine: Engine, embedder: EmbeddingProvider) -> None:
         self.engine = engine
         self.embedder = embedder
+
+    def embedding_info(self) -> dict[str, Any]:
+        return embedding_info(self.embedder)
+
+    def effective_threshold(self, configured_threshold: float) -> float:
+        configured = max(0.0, min(1.0, float(configured_threshold)))
+        info = self.embedding_info()
+        if info.get("provider") == "local_hash":
+            return min(configured, LOCAL_HASH_SIMILARITY_CAP)
+        return configured
 
     def retrieve(
         self,
@@ -27,10 +40,47 @@ class PgVectorRagRepository:
         top_k: int,
         similarity_threshold: float,
     ) -> list[RetrievalChunk]:
+        return self._search(
+            organization_id=organization_id,
+            project_id=project_id,
+            query=query,
+            top_k=top_k,
+            similarity_threshold=float(similarity_threshold),
+        )
+
+    def retrieve_candidates(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        query: str,
+        top_k: int,
+    ) -> list[RetrievalChunk]:
+        return self._search(
+            organization_id=organization_id,
+            project_id=project_id,
+            query=query,
+            top_k=top_k,
+            similarity_threshold=None,
+        )
+
+    def _search(
+        self,
+        *,
+        organization_id: str,
+        project_id: str,
+        query: str,
+        top_k: int,
+        similarity_threshold: float | None,
+    ) -> list[RetrievalChunk]:
         vector = self.embedder.embed(query)
         literal = "[" + ",".join(f"{value:.10f}" for value in vector) + "]"
+        provider = self.embedding_info()
+        signature = str(provider["signature"])
+        allow_legacy = provider.get("provider") == "local_hash"
+        threshold_clause = "" if similarity_threshold is None else "AND 1 - (c.embedding <=> CAST(:embedding AS vector)) >= :threshold"
         statement = text(
-            """
+            f"""
             SELECT c.id, d.source_type, d.source_id, d.source_path, c.content, c.metadata,
                    1 - (c.embedding <=> CAST(:embedding AS vector)) AS score
             FROM rag_chunks c
@@ -39,22 +89,27 @@ class PgVectorRagRepository:
               AND c.project_id = :project_id
               AND d.deleted_at IS NULL
               AND c.embedding IS NOT NULL
-              AND 1 - (c.embedding <=> CAST(:embedding AS vector)) >= :threshold
+              AND (
+                    c.metadata->>'embedding_signature' = :embedding_signature
+                    OR (:allow_legacy AND NOT (c.metadata ? 'embedding_signature'))
+                  )
+              {threshold_clause}
             ORDER BY c.embedding <=> CAST(:embedding AS vector)
             LIMIT :limit
             """
         )
+        params: dict[str, Any] = {
+            "organization_id": organization_id,
+            "project_id": project_id,
+            "embedding": literal,
+            "embedding_signature": signature,
+            "allow_legacy": bool(allow_legacy),
+            "limit": int(top_k),
+        }
+        if similarity_threshold is not None:
+            params["threshold"] = float(similarity_threshold)
         with self.engine.connect() as connection:
-            rows = connection.execute(
-                statement,
-                {
-                    "organization_id": organization_id,
-                    "project_id": project_id,
-                    "embedding": literal,
-                    "threshold": float(similarity_threshold),
-                    "limit": int(top_k),
-                },
-            ).mappings().all()
+            rows = connection.execute(statement, params).mappings().all()
         chunks: list[RetrievalChunk] = []
         for row in rows:
             metadata: Any = row["metadata"] or {}
@@ -63,6 +118,10 @@ class PgVectorRagRepository:
                     metadata = json.loads(metadata)
                 except json.JSONDecodeError:
                     metadata = {}
+            chunk_metadata = dict(metadata)
+            chunk_metadata.setdefault("embedding_provider", provider.get("provider"))
+            chunk_metadata.setdefault("embedding_model", provider.get("model"))
+            chunk_metadata.setdefault("embedding_signature", signature)
             chunks.append(
                 RetrievalChunk(
                     id=str(row["id"]),
@@ -71,10 +130,58 @@ class PgVectorRagRepository:
                     source_path=str(row["source_path"]) if row["source_path"] else None,
                     content=str(row["content"]),
                     score=float(row["score"] or 0.0),
-                    metadata=dict(metadata),
+                    metadata=chunk_metadata,
                 )
             )
         return chunks
+
+    def index_state(self, *, organization_id: str, project_id: str) -> dict[str, Any]:
+        provider = self.embedding_info()
+        signature = str(provider["signature"])
+        allow_legacy = provider.get("provider") == "local_hash"
+        statement = text(
+            """
+            SELECT
+                COUNT(*) AS total,
+                COUNT(*) FILTER (WHERE c.metadata->>'embedding_signature' = :embedding_signature) AS compatible,
+                COUNT(*) FILTER (WHERE NOT (c.metadata ? 'embedding_signature')) AS legacy,
+                COUNT(*) FILTER (
+                    WHERE c.metadata ? 'embedding_signature'
+                      AND c.metadata->>'embedding_signature' <> :embedding_signature
+                ) AS foreign
+            FROM rag_chunks c
+            JOIN rag_documents d ON d.id = c.document_id
+            WHERE c.organization_id = :organization_id
+              AND c.project_id = :project_id
+              AND d.deleted_at IS NULL
+              AND c.embedding IS NOT NULL
+            """
+        )
+        with self.engine.connect() as connection:
+            row = connection.execute(
+                statement,
+                {
+                    "organization_id": organization_id,
+                    "project_id": project_id,
+                    "embedding_signature": signature,
+                },
+            ).mappings().one()
+        total = int(row["total"] or 0)
+        compatible = int(row["compatible"] or 0)
+        legacy = int(row["legacy"] or 0)
+        foreign = int(row["foreign"] or 0)
+        reindex_required = total > 0 and compatible == 0 and (
+            foreign > 0 or (legacy > 0 and not allow_legacy)
+        )
+        return {
+            "total_vectors": total,
+            "compatible_vectors": compatible,
+            "legacy_vectors": legacy,
+            "foreign_vectors": foreign,
+            "legacy_compatible": bool(allow_legacy),
+            "embedding_signature": signature,
+            "reindex_required": reindex_required,
+        }
 
     def record_query(
         self,
@@ -112,11 +219,11 @@ class PgVectorRagRepository:
                     },
                 )
         except Exception:
-            # Telemetry must never break retrieval.
             return None
 
     def health(self) -> dict[str, Any]:
         started = time.perf_counter()
+        provider = self.embedding_info()
         try:
             with self.engine.connect() as connection:
                 extension = connection.execute(
@@ -126,6 +233,12 @@ class PgVectorRagRepository:
                 "status": "healthy" if extension else "degraded",
                 "backend": "pgvector",
                 "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+                "embedding": provider,
             }
         except Exception as error:
-            return {"status": "error", "backend": "pgvector", "detail": str(error)[:300]}
+            return {
+                "status": "error",
+                "backend": "pgvector",
+                "detail": str(error)[:300],
+                "embedding": provider,
+            }

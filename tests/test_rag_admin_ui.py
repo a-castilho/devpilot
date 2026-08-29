@@ -37,5 +37,19 @@ def test_rag_disabled_is_neutral_and_actionable():
     assert "NÃO AVALIADA" in ui
     assert "NÃO AVALIADO" in ui
     assert "Isto não é uma falha do sistema" in ui
-    assert "status||'').toLowerCase()) ? 100" in ui
+    assert "['healthy','ok','ready']" in ui
     assert "==='disabled' ? 20" not in ui
+
+
+def test_rag_admin_ui_exposes_retrieval_tuning_and_diagnostics():
+    ui = (ROOT / "app/static/rag-admin-ui.js").read_text(encoding="utf-8")
+
+    assert "Limiar de similaridade" in ui
+    assert 'data-number-setting="similarity_threshold"' in ui
+    assert 'data-number-setting="top_k"' in ui
+    assert "effective_threshold" in ui
+    assert "configured_threshold" in ui
+    assert "CANDIDATOS ABAIXO DO LIMIAR / DIAGNÓSTICO" in ui
+    assert "Reindexação necessária" in ui
+    assert "diagnostic:true" in ui
+    assert "Indexação RAG enfileirada" in ui
