@@ -11,7 +11,7 @@ from sqlalchemy.engine import Engine
 
 from app.models import Project
 from .chunking import RagChunker
-from .embedding import EmbeddingProvider
+from .embedding import EmbeddingProvider, embedding_info
 from .git_source import GitRagSource
 from .sanitizer import RagSanitizer
 
@@ -30,27 +30,46 @@ class RagIndexer:
         indexed = 0
         skipped = 0
         failed = 0
+        chunks_indexed = 0
+        errors: list[str] = []
         paths = self.source.list_files(project)
         total = len(paths)
         if progress:
             progress(0, total)
         for position, path in enumerate(paths, start=1):
             try:
-                changed = self.index_file(project, path)
+                changed, chunk_count = self._index_file_with_stats(project, path)
                 indexed += 1 if changed else 0
                 skipped += 0 if changed else 1
-            except Exception:
+                chunks_indexed += chunk_count
+            except Exception as error:
                 failed += 1
+                if len(errors) < 10:
+                    errors.append(f"{path}: {str(error)[:300]}")
             if progress:
                 progress(position, total)
-        return {"project_id": project.id, "indexed": indexed, "skipped": skipped, "failed": failed, "total": total}
+        return {
+            "project_id": project.id,
+            "indexed": indexed,
+            "skipped": skipped,
+            "failed": failed,
+            "chunks_indexed": chunks_indexed,
+            "total": total,
+            "errors": errors,
+        }
 
     def index_file(self, project: Project, path: str) -> bool:
+        changed, _ = self._index_file_with_stats(project, path)
+        return changed
+
+    def _index_file_with_stats(self, project: Project, path: str) -> tuple[bool, int]:
         raw = self.source.read(project, path)
         content = self.sanitizer.sanitize(raw)
         if not content.strip():
-            return False
-        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+            return False, 0
+        provider = embedding_info(self.embedder)
+        signature = str(provider["signature"])
+        digest = hashlib.sha256(f"{signature}\n{content}".encode("utf-8")).hexdigest()
         source_type = "documentation" if path.lower().endswith((".md", ".txt")) or path.startswith("docs/") else "git_file"
         with self.engine.begin() as connection:
             existing = connection.execute(
@@ -70,7 +89,7 @@ class RagIndexer:
                 },
             ).scalar_one_or_none()
             if existing:
-                return False
+                return False, 0
 
             connection.execute(
                 text("""
@@ -82,6 +101,14 @@ class RagIndexer:
             )
             document_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc)
+            document_metadata = {
+                "repository_url": project.repository_url,
+                "branch": project.default_branch,
+                "embedding_provider": provider.get("provider"),
+                "embedding_model": provider.get("model"),
+                "embedding_dimensions": provider.get("dimensions"),
+                "embedding_signature": signature,
+            }
             connection.execute(
                 text("""
                     INSERT INTO rag_documents
@@ -98,7 +125,7 @@ class RagIndexer:
                     "title": path,
                     "content_hash": digest,
                     "version": project.default_branch,
-                    "metadata": json.dumps({"repository_url": project.repository_url, "branch": project.default_branch}),
+                    "metadata": json.dumps(document_metadata),
                     "indexed_at": now,
                     "created_at": now,
                     "updated_at": now,
@@ -108,6 +135,13 @@ class RagIndexer:
             for chunk in chunks:
                 vector = self.embedder.embed(chunk.content)
                 literal = "[" + ",".join(f"{value:.10f}" for value in vector) + "]"
+                chunk_metadata = {
+                    "path": path,
+                    "embedding_provider": provider.get("provider"),
+                    "embedding_model": provider.get("model"),
+                    "embedding_dimensions": provider.get("dimensions"),
+                    "embedding_signature": signature,
+                }
                 connection.execute(
                     text("""
                         INSERT INTO rag_chunks
@@ -123,7 +157,7 @@ class RagIndexer:
                         "content": chunk.content,
                         "embedding": literal,
                         "token_count": len(chunk.content.split()),
-                        "metadata": json.dumps({"path": path}),
+                        "metadata": json.dumps(chunk_metadata),
                     },
                 )
-        return True
+        return True, len(chunks)
