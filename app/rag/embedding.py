@@ -37,7 +37,11 @@ def embedding_signature(provider: EmbeddingProvider, *, info: dict[str, Any] | N
         "model": provider.__class__.__name__,
         "dimensions": int(provider.dimensions),
     }
-    raw = f"{data.get('provider', '')}:{data.get('model', '')}:{int(data.get('dimensions') or provider.dimensions)}"
+    identity = str(data.get("endpoint_fingerprint") or data.get("identity") or "")
+    raw = (
+        f"{data.get('provider', '')}:{data.get('model', '')}:"
+        f"{int(data.get('dimensions') or provider.dimensions)}:{identity}"
+    )
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:24]
 
 
@@ -120,12 +124,14 @@ class OpenAIEmbeddingProvider:
         self.timeout_seconds = float(timeout_seconds)
 
     def info(self) -> dict[str, Any]:
+        endpoint_fingerprint = hashlib.sha256(self.base_url.encode("utf-8")).hexdigest()[:12]
         return {
             "provider": "openai",
             "model": self.model,
             "dimensions": self.dimensions,
             "semantic": True,
             "offline": False,
+            "endpoint_fingerprint": endpoint_fingerprint,
         }
 
     def embed(self, text: str) -> list[float]:
