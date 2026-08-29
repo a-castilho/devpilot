@@ -43,14 +43,12 @@ jobs:
           echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
           echo "Policy base: $BASE"
 
-      - name: Set up Python on GitHub-hosted runner
-        if: ${{ !vars.DEVPILOT_RUNNER }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Verify Python on self-hosted runner
-        if: ${{ vars.DEVPILOT_RUNNER }}
+      - name: Verify Python runtime
         run: |
           python3 - <<'PY'
           import sys
@@ -60,12 +58,7 @@ jobs:
           PY
 
       - name: Enforce engineering standard
-        run: |
-          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then
-            python3 scripts/check-engineering-standards.py --changed
-          else
-            python scripts/check-engineering-standards.py --changed
-          fi
+        run: python3 scripts/check-engineering-standards.py --changed
 
   quality:
     name: DevPilot full quality
@@ -95,15 +88,13 @@ jobs:
           fi
           echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
 
-      - name: Set up Python on GitHub-hosted runner
-        if: ${{ !vars.DEVPILOT_RUNNER }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
-      - name: Verify Python on self-hosted runner
-        if: ${{ vars.DEVPILOT_RUNNER }}
+      - name: Verify Python runtime
         run: |
           python3 - <<'PY'
           import sys
@@ -114,13 +105,12 @@ jobs:
 
       - name: Install package, test and browser dependencies
         run: |
-          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then PYTHON=python3; else PYTHON=python; fi
-          "$PYTHON" -m pip install --upgrade pip
-          "$PYTHON" -m pip install -e '.[test,e2e]'
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e '.[test,e2e]'
 
       - name: Install Chromium on GitHub-hosted runner
         if: ${{ !vars.DEVPILOT_RUNNER }}
-        run: python -m playwright install --with-deps chromium
+        run: python3 -m playwright install --with-deps chromium
 
       - name: Install Chromium on self-hosted runner
         if: ${{ vars.DEVPILOT_RUNNER }}
@@ -128,7 +118,7 @@ jobs:
 
       - name: Run complete validation including critical matrix and browser E2E
         run: |
-          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then export PYTHON_BIN="$(command -v python3)"; fi
+          export PYTHON_BIN="$(command -v python3)"
           bash scripts/test-all.sh
 
       - name: Publish complete failure report
