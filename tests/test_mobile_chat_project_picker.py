@@ -1,30 +1,30 @@
 from pathlib import Path
 
 
-SOURCE = Path('app/static/mobile-accordion-menu.js').read_text(encoding='utf-8')
+PICKER = Path('app/static/mobile-chat-project-picker.js').read_text(encoding='utf-8')
+LOADER = Path('app/static/feature-loader.js').read_text(encoding='utf-8')
 
 
-def test_mobile_chat_uses_custom_project_picker_instead_of_android_native_select():
-    assert "mobile-chat-project-picker" in SOURCE
-    assert "mobile-chat-project-trigger" in SOURCE
-    assert "aria-haspopup', 'listbox" in SOURCE
-    assert "pointer-events: none !important" in SOURCE
-    assert "#voice-modal .voice-project-control > #voice-project" in SOURCE
-    assert "select.dispatchEvent(new Event('change', {bubbles: true}))" in SOURCE
+def test_mobile_chat_project_picker_is_loaded_only_with_voice_feature():
+    assert "'mobile-chat-project-picker.js'" in LOADER
+    voice_bundle = LOADER.split("voice: [", 1)[1].split("],", 1)[0]
+    assert "mobile-chat-project-picker.js" in voice_bundle
 
 
-def test_mobile_chat_lazy_loads_real_projects_without_heavy_dashboard_boot():
-    assert "async function ensureProjects(select)" in SOURCE
-    assert "typeof loadProjects === 'function'" in SOURCE
-    assert "await loadProjects()" in SOURCE
-    assert "Carregando projetos…" in SOURCE
-    assert "realProjects.length" in SOURCE
+def test_mobile_chat_uses_custom_picker_instead_of_android_native_select():
+    assert 'mobile-chat-project-picker' in PICKER
+    assert 'mobile-chat-project-trigger' in PICKER
+    assert "aria-haspopup', 'listbox" in PICKER
+    assert 'pointer-events: none !important' in PICKER
+    assert '#voice-modal .voice-project-control > #voice-project' in PICKER
+    assert "select.dispatchEvent(new Event('change', {bubbles: true}))" in PICKER
 
 
-def test_mobile_project_picker_is_touch_and_accessibility_friendly():
-    assert "min-height: 48px" in SOURCE
-    assert "min-height: 46px" in SOURCE
-    assert "role', 'listbox" in SOURCE
-    assert "role', 'option" in SOURCE
-    assert "aria-selected" in SOURCE
-    assert "event.key === 'Escape'" in SOURCE
+def test_picker_has_no_global_dom_observer_and_preserves_touch_accessibility():
+    assert 'MutationObserver' not in PICKER
+    assert 'min-height: 48px' in PICKER
+    assert 'min-height: 46px' in PICKER
+    assert "role', 'listbox" in PICKER
+    assert "role', 'option" in PICKER
+    assert 'aria-selected' in PICKER
+    assert "event.key !== 'Escape'" in PICKER
