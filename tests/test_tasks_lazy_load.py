@@ -8,11 +8,11 @@ def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
 
 
-def test_dashboard_starts_with_only_five_task_summaries():
+def test_dashboard_starts_with_twenty_task_summaries():
     app = read("app/static/app.js")
     dashboard = app.split("async function loadDashboard()", 1)[1].split("async function loadProjects()", 1)[0]
-    assert "api('/ui/tasks?limit=5')" in dashboard
-    assert "api('/tasks?limit=5')" not in dashboard
+    assert "api('/ui/tasks?limit=20')" in dashboard
+    assert "api('/tasks?limit=20')" not in dashboard
 
 
 def test_task_history_is_owned_by_core_app_and_uses_lightweight_summary_endpoint():
