@@ -10,16 +10,24 @@ permissions:
 
 jobs:
   smoke:
-    name: DevPilot localhost smoke
+    name: DevPilot localhost update and smoke
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 5
+    timeout-minutes: 20
     steps:
-      - name: Identify runner
+      - name: Update local DevPilot from main
+        shell: bash
         run: |
-          echo "host=$(hostname)"
-          echo "user=$(whoami)"
+          set -euo pipefail
+          export DEVPILOT_HOME="$HOME/Documents/devpilot"
+          cd "$DEVPILOT_HOME"
+          echo "host=$(hostname) user=$(whoami)"
+          echo "before=$(git rev-parse --short HEAD) branch=$(git rev-parse --abbrev-ref HEAD)"
+          git fetch origin --prune
+          git show origin/main:app/static/voice-runtime-stability.js >/dev/null
+          bash scripts/atualizar-local.sh
+          echo "after=$(git rev-parse --short HEAD) branch=$(git rev-parse --abbrev-ref HEAD)"
 
-      - name: Test localhost runtime
+      - name: Test updated localhost runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -42,19 +50,18 @@ jobs:
           grep -qi 'DevPilot' /tmp/devpilot-root.html
           echo "root: HTTP $root_code"
 
-          echo '=== ASSETS DA CORREÇÃO ==='
+          echo '=== ASSETS CHAT/VOZ ==='
           for asset in feature-loader.js voice-runtime-stability.js chat-request-watchdog.js; do
             code="$(curl -sS -o "/tmp/$asset" -w '%{http_code}' --max-time 8 "$BASE/assets/$asset")"
             echo "$asset: HTTP $code"
             test "$code" = '200'
             test -s "/tmp/$asset"
           done
-
           grep -q 'voice-runtime-stability.js' /tmp/feature-loader.js
           grep -q 'response.status === 422' /tmp/voice-runtime-stability.js
           grep -q '45' /tmp/chat-request-watchdog.js
 
-          echo '=== ROTAS PROTEGIDAS ==='
+          echo '=== ROTAS ==='
           chat_code="$(curl -sS -o /tmp/chat-noauth.txt -w '%{http_code}' --max-time 8 -X POST "$BASE/api/chat" -H 'Content-Type: application/json' --data '{"transcript":"ping","mode":"planning","response_style":"chat","history":[]}')"
           voice_code="$(curl -sS -o /tmp/voice-noauth.txt -w '%{http_code}' --max-time 8 -X POST "$BASE/api/voice/transcriptions")"
           echo "chat sem auth: HTTP $chat_code"
@@ -62,5 +69,4 @@ jobs:
           case "$chat_code" in 401|403) ;; *) echo 'chat route/auth inesperado'; cat /tmp/chat-noauth.txt; exit 1;; esac
           case "$voice_code" in 401|403) ;; *) echo 'voice route/auth inesperado'; cat /tmp/voice-noauth.txt; exit 1;; esac
 
-          echo '=== RESULTADO ==='
-          echo 'LOCALHOST 127.0.0.1:8080 OK'
+          echo 'LOCALHOST 127.0.0.1:8080 ATUALIZADO E OK'
