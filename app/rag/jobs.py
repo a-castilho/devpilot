@@ -75,16 +75,18 @@ def list_jobs(engine: Engine, *, project_id: str | None = None, limit: int = 50)
 
 
 def retry_job(engine: Engine, job_id: str) -> dict | None:
+    """Start a fresh automatic-attempt cycle for a terminal failed job."""
     with engine.begin() as connection:
         row = connection.execute(
             text("""
                 UPDATE rag_index_jobs
-                SET status='pending', last_error=NULL, started_at=NULL, completed_at=NULL,
-                    progress_done=0, indexed_files=0, skipped_files=0, failed_files=0, chunks_indexed=0
-                WHERE id=:id AND status='failed' AND attempts < :max_attempts
+                SET status='pending', attempts=0, last_error=NULL, started_at=NULL, completed_at=NULL,
+                    progress_done=0, progress_total=0,
+                    indexed_files=0, skipped_files=0, failed_files=0, chunks_indexed=0
+                WHERE id=:id AND status='failed'
                 RETURNING id, project_id, status, attempts
             """),
-            {"id": job_id, "max_attempts": MAX_ATTEMPTS},
+            {"id": job_id},
         ).mappings().first()
     return dict(row) if row else None
 
