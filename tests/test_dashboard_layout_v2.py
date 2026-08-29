@@ -29,16 +29,16 @@ def test_dashboard_v2_normalizes_all_primary_surface_types():
     assert "overflow-x:auto" in css
 
 
-def test_tablet_sidebar_cannot_remain_collapsed_and_squeeze_content():
+def test_tablet_sidebar_preserves_collapsible_gpt_rail():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
 
     assert "@media (min-width:901px) and (max-width:1180px)" in css
-    assert "html.sidebar-collapsed .shell" in css
-    assert "grid-template-columns:220px minmax(0,1fr)!important" in css
-    assert "html.sidebar-collapsed .sidebar" in css
-    assert "width:220px!important" in css
+    assert ".shell{grid-template-columns:240px minmax(0,1fr)!important}" in css
+    assert "html.sidebar-collapsed .shell{grid-template-columns:72px minmax(0,1fr)!important}" in css
+    assert "html.sidebar-collapsed .sidebar{width:72px!important;min-width:72px!important}" in css
     assert "html.sidebar-collapsed .brand>span:last-child" in css
-    assert "display:block!important" in css
+    assert "display:none!important" in css
+    assert "main>header .header-actions{width:100%;display:flex" in css
 
 
 def test_dashboard_v2_is_responsive_from_desktop_to_small_mobile():
