@@ -35,7 +35,7 @@ def process_one_rag_job(db: Session) -> bool:
             chunk_size=rag.settings.chunk_size_tokens,
             overlap=rag.settings.chunk_overlap_tokens,
         )
-        indexer.index_project(
+        result = indexer.index_project(
             project,
             progress=lambda done, total: update_progress(
                 rag_engine, job["id"], done=done, total=total
@@ -45,7 +45,14 @@ def process_one_rag_job(db: Session) -> bool:
             organization_id=project.organization_id,
             project_id=project.id,
         )
-        complete_job(rag_engine, job["id"])
+        if int(result.get("failed") or 0) > 0:
+            examples = result.get("errors") or []
+            detail = f"{result['failed']} de {result['total']} arquivo(s) falharam na indexação"
+            if examples:
+                detail += ": " + " | ".join(str(item) for item in examples[:3])
+            fail_job(rag_engine, job["id"], detail, result=result)
+        else:
+            complete_job(rag_engine, job["id"], result=result)
     except Exception as error:
         fail_job(rag_engine, job["id"], str(error))
     return True
