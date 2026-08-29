@@ -130,7 +130,10 @@ class RagService:
                 return dict(resolver())
             except Exception:
                 return {}
-        health = self.repository.health()
+        try:
+            health = self.repository.health()
+        except Exception:
+            return {}
         return dict(health.get("embedding") or {})
 
     def effective_threshold(self) -> float:
@@ -175,21 +178,20 @@ class RagService:
             embedding=embedding,
             diagnostic=diagnostic,
         )
-        if self.settings.cache_enabled:
-            cached = self.cache.get(cache_key)
-            if cached is not None:
-                cached.cache_hit = True
-                cached.retrieval_time_ms = (time.perf_counter() - started) * 1000.0
-                self._record_query_safely(
-                    organization_id=organization_id,
-                    project_id=project_id,
-                    query=query,
-                    query_type=mode.value,
-                    cache_hit=True,
-                    retrieved_chunks=len(cached.chunks),
-                    retrieval_time_ms=cached.retrieval_time_ms,
-                )
-                return cached
+        cached = self._cache_get_safely(cache_key) if self.settings.cache_enabled else None
+        if cached is not None:
+            cached.cache_hit = True
+            cached.retrieval_time_ms = (time.perf_counter() - started) * 1000.0
+            self._record_query_safely(
+                organization_id=organization_id,
+                project_id=project_id,
+                query=query,
+                query_type=mode.value,
+                cache_hit=True,
+                retrieved_chunks=len(cached.chunks),
+                retrieval_time_ms=cached.retrieval_time_ms,
+            )
+            return cached
 
         chunks = self.repository.retrieve(
             organization_id=organization_id,
@@ -234,8 +236,20 @@ class RagService:
             retrieval_time_ms=result.retrieval_time_ms,
         )
         if self.settings.cache_enabled:
-            self.cache.set(cache_key, result, self.settings.cache_ttl_seconds)
+            self._cache_set_safely(cache_key, result)
         return result
+
+    def _cache_get_safely(self, key: str) -> RetrievalResult | None:
+        try:
+            return self.cache.get(key)
+        except Exception:
+            return None
+
+    def _cache_set_safely(self, key: str, value: RetrievalResult) -> None:
+        try:
+            self.cache.set(key, value, self.settings.cache_ttl_seconds)
+        except Exception:
+            return None
 
     def _record_query_safely(self, **event: Any) -> None:
         recorder = getattr(self.repository, "record_query", None)
@@ -247,13 +261,25 @@ class RagService:
             return
 
     def invalidate_project(self, *, organization_id: str, project_id: str) -> None:
-        self.cache.invalidate_project(organization_id, project_id)
+        try:
+            self.cache.invalidate_project(organization_id, project_id)
+        except Exception:
+            return None
 
     def health(self) -> dict[str, Any]:
         if not self.settings.enabled:
             return {"status": "disabled", "enabled": False}
-        repository = self.repository.health()
-        cache = self.cache.health() if self.settings.cache_enabled else {"status": "disabled", "optional": True}
+        try:
+            repository = self.repository.health()
+        except Exception as error:
+            repository = {"status": "error", "backend": "unknown", "detail": str(error)[:300]}
+        if self.settings.cache_enabled:
+            try:
+                cache = self.cache.health()
+            except Exception as error:
+                cache = {"status": "degraded", "backend": "unknown", "error": type(error).__name__}
+        else:
+            cache = {"status": "disabled", "optional": True}
         degraded = repository.get("status") not in {"healthy", "ok"}
         cache_status = str(cache.get("status") or "").lower()
         if self.settings.cache_enabled and cache_status in {"error", "degraded", "unhealthy"}:
