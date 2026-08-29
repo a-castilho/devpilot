@@ -39,9 +39,17 @@ def test_project_logo_editor_persists_inside_codex_config_without_replacing_othe
 def test_project_cards_have_responsive_breakpoints_and_non_stacked_actions():
     source = IDENTITY_UI.read_text(encoding="utf-8")
 
-    assert "repeat(3, minmax(0, 1fr))" in source
-    assert "repeat(2, minmax(0, 1fr))" in source
-    assert "@media (max-width: 760px)" in source
-    assert "grid-template-columns: minmax(0, 1fr) !important" in source
-    assert "white-space: nowrap !important" in source
+    assert "repeat(3,minmax(0,1fr))" in source
+    assert "repeat(2,minmax(0,1fr))" in source
+    assert "@media (max-width:760px)" in source
+    assert "grid-template-columns:minmax(0,1fr)!important" in source
+    assert "white-space:nowrap!important" in source
     assert "project-card-actions" in source
+
+
+def test_project_identity_respects_frontend_boot_policy():
+    source = IDENTITY_UI.read_text(encoding="utf-8")
+
+    assert "new MutationObserver" not in source
+    assert "createElement('script')" not in source
+    assert 'createElement("script")' not in source
