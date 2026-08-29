@@ -17,6 +17,7 @@ services:
     environment:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
       DEVPILOT_RAG_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_RAG_ENABLED: "true"
       DEVPILOT_REDIS_URL: redis://redis:6379/0
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
@@ -68,6 +69,30 @@ services:
     environment:
       DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
       DEVPILOT_RAG_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_REDIS_URL: redis://redis:6379/0
+      DEVPILOT_DATA_DIR: /data
+      DEVPILOT_REPOSITORIES_DIR: /data/repositories
+      DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
+    volumes:
+      - devpilot_data:/data
+      - ./runtime/host-actions:/runtime/host-actions
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      host-actions-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  rag-worker:
+    build: .
+    command: ["python", "-m", "app.rag_worker_entry"]
+    env_file: .env
+    environment:
+      DEVPILOT_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_RAG_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot
+      DEVPILOT_RAG_ENABLED: "true"
       DEVPILOT_REDIS_URL: redis://redis:6379/0
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
