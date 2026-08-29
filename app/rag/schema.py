@@ -78,11 +78,19 @@ def ensure_rag_schema(engine: Engine, *, embedding_dimensions: int = 1536) -> bo
             completed_at TIMESTAMPTZ,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             progress_done INTEGER NOT NULL DEFAULT 0,
-            progress_total INTEGER NOT NULL DEFAULT 0
+            progress_total INTEGER NOT NULL DEFAULT 0,
+            indexed_files INTEGER NOT NULL DEFAULT 0,
+            skipped_files INTEGER NOT NULL DEFAULT 0,
+            failed_files INTEGER NOT NULL DEFAULT 0,
+            chunks_indexed INTEGER NOT NULL DEFAULT 0
         )
         """,
         "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS progress_done INTEGER NOT NULL DEFAULT 0",
         "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS progress_total INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS indexed_files INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS skipped_files INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS failed_files INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE rag_index_jobs ADD COLUMN IF NOT EXISTS chunks_indexed INTEGER NOT NULL DEFAULT 0",
         "CREATE INDEX IF NOT EXISTS ix_rag_jobs_scope_status ON rag_index_jobs (organization_id, project_id, status)",
         """
         CREATE TABLE IF NOT EXISTS rag_queries (
