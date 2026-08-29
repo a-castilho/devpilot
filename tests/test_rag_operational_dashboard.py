@@ -24,6 +24,20 @@ def test_rag_operational_dashboard_exposes_live_visual_metrics():
     assert "Promise.allSettled" in ui
 
 
+def test_rag_operational_dashboard_shows_real_indexing_results():
+    ui = (ROOT / "app/static/rag-jobs-ui.js").read_text(encoding="utf-8")
+
+    assert "indexed_files" in ui
+    assert "skipped_files" in ui
+    assert "failed_files" in ui
+    assert "chunks_indexed" in ui
+    assert "Motivo:" in ui
+    assert "indexados" in ui
+    assert "ignorados" in ui
+    assert "falhas" in ui
+    assert "chunks" in ui
+
+
 def test_rag_operational_dashboard_is_mobile_responsive():
     ui = (ROOT / "app/static/rag-jobs-ui.js").read_text(encoding="utf-8")
 
