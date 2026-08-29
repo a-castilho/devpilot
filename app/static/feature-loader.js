@@ -15,7 +15,7 @@
     users: ['users.js'],
     providers: ['provider-models.js', 'provider-ollama.js'],
     projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
-    projects: ['project-ships.js', 'project-delete-ui.js', 'system-tests.js', 'project-identity-ui.js', 'build-game-cockpit.js'],
+    projects: ['project-delete-ui.js', 'system-tests.js', 'project-identity-ui.js', 'build-game-cockpit.js'],
     reports: ['reports.js'],
     taskModal: ['task-modal.js'],
     tasks: ['task-analytics.js', 'project-delete-ui.js', 'task-completion-documentation.js', 'system-tests.js', 'task-workflow-observability.js'],
