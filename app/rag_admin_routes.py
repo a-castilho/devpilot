@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db import engine as core_engine, get_db
+from app.db import get_db
 from app.models import Project
 from app.rag.admin import RagAdminService
 from app.rag.db import get_rag_engine
@@ -98,7 +98,9 @@ def update_settings(
         updated = _admin().update_settings(changes)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    save_runtime_settings(core_engine, updated)
+    # Persist RAG runtime settings beside the RAG schema. The DevPilot core may
+    # legitimately remain on SQLite while pgvector is a dedicated PostgreSQL DB.
+    save_runtime_settings(get_rag_engine(), updated)
     reload_rag_service()
     record(
         db,
