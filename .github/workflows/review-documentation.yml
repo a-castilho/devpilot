@@ -14,8 +14,8 @@ concurrency:
 
 jobs:
   sync-review-document:
-    # Keep review documentation isolated from the scarce DevPilot quality runner.
-    runs-on: ubuntu-latest
+    # Reuse the known DevPilot runner and keep this workflow off push churn.
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Gerar relatório versionado da revisão

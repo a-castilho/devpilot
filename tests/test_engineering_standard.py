@@ -137,10 +137,10 @@ def test_resource_intensive_workflows_keep_self_hosted_fallback():
         assert "runs-on: ubuntu-latest" not in workflow, name
 
 
-def test_review_documentation_cannot_starve_quality_runner_or_churn_on_every_push():
+def test_review_documentation_reuses_known_runner_without_churn_on_every_push():
     workflow = (WORKFLOWS / "review-documentation.yml").read_text(encoding="utf-8")
 
-    assert "runs-on: ubuntu-latest" in workflow
+    assert "vars.DEVPILOT_RUNNER || 'ubuntu-latest'" in workflow
     assert "DEVPILOT_DOCS_RUNNER" not in workflow
     assert "types: [opened, edited, reopened, ready_for_review, closed]" in workflow
     assert "synchronize" not in workflow
