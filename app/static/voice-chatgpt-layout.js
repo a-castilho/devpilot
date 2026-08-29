@@ -30,14 +30,14 @@
   };
 
   if (!modal || !panel || !transcript || !sendButton || !stage || !statusNode) return;
-  if (panel.dataset.voiceChatgptLayout === '7') return;
-  panel.dataset.voiceChatgptLayout = '7';
+  if (panel.dataset.voiceChatgptLayout === '8') return;
+  panel.dataset.voiceChatgptLayout = '8';
   panel.classList.add('voice-ui-polished');
 
   if (!document.querySelector('link[data-voice-ui-polish]')) {
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/assets/voice-ui-polish.css?v=20260829-chat7';
+    link.href = '/assets/voice-ui-polish.css?v=20260829-chat8';
     link.dataset.voiceUiPolish = '1';
     document.head.appendChild(link);
   }
@@ -95,9 +95,9 @@
     stage.append(modeSwitch, profileBanner, conversation);
   }
 
-  if (!document.querySelector('style[data-voice-visible-conversation="7"]')) {
+  if (!document.querySelector('style[data-voice-visible-conversation="8"]')) {
     const style = document.createElement('style');
-    style.dataset.voiceVisibleConversation = '7';
+    style.dataset.voiceVisibleConversation = '8';
     style.textContent = `
       #voice-chat-preview{display:none!important}
       .voice-chat-mode-switch{width:min(100%,820px);display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:2px auto 4px;padding:4px;border:1px solid rgba(148,163,184,.18);border-radius:16px;background:rgba(15,23,42,.54)}
@@ -438,7 +438,10 @@
     profileCopy.replaceChildren();
     const strong = document.createElement('strong');
     strong.textContent = config.profile;
-    profileCopy.append(strong, document.createTextNode(` · ${config.description}`));
+    profileCopy.append(
+      strong,
+      document.createTextNode(` · Online · Português (Brasil) · ${config.description}`)
+    );
     modeSwitch.querySelectorAll('[data-chat-mode]').forEach((button) => {
       const active = button.dataset.chatMode === mode;
       button.dataset.active = active ? '1' : '0';
