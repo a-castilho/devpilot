@@ -42,3 +42,61 @@
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:first-child,
   #tasks-view .table-wrap tbody tr:not(.task-instructions-row)>td:nth-child(6){grid-column:1}
 }
+
+/* Mobile task analytics must occupy the first available content space.
+ * The global legacy one-frame rules can otherwise stretch the task heading to
+ * almost a viewport and push these real-data charts below an empty region. */
+@media (max-width: 900px) {
+  body #tasks-view {
+    padding-top: 14px !important;
+  }
+
+  body #tasks-view > .section-head {
+    display: flex !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 0 14px !important;
+    padding: 0 !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    gap: 8px !important;
+    scroll-snap-align: none !important;
+    scroll-snap-stop: normal !important;
+  }
+
+  body #tasks-view > .section-head > p {
+    margin: 0 !important;
+  }
+
+  /* The fixed page header already exposes “Nova tarefa” on mobile. */
+  body #tasks-view > .section-head > .primary {
+    display: none !important;
+  }
+
+  body #tasks-view > .task-analytics {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 0 16px !important;
+    padding: 0 !important;
+    scroll-snap-align: none !important;
+    scroll-snap-stop: normal !important;
+  }
+
+  body #tasks-view > .task-analytics > .task-analytics-head {
+    min-height: 0 !important;
+    margin: 0 0 10px !important;
+    padding: 16px !important;
+  }
+
+  body #tasks-view > .task-analytics > .task-kpis {
+    margin-bottom: 10px !important;
+  }
+
+  body #tasks-view > .task-analytics > .task-charts-grid {
+    margin-top: 0 !important;
+  }
+}
