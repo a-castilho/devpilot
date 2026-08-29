@@ -127,6 +127,26 @@
   window.__devpilotLoadFeature = loadFeature;
   window.__devpilotFeatureState = featureState;
 
+  function openChat() {
+    const modal = document.querySelector('#voice-modal');
+    if (modal && !modal.open) modal.showModal?.();
+
+    const featurePromise = loadFeature('voice');
+    const projectsPromise = typeof window.loadProjects === 'function'
+      ? Promise.resolve(window.loadProjects()).catch(() => [])
+      : Promise.resolve([]);
+
+    return Promise.all([featurePromise, projectsPromise]).then(([ready]) => {
+      document.dispatchEvent(new CustomEvent('devpilot:chat-opened', {detail: {ready}}));
+      window.requestAnimationFrame(() => {
+        document.querySelector('#voice-transcript, #voice-chat-input')?.focus?.();
+      });
+      return ready;
+    });
+  }
+
+  window.devpilotOpenChat = openChat;
+
   const navRoot = () => document.querySelector('.sidebar nav');
 
   function addPlaceholder(feature, label, {superAdmin = false} = {}) {
@@ -231,6 +251,20 @@
     const match = matchFeatureTrigger(event.target);
     if (!match) return;
     const {trigger, feature} = match;
+
+    if (feature === 'voice') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      trigger.setAttribute('aria-busy', 'true');
+      void openChat().then(ready => {
+        if (!ready) window.toast?.('O chat abriu, mas alguns recursos não puderam ser carregados.');
+      }).catch(error => {
+        console.error('[DevPilot] Falha ao preparar o chat', error);
+        window.toast?.('Não foi possível preparar todos os recursos do chat.');
+      }).finally(() => trigger.removeAttribute('aria-busy'));
+      return;
+    }
+
     if (trigger.dataset.devpilotFeatureReplay === '1') {
       delete trigger.dataset.devpilotFeatureReplay;
       return;
