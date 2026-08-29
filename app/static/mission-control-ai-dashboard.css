@@ -644,3 +644,79 @@
     padding-inline: 12px;
   }
 }
+
+
+/* Responsive GPT chat: the assistant behaves as a side workspace on large
+ * screens, an intentional centered dialog on tablets, and a full-height sheet
+ * on phones. It never sits as an accidental card over task actions. */
+.mc-ai-drawer{
+  border-color:rgba(255,255,255,.12);
+  background:#212121;
+  color:#ececec;
+}
+.mc-ai-header{background:#171717;border-bottom-color:rgba(255,255,255,.08)}
+.mc-ai-context{border-bottom-color:rgba(255,255,255,.08)}
+.mc-ai-context select,
+.mc-ai-composer textarea{background:#2f2f2f;border-color:rgba(255,255,255,.1);color:#ececec}
+.mc-ai-modes{background:#2b2b2b;border-color:rgba(255,255,255,.08)}
+.mc-ai-launcher{bottom:max(22px,env(safe-area-inset-bottom))}
+body.mc-ai-open .mc-ai-launcher{opacity:0;pointer-events:none}
+
+@media (min-width:1280px){
+  body.mc-ai-open .shell main{
+    margin-right:446px;
+    transition:margin-right .18s ease;
+  }
+  .mc-ai-drawer{
+    top:16px;
+    right:16px;
+    bottom:16px;
+    width:414px;
+    max-height:none;
+    border-radius:16px;
+    grid-template-rows:auto auto minmax(0,1fr) auto auto;
+  }
+}
+
+@media (min-width:721px) and (max-width:1279px){
+  body.mc-ai-open::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:10025;
+    background:rgba(0,0,0,.56);
+    backdrop-filter:blur(3px);
+  }
+  .mc-ai-drawer{
+    left:calc((100vw + 240px) / 2);
+    right:auto;
+    bottom:24px;
+    width:min(560px,calc(100vw - 288px));
+    max-height:calc(100dvh - 48px);
+    transform:translate(-50%,14px) scale(.985);
+    grid-template-rows:auto auto minmax(160px,1fr) auto auto;
+  }
+  .mc-ai-drawer.open{transform:translate(-50%,0) scale(1)}
+  html.sidebar-collapsed .mc-ai-drawer{
+    left:calc((100vw + 72px) / 2);
+    width:min(620px,calc(100vw - 120px));
+  }
+  .mc-ai-context{grid-template-columns:minmax(0,1fr);gap:8px}
+  .mc-ai-modes{align-self:auto}
+}
+
+@media (max-width:720px){
+  .mc-ai-drawer{
+    inset:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left));
+    width:auto;
+    max-height:none;
+    border-radius:16px;
+    grid-template-rows:auto auto minmax(0,1fr) auto auto;
+  }
+  .mc-ai-header{padding:12px}
+  .mc-ai-context{grid-template-columns:minmax(0,1fr);padding:9px}
+  .mc-ai-modes button{min-height:40px}
+  .mc-ai-log{padding:12px 10px}
+  .mc-ai-composer{padding:9px}
+  .mc-ai-composer textarea{min-height:44px;font-size:16px}
+}
