@@ -1,0 +1,204 @@
+name: DevPilot Preview Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ttl_minutes:
+        description: "Tempo de vida do preview (10-90 minutos)"
+        required: false
+        default: "45"
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devpilot-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Publicar preview temporário
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'preview')
+      )
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 12
+    steps:
+      - name: Checkout da revisão
+        uses: actions/checkout@v4
+
+      - name: Validar runtime disponível
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import fastapi, sqlalchemy, uvicorn
+          print('Runtime Python disponível para preview.')
+          PY
+          command -v curl >/dev/null
+
+      - name: Preparar cloudflared
+        id: cloudflared
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOL_DIR="${RUNNER_TEMP}/devpilot-preview-tools"
+          mkdir -p "$TOOL_DIR"
+          BIN="$TOOL_DIR/cloudflared"
+          if [[ ! -x "$BIN" ]]; then
+            curl -fL --retry 3 --connect-timeout 15 \
+              -o "$BIN" \
+              https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+            chmod +x "$BIN"
+          fi
+          "$BIN" --version
+          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Subir DevPilot isolado e publicar URL
+        id: preview
+        shell: bash
+        env:
+          CLOUDFLARED_BIN: ${{ steps.cloudflared.outputs.bin }}
+          REQUESTED_TTL: ${{ github.event.inputs.ttl_minutes || '45' }}
+        run: |
+          set -euo pipefail
+
+          TTL="$REQUESTED_TTL"
+          if ! [[ "$TTL" =~ ^[0-9]+$ ]]; then TTL=45; fi
+          if (( TTL < 10 )); then TTL=10; fi
+          if (( TTL > 90 )); then TTL=90; fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            PREVIEW_KEY="pr-${{ github.event.pull_request.number }}"
+          else
+            SAFE_REF="$(printf '%s' '${{ github.ref_name }}' | tr -cs 'A-Za-z0-9._-' '-')"
+            PREVIEW_KEY="manual-${SAFE_REF}"
+          fi
+
+          BASE_DIR="/tmp/devpilot-preview-${PREVIEW_KEY}"
+          STATE_FILE="$BASE_DIR/state"
+
+          if [[ -f "$STATE_FILE" ]]; then
+            # A nova revisão substitui o preview anterior da mesma PR/ref.
+            while read -r old_pid; do
+              [[ "$old_pid" =~ ^[0-9]+$ ]] && kill "$old_pid" 2>/dev/null || true
+            done < "$STATE_FILE"
+          fi
+          rm -rf "$BASE_DIR"
+          mkdir -p "$BASE_DIR/data/repositories" "$BASE_DIR/runtime/host-actions"
+
+          PORT=$((18080 + (GITHUB_RUN_ID % 1000)))
+          EMAIL="preview-admin@devpilot.local"
+          PASSWORD="$(python3 - <<'PY'
+          import secrets
+          print(secrets.token_urlsafe(18))
+          PY
+          )"
+          AUTH_SECRET="$(python3 - <<'PY'
+          import secrets
+          print(secrets.token_urlsafe(48))
+          PY
+          )"
+
+          DB_URL="sqlite:///$BASE_DIR/data/devpilot.db"
+          APP_LOG="$BASE_DIR/app.log"
+          TUNNEL_LOG="$BASE_DIR/tunnel.log"
+
+          nohup env -u RUNNER_TRACKING_ID \
+            DEVPILOT_ENV=preview \
+            DEVPILOT_DATABASE_URL="$DB_URL" \
+            DEVPILOT_DATA_DIR="$BASE_DIR/data" \
+            DEVPILOT_REPOSITORIES_DIR="$BASE_DIR/data/repositories" \
+            DEVPILOT_HOST_ACTIONS_DIR="$BASE_DIR/runtime/host-actions" \
+            DEVPILOT_AUTH_SECRET="$AUTH_SECRET" \
+            DEVPILOT_EXECUTION_ENABLED=false \
+            DEVPILOT_EMBEDDED_WORKER=false \
+            PYTHONPATH="$GITHUB_WORKSPACE" \
+            python3 -m uvicorn app.main:app --host 127.0.0.1 --port "$PORT" \
+            >"$APP_LOG" 2>&1 < /dev/null &
+          APP_PID=$!
+
+          healthy=0
+          for _ in $(seq 1 40); do
+            if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+            if ! kill -0 "$APP_PID" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [[ "$healthy" != "1" ]]; then
+            cat "$APP_LOG" || true
+            exit 1
+          fi
+
+          curl -fsS -X POST "http://127.0.0.1:$PORT/api/auth/bootstrap" \
+            -H 'Content-Type: application/json' \
+            --data "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
+            >/dev/null
+
+          nohup env -u RUNNER_TRACKING_ID \
+            "$CLOUDFLARED_BIN" tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" \
+            >"$TUNNEL_LOG" 2>&1 < /dev/null &
+          TUNNEL_PID=$!
+
+          URL=""
+          for _ in $(seq 1 45); do
+            URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$TUNNEL_LOG" | tail -n1 || true)"
+            [[ -n "$URL" ]] && break
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [[ -z "$URL" ]]; then
+            cat "$TUNNEL_LOG" || true
+            kill "$APP_PID" "$TUNNEL_PID" 2>/dev/null || true
+            exit 1
+          fi
+
+          printf '%s\n%s\n' "$APP_PID" "$TUNNEL_PID" > "$STATE_FILE"
+
+          # O preview continua vivo depois que o job termina, mas possui TTL rígido.
+          nohup env -u RUNNER_TRACKING_ID bash -c \
+            "sleep $((TTL * 60)); kill $APP_PID $TUNNEL_PID 2>/dev/null || true; rm -rf '$BASE_DIR'" \
+            >/dev/null 2>&1 < /dev/null &
+
+          EXPIRES_AT="$(date -u -d "+${TTL} minutes" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || true)"
+          RESULT_FILE="$RUNNER_TEMP/devpilot-preview.txt"
+          {
+            echo "DevPilot Preview"
+            echo "URL: $URL"
+            echo "Login: $EMAIL"
+            echo "Senha: $PASSWORD"
+            echo "Expira: ${EXPIRES_AT:-em aproximadamente ${TTL} minutos}"
+            echo "Ref: $GITHUB_SHA"
+          } > "$RESULT_FILE"
+
+          {
+            echo "## 📱 DevPilot Preview disponível"
+            echo
+            echo "**URL:** $URL"
+            echo
+            echo "**Login:** \`$EMAIL\`"
+            echo
+            echo "**Senha:** \`$PASSWORD\`"
+            echo
+            echo "**Validade:** ${EXPIRES_AT:-aproximadamente ${TTL} minutos}"
+            echo
+            echo "> Ambiente temporário, banco isolado e execução automática desativada."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "result_file=$RESULT_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar acesso como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: devpilot-preview-access-${{ github.run_id }}
+          path: ${{ steps.preview.outputs.result_file }}
+          retention-days: 1
+          if-no-files-found: error
