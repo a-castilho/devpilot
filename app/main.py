@@ -27,6 +27,7 @@ from app.linux_routes import router as linux_router
 from app.local_test_routes import router as local_test_router
 from app.ollama_provider_routes import router as ollama_provider_router
 from app.product_delivery_routes import router as product_delivery_router
+from app.project_delete_routes import router as project_delete_router
 from app.project_provisioning_routes import router as project_provisioning_router
 from app.provider_models_routes import router as provider_models_router
 from app.rag.schema import ensure_rag_schema
@@ -65,6 +66,7 @@ _PREAUTH_SCRIPT_NAMES = {"acs-loader.js", "auth-ui.js"}
 
 _CORE_AUTHENTICATED_SCRIPTS = [
     "app.js",
+    "project-delete-ui.js",
     "feature-loader.js",
 ]
 
@@ -334,6 +336,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(frontend_ui_router)
 app.include_router(router)
+app.include_router(project_delete_router)
 app.include_router(audit_router)
 app.include_router(career_router)
 app.include_router(chat_mode_router)
