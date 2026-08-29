@@ -19,7 +19,7 @@
     taskModal: ['task-modal.js'],
     tasks: ['task-analytics.js', 'project-delete-ui.js', 'task-completion-documentation.js', 'system-tests.js', 'task-workflow-observability.js'],
     example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
-    voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js', 'mobile-chat-project-picker.js'],
+    voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js', 'voice-insecure-lan-recorder-fallback.js', 'mobile-chat-project-picker.js'],
     admin: ['super-admin-task-panel.js', 'token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js', 'rag-admin-ui.js', 'rag-jobs-ui.js'],
     audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
   });
@@ -287,7 +287,7 @@
       initializeIfAuthenticated();
     }
   } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
+    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi);
   } else {
     initializeAuthenticatedUi();
   }
