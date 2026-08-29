@@ -103,11 +103,24 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
                   });
                   if (!taskResponse.ok) throw new Error(`task HTTP ${taskResponse.status}`);
                   const task = await taskResponse.json();
-                  return {project, task};
+                  const deletableResponse = await fetch('/api/tasks', {
+                    method: 'POST', headers,
+                    body: JSON.stringify({
+                      project_id: project.id,
+                      title: 'Tarefa E2E removível',
+                      prompt: 'Alterar arquivos somente depois de aprovação explícita.',
+                      source: 'dashboard', priority: 70, requires_approval: true
+                    })
+                  });
+                  if (!deletableResponse.ok) throw new Error(`deletable task HTTP ${deletableResponse.status}`);
+                  const deletable = await deletableResponse.json();
+                  return {project, task, deletable};
                 }"""
             )
             assert created["project"]["id"]
             assert created["task"]["id"]
+            assert created["deletable"]["id"]
+            assert created["deletable"]["status"] == "awaiting_approval"
 
             # Exercise the actual task navigation and on-demand task bundle.
             page.locator('.nav[data-view="tasks"]').click()
@@ -117,6 +130,94 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
                 timeout=15_000,
             )
             assert page.locator('script[src*="task-analytics.js"]').count() == 1
+            page.wait_for_selector('script[src*="project-delete-ui.js"]', state="attached", timeout=15_000)
+            page.wait_for_function(
+                "() => document.querySelector('script[src*=\"project-delete-ui.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
+                timeout=15_000,
+            )
+
+            # The active queued task must not offer the destructive action.
+            active_row = page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E da matriz crítica")
+            active_row.wait_for(state="visible", timeout=10_000)
+            assert active_row.locator("button.delete-task").count() == 0
+
+            # The awaiting-approval task must expose the real delete button to SUPER_ADMIN.
+            deletable_row = page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E removível")
+            deletable_row.wait_for(state="visible", timeout=10_000)
+            delete_button = deletable_row.locator("button.delete-task")
+            delete_button.wait_for(state="visible", timeout=10_000)
+
+            # Cancelling confirmation must leave both UI and persistence untouched.
+            page.once("dialog", lambda dialog: dialog.dismiss())
+            delete_button.click()
+            assert deletable_row.is_visible()
+            still_present = page.evaluate(
+                """async taskId => {
+                  const token = localStorage.getItem('devpilot-token');
+                  const response = await fetch('/api/ui/tasks?limit=20', {
+                    headers: {Authorization: `Bearer ${token}`}, cache: 'no-store'
+                  });
+                  const tasks = await response.json();
+                  return {status: response.status, present: tasks.some(item => item.id === taskId)};
+                }""",
+                created["deletable"]["id"],
+            )
+            assert still_present == {"status": 200, "present": True}
+
+            # Accept confirmation, observe the actual HTTP DELETE, and require 204.
+            page.once("dialog", lambda dialog: dialog.accept())
+            with page.expect_response(
+                lambda response: response.request.method == "DELETE"
+                and f"/api/tasks/{created['deletable']['id']}" in response.url,
+                timeout=15_000,
+            ) as delete_response_info:
+                delete_button.click()
+            assert delete_response_info.value.status == 204
+            deletable_row.wait_for(state="detached", timeout=10_000)
+
+            # Persistence: the API must no longer return the deleted task.
+            persisted = page.evaluate(
+                """async ({deletedId, activeId}) => {
+                  const token = localStorage.getItem('devpilot-token');
+                  const response = await fetch('/api/ui/tasks?limit=20', {
+                    headers: {Authorization: `Bearer ${token}`}, cache: 'no-store'
+                  });
+                  const tasks = await response.json();
+                  return {
+                    status: response.status,
+                    deletedPresent: tasks.some(item => item.id === deletedId),
+                    activePresent: tasks.some(item => item.id === activeId),
+                  };
+                }""",
+                {"deletedId": created["deletable"]["id"], "activeId": created["task"]["id"]},
+            )
+            assert persisted == {"status": 200, "deletedPresent": False, "activePresent": True}
+
+            # Protected status: even a SUPER_ADMIN receives 409 for an active task.
+            blocked_delete = page.evaluate(
+                """async taskId => {
+                  const token = localStorage.getItem('devpilot-token');
+                  const response = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+                    method: 'DELETE', headers: {Authorization: `Bearer ${token}`}, cache: 'no-store'
+                  });
+                  return {status: response.status, body: await response.json()};
+                }""",
+                created["task"]["id"],
+            )
+            assert blocked_delete["status"] == 409
+            assert blocked_delete["body"]["detail"] == "Active task cannot be deleted"
+
+            # Full-page reload must not resurrect the deleted task.
+            page.reload(wait_until="domcontentloaded", timeout=20_000)
+            _resume_saved_session(page)
+            page.locator('.nav[data-view="tasks"]').click()
+            page.wait_for_selector("#tasks-view.active", timeout=10_000)
+            page.wait_for_function(
+                "() => document.querySelector('#tasks-table')?.textContent?.includes('Tarefa E2E da matriz crítica')",
+                timeout=15_000,
+            )
+            assert page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E removível").count() == 0
+            assert page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E da matriz crítica").count() == 1
 
             # First bootstrap user is SUPER_ADMIN. Loading the placeholder must boot the
             # admin bundle on demand and the protected API must authorize the same session.

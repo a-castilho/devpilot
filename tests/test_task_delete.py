@@ -43,9 +43,18 @@ def _task_fixture(db: Session, status: TaskStatus) -> tuple[Task, Run]:
     return task, run
 
 
-def test_delete_terminal_task_removes_task_and_runs_and_keeps_audit_event():
+@pytest.mark.parametrize(
+    "task_status",
+    [
+        TaskStatus.awaiting_approval,
+        TaskStatus.completed,
+        TaskStatus.failed,
+        TaskStatus.blocked,
+    ],
+)
+def test_delete_terminal_task_removes_task_and_runs_and_keeps_audit_event(task_status):
     db = _session()
-    task, run = _task_fixture(db, TaskStatus.failed)
+    task, run = _task_fixture(db, task_status)
     task_id = task.id
     run_id = run.id
 
@@ -60,21 +69,45 @@ def test_delete_terminal_task_removes_task_and_runs_and_keeps_audit_event():
         .order_by(AuditEvent.created_at.desc())
     )
     assert event is not None
+    assert event.details
 
 
-def test_delete_active_task_is_rejected_without_removing_it():
+@pytest.mark.parametrize(
+    "task_status",
+    [
+        TaskStatus.queued,
+        TaskStatus.planning,
+        TaskStatus.running,
+        TaskStatus.review,
+    ],
+)
+def test_delete_active_task_is_rejected_without_removing_it(task_status):
     db = _session()
-    task, _ = _task_fixture(db, TaskStatus.running)
+    task, _ = _task_fixture(db, task_status)
     task_id = task.id
 
     with pytest.raises(HTTPException) as error:
         delete_task(task_id, db=db, actor="super-admin@example.com")
 
     assert error.value.status_code == 409
+    assert error.value.detail == "Active task cannot be deleted"
     assert db.scalar(select(Task).where(Task.id == task_id)) is not None
 
 
-def test_task_delete_ui_removes_row_and_refreshes_task_data():
+def test_delete_missing_task_returns_404():
+    db = _session()
+    workspace = Workspace(name="DevPilot", slug="default")
+    db.add(workspace)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        delete_task("missing-task", db=db, actor="super-admin@example.com")
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Task not found"
+
+
+def test_task_delete_ui_contract_includes_refresh_and_no_global_observer():
     source = Path("app/static/project-delete-ui.js").read_text(encoding="utf-8")
 
     assert "`/api/tasks/${encodeURIComponent(task.id)}`" in source
