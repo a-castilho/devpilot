@@ -44,14 +44,14 @@ def test_local_rag_setup_is_bound_to_loopback_without_polluting_shared_env():
 
     compose = Path("docker-compose.yml").read_text(encoding="utf-8")
     script = Path("scripts/devpilot-rag-local-safe.sh").read_text(encoding="utf-8")
+    rag_url = "DEVPILOT_RAG_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot"
+
     assert '"127.0.0.1:5433:5432"' in compose
     assert 'export DEVPILOT_RAG_DATABASE_URL="$RAG_URL"' in script
     assert "path.write_text" not in script
     assert "docker compose up -d postgres" in script
     assert "app.rag_worker_entry" in script
-    assert compose.count(
-        "DEVPILOT_RAG_DATABASE_URL: postgresql+psycopg://devpilot:devpilot@postgres:5432/devpilot"
-    ) == 2
+    assert compose.count(rag_url) == 3
 
 
 def test_rag_reuses_general_openai_vault_credential_without_exposing_secret():
