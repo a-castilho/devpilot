@@ -53,6 +53,18 @@ def _require_index_backend() -> None:
         )
 
 
+def _chunk_dict(chunk: Any) -> dict[str, Any]:
+    return {
+        "id": chunk.id,
+        "source_type": chunk.source_type,
+        "source_id": chunk.source_id,
+        "source_path": chunk.source_path,
+        "content": chunk.content,
+        "score": chunk.score,
+        "metadata": chunk.metadata,
+    }
+
+
 @router.get("/overview")
 def overview() -> dict[str, Any]:
     data = _admin().overview()
@@ -98,8 +110,6 @@ def update_settings(
         updated = _admin().update_settings(changes)
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # Persist RAG runtime settings beside the RAG schema. The DevPilot core may
-    # legitimately remain on SQLite while pgvector is a dedicated PostgreSQL DB.
     save_runtime_settings(get_rag_engine(), updated)
     reload_rag_service()
     record(
@@ -183,23 +193,18 @@ def retrieve_project(project_id: str, payload: dict[str, Any], db: Session = Dep
         organization_id=project.organization_id,
         project_id=project.id,
         query=query,
+        diagnostic=bool(payload.get("diagnostic", True)),
     )
     return {
         "mode": result.mode.value,
         "cache_hit": result.cache_hit,
         "retrieval_time_ms": result.retrieval_time_ms,
-        "chunks": [
-            {
-                "id": chunk.id,
-                "source_type": chunk.source_type,
-                "source_id": chunk.source_id,
-                "source_path": chunk.source_path,
-                "content": chunk.content,
-                "score": chunk.score,
-                "metadata": chunk.metadata,
-            }
-            for chunk in result.chunks
-        ],
+        "configured_threshold": result.configured_threshold,
+        "effective_threshold": result.effective_threshold,
+        "embedding": result.embedding,
+        "index_state": result.index_state,
+        "chunks": [_chunk_dict(chunk) for chunk in result.chunks],
+        "candidates": [_chunk_dict(chunk) for chunk in result.candidates],
     }
 
 
