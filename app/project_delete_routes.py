@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.investia_models import (
+    InvestiaDistributionSnapshot,
+    InvestiaProjectConfig,
+    InvestiaProjectCost,
+)
 from app.models import Project, Repository, Task, TaskStatus, Workspace
+from app.quest_models import QuestMission
 from app.security import require_access, require_super_admin
 from app.services.audit import record
 
@@ -16,7 +22,7 @@ router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
 def _workspace(db: Session) -> Workspace:
     item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
     if not item:
-        raise HTTPException(404, "Workspace not found")
+        raise HTTPException(404, "Espaço de trabalho não encontrado")
     return item
 
 
@@ -34,11 +40,34 @@ def delete_project(
         )
     )
     if not project:
-        raise HTTPException(404, "Project not found")
+        raise HTTPException(404, "Projeto não encontrado")
 
     project_name = project.name
     project_slug = project.slug
     repository_url = project.repository_url
+
+    # Os módulos Jogo/Quest e Investia mantêm chaves estrangeiras próprias.
+    # Remova primeiro os registros dependentes para o projeto poder ser
+    # excluído tanto no PostgreSQL quanto no SQLite com FKs habilitadas.
+    db.execute(delete(QuestMission).where(QuestMission.project_id == project.id))
+    investia_config_ids = select(InvestiaProjectConfig.id).where(
+        InvestiaProjectConfig.project_id == project.id
+    )
+    db.execute(
+        delete(InvestiaProjectCost).where(
+            InvestiaProjectCost.investia_project_id.in_(investia_config_ids)
+        )
+    )
+    db.execute(
+        delete(InvestiaDistributionSnapshot).where(
+            InvestiaDistributionSnapshot.investia_project_id.in_(investia_config_ids)
+        )
+    )
+    db.execute(
+        delete(InvestiaProjectConfig).where(
+            InvestiaProjectConfig.project_id == project.id
+        )
+    )
 
     # Repositórios sincronizados pertencem à organização GitHub e devem
     # continuar cadastrados. Apenas removemos o vínculo com o projeto.
@@ -82,7 +111,7 @@ def delete_task(
         )
     )
     if not task:
-        raise HTTPException(404, "Task not found")
+        raise HTTPException(404, "Tarefa não encontrada")
 
     active_statuses = {
         TaskStatus.queued,
@@ -91,7 +120,7 @@ def delete_task(
         TaskStatus.review,
     }
     if task.status in active_statuses:
-        raise HTTPException(409, "Active task cannot be deleted")
+        raise HTTPException(409, "Uma tarefa ativa não pode ser excluída")
 
     task_title = task.title
     task_status = task.status.value if isinstance(task.status, TaskStatus) else str(task.status)
