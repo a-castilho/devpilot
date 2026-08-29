@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   sync-review-document:
-    # Reuse the known DevPilot runner and keep this workflow off synchronize/push events.
+    # Reuse the known DevPilot runner and keep this workflow off push churn.
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
