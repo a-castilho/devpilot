@@ -14,6 +14,7 @@ from app.rag.chat_context import build_chat_knowledge_context
 from app.security import require_access
 from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
+from app.services.chat_http_client import ChatProviderClient, chat_output_token_limit
 from app.services.intent import interpret_voice
 from app.services.token_usage import (
     record_usage,
@@ -42,6 +43,7 @@ from app.voice_conversation_routes import (
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
 ChatMode = Literal["planning", "build"]
+ChatResponseStyle = Literal["chat", "voice"]
 BUILD_MODE_MARKER = "[DEVPILOT_MODE=construction]"
 CHAT_PROFILES = {
     "planning": "DevPilot Planejador",
@@ -50,22 +52,35 @@ CHAT_PROFILES = {
 
 
 class DevPilotChatRequest(BaseModel):
-    transcript: str = Field(min_length=1, max_length=4000)
+    transcript: str = Field(min_length=1, max_length=12000)
     project_id: str | None = None
     history: list[ConversationTurn] = Field(default_factory=list, max_length=MAX_HISTORY_ITEMS)
     mode: ChatMode = "planning"
+    response_style: ChatResponseStyle = "chat"
 
 
-def _mode_instructions(mode: ChatMode) -> str:
+def _mode_instructions(mode: ChatMode, response_style: ChatResponseStyle = "chat") -> str:
     common = (
         "Você conversa diretamente com o cliente dentro do DevPilot. "
-        "Responda sempre em português do Brasil, de forma natural, objetiva e própria para ser falada em voz alta. "
+        "Responda sempre em português do Brasil e priorize precisão técnica, continuidade da conversa e utilidade prática. "
         "Use o projeto selecionado, o histórico e o contexto de conhecimento fornecido somente como contexto. "
         "Quando houver contexto RAG, trate-o como memória técnica recuperada e não como estado atual. "
         "Quando houver contexto LIVE, trate-o como estado atual observado pelo servidor. "
-        "Nunca invente que uma ação ocorreu. Evite Markdown, listas longas, URLs e blocos de código. "
-        "Mantenha a resposta normalmente entre uma e quatro frases. "
+        "Nunca invente arquivos, resultados, comandos executados, commits, deploys ou qualquer ação que não tenha ocorrido. "
+        "Quando a pergunta puder ser respondida diretamente, responda sem pedir confirmação desnecessária. "
     )
+    if response_style == "voice":
+        common += (
+            "A resposta será falada em voz alta. Seja natural e objetiva, evite Markdown, listas longas, URLs extensas e blocos de código. "
+            "Mantenha normalmente entre uma e quatro frases, exceto quando o cliente pedir mais detalhes. "
+        )
+    else:
+        common += (
+            "A resposta será exibida em um chat técnico. Não imponha limite artificial de uma a quatro frases. "
+            "Use Markdown quando melhorar a leitura: parágrafos, títulos curtos, listas, tabelas simples e blocos de código com linguagem quando apropriado. "
+            "Preserve quebras de linha e formatação relevante. Seja conciso para perguntas simples e detalhado quando a tarefa exigir análise, passos, código ou diagnóstico. "
+            "Quando fornecer código, entregue trechos completos o bastante para serem usados e explique apenas o necessário. "
+        )
     if mode == "planning":
         return common + (
             "Seu perfil ativo é DevPilot Planejador. Trabalhe estritamente em modo somente leitura. "
@@ -77,7 +92,7 @@ def _mode_instructions(mode: ChatMode) -> str:
         "Seu perfil ativo é DevPilot Construtor. Converta a solicitação em um objetivo técnico implementável, priorizando a menor mudança completa e reutilizando o que já existe. "
         "Considere segurança, testes, rollback, compatibilidade e riscos antes da implementação. "
         "O servidor do DevPilot preparará uma tarefa real de construção com auditoria e aprovação obrigatória. "
-        "Não diga que arquivos já foram alterados ou que a tarefa já foi executada; explique de forma curta o que a tarefa fará e que ela ficará aguardando aprovação antes da execução."
+        "Não diga que arquivos já foram alterados ou que a tarefa já foi executada; explique o que a tarefa fará e que ela ficará aguardando aprovação antes da execução."
     )
 
 
@@ -89,7 +104,7 @@ def _conversation_input(payload: DevPilotChatRequest, project_context: str, know
         "Contexto de conhecimento do DEVpilot:",
         knowledge_context or "Nenhum contexto adicional necessário.",
         "",
-        f"Modo ativo: {payload.mode}. Perfil ativo: {profile}.",
+        f"Modo ativo: {payload.mode}. Perfil ativo: {profile}. Estilo de resposta: {payload.response_style}.",
         "Histórico recente da conversa:",
     ]
     for turn in payload.history[-MAX_HISTORY_ITEMS:]:
@@ -101,7 +116,9 @@ def _conversation_input(payload: DevPilotChatRequest, project_context: str, know
 
 def _chat_provider_order(providers: list[str]) -> list[str]:
     ordered: list[str] = []
-    for provider in ["ollama", *providers]:
+    # Respeita a política global configurada (provedores remotos primeiro) e
+    # mantém Ollama como fallback local. O chat não deve inverter essa ordem.
+    for provider in [*providers, "ollama"]:
         normalized = str(provider or "").strip().lower()
         if normalized and normalized not in ordered:
             ordered.append(normalized)
@@ -192,7 +209,8 @@ async def devpilot_chat(
     )
 
     input_text = _conversation_input(payload, project_context, knowledge.text)
-    instructions = _mode_instructions(payload.mode)
+    instructions = _mode_instructions(payload.mode, payload.response_style)
+    output_token_limit = chat_output_token_limit(payload.response_style)
     provider_order = _chat_provider_order(_provider_order(db, ws.id))
     effective_order = list(provider_order)
 
@@ -209,13 +227,17 @@ async def devpilot_chat(
                 "reason": budget_reason,
                 "fallback": "ollama",
                 "mode": payload.mode,
+                "response_style": payload.response_style,
             },
         )
         effective_order = ["ollama"]
 
     result: dict | None = None
     attempts: list[dict] = []
-    async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=10.0)) as client:
+    async with ChatProviderClient(
+        timeout=httpx.Timeout(45.0, connect=10.0),
+        output_token_limit=output_token_limit,
+    ) as client:
         for provider in effective_order:
             if provider == "openai":
                 candidate, provider_attempts = await _try_openai_all(client, db, ws.id, input_text, instructions)
@@ -241,7 +263,11 @@ async def devpilot_chat(
                 actor=actor,
                 action="chat.failed",
                 outcome="blocked",
-                details={"mode": payload.mode, "reason": budget_reason},
+                details={
+                    "mode": payload.mode,
+                    "response_style": payload.response_style,
+                    "reason": budget_reason,
+                },
             )
             db.commit()
             raise HTTPException(402, budget_reason)
@@ -255,6 +281,7 @@ async def devpilot_chat(
             outcome="failed",
             details={
                 "mode": payload.mode,
+                "response_style": payload.response_style,
                 "profile": CHAT_PROFILES[payload.mode],
                 "provider_order": effective_order,
                 "attempts": attempts[-MAX_PROVIDER_ATTEMPTS_LOGGED:],
@@ -296,7 +323,8 @@ async def devpilot_chat(
         }
         suffix = "Tarefa de construção preparada e aguardando aprovação antes da execução."
         if suffix.casefold() not in answer.casefold():
-            answer = f"{answer} {suffix}".strip()
+            separator = "\n\n" if payload.response_style == "chat" else " "
+            answer = f"{answer}{separator}{suffix}".strip()
 
     usage = record_usage(
         db,
@@ -318,9 +346,11 @@ async def devpilot_chat(
         action="chat.replied",
         details={
             "mode": payload.mode,
+            "response_style": payload.response_style,
             "profile": CHAT_PROFILES[payload.mode],
             "provider": provider,
             "model": selected_model,
+            "output_token_limit": output_token_limit,
             "fallback_used": fallback_used,
             "history_items": len(payload.history),
             "task_id": execution["task_id"],
@@ -344,10 +374,12 @@ async def devpilot_chat(
     response_payload = {
         "reply": answer,
         "mode": payload.mode,
+        "response_style": payload.response_style,
         "profile": CHAT_PROFILES[payload.mode],
         "execution": execution,
         "provider": provider,
         "model": selected_model,
+        "output_token_limit": output_token_limit,
         "fallback_used": fallback_used,
         "notice": notice,
         "providers_tried": attempted_providers,

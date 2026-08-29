@@ -1,18 +1,18 @@
 from app.chat_mode_routes import _chat_provider_order
 
 
-def test_chat_tries_local_ollama_before_registered_cloud_providers():
+def test_chat_respects_configured_remote_order_and_keeps_ollama_as_fallback():
     assert _chat_provider_order(["openai", "google", "anthropic", "ollama"]) == [
-        "ollama",
         "openai",
         "google",
         "anthropic",
+        "ollama",
     ]
 
 
-def test_chat_provider_order_deduplicates_and_normalizes_values():
-    assert _chat_provider_order(["OLLAMA", "openai", "openai", "google"]) == [
-        "ollama",
+def test_chat_provider_order_deduplicates_normalizes_and_adds_local_fallback():
+    assert _chat_provider_order(["OPENAI", "openai", "google"]) == [
         "openai",
         "google",
+        "ollama",
     ]
