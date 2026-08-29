@@ -3,6 +3,7 @@ from pathlib import Path
 
 DASHBOARD_CSS = Path("app/static/dashboard-layout-v2.css")
 MOBILE_MENU_CSS = Path("app/static/mobile-accordion-menu.css")
+WORKFLOW_UI = Path("app/static/task-workflow-observability.js")
 
 
 def test_dashboard_v2_is_loaded_from_existing_layout_stack():
@@ -11,7 +12,7 @@ def test_dashboard_v2_is_loaded_from_existing_layout_stack():
     assert mobile_css.startswith("@import url('/assets/dashboard-layout-v2.css?v=20260829-1');")
 
 
-def test_dashboard_v3_normalizes_primary_surfaces_and_main_geometry():
+def test_dashboard_v4_normalizes_primary_surfaces_and_main_geometry():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
 
     for selector in (
@@ -43,24 +44,44 @@ def test_compact_desktop_uses_icon_rail_instead_of_wide_sidebar():
     assert "display:none!important" in css
 
 
-def test_compact_desktop_restores_real_five_column_task_table():
+def test_compact_desktop_task_table_scrolls_internally_without_crushing_columns():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
+    compact = css.split("@media (min-width:901px) and (max-width:1180px)", 1)[1].split(
+        "@media (max-width:900px)", 1
+    )[0]
 
-    assert "#tasks-view .table-wrap thead { display:table-header-group!important; }" in css
-    assert "#tasks-view .table-wrap tbody { display:table-row-group!important; }" in css
-    assert "#tasks-view th:nth-child(5),#tasks-view td:nth-child(5)" in css
-    assert "#tasks-view .table-wrap tbody tr.task-main-row>td::before" in css
-    assert "content:none!important" in css
+    assert "#tasks-view .panel.table-wrap" in compact
+    assert "overflow-x:auto!important" in compact
+    assert "min-width:980px!important" in compact
+    assert "table-layout:auto!important" in compact
+    assert "white-space:nowrap!important" in compact
+    assert "overflow-wrap:normal!important" in compact
+    assert "table-layout:fixed!important" not in compact
+    assert "overflow-x:hidden!important" not in compact
+    assert "#tasks-view .table-wrap tbody tr.task-main-row>td::before" in compact
+    assert "content:none!important" in compact
 
 
-def test_mobile_task_cards_use_the_real_five_column_labels():
+def test_compact_desktop_supports_runtime_added_flow_column():
+    css = DASHBOARD_CSS.read_text(encoding="utf-8")
+    workflow = WORKFLOW_UI.read_text(encoding="utf-8")
+
+    assert "data-task-flow-header" in workflow
+    assert "task-flow-cell" in workflow
+    assert "#tasks-view .table-wrap th[data-task-flow-header]" in css
+    assert "td.task-flow-cell" in css
+    assert "min-width:150px!important" in css
+
+
+def test_mobile_task_cards_use_base_labels_and_runtime_flow_label():
     css = DASHBOARD_CSS.read_text(encoding="utf-8")
 
     assert "td:nth-child(2)::before { content:'Origem'!important; }" in css
     assert "td:nth-child(3)::before { content:'Status'!important; }" in css
     assert "td:nth-child(4)::before { content:'Prioridade'!important; }" in css
     assert "td:nth-child(5)::before { content:'Ação'!important; }" in css
-    assert "td:nth-child(6)::before" not in css
+    assert "td.task-flow-cell::before { content:'Fluxo'!important; }" in css
+    assert "#tasks-view .task-workflow-row" in css
 
 
 def test_mobile_uses_natural_height_cards_and_no_global_scroll_snap():
@@ -85,6 +106,17 @@ def test_dashboard_is_responsive_from_desktop_to_small_mobile():
     assert "display:block!important" in css
     assert "dialog,.modal" in css
     assert "width:min(96vw,620px)!important" in css
+
+
+def test_header_and_table_controls_keep_readable_words():
+    css = DASHBOARD_CSS.read_text(encoding="utf-8")
+
+    assert "flex-wrap:wrap" in css
+    assert "word-break:normal" in css
+    assert "overflow-wrap:normal" in css
+    assert ".table-wrap button,.table-wrap .link,.table-wrap a { white-space:nowrap; }" in css
+    assert "th {" in css
+    assert "white-space:nowrap" in css
 
 
 def test_sticky_content_respects_global_header_height():
