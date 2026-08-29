@@ -1,13 +1,13 @@
 /* DevPilot dashboard layout v2 — global layout foundation.
  * Uses only existing live DOM/data; no fake content is introduced. */
 :root {
-  --dashboard-bg:#0b1118;
-  --dashboard-surface:#111923;
-  --dashboard-surface-2:#16212d;
-  --dashboard-surface-3:#1b2835;
-  --dashboard-border:rgba(255,255,255,.085);
+  --dashboard-bg:#212121;
+  --dashboard-surface:#2f2f2f;
+  --dashboard-surface-2:#292929;
+  --dashboard-surface-3:#383838;
+  --dashboard-border:rgba(255,255,255,.105);
   --dashboard-text:#eef3f7;
-  --dashboard-muted:#9aa8b7;
+  --dashboard-muted:#b4b4b4;
   --dashboard-accent:#18b77a;
   --dashboard-accent-soft:rgba(24,183,122,.13);
   --dashboard-danger:#ff6577;
@@ -20,8 +20,8 @@ html{background:var(--dashboard-bg);font-size:16px}
 body{background:var(--dashboard-bg);color:var(--dashboard-text);font-size:14px;line-height:1.5;overflow-x:hidden}
 *{box-sizing:border-box}
 img,svg,canvas,video{max-width:100%}
-main{min-width:0;max-width:none;background:radial-gradient(circle at 70% 0%,rgba(30,82,111,.08),transparent 34%),var(--dashboard-bg)}
-main>header{position:sticky;top:0;z-index:20;min-height:78px;margin:0;padding:14px clamp(16px,2.2vw,32px);border-bottom:1px solid var(--dashboard-border);background:rgba(11,17,24,.94);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:space-between;gap:16px}
+main{min-width:0;max-width:none;background:var(--dashboard-bg)}
+main>header{position:sticky;top:0;z-index:20;min-height:78px;margin:0;padding:14px clamp(16px,2.2vw,32px);border-bottom:1px solid var(--dashboard-border);background:rgba(33,33,33,.94);backdrop-filter:blur(16px);display:flex;align-items:center;justify-content:space-between;gap:16px}
 main>header .eyebrow{color:var(--dashboard-muted);letter-spacing:.02em}
 main>header h1{color:var(--dashboard-text);font-size:clamp(20px,2vw,27px);line-height:1.15;margin:2px 0 0}
 
@@ -63,13 +63,13 @@ button,.primary,.ghost,.voice,.link,input,select,textarea{font:inherit}
 .primary,.ghost,.voice,.link,button{min-height:40px;border-radius:10px}
 .primary{border-color:transparent;background:#137c57;color:#fff;box-shadow:none}.primary:hover{background:#159767}
 .ghost,.link{border-color:var(--dashboard-border);color:var(--dashboard-text)}
-input,select,textarea{max-width:100%;border:1px solid var(--dashboard-border);border-radius:10px;background:#0d151e;color:var(--dashboard-text)}
+input,select,textarea{max-width:100%;border:1px solid var(--dashboard-border);border-radius:10px;background:#282828;color:var(--dashboard-text)}
 textarea{resize:vertical}
 
 .table-wrap{width:100%;max-width:100%;overflow-x:auto;overscroll-behavior-x:contain;border-color:var(--dashboard-border)!important;background:var(--dashboard-surface)!important;box-shadow:none!important}
 table{width:100%;min-width:680px;border-collapse:collapse}
 th,td{padding:12px 14px;vertical-align:top;text-align:left;font-size:13px;line-height:1.45}
-th{position:sticky;top:0;z-index:1;background:#0f1720!important;color:var(--dashboard-muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+th{position:sticky;top:0;z-index:1;background:#292929!important;color:var(--dashboard-muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
 tbody tr{border-top:1px solid var(--dashboard-border)}
 tbody tr:hover{background:rgba(24,183,122,.045)}
 pre,code{max-width:100%}pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.55}
@@ -87,19 +87,29 @@ pre,code{max-width:100%}pre{overflow:auto;white-space:pre-wrap;overflow-wrap:any
   .system-card .dot{background:var(--dashboard-accent)!important}
 }
 
-/* Tablet: never leave the content squeezed beside a persisted 72px sidebar.
- * Expand the sidebar to a readable compact rail until the true mobile menu takes over. */
+/* Tablet and compact desktop: preserve the ChatGPT-style collapsible
+ * rail. The content expands when the rail is collapsed instead of forcing the
+ * 220px menu back open. */
 @media (min-width:901px) and (max-width:1180px){
-  :root{--devpilot-sidebar-width:220px}
-  .shell,html.sidebar-collapsed .shell{grid-template-columns:220px minmax(0,1fr)!important}
-  .sidebar,html.sidebar-collapsed .sidebar{width:220px!important;min-width:220px!important;padding:8px!important;background:#111820!important;overflow:hidden!important}
-  html.sidebar-collapsed .brand{width:auto!important;padding:7px 8px!important}
-  html.sidebar-collapsed .brand>span:last-child,html.sidebar-collapsed .nav-group-label,html.sidebar-collapsed .nav-group-caret,html.sidebar-collapsed .system-card>div{display:block!important}
-  html.sidebar-collapsed .sidebar-search{display:block!important}
-  html.sidebar-collapsed .sidebar>nav>.nav,html.sidebar-collapsed .nav-group-toggle{display:flex!important;place-items:initial!important;width:100%!important;min-width:0!important;margin:0!important;padding:8px 10px!important;gap:10px!important;font-size:13px!important}
-  html.sidebar-collapsed .nav-group-toggle{display:grid!important;grid-template-columns:20px minmax(0,1fr) 16px!important}
-  html.sidebar-collapsed .sidebar>nav>.nav[data-nav-group]{padding-left:22px!important}
-  html.sidebar-collapsed .system-card{justify-content:flex-start!important;width:100%!important;min-height:44px!important;margin-inline:0!important;padding:8px 10px!important}
+  :root{--devpilot-sidebar-width:240px}
+  .shell{grid-template-columns:240px minmax(0,1fr)!important}
+  .sidebar{width:240px!important;min-width:240px!important;padding:8px!important;background:#171717!important;overflow:hidden!important}
+  html.sidebar-collapsed .shell{grid-template-columns:72px minmax(0,1fr)!important}
+  html.sidebar-collapsed .sidebar{width:72px!important;min-width:72px!important}
+  html.sidebar-collapsed .brand{width:40px!important;padding-inline:5px!important}
+  html.sidebar-collapsed .brand>span:last-child,
+  html.sidebar-collapsed .sidebar-search,
+  html.sidebar-collapsed .sidebar-search-empty,
+  html.sidebar-collapsed .nav-group-label,
+  html.sidebar-collapsed .nav-group-caret,
+  html.sidebar-collapsed .system-card>div{display:none!important}
+  html.sidebar-collapsed .sidebar>nav>.nav,
+  html.sidebar-collapsed .nav-group-toggle{display:grid!important;place-items:center!important;grid-template-columns:1fr!important;width:40px!important;min-width:40px!important;margin-inline:auto!important;padding:8px!important;gap:0!important;font-size:0!important}
+  html.sidebar-collapsed .sidebar>nav>.nav[data-nav-group]{padding:8px!important}
+  html.sidebar-collapsed .system-card{justify-content:center!important;width:40px!important;min-height:40px!important;margin-inline:auto!important;padding:0!important}
+  main>header{align-items:flex-start;flex-direction:column;min-height:auto}
+  main>header .header-actions{width:100%;display:flex;gap:8px;overflow-x:auto;padding-bottom:3px;scrollbar-width:thin}
+  main>header .header-actions>*{flex:0 0 auto}
   .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
   .grid-two{grid-template-columns:1fr}
   .view{padding-inline:18px}
@@ -143,3 +153,36 @@ pre,code{max-width:100%}pre{overflow:auto;white-space:pre-wrap;overflow-wrap:any
 }
 
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation-duration:.01ms!important;animation-iteration-count:1!important}}
+
+
+/* Final GPT shell refinement: neutral surfaces, compact actions and visible
+ * hierarchy across desktop, tablet and phone. */
+main>header .header-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-width:0}
+main>header .header-actions button,
+.section-head button,
+.panel-title button{
+  min-height:40px;
+  padding:0 14px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:7px;
+  border:1px solid var(--dashboard-border);
+  border-radius:10px;
+  white-space:nowrap;
+  font-size:13px;
+  font-weight:650;
+}
+main>header .header-actions .primary,
+.section-head .primary{border-color:transparent}
+.panel,.metric,.project-card,.builder-card,.card{
+  background:var(--dashboard-surface)!important;
+}
+@media (min-width:1181px){
+  .sidebar{background:#171717!important}
+  .sidebar>nav>.nav:hover,.nav-group-toggle:hover{background:#212121!important}
+  .sidebar>nav>.nav.active,.nav-group-toggle.active,.nav-group-toggle.open{background:#2f2f2f!important;color:#fff!important}
+}
+@media (max-width:900px){
+  main>header .header-actions{justify-content:flex-start}
+}
