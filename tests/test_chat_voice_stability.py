@@ -14,13 +14,15 @@ from app.services.chat_http_client import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_voice_stability_module_is_loaded_last_in_voice_bundle():
+def test_voice_stability_and_watchdog_are_loaded_last_in_voice_bundle():
     loader = (ROOT / "app/static/feature-loader.js").read_text(encoding="utf-8")
     voice_bundle = loader.split("voice: [", 1)[1].split("],", 1)[0]
 
     assert "voice-chatgpt-layout.js" in voice_bundle
     assert "voice-runtime-stability.js" in voice_bundle
+    assert "chat-request-watchdog.js" in voice_bundle
     assert voice_bundle.rfind("voice-runtime-stability.js") > voice_bundle.rfind("mobile-chat-project-picker.js")
+    assert voice_bundle.rfind("chat-request-watchdog.js") > voice_bundle.rfind("voice-runtime-stability.js")
 
 
 def test_voice_stability_preserves_layout_and_recovers_transcription_422():
@@ -33,6 +35,16 @@ def test_voice_stability_preserves_layout_and_recovers_transcription_422():
     assert "Continuo ouvindo" in source
     assert "createElement('style')" not in source
     assert ".innerHTML =" not in source
+
+
+def test_chat_watchdog_only_bounds_canonical_chat_request():
+    source = (ROOT / "app/static/chat-request-watchdog.js").read_text(encoding="utf-8")
+
+    assert "'/api/chat'" in source
+    assert "CHAT_REQUEST_TIMEOUT_MS = 45000" in source
+    assert "new AbortController()" in source
+    assert "mais de 45 segundos" in source
+    assert "createElement" not in source
 
 
 def test_chat_provider_time_budgets_are_clamped(monkeypatch):
