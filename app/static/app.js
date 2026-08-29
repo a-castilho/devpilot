@@ -109,7 +109,7 @@ async function loadDashboard() {
       applyRoleVisibility();
       const [overview, recentTasks] = await Promise.all([
         api('/overview'),
-        api('/ui/tasks?limit=5'),
+        api('/ui/tasks?limit=20'),
       ]);
       state.tasks = Array.isArray(recentTasks) ? recentTasks : [];
       state.tasksLoadedAll = false;
@@ -187,23 +187,90 @@ async function load() {
 }
 
 function renderOverview(overview) {
+  const tasks = Array.isArray(state.tasks) ? state.tasks : [];
+  const normalized = value => String(value || '').toLowerCase();
+  const groups = {
+    active: tasks.filter(task => ['running', 'in_progress', 'queued', 'approved', 'processing'].includes(normalized(task.status))),
+    approvals: tasks.filter(task => normalized(task.status) === 'awaiting_approval'),
+    failed: tasks.filter(task => ['failed', 'error', 'blocked'].includes(normalized(task.status))),
+    completed: tasks.filter(task => ['completed', 'done', 'review'].includes(normalized(task.status))),
+  };
+  const total = Math.max(Number(overview.tasks || 0), tasks.length);
+  const completed = Number(overview.completed ?? groups.completed.length);
+  const completionRate = total ? Math.round((completed / total) * 100) : 0;
+
   const metrics = $('#metrics');
   if (metrics) {
-    metrics.innerHTML = [
-      ['Projetos', overview.projects], ['Tarefas', overview.tasks],
-      ['Em andamento', overview.active], ['Concluídas', overview.completed],
-    ].map(([name, value]) => `<div class="metric"><span>${name}</span><strong>${value ?? 0}</strong></div>`).join('');
+    const values = [
+      ['Projetos', overview.projects ?? 0, 'Repositórios acompanhados', 'projects'],
+      ['Em andamento', overview.active ?? groups.active.length, 'Execuções e fila', 'active'],
+      ['Aguardando você', groups.approvals.length, 'Aprovações pendentes', 'approval'],
+      ['Concluídas', completed, 'Entregas finalizadas', 'completed'],
+    ];
+    metrics.innerHTML = values.map(([name, value, detail, tone]) => `
+      <article class="metric overview-metric ${tone}">
+        <span>${esc(name)}</span><strong>${value}</strong><small>${esc(detail)}</small>
+      </article>
+    `).join('');
+  }
+
+  const summary = $('#overview-summary');
+  if (summary) {
+    summary.textContent = total
+      ? `${total} tarefas acompanhadas em ${overview.projects ?? 0} projetos. ${groups.active.length} estão em movimento agora.`
+      : 'Seu ambiente está pronto. Crie uma tarefa ou conecte um projeto para começar.';
+  }
+
+  const attention = $('#attention-card');
+  if (attention) {
+    let content;
+    if (groups.failed.length) {
+      content = ['!', 'FALHA QUE PRECISA DE ATENÇÃO', `${groups.failed.length} tarefa(s) com falha`, 'Abra Desenvolvimento para consultar o motivo e os registros.', 'danger'];
+    } else if (groups.approvals.length) {
+      content = ['✓', 'AGUARDANDO SUA DECISÃO', `${groups.approvals.length} aprovação(ões) pendente(s)`, 'Revise a análise antes de liberar alterações no código.', 'warning'];
+    } else if (groups.active.length) {
+      content = ['↻', 'DEV PILOT TRABALHANDO', `${groups.active.length} tarefa(s) em andamento`, 'Você pode acompanhar cada etapa em Desenvolvimento.', 'active'];
+    } else {
+      content = ['✓', 'OPERAÇÃO EM DIA', 'Nada exige sua atenção agora', 'Novas atividades aparecerão aqui automaticamente.', 'success'];
+    }
+    attention.className = `attention-card ${content[4]}`;
+    attention.innerHTML = `<span class="attention-icon">${content[0]}</span><div><small>${content[1]}</small><strong>${content[2]}</strong><p>${content[3]}</p></div>`;
+    attention.onclick = () => {
+      if (groups.failed.length || groups.approvals.length || groups.active.length) showView('tasks');
+    };
+  }
+
+  const rate = $('#completion-rate');
+  const bar = $('#completion-bar');
+  if (rate) rate.textContent = `${completionRate}%`;
+  if (bar) bar.style.width = `${Math.min(100, completionRate)}%`;
+
+  const breakdown = $('#status-breakdown');
+  if (breakdown) {
+    breakdown.innerHTML = [
+      ['Em andamento', groups.active.length, 'active'],
+      ['Aguardando aprovação', groups.approvals.length, 'approval'],
+      ['Com falha', groups.failed.length, 'failed'],
+      ['Concluídas', completed, 'completed'],
+    ].map(([label, value, tone]) => `<span class="breakdown-item ${tone}"><i></i><b>${value}</b> ${label}</span>`).join('');
   }
 
   const recent = $('#recent-tasks');
   if (recent) {
-    recent.innerHTML = state.tasks.slice(0, 5).map(task => `
-      <div class="recent-task"><div class="list-row"><div><strong>${esc(task.title)}</strong><p>${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source)}</p></div>${status(task.status)}</div></div>
-    `).join('') || '<div class="empty">Nenhuma tarefa ainda.</div>';
+    recent.innerHTML = tasks.slice(0, 6).map(task => `
+      <button type="button" class="recent-task overview-task" data-view="tasks">
+        <span class="task-state ${esc(normalized(task.status))}"></span>
+        <span class="task-copy"><strong>${esc(task.title)}</strong><small>${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source || 'dashboard')}</small></span>
+        ${status(task.status)}
+      </button>
+    `).join('') || '<div class="empty">Nenhuma atividade ainda. Crie o primeiro desenvolvimento.</div>';
     decorateStatuses(recent);
+    $$('[data-view="tasks"]', recent).forEach(button => button.onclick = () => showView('tasks'));
   }
-}
 
+  const overviewRefresh = $('#overview-refresh');
+  if (overviewRefresh) overviewRefresh.onclick = () => void loadDashboard();
+}
 function organizationName(id) {
   return state.organizations.find(item => item.id === id)?.name || '';
 }
