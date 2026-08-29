@@ -237,9 +237,9 @@
       if (statusValue === 'running') {
         actions.appendChild(actionButton('Parar', 'pause', task.id));
         actions.appendChild(actionButton('Cancelar', 'cancel', task.id));
-      } else if (statusValue !== 'completed') {
+      } else if (String(task.status) !== 'completed') {
         actions.appendChild(actionButton('Próximo', 'next', task.id));
-        actions.appendChild(actionButton('Continuar auto', 'auto', task.id));
+        actions.appendChild(actionButton('Continuar automaticamente', 'auto', task.id));
         actions.appendChild(actionButton('Retomar', 'resume', task.id));
         actions.appendChild(actionButton('Arquivar', 'archive', task.id));
       }
