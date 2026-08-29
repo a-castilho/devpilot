@@ -68,7 +68,7 @@ def test_post_login_does_not_fetch_heavy_projects_or_organizations():
     dashboard = app.split("async function loadDashboard()", 1)[1].split("async function loadProjects()", 1)[0]
 
     assert "api('/overview')" in dashboard
-    assert "api('/ui/tasks?limit=5')" in dashboard
+    assert "api('/ui/tasks?limit=20')" in dashboard
     assert "api('/projects')" not in dashboard
     assert "api('/organizations')" not in dashboard
     assert "agents_md" not in dashboard
