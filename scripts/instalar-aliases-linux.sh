@@ -5,6 +5,7 @@ RC_FILE="${HOME}/.bashrc"
 START="# >>> DEVPILOT ALIASES >>>"
 END="# <<< DEVPILOT ALIASES <<<"
 TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
 
 if [ -f "$RC_FILE" ]; then
   awk -v start="$START" -v end="$END" '
@@ -20,6 +21,11 @@ cat >> "$TMP" <<'EOF'
 # >>> DEVPILOT ALIASES >>>
 export DEVPILOT_HOME="$HOME/Documents/devpilot"
 export DEVPILOT_URL="http://127.0.0.1:8080"
+
+# Estes nomes pertencem ao DevPilot. Neutralize aliases legados antes de
+# declarar funções: Bash interativo expande aliases durante o parsing e um
+# alias como `atualizar=...` pode transformar `atualizar() { ...; }` em erro.
+unalias subir-projeto subir atualizar-local atualizar reconstruir-sistema reconstruir 2>/dev/null || true
 
 # Funções em vez de aliases: funcionam também depois de `source ~/.bashrc`.
 subir-projeto() { bash "$DEVPILOT_HOME/scripts/subir-projeto.sh" "$@"; }
@@ -44,8 +50,14 @@ fi
 # <<< DEVPILOT ALIASES <<<
 EOF
 
+# Nunca substitua o arquivo real por conteúdo com erro de sintaxe. A validação
+# é feita no candidato para preservar o .bashrc atual em caso de falha.
+if ! bash -n "$TMP"; then
+  echo "ERRO: o .bashrc resultante contém erro de sintaxe; arquivo atual preservado." >&2
+  exit 1
+fi
+
 cat "$TMP" > "$RC_FILE"
-rm -f "$TMP"
 
 chmod +x \
   "$HOME/Documents/devpilot/scripts/subir-projeto.sh" \
