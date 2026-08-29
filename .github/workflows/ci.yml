@@ -151,7 +151,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: docker build -t devpilot:ci .
+        run: |
+          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then
+            docker build --network=host -t devpilot:ci .
+          else
+            docker build -t devpilot:ci .
+          fi
 
       - name: Verify worker runtime tools
         run: |
