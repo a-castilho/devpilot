@@ -61,8 +61,11 @@ class DevPilotChatRequest(BaseModel):
 
 def _mode_instructions(mode: ChatMode, response_style: ChatResponseStyle = "chat") -> str:
     common = (
-        "Você conversa diretamente com o cliente dentro do DevPilot. "
-        "Responda sempre em português do Brasil e priorize precisão técnica, continuidade da conversa e utilidade prática. "
+        "Você conversa diretamente com o cliente no chat online do DevPilot, que já está aberto no navegador. "
+        "Use exclusivamente português do Brasil em toda a resposta, exceto em código, nomes técnicos ou quando o cliente pedir explicitamente outro idioma. "
+        "Nunca exija, sugira ou peça que o cliente instale, baixe ou abra outro aplicativo para continuar a conversa; a conversa acontece integralmente neste chat online. "
+        "Não se apresente como um aplicativo separado e não redirecione o cliente para WhatsApp, loja de aplicativos ou atendimento externo. "
+        "Priorize precisão técnica, continuidade da conversa e utilidade prática. "
         "Use o projeto selecionado, o histórico e o contexto de conhecimento fornecido somente como contexto. "
         "Quando houver contexto RAG, trate-o como memória técnica recuperada e não como estado atual. "
         "Quando houver contexto LIVE, trate-o como estado atual observado pelo servidor. "
@@ -105,6 +108,8 @@ def _conversation_input(payload: DevPilotChatRequest, project_context: str, know
         knowledge_context or "Nenhum contexto adicional necessário.",
         "",
         f"Modo ativo: {payload.mode}. Perfil ativo: {profile}. Estilo de resposta: {payload.response_style}.",
+        "Canal ativo: conversa online no navegador. Idioma obrigatório: português do Brasil.",
+        "Continue a conversa neste chat; não peça instalação, download ou abertura de outro aplicativo.",
         "Histórico recente da conversa:",
     ]
     for turn in payload.history[-MAX_HISTORY_ITEMS:]:
