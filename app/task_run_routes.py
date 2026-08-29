@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Run, Task, TaskStatus, Workspace
-from app.security import require_access
+from app.security import Principal, Role, require_access, require_roles
 from app.services.audit import record
 
 
@@ -259,6 +259,50 @@ def _run_summary(task: Task, run: Run | None) -> dict:
         "has_log": bool(run),
         "log_url": f"/api/task-runs/{run.id}" if run else None,
     }
+
+
+@router.delete("/tasks/queued")
+def delete_queued_tasks(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(require_roles(Role.SUPER_ADMIN)),
+):
+    """Remove queued tasks that have never started, preserving an audit record.
+
+    A queued task with an existing run may represent a retry and is intentionally
+    retained so execution evidence is never destroyed by this cleanup operation.
+    """
+    workspace_id = _workspace_id(db)
+    queued = db.scalars(
+        select(Task)
+        .where(
+            Task.workspace_id == workspace_id,
+            Task.owner_user_id == principal.user_id,
+            Task.status == TaskStatus.queued,
+            ~Task.runs.any(),
+        )
+        .order_by(Task.created_at.asc())
+    ).all()
+
+    for task in queued:
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor=principal.actor,
+            action="task.queued_deleted",
+            details={
+                "title": task.title,
+                "source": task.source,
+                "priority": task.priority,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "reason": "super_admin_queue_cleanup",
+            },
+        )
+        db.delete(task)
+
+    db.commit()
+    return {"deleted": len(queued), "status": "ok"}
 
 
 @router.get("/task-runs/latest")
