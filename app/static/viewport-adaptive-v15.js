@@ -22,10 +22,6 @@
     const ratio = width / screenWidth;
     const dpr = Number(window.devicePixelRatio || 1);
 
-    /*
-     * Em desktop, zoom-out aumenta a viewport CSS acima do espaço físico da
-     * tela. ratio é mais estável que depender apenas de DPR em Linux/HiDPI.
-     */
     const zoomedOut =
       width > 900 && (
         ratio >= 1.08 ||
@@ -42,11 +38,6 @@
       physicalHeight <= 820 ||
       height <= 760;
 
-    /*
-     * V15 limitava a compensação em 1.42 e deixava 67%/50% fisicamente
-     * minúsculos. A escala agora acompanha o zoom observado, com limite de
-     * segurança para não transformar uma janela estreita em layout gigante.
-     */
     const boost = zoomedOut
       ? Math.min(2.25, Math.max(1.08, ratio))
       : 1;
@@ -148,6 +139,11 @@
       '/assets/layout-scale-v36.css?v=20260830-1',
       'layoutScaleV36'
     );
+    ensureStylesheet(
+      'link[data-layout-authority-v37]',
+      '/assets/layout-authority-v37.css?v=20260830-1',
+      'layoutAuthorityV37'
+    );
   }
 
   loadCss();
@@ -162,5 +158,5 @@
   document.addEventListener('devpilot:dashboard-revealed', schedule);
   document.addEventListener('devpilot:feature-ready', schedule);
 
-  console.info('[DevPilot] Viewport Adaptive V36 escala física ativa');
+  console.info('[DevPilot] Viewport Adaptive V37 autoridade final ativa');
 })();
