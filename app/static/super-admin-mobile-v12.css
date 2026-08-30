@@ -1,0 +1,349 @@
+/* DevPilot Super Admin Mobile V12
+ * Compacta o mapa do sistema sem remover dados ou interatividade.
+ */
+
+@media (max-width: 900px) {
+  :root {
+    --dp-super-admin-nav-space: calc(92px + env(safe-area-inset-bottom));
+  }
+
+  body.mobile-route #super-admin-system-view,
+  #super-admin-system-view {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px 10px calc(var(--dp-super-admin-nav-space) + 34px) !important;
+    overflow-x: hidden !important;
+    scroll-padding-bottom: calc(var(--dp-super-admin-nav-space) + 28px);
+  }
+
+  /* Hero mais curto: informação principal + ação. */
+  #super-admin-system-view .system-map-hero {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+    margin-bottom: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-hero h2 {
+    margin: 3px 0 5px !important;
+    font-size: clamp(25px, 7vw, 32px) !important;
+    line-height: 1.06 !important;
+  }
+
+  #super-admin-system-view .system-map-hero p {
+    display: -webkit-box !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    font-size: 12px !important;
+    line-height: 1.45 !important;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  #super-admin-system-view #system-map-refresh {
+    width: 100% !important;
+    min-height: 42px !important;
+    justify-self: stretch !important;
+    font-size: 12px !important;
+  }
+
+  /* Alertas não devem virar cards altos. */
+  #super-admin-system-view .system-map-alerts {
+    gap: 6px !important;
+    margin-bottom: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-alerts > div {
+    gap: 8px !important;
+    padding: 9px 10px !important;
+    border-radius: 11px !important;
+  }
+
+  #super-admin-system-view .system-map-alerts b {
+    width: 20px !important;
+    height: 20px !important;
+    flex: 0 0 20px !important;
+    font-size: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-alerts span {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Fluxo geral: uma faixa horizontal em vez de 5 telas verticais. */
+  #super-admin-system-view .system-map-flow {
+    display: grid !important;
+    grid-auto-flow: column !important;
+    grid-auto-columns: minmax(205px, 76vw) !important;
+    grid-template-columns: none !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 0 12px !important;
+    padding: 9px !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-inline: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  #super-admin-system-view .system-map-flow article {
+    display: grid !important;
+    grid-template-columns: 34px minmax(0, 1fr) !important;
+    align-items: center !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    width: auto !important;
+    min-height: 76px !important;
+    padding: 9px !important;
+    gap: 9px !important;
+    border: 1px solid rgba(80, 150, 204, .13);
+    border-radius: 11px;
+    background: rgba(8, 18, 34, .62);
+    scroll-snap-align: start;
+  }
+
+  #super-admin-system-view .system-map-flow article > span {
+    width: 34px !important;
+    height: 34px !important;
+    flex: 0 0 34px !important;
+    font-size: 11px !important;
+  }
+
+  #super-admin-system-view .system-map-flow strong {
+    font-size: 12px !important;
+    white-space: normal !important;
+  }
+
+  #super-admin-system-view .system-map-flow small {
+    margin-top: 3px !important;
+    font-size: 10px !important;
+    line-height: 1.35 !important;
+    -webkit-line-clamp: 2 !important;
+  }
+
+  #super-admin-system-view .system-map-flow > i {
+    display: none !important;
+  }
+
+  /* Métricas: sempre 2 colunas no telefone. */
+  #super-admin-system-view .system-map-metrics {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    margin: 0 0 12px !important;
+  }
+
+  #super-admin-system-view .system-map-metrics article {
+    display: grid !important;
+    align-content: start !important;
+    min-width: 0 !important;
+    min-height: 96px !important;
+    height: auto !important;
+    padding: 11px 12px !important;
+    border-radius: 13px !important;
+  }
+
+  #super-admin-system-view .system-map-metrics span {
+    font-size: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-metrics strong {
+    margin: 5px 0 3px !important;
+    font-size: clamp(24px, 7vw, 30px) !important;
+    line-height: 1 !important;
+  }
+
+  #super-admin-system-view .system-map-metrics small {
+    display: -webkit-box !important;
+    overflow: hidden !important;
+    font-size: 9px !important;
+    line-height: 1.3 !important;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+
+  /* No celular, o inspector é mais útil antes do mapa completo. */
+  #super-admin-system-view .system-map-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-inspector {
+    order: -1 !important;
+    position: static !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 12px !important;
+    border-radius: 14px !important;
+  }
+
+  #super-admin-system-view .system-map-inspector-head {
+    grid-template-columns: 32px minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  #super-admin-system-view .system-map-inspector-head .system-map-status {
+    grid-column: 2 !important;
+    justify-self: start !important;
+  }
+
+  #super-admin-system-view .system-map-inspector-head h3 {
+    font-size: 16px !important;
+    white-space: normal !important;
+  }
+
+  #super-admin-system-view .system-map-inspector-value {
+    margin: 12px 0 5px !important;
+    font-size: 27px !important;
+  }
+
+  #super-admin-system-view .system-map-inspector > p {
+    margin-bottom: 10px !important;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+    -webkit-line-clamp: 3 !important;
+  }
+
+  #super-admin-system-view .system-map-inspector-links {
+    gap: 6px !important;
+  }
+
+  #super-admin-system-view .system-map-inspector-links button {
+    min-height: 42px !important;
+    padding: 8px 9px !important;
+  }
+
+  #super-admin-system-view .system-map-open {
+    min-height: 42px !important;
+  }
+
+  /* Board compacto e sem quadro por viewport. */
+  #super-admin-system-view .system-map-board {
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 9px !important;
+    border-radius: 15px !important;
+  }
+
+  #super-admin-system-view .system-map-columns {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 8px !important;
+  }
+
+  #super-admin-system-view .system-map-group {
+    min-width: 0 !important;
+    padding: 9px !important;
+    border-radius: 12px !important;
+  }
+
+  #super-admin-system-view .system-map-group > header {
+    margin-bottom: 7px !important;
+    padding-bottom: 6px !important;
+  }
+
+  #super-admin-system-view .system-map-group > header span {
+    font-size: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-group-nodes {
+    gap: 6px !important;
+  }
+
+  #super-admin-system-view .system-map-node {
+    grid-template-columns: 32px minmax(0, 1fr) !important;
+    min-height: 58px !important;
+    padding: 8px !important;
+    gap: 8px !important;
+  }
+
+  #super-admin-system-view .system-map-node-copy strong {
+    font-size: 11px !important;
+  }
+
+  #super-admin-system-view .system-map-node-copy small {
+    font-size: 9px !important;
+    -webkit-line-clamp: 1 !important;
+  }
+
+  #super-admin-system-view .system-map-node-meta {
+    gap: 5px !important;
+  }
+
+  /* Conexões continuam disponíveis, mas não dominam a página. */
+  #super-admin-system-view .system-map-edge-list {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 6px !important;
+    max-height: 310px !important;
+    margin-top: 10px !important;
+    padding-top: 10px !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+
+  #super-admin-system-view .system-map-edge-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 5px 0 7px;
+    background: rgba(2, 8, 20, .96);
+  }
+
+  #super-admin-system-view .system-map-edge {
+    min-height: 48px !important;
+    padding: 8px !important;
+  }
+
+  #super-admin-system-view .system-map-legend {
+    gap: 8px 12px !important;
+    margin-top: 11px !important;
+    padding: 8px 2px !important;
+    font-size: 9px !important;
+  }
+
+  #super-admin-system-view .system-map-generated {
+    padding-bottom: 8px;
+    font-size: 9px !important;
+  }
+
+  /* A bolha de voz não invade métricas, mapa ou menu. */
+  body.mobile-route .voice-dock {
+    right: 10px !important;
+    bottom: calc(var(--dp-super-admin-nav-space) + 4px) !important;
+    z-index: 95 !important;
+  }
+
+  body.mobile-route .voice-dock button,
+  body.mobile-route .voice-dock > button,
+  body.mobile-route #voice-dock button {
+    width: 50px !important;
+    height: 50px !important;
+    min-width: 50px !important;
+    min-height: 50px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  #super-admin-system-view .system-map-metrics article {
+    min-height: 90px !important;
+    padding: 10px !important;
+  }
+
+  #super-admin-system-view .system-map-metrics strong {
+    font-size: 26px !important;
+  }
+
+  #super-admin-system-view .system-map-flow {
+    grid-auto-columns: minmax(200px, 82vw) !important;
+  }
+}
