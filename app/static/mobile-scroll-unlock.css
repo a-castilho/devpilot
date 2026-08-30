@@ -13,6 +13,7 @@
     overscroll-behavior-y: auto !important;
     scroll-snap-type: none !important;
     scroll-behavior: auto !important;
+    scroll-padding-bottom: calc(var(--dp-mobile-nav-height, 76px) + 32px) !important;
     touch-action: pan-x pan-y !important;
     -webkit-overflow-scrolling: touch;
   }
@@ -32,7 +33,60 @@
 
   main {
     min-height: calc(100dvh - 72px) !important;
-    padding-bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+    padding-bottom: calc(var(--dp-mobile-nav-height, 76px) + 32px) !important;
+  }
+
+  /* Projects: keep one native vertical scroll. Nested card scrolling on touch
+     was intercepting the page gesture and the fixed bottom nav covered content. */
+  #projects-view {
+    min-height: 0 !important;
+    padding-bottom: 20px !important;
+    overflow: visible !important;
+    touch-action: pan-y !important;
+  }
+
+  #projects-view > .cards,
+  #projects-view #projects-list.cards {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 14px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  #projects-view #projects-list .project-card {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    justify-content: flex-start !important;
+    overflow: visible !important;
+    overscroll-behavior: auto !important;
+    touch-action: pan-y !important;
+  }
+
+  #projects-view #projects-list .project-card > p {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    overscroll-behavior: auto !important;
+    scrollbar-gutter: auto !important;
+    padding-right: 0 !important;
+    -webkit-overflow-scrolling: auto;
+  }
+
+  #projects-view #projects-list .project-card > code,
+  #projects-view #projects-list .project-card code,
+  #projects-view #projects-list .project-card a {
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
   }
 
   /* RepetAI: the document scrolls; the stage must not lock the viewport. */
@@ -153,6 +207,6 @@
   }
 
   main {
-    padding-bottom: calc(90px + env(safe-area-inset-bottom)) !important;
+    padding-bottom: calc(var(--dp-mobile-nav-height, 76px) + 28px) !important;
   }
 }
