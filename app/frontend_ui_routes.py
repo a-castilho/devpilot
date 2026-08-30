@@ -71,6 +71,53 @@ def _game_prompt_metadata(prompt: str | None) -> str:
     return "\n".join(lines)
 
 
+def _task_display_prompt(prompt: str | None) -> str:
+    """Return a human-facing task context without internal runtime markers.
+
+    The persisted prompt is intentionally kept untouched in the database.  This
+    function is used only by the lightweight UI detail endpoint so internal game
+    ids, DevPilot mode markers and orchestration metadata do not leak into the
+    normal task card.
+    """
+    text = str(prompt or "").strip()
+    marker = "Contexto do usuário:"
+    if marker in text:
+        text = text.split(marker, 1)[1].strip()
+
+    output: list[str] = []
+    technical_prefixes = (
+        "PARTIDA:",
+        "TASK_ID:",
+        "RUN_ID:",
+        "WORKSPACE:",
+        "TRACE_ID:",
+    )
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if output and output[-1] != "":
+                output.append("")
+            continue
+        if line.startswith("[DEVPILOT_") and line.endswith("]"):
+            continue
+        if line.upper().startswith(technical_prefixes):
+            continue
+        if line.upper().startswith("FASE:"):
+            output.append(f"Fase: {line.split(':', 1)[1].strip()}")
+            continue
+        if line.upper().startswith("OBJETIVO:"):
+            output.append(f"Objetivo: {line.split(':', 1)[1].strip()}")
+            continue
+        output.append(line)
+
+    while output and not output[-1]:
+        output.pop()
+
+    cleaned = "\n".join(output).strip()
+    return cleaned or "Nenhum contexto adicional registrado."
+
+
 @router.get("/projects")
 def project_summaries(
     limit: int = Query(50, ge=1, le=100),
@@ -144,8 +191,6 @@ def task_summaries(
         query.order_by(Task.created_at.desc()).limit(limit)
     ).all()
 
-    # A listagem operacional precisa identificar o projeto sem obrigar
-    # o navegador a baixar/reprocessar toda a tela de Projetos.
     project_ids = {
         row.project_id
         for row in rows
@@ -272,18 +317,27 @@ def create_super_admin_task(
 
 @router.get("/tasks/{task_id}")
 def task_detail(task_id: str, db: Session = Depends(get_db)):
-    """Fetch the large prompt only for one task on explicit user action."""
+    """Fetch one task's human-facing context only on explicit user action."""
     ws = _workspace(db)
     item = db.scalar(
         select(Task).where(Task.id == task_id, Task.workspace_id == ws.id)
     )
     if not item:
         raise HTTPException(404, "Task not found")
+
+    project = db.scalar(
+        select(Project).where(
+            Project.id == item.project_id,
+            Project.workspace_id == ws.id,
+        )
+    )
+
     return {
         "id": item.id,
         "project_id": item.project_id,
+        "project_name": project.name if project else "",
         "title": item.title,
-        "prompt": item.prompt,
+        "prompt": _task_display_prompt(item.prompt),
         "source": item.source,
         "status": item.status,
         "priority": item.priority,
