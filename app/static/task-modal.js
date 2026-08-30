@@ -10,6 +10,17 @@
   const submit = document.querySelector('#task-submit');
 
   if (!form || !mode || !context) return;
+  if (window.__devpilotCanonicalExecutionSubmitV34) return;
+  window.__devpilotCanonicalExecutionSubmitV34 = true;
+
+  /*
+   * app.js é carregado antes deste módulo e historicamente instalava
+   * taskForm.onsubmit. Nova execução reutiliza o mesmo contrato /api/tasks,
+   * portanto deve existir um único dono do submit. Removemos apenas o handler
+   * legado do mesmo formulário; os demais controles do app.js permanecem.
+   */
+  form.onsubmit = null;
+  delete form.dataset.submitting;
 
   const approvalInput = form.querySelector('input[name="requires_approval"]');
   const approvalLabel = approvalInput?.closest('label');
@@ -197,7 +208,6 @@
     if (event.target !== form) return;
 
     event.preventDefault();
-    event.stopImmediatePropagation();
 
     if (form.dataset.executionSubmitting === '1') return;
 
@@ -283,7 +293,7 @@
   }
 
   mode.addEventListener('change', refreshMode);
-  form.addEventListener('submit', saveExecution, true);
+  form.addEventListener('submit', saveExecution);
   form.addEventListener('reset', () => {
     window.setTimeout(() => {
       applyApprovalByExceptionDefault();
@@ -402,7 +412,7 @@
   }
 
   window.__devpilotCanonicalExecutionSubmitV30 = true;
-  console.info('[DevPilot] Execução Submit V30 canônico ativo');
+  console.info('[DevPilot] Execução Submit V34 canônico ativo');
 })();
 
 /* Runtime Experience V13: legado temporário; carregado somente após intenção explícita no modal. */
