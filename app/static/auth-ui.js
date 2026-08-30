@@ -2,6 +2,7 @@
   'use strict';
 
   const TOKEN_KEY = 'devpilot-token';
+  const AUTH_MESSAGE_KEY = 'devpilot-auth-message';
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
 
@@ -12,6 +13,31 @@
   let localBootstrapAvailable = false;
   let resolveAuthReady;
   let runtimeHandoffStarted = false;
+
+  function consumeAuthMessage(fallback = '') {
+    const message = String(sessionStorage.getItem(AUTH_MESSAGE_KEY) || '').trim();
+    sessionStorage.removeItem(AUTH_MESSAGE_KEY);
+    return message || fallback;
+  }
+
+  function tokenExpired(token) {
+    try {
+      const parts = String(token || '').split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(
+        decodeURIComponent(
+          atob(parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '='))
+            .split('')
+            .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+            .join('')
+        )
+      );
+      const exp = Number(payload?.exp || 0);
+      return !Number.isFinite(exp) || exp <= Math.floor(Date.now() / 1000) + 5;
+    } catch (_) {
+      return true;
+    }
+  }
 
   function installCompositorSafeMode() {
     if (!document.getElementById(SAFE_STYLE_ID)) {
@@ -152,7 +178,10 @@
   }
 
   async function validateToken(token) {
-    if (!token) return false;
+    if (!token || tokenExpired(token)) {
+      localStorage.removeItem(TOKEN_KEY);
+      return false;
+    }
     try {
       const response = await fetchWithTimeout('/api/auth/me', {
         headers: {Authorization: `Bearer ${token}`},
@@ -225,6 +254,7 @@
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.access_token) throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
         localStorage.setItem(TOKEN_KEY, data.access_token);
+        sessionStorage.removeItem(AUTH_MESSAGE_KEY);
         document.dispatchEvent(new CustomEvent('devpilot:login-complete'));
         handoffAuthenticatedRuntime(errorBox);
       } catch (error) {
@@ -238,6 +268,12 @@
   }
 
   function renderResumeSession(token) {
+    if (!token || tokenExpired(token)) {
+      localStorage.removeItem(TOKEN_KEY);
+      renderLoginForm(consumeAuthMessage('Sua sessão expirou. Entre novamente.'));
+      return;
+    }
+
     installCompositorSafeMode();
     runtimeHandoffStarted = false;
     modal.innerHTML = `
@@ -276,12 +312,14 @@
   }
 
   const boot = async () => {
-    // Nunca deixe o mobile em uma tela preta esperando indefinidamente o status.
     const fallback = window.setTimeout(() => {
       if (!modal.open && root.classList.contains('devpilot-auth-pending')) {
         const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
-        if (token) renderResumeSession(token);
-        else renderLoginForm('Não foi possível consultar o status do servidor.');
+        if (token && !tokenExpired(token)) renderResumeSession(token);
+        else {
+          if (token) localStorage.removeItem(TOKEN_KEY);
+          renderLoginForm(consumeAuthMessage('Não foi possível consultar o status do servidor.'));
+        }
       }
     }, FETCH_TIMEOUT_MS + 500);
 
@@ -289,8 +327,9 @@
     window.clearTimeout(fallback);
     if (modal.open) return;
     const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
-    if (!token) {
-      renderLoginForm();
+    if (!token || tokenExpired(token)) {
+      if (token) localStorage.removeItem(TOKEN_KEY);
+      renderLoginForm(consumeAuthMessage(token ? 'Sua sessão expirou. Entre novamente.' : ''));
       return;
     }
     renderResumeSession(token);
