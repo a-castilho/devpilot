@@ -76,3 +76,15 @@ def test_mobile_task_columns_match_injected_type_column():
     assert "td:nth-child(4)::before{content:'Status'}" in styles
     assert "td:nth-child(5)::before{content:'Prioridade'}" in styles
     assert "td:nth-child(6)::before{content:'Ação'}" in styles
+
+def test_mobile_task_analytics_fill_available_space():
+    styles = read("app/static/task-analytics.css")
+    index = read("app/static/index.html")
+
+    assert "body #tasks-view > .section-head" in styles
+    assert "body #tasks-view > .task-analytics" in styles
+    assert "min-height: 0 !important;" in styles
+    assert "justify-content: flex-start !important;" in styles
+    assert "section-head > .primary" in styles
+    assert "task-analytics.css?v=20260829-mobile-gap1" in index
+
