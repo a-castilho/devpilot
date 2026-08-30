@@ -4,25 +4,12 @@
   if (window.__devpilotFeatureLoaderReady) return;
   window.__devpilotFeatureLoaderReady = true;
 
+  const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
+  const MANIFEST_SRC = '/assets/runtime-manifest.js?v=20260830-unified-1';
   const loadedFiles = new Set();
   const featureState = new Map();
-  const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
+  const backgroundJobs = new Map();
   let navigationEpoch = 0;
-
-  const FEATURE_BUNDLES = Object.freeze({
-    mobileShell: ['mobile-accordion-menu.js'],
-    profile: ['profile.js'],
-    users: ['users.js'],
-    providers: ['provider-models.js', 'provider-ollama.js'],
-    projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
-    reports: ['reports.js'],
-    taskModal: ['task-modal.js'],
-    tasks: ['task-analytics.js', 'project-delete-ui.js', 'task-completion-documentation.js', 'system-tests.js', 'task-workflow-observability.js'],
-    example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
-    voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js', 'mobile-voice-capture-final.js', 'voice-project-autoload.js', 'mobile-chat-project-picker.js', 'voice-runtime-stability.js', 'chat-request-watchdog.js'],
-    admin: ['super-admin-task-panel.js', 'token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js', 'rag-admin-ui.js', 'rag-jobs-ui.js'],
-    audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
-  });
 
   const scriptName = src => {
     try { return new URL(src, location.href).pathname.split('/').pop() || ''; }
@@ -35,6 +22,78 @@
   });
 
   const nextPaint = () => new Promise(resolve => window.requestAnimationFrame(resolve));
+  const shortYield = () => new Promise(resolve => window.setTimeout(resolve, 24));
+  const idleYield = () => new Promise(resolve => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => resolve(), {timeout: 220});
+    } else {
+      window.setTimeout(resolve, 48);
+    }
+  });
+
+  function installLowPowerHint() {
+    const memory = Number(navigator.deviceMemory || 0);
+    const cpu = Number(navigator.hardwareConcurrency || 0);
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+    const lowPower = reducedMotion || (memory > 0 && memory <= 4) || (cpu > 0 && cpu <= 2);
+    document.documentElement.classList.toggle('devpilot-low-power', lowPower);
+  }
+
+  function loadRawScript(src, dataset = {}) {
+    return new Promise(resolve => {
+      const absolute = new URL(src, location.href).href;
+      const existing = Array.from(document.scripts).find(script => script.src === absolute);
+      if (existing) {
+        if (existing.dataset.devpilotFeatureLoadState === 'failed') existing.remove();
+        else {
+          if (existing.dataset.devpilotFeatureLoadState === 'loading') {
+            let settled = false;
+            const finish = ok => {
+              if (settled) return;
+              settled = true;
+              window.clearTimeout(timeoutId);
+              resolve(ok);
+            };
+            const timeoutId = window.setTimeout(() => finish(false), FEATURE_SCRIPT_TIMEOUT_MS);
+            existing.addEventListener('load', () => finish(true), {once: true});
+            existing.addEventListener('error', () => finish(false), {once: true});
+            return;
+          }
+          resolve(true);
+          return;
+        }
+      }
+
+      const script = document.createElement('script');
+      let settled = false;
+      const finish = ok => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timeoutId);
+        script.dataset.devpilotFeatureLoadState = ok ? 'loaded' : 'failed';
+        if (!ok) script.remove();
+        resolve(ok);
+      };
+      const timeoutId = window.setTimeout(() => finish(false), FEATURE_SCRIPT_TIMEOUT_MS);
+      script.src = src;
+      script.async = false;
+      script.dataset.devpilotFeatureLoadState = 'loading';
+      Object.entries(dataset).forEach(([key, value]) => { script.dataset[key] = value; });
+      script.onload = () => finish(true);
+      script.onerror = () => finish(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function ensureManifest() {
+    if (window.__devpilotRuntimeManifest) return window.__devpilotRuntimeManifest;
+    const ok = await loadRawScript(MANIFEST_SRC, {devpilotRuntimeManifest: '1'});
+    if (!ok || !window.__devpilotRuntimeManifest) {
+      console.error('[DevPilot] Manifesto de runtime indisponível.');
+      return null;
+    }
+    return window.__devpilotRuntimeManifest;
+  }
 
   function waitForExistingFeatureScript(script, name) {
     const state = script.dataset.devpilotFeatureLoadState;
@@ -92,7 +151,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260829-chat-voice-stable`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=runtime-unified-20260830-1`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -102,24 +161,88 @@
     });
   }
 
-  async function loadFeature(feature) {
-    const files = FEATURE_BUNDLES[feature];
-    if (!Array.isArray(files)) return false;
+  function policyFor(manifest, feature) {
+    return manifest.policies?.[feature] || manifest.policies?.default || {idleEvery: 3};
+  }
+
+  async function loadFiles(manifest, feature, files, {intentEpoch = null, cancellable = true} = {}) {
+    const failures = [];
+    const policy = policyFor(manifest, feature);
+    const idleEvery = Math.max(1, Number(policy.idleEvery || 3));
+
+    for (let index = 0; index < files.length; index += 1) {
+      if (cancellable && intentEpoch !== null && intentEpoch !== navigationEpoch) {
+        return {failures, cancelled: true};
+      }
+      const file = files[index];
+      const started = performance.now();
+      const ok = await loadScript(file);
+      window.__devpilotFeaturePerf = window.__devpilotFeaturePerf || [];
+      window.__devpilotFeaturePerf.push({feature, file, ok, durationMs: Math.round(performance.now() - started), at: Date.now()});
+      if (!ok) failures.push(file);
+      await nextPaint();
+      await shortYield();
+      if (index > 0 && index % idleEvery === 0) await idleYield();
+    }
+    return {failures, cancelled: false};
+  }
+
+  function scheduleBackground(manifest, feature, files) {
+    if (!files.length) return Promise.resolve(true);
+    if (backgroundJobs.has(feature)) return backgroundJobs.get(feature);
+
+    const job = (async () => {
+      await idleYield();
+      const result = await loadFiles(manifest, feature, files, {cancellable: false});
+      const current = featureState.get(feature) || {};
+      const failures = [...new Set([...(current.failures || []), ...result.failures])];
+      featureState.set(feature, {status: failures.length ? 'partial' : 'loaded', failures, promise: null});
+      document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {detail: {feature, failures, background: true}}));
+      return failures.length === 0;
+    })().finally(() => backgroundJobs.delete(feature));
+
+    backgroundJobs.set(feature, job);
+    return job;
+  }
+
+  async function loadFeature(feature, options = {}) {
+    const manifest = await ensureManifest();
+    if (!manifest) return false;
+    const bundle = manifest.bundles?.[feature];
+    if (!Array.isArray(bundle)) return false;
+
+    const full = options.full !== false;
     const current = featureState.get(feature);
     if (current?.status === 'loaded') return true;
+    if (current?.status === 'warming' && !full) return true;
+    if (current?.status === 'warming' && full && backgroundJobs.has(feature)) return backgroundJobs.get(feature);
     if (current?.promise) return current.promise;
 
+    const critical = full ? bundle : (manifest.critical?.[feature] || bundle);
+    const criticalSet = new Set(critical);
+    const remaining = bundle.filter(file => !criticalSet.has(file));
+    const intentEpoch = Number.isInteger(options.intentEpoch) ? options.intentEpoch : null;
+
     const promise = (async () => {
-      const failures = [];
-      for (const file of files) {
-        const ok = await loadScript(file);
-        if (!ok) failures.push(file);
-        await nextPaint();
+      const result = await loadFiles(manifest, feature, critical, {intentEpoch, cancellable: intentEpoch !== null});
+      if (result.cancelled) {
+        featureState.set(feature, {status: 'idle', failures: result.failures, promise: null});
+        return false;
       }
-      featureState.set(feature, {status: failures.length ? 'partial' : 'loaded', failures, promise: null});
-      document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {detail: {feature, failures}}));
-      return failures.length === 0;
+      if (full && remaining.length) {
+        const tail = await loadFiles(manifest, feature, remaining, {intentEpoch, cancellable: intentEpoch !== null});
+        const failures = [...result.failures, ...tail.failures];
+        featureState.set(feature, {status: failures.length ? 'partial' : 'loaded', failures, promise: null});
+        return !tail.cancelled && failures.length === 0;
+      }
+
+      const status = remaining.length ? 'warming' : (result.failures.length ? 'partial' : 'loaded');
+      featureState.set(feature, {status, failures: result.failures, promise: null});
+      if (remaining.length) void scheduleBackground(manifest, feature, remaining);
+      document.dispatchEvent(new CustomEvent('devpilot:feature-critical-ready', {detail: {feature, failures: result.failures}}));
+      return result.failures.length === 0;
     })();
+
     featureState.set(feature, {status: 'loading', failures: [], promise});
     return promise;
   }
@@ -130,17 +253,14 @@
   function openChat() {
     const modal = document.querySelector('#voice-modal');
     if (modal && !modal.open) modal.showModal?.();
-
-    const featurePromise = loadFeature('voice');
+    const intentEpoch = navigationEpoch;
+    const featurePromise = loadFeature('voice', {full: false, intentEpoch});
     const projectsPromise = typeof window.loadProjects === 'function'
       ? Promise.resolve(window.loadProjects()).catch(() => [])
       : Promise.resolve([]);
-
     return Promise.all([featurePromise, projectsPromise]).then(([ready]) => {
       document.dispatchEvent(new CustomEvent('devpilot:chat-opened', {detail: {ready}}));
-      window.requestAnimationFrame(() => {
-        document.querySelector('#voice-transcript, #voice-chat-input')?.focus?.();
-      });
+      window.requestAnimationFrame(() => document.querySelector('#voice-transcript, #voice-chat-input')?.focus?.());
       return ready;
     });
   }
@@ -186,8 +306,10 @@
 
   async function openPlaceholder(button, feature) {
     if (!button || button.dataset.devpilotBusy === '1') return;
+    const manifest = await ensureManifest();
+    if (!manifest) return;
     if (feature === 'game') {
-      window.location.assign('/game/index.html');
+      window.location.assign(manifest.routes?.game || '/game/index.html');
       return;
     }
     const intentEpoch = navigationEpoch;
@@ -198,17 +320,17 @@
     button.setAttribute('aria-busy', 'true');
     button.textContent = `${original} · carregando…`;
     try {
-      const ok = await loadFeature(feature);
+      const ok = await loadFeature(feature, {full: false, intentEpoch});
       if (intentEpoch !== navigationEpoch) return restorePlaceholder(button, original);
       if (!ok) {
         window.toast?.(`Não foi possível carregar ${original}. Tente novamente.`);
         return restorePlaceholder(button, original);
       }
-      const target = featureTarget(feature);
       if (feature === 'admin') {
         removePlaceholder(feature);
         return;
       }
+      const target = featureTarget(feature);
       if (!target) return restorePlaceholder(button, original);
       removePlaceholder(feature);
       target.click();
@@ -218,68 +340,74 @@
     }
   }
 
-  const TRIGGERS = [
-    ['[data-project-builder-open]', 'projectBuilder'], ['[data-example-project]', 'example'],
-    ['[data-open="task-modal"]', 'taskModal'], ['.nav[data-view="providers"]', 'providers'],
-    ['.nav[data-view="reports"]', 'reports'], ['.nav[data-view="projects"]', 'tasks'],
-    ['.nav[data-view="tasks"]', 'tasks'], ['#voice-hero, #voice-dock', 'voice'],
-    ['.nav[data-view="audit"]', 'audit'],
-  ];
-
-  function matchFeatureTrigger(target) {
+  function matchFeatureTrigger(target, manifest) {
     if (!(target instanceof Element)) return null;
-    for (const [selector, feature] of TRIGGERS) {
-      const trigger = target.closest(selector);
-      if (trigger) return {trigger, feature};
+    for (const rule of manifest.triggers || []) {
+      const trigger = target.closest(rule.selector);
+      if (trigger) return {trigger, feature: rule.feature};
     }
     return null;
   }
 
   document.addEventListener('click', event => {
-    const placeholder = event.target.closest?.('[data-devpilot-feature-placeholder]');
-    if (placeholder) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      void openPlaceholder(placeholder, placeholder.dataset.devpilotFeaturePlaceholder);
-      return;
-    }
-    const navTarget = event.target.closest?.('.sidebar nav .nav');
-    if (navTarget) {
-      navigationEpoch += 1;
-      restorePendingPlaceholders();
-    }
-    const match = matchFeatureTrigger(event.target);
-    if (!match) return;
-    const {trigger, feature} = match;
+    void (async () => {
+      const placeholder = event.target.closest?.('[data-devpilot-feature-placeholder]');
+      if (placeholder) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        await openPlaceholder(placeholder, placeholder.dataset.devpilotFeaturePlaceholder);
+        return;
+      }
 
-    if (feature === 'voice') {
+      const navTarget = event.target.closest?.('.sidebar nav .nav');
+      if (navTarget) {
+        navigationEpoch += 1;
+        restorePendingPlaceholders();
+      }
+
+      const manifest = await ensureManifest();
+      if (!manifest) return;
+      const match = matchFeatureTrigger(event.target, manifest);
+      if (!match) return;
+      const {trigger, feature} = match;
+
+      if (feature === 'voice') {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        trigger.setAttribute('aria-busy', 'true');
+        try {
+          const ready = await openChat();
+          if (!ready) window.toast?.('O chat abriu, mas alguns recursos não puderam ser carregados.');
+        } catch (error) {
+          console.error('[DevPilot] Falha ao preparar o chat', error);
+          window.toast?.('Não foi possível preparar todos os recursos do chat.');
+        } finally {
+          trigger.removeAttribute('aria-busy');
+        }
+        return;
+      }
+
+      if (trigger.dataset.devpilotFeatureReplay === '1') {
+        delete trigger.dataset.devpilotFeatureReplay;
+        return;
+      }
+      const status = featureState.get(feature)?.status;
+      if (status === 'loaded' || status === 'warming') return;
+
+      const intentEpoch = navigationEpoch;
       event.preventDefault();
       event.stopImmediatePropagation();
       trigger.setAttribute('aria-busy', 'true');
-      void openChat().then(ready => {
-        if (!ready) window.toast?.('O chat abriu, mas alguns recursos não puderam ser carregados.');
-      }).catch(error => {
-        console.error('[DevPilot] Falha ao preparar o chat', error);
-        window.toast?.('Não foi possível preparar todos os recursos do chat.');
-      }).finally(() => trigger.removeAttribute('aria-busy'));
-      return;
-    }
-
-    if (trigger.dataset.devpilotFeatureReplay === '1') {
-      delete trigger.dataset.devpilotFeatureReplay;
-      return;
-    }
-    if (featureState.get(feature)?.status === 'loaded') return;
-    const intentEpoch = navigationEpoch;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    trigger.setAttribute('aria-busy', 'true');
-    void loadFeature(feature).then(ok => {
-      trigger.removeAttribute('aria-busy');
-      if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;
-      trigger.dataset.devpilotFeatureReplay = '1';
-      trigger.click();
-    }).catch(() => trigger.removeAttribute('aria-busy'));
+      try {
+        const ok = await loadFeature(feature, {full: false, intentEpoch});
+        trigger.removeAttribute('aria-busy');
+        if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;
+        trigger.dataset.devpilotFeatureReplay = '1';
+        trigger.click();
+      } catch (_) {
+        trigger.removeAttribute('aria-busy');
+      }
+    })();
   }, true);
 
   let placeholdersInitialized = false;
@@ -298,12 +426,21 @@
   function initializeMobileShell() {
     if (mobileShellRequested || !window.matchMedia('(max-width: 900px)').matches) return;
     mobileShellRequested = true;
-    void loadFeature('mobileShell').then(ok => { if (!ok) mobileShellRequested = false; });
+    void loadFeature('mobileShell', {full: true}).then(ok => { if (!ok) mobileShellRequested = false; });
+  }
+
+  let desktopShellRequested = false;
+  function initializeDesktopShell() {
+    if (desktopShellRequested || !window.matchMedia('(min-width: 901px)').matches) return;
+    desktopShellRequested = true;
+    void loadFeature('shell', {full: true}).then(ok => { if (!ok) desktopShellRequested = false; });
   }
 
   function initializeAuthenticatedUi() {
+    installLowPowerHint();
     initializePlaceholders();
     initializeMobileShell();
+    initializeDesktopShell();
   }
 
   const authModal = document.querySelector('#auth-modal');
@@ -315,16 +452,16 @@
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
     document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi);
     authModal?.addEventListener('close', initializeIfAuthenticated);
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once: true});
-    } else {
-      initializeIfAuthenticated();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once: true});
+    else initializeIfAuthenticated();
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
   } else {
     initializeAuthenticatedUi();
   }
 
-  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => { if (event.matches) initializeMobileShell(); });
+  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => {
+    if (event.matches) initializeMobileShell();
+    else initializeDesktopShell();
+  });
 })();
