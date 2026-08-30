@@ -22,9 +22,20 @@ def test_feature_loader_is_the_only_owner_of_optional_runtime_chain():
     assert "dashboard-user-v21.js" in source
     assert "executions-v18.js" in source
     assert "executions-focus-v19.js" in source
+    assert "tasks-operational-ui.js" in source
     assert "tasksAnalytics" in source
     assert "#tasks-v9-indicators" in source
     assert "tasksDetails" in source
+
+
+def test_core_app_does_not_inject_optional_scripts_or_prewarm_modal():
+    source = read("app.js")
+    assert "tasks-operational-ui.js" not in source
+    assert "prewarmTaskModal" not in source
+    assert "document.createElement('script')" not in source
+    assert 'document.createElement("script")' not in source
+    assert "tasks: 'Execuções'" in source
+    assert "Nova execução" in source
 
 
 def test_viewport_adaptive_never_loads_javascript():
@@ -43,6 +54,16 @@ def test_task_modal_has_no_hidden_runtime_loader():
     assert "canonicalSource" in source
     assert "source: canonicalSource" in source
     assert "aria-labelledby" in source
+    assert "aria-busy" in source
+
+
+def test_tasks_operational_has_no_parallel_analytics_loader():
+    source = read("tasks-operational-ui.js")
+    assert "document.createElement('script')" not in source
+    assert "task-analytics.js?v=" not in source
+    assert "Nenhuma execução encontrada" in source
+    assert "Execução excluída" in source
+    assert "aria-controls" in source
     assert "aria-busy" in source
 
 
