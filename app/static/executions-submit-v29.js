@@ -1,6 +1,7 @@
 (() => {
   'use strict';
 
+  if (window.__devpilotCanonicalExecutionSubmitV30) return;
   if (window.__devpilotExecutionsSubmitV29) return;
   window.__devpilotExecutionsSubmitV29 = true;
 
@@ -101,6 +102,7 @@
   }
 
   async function save(form) {
+    if (window.__devpilotCanonicalExecutionSubmitV30) return;
     if (!(form instanceof HTMLFormElement)) return;
     if (form.dataset.executionSubmittingV29 === '1') return;
 
@@ -182,6 +184,7 @@
   }
 
   function prepareForm(form) {
+    if (window.__devpilotCanonicalExecutionSubmitV30) return;
     if (!(form instanceof HTMLFormElement)) return;
     form.noValidate = true;
     form.setAttribute('novalidate', 'novalidate');
@@ -194,6 +197,7 @@
   }
 
   function intercept(event) {
+    if (window.__devpilotCanonicalExecutionSubmitV30) return;
     const form = event.target instanceof HTMLFormElement
       ? event.target
       : event.target?.closest?.('form');
@@ -211,6 +215,7 @@
   document.addEventListener('submit', intercept, true);
 
   document.addEventListener('click', event => {
+    if (window.__devpilotCanonicalExecutionSubmitV30) return;
     const button = event.target?.closest?.('#task-submit');
     if (!button) return;
     const form = button.form || qs('#task-form');
@@ -218,6 +223,7 @@
   }, true);
 
   function install() {
+    if (window.__devpilotCanonicalExecutionSubmitV30) return;
     const form = qs('#task-form');
     if (form) prepareForm(form);
   }
@@ -234,5 +240,5 @@
   [100, 400, 900, 1800].forEach(delay => window.setTimeout(install, delay));
 
   document.documentElement.dataset.devpilotExecutionSubmit = 'v29';
-  console.info('[DevPilot] Execução Submit V29 ativo');
+  console.info('[DevPilot] Execução Submit V29 legado ativo');
 })();
