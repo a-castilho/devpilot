@@ -129,11 +129,6 @@
       'sidebarResponsiveV16'
     );
 
-    /*
-     * V20 usa somente os dados já renderizados por app.js e não adiciona
-     * chamadas, polling ou escritas. Carrega depois das camadas históricas
-     * para ser a autoridade visual final da Visão geral.
-     */
     ensureStylesheet(
       'link[data-dashboard-user-v20]',
       '/assets/dashboard-user-v20.css?v=20260830-1',
@@ -157,9 +152,18 @@
     );
   }
 
+  function loadDashboardUserV21() {
+    ensureScript(
+      'script[data-dashboard-user-v21]',
+      '/assets/dashboard-user-v21.js?v=20260830-1',
+      'dashboardUserV21'
+    );
+  }
+
   loadCss();
   loadExecutionsV18();
   loadExecutionsFocusV19();
+  loadDashboardUserV21();
   apply();
 
   window.addEventListener('resize', schedule, {passive: true});
