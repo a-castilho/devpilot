@@ -31,14 +31,20 @@ function errorDetail(data) {
   return 'Falha na operação';
 }
 
+function requireFreshLogin(message = 'Sua sessão expirou. Entre novamente.') {
+  localStorage.removeItem('devpilot-token');
+  sessionStorage.setItem('devpilot-auth-message', message);
+  window.setTimeout(() => window.location.reload(), 0);
+}
+
 async function api(path, options = {}) {
   const headers = {Authorization: `Bearer ${state.token}`, ...options.headers};
   if (options.body && !(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
   const response = await fetch(`/api${path}`, {...options, headers, cache: options.cache || 'no-store'});
   if (response.status === 401) {
-    localStorage.removeItem('devpilot-token');
-    $('#auth-modal')?.showModal?.();
-    throw new Error('Autenticação necessária');
+    state.token = '';
+    requireFreshLogin();
+    throw new Error('Sessão expirada. Faça login novamente.');
   }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(errorDetail(data));
@@ -79,7 +85,7 @@ function setActiveView(name) {
   if (title) {
     title.textContent = {
       overview: 'Visão geral', organizations: 'Organizações', projects: 'Projetos',
-      tasks: 'Desenvolvimento', providers: 'Modelos de IA', reports: 'Relatórios', audit: 'Auditoria',
+      tasks: 'Execuções', providers: 'Modelos de IA', reports: 'Relatórios', audit: 'Auditoria',
     }[name] || title.textContent;
   }
 }
@@ -106,8 +112,6 @@ async function loadDashboard() {
 
   state.dashboardLoading = (async () => {
     try {
-      // Pós-login deliberadamente pequeno: somente identidade, visão geral
-      // e cinco tarefas recentes são carregadas nesta etapa.
       state.currentUser = await api('/auth/me');
       applyRoleVisibility();
       const [overview, recentTasks] = await Promise.all([
@@ -143,7 +147,7 @@ async function loadProjects() {
       fillProjects();
       return state.projects;
     } catch (error) {
-      if (target) target.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+      if (target) target.innerHTML = `<div class="empty" role="alert">${esc(error.message)}</div>`;
       toast(error.message);
       return [];
     } finally {
@@ -168,7 +172,7 @@ async function loadOrganizations() {
       fillOrganizations();
       return state.organizations;
     } catch (error) {
-      if (target) target.innerHTML = `<div class="empty">${esc(error.message)}</div>`;
+      if (target) target.innerHTML = `<div class="empty" role="alert">${esc(error.message)}</div>`;
       toast(error.message);
       return [];
     } finally {
@@ -220,19 +224,19 @@ function renderOverview(overview) {
   const summary = $('#overview-summary');
   if (summary) {
     summary.textContent = total
-      ? `${total} tarefas acompanhadas em ${overview.projects ?? 0} projetos. ${groups.active.length} estão em movimento agora.`
-      : 'Seu ambiente está pronto. Crie uma tarefa ou conecte um projeto para começar.';
+      ? `${total} execuções acompanhadas em ${overview.projects ?? 0} projetos. ${groups.active.length} estão em movimento agora.`
+      : 'Seu ambiente está pronto. Registre uma execução ou conecte um projeto para começar.';
   }
 
   const attention = $('#attention-card');
   if (attention) {
     let content;
     if (groups.failed.length) {
-      content = ['!', 'FALHA QUE PRECISA DE ATENÇÃO', `${groups.failed.length} tarefa(s) com falha`, 'Abra Desenvolvimento para consultar o motivo e os registros.', 'danger'];
+      content = ['!', 'FALHA QUE PRECISA DE ATENÇÃO', `${groups.failed.length} execução(ões) com falha`, 'Abra Execuções para consultar o motivo e os registros.', 'danger'];
     } else if (groups.approvals.length) {
       content = ['✓', 'AGUARDANDO SUA DECISÃO', `${groups.approvals.length} aprovação(ões) pendente(s)`, 'Revise a análise antes de liberar alterações no código.', 'warning'];
     } else if (groups.active.length) {
-      content = ['↻', 'DEV PILOT TRABALHANDO', `${groups.active.length} tarefa(s) em andamento`, 'Você pode acompanhar cada etapa em Desenvolvimento.', 'active'];
+      content = ['↻', 'DEVPILOT TRABALHANDO', `${groups.active.length} execução(ões) em andamento`, 'Você pode acompanhar cada etapa em Execuções.', 'active'];
     } else {
       content = ['✓', 'OPERAÇÃO EM DIA', 'Nada exige sua atenção agora', 'Novas atividades aparecerão aqui automaticamente.', 'success'];
     }
@@ -266,7 +270,7 @@ function renderOverview(overview) {
         <span class="task-copy"><strong>${esc(task.title)}</strong><small>${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source || 'dashboard')}</small></span>
         ${status(task.status)}
       </button>
-    `).join('') || '<div class="empty">Nenhuma atividade ainda. Crie o primeiro desenvolvimento.</div>';
+    `).join('') || '<div class="empty">Nenhuma atividade ainda. Registre a primeira execução.</div>';
     decorateStatuses(recent);
     $$('[data-view="tasks"]', recent).forEach(button => button.onclick = () => showView('tasks'));
   }
@@ -274,6 +278,7 @@ function renderOverview(overview) {
   const overviewRefresh = $('#overview-refresh');
   if (overviewRefresh) overviewRefresh.onclick = () => void loadDashboard();
 }
+
 function organizationName(id) {
   return state.organizations.find(item => item.id === id)?.name || '';
 }
@@ -297,21 +302,18 @@ function renderProjects() {
   const target = $('#projects-list');
   if (!target) return;
   target.innerHTML = state.projects.map(project => `
-    <article class="project-card"><span class="eyebrow">${esc(project.status).toUpperCase()}</span><h3>${esc(project.name)}</h3><p>${esc(project.description || 'Sem descrição')}${project.organization_id && isSuperAdmin() && organizationName(project.organization_id) ? ` · ${esc(organizationName(project.organization_id))}` : ''}</p><code>${esc(project.repository_url)}</code><div class="list-row"><small>Branch ${esc(project.default_branch)}</small><div><button class="link analyze" data-id="${project.id}">Analisar</button><button class="link" data-project-task="${project.id}">Nova tarefa</button></div></div></article>
+    <article class="project-card"><span class="eyebrow">${esc(project.status).toUpperCase()}</span><h3>${esc(project.name)}</h3><p>${esc(project.description || 'Sem descrição')}${project.organization_id && isSuperAdmin() && organizationName(project.organization_id) ? ` · ${esc(organizationName(project.organization_id))}` : ''}</p><code>${esc(project.repository_url)}</code><div class="list-row"><small>Branch ${esc(project.default_branch)}</small><div><button class="link analyze" data-id="${project.id}">Analisar</button><button class="link" data-project-task="${project.id}">Nova execução</button></div></div></article>
   `).join('') || '<div class="empty">Conecte seu primeiro repositório.</div>';
 
   $$('[data-project-task]', target).forEach(button => {
     button.onclick = () => {
-      window.devpilotOpenTaskModal?.({
-        projectId: button.dataset.projectTask || '',
-        source: 'project',
-      });
+      window.devpilotOpenTaskModal?.({projectId:button.dataset.projectTask || '', source:'project'});
     };
   });
   $$('.analyze', target).forEach(button => {
     button.onclick = async () => {
       try {
-        await api(`/projects/${button.dataset.id}/analyze`, {method: 'POST'});
+        await api(`/projects/${button.dataset.id}/analyze`, {method:'POST'});
         toast('Análise técnica enfileirada');
         await loadDashboard();
       } catch (error) {
@@ -367,59 +369,29 @@ async function loadTaskInstructions(taskId, container, button) {
 function renderTasks() {
   const table = $('#tasks-table');
   if (!table) return;
-
-  const tasks = Array.isArray(state.tasks)
-    ? state.tasks.slice(0, 20)
-    : [];
+  const tasks = Array.isArray(state.tasks) ? state.tasks.slice(0, 20) : [];
 
   table.innerHTML = tasks.map(task => `
     <tr class="task-main-row" data-task-id="${esc(task.id)}">
-      <td class="task-primary-cell">
-        <strong title="${esc(task.title)}">${esc(task.title)}</strong>
-        <small>${new Date(task.created_at).toLocaleString('pt-BR')}</small>
-      </td>
-
-      <td class="task-secondary-cell">
-        ${esc(task.source || 'DevPilot')}
-      </td>
-
-      <td class="task-status-cell">
-        ${status(task.status)}
-      </td>
-
-      <td class="task-priority-cell">
-        ${esc(task.priority ?? '—')}
-      </td>
-
+      <td class="task-primary-cell"><strong title="${esc(task.title)}">${esc(task.title)}</strong><small>${new Date(task.created_at).toLocaleString('pt-BR')}</small></td>
+      <td class="task-secondary-cell">${esc(task.source || 'DevPilot')}</td>
+      <td class="task-status-cell">${status(task.status)}</td>
+      <td class="task-priority-cell">${esc(task.priority ?? '—')}</td>
       <td class="task-action-cell">
         <div class="task-operational-actions">
-          ${task.status === 'awaiting_approval'
-            ? `<button class="primary approve" data-id="${esc(task.id)}">Aprovar</button>`
-            : ''}
-          <button
-            class="ghost task-instructions-load"
-            type="button"
-            data-id="${esc(task.id)}"
-          >Detalhes</button>
+          ${task.status === 'awaiting_approval' ? `<button class="primary approve" data-id="${esc(task.id)}">Aprovar</button>` : ''}
+          <button class="ghost task-instructions-load" type="button" data-id="${esc(task.id)}">Detalhes</button>
         </div>
-        <div
-          class="task-inline-details"
-          data-task-instructions="${esc(task.id)}"
-          hidden
-        ></div>
+        <div class="task-inline-details" data-task-instructions="${esc(task.id)}" hidden></div>
       </td>
     </tr>
-  `).join('') ||
-    '<tr><td colspan="5" class="empty">Nenhuma tarefa registrada.</td></tr>';
+  `).join('') || '<tr><td colspan="5" class="empty">Nenhuma execução registrada.</td></tr>';
 
   $$('.approve', table).forEach(button => {
     button.onclick = async () => {
       try {
-        await api(
-          `/tasks/${button.dataset.id}/approve`,
-          {method: 'POST'}
-        );
-        toast('Tarefa aprovada');
+        await api(`/tasks/${button.dataset.id}/approve`, {method:'POST'});
+        toast('Execução aprovada');
         await loadAllTasks(true, 8);
         await loadDashboard();
       } catch (error) {
@@ -430,39 +402,23 @@ function renderTasks() {
 
   $$('.task-instructions-load', table).forEach(button => {
     button.onclick = () => {
-      const container = table.querySelector(
-        `[data-task-instructions="${CSS.escape(button.dataset.id)}"]`
-      );
-
+      const container = table.querySelector(`[data-task-instructions="${CSS.escape(button.dataset.id)}"]`);
       if (!container) return;
-
       const opening = container.hidden;
       container.hidden = !opening;
-
       if (!opening) {
         button.textContent = 'Detalhes';
         return;
       }
-
       button.textContent = 'Ocultar';
-
-      void loadTaskInstructions(
-        button.dataset.id,
-        container,
-        button
-      ).finally(() => {
+      void loadTaskInstructions(button.dataset.id, container, button).finally(() => {
         if (!container.hidden) button.textContent = 'Ocultar';
       });
     };
   });
 
-  document.dispatchEvent(
-    new CustomEvent('devpilot:tasks-rendered', {
-      detail: {count: tasks.length},
-    })
-  );
+  document.dispatchEvent(new CustomEvent('devpilot:tasks-rendered', {detail:{count:tasks.length}}));
 }
-
 
 function fillProjects(selected = '') {
   const options = state.projects.map(project => `<option value="${project.id}" ${String(project.id) === String(selected) ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
@@ -488,7 +444,7 @@ async function syncOrganization(id, button) {
     button.textContent = 'Sincronizando…';
   }
   try {
-    const result = await api(`/organizations/${id}/sync`, {method: 'POST', body: JSON.stringify({import_projects: true})});
+    const result = await api(`/organizations/${id}/sync`, {method:'POST', body:JSON.stringify({import_projects:true})});
     toast(`Sync concluído: ${result.repositories} repositórios, ${result.imported_projects} projetos importados`);
     state.organizations = [];
     state.projects = [];
@@ -530,201 +486,66 @@ async function loadAudit() {
   }
 }
 
-
-async function ensureTaskProjectsForModal(
-  selectedProjectId = ''
-) {
-  /*
-   * O modal precisa somente da lista.
-   *
-   * NÃO chamamos loadProjects(), porque loadProjects também
-   * redesenha cards, naves, delivery e outros complementos.
-   */
-  if (
-    Array.isArray(state.projects) &&
-    state.projects.length
-  ) {
+async function ensureTaskProjectsForModal(selectedProjectId = '') {
+  if (Array.isArray(state.projects) && state.projects.length) {
     fillProjects(selectedProjectId);
     return state.projects;
   }
 
   const select = $('#task-project');
-
-  if (select) {
-    select.innerHTML =
-      '<option value="">Carregando projetos…</option>';
-  }
+  if (select) select.innerHTML = '<option value="">Carregando projetos…</option>';
 
   try {
     const projects = await api('/ui/projects?limit=50');
-
-    state.projects = Array.isArray(projects)
-      ? projects
-      : [];
-
+    state.projects = Array.isArray(projects) ? projects : [];
     fillProjects(selectedProjectId);
-
     return state.projects;
-
   } catch (error) {
-
-    if (select) {
-      select.innerHTML =
-        '<option value="">Falha ao carregar projetos</option>';
-    }
-
-    toast(
-      error.message ||
-      'Não foi possível carregar os projetos'
-    );
-
+    if (select) select.innerHTML = '<option value="">Falha ao carregar projetos</option>';
+    toast(error.message || 'Não foi possível carregar os projetos');
     return [];
   }
 }
 
-
 function requestTaskFeature(name) {
-  const attempt = () => {
-    if (
-      typeof window.__devpilotLoadFeature === 'function'
-    ) {
-      return Promise.resolve(
-        window.__devpilotLoadFeature(name)
-      );
-    }
-
-    return Promise.resolve(false);
-  };
-
-  /*
-   * app.js entra antes do feature-loader.
-   * Em um clique normal ele já estará disponível.
-   */
-  if (
-    typeof window.__devpilotLoadFeature === 'function'
-  ) {
-    return attempt();
+  if (typeof window.__devpilotLoadFeature === 'function') {
+    return Promise.resolve(window.__devpilotLoadFeature(name));
   }
-
-  return new Promise(resolve => {
-    window.setTimeout(() => {
-      attempt()
-        .then(resolve)
-        .catch(() => resolve(false));
-    }, 60);
-  });
+  return Promise.resolve(false);
 }
 
-
-window.devpilotOpenTaskModal =
-function devpilotOpenTaskModal({
-  projectId = '',
-  source = 'dashboard',
-} = {}) {
-
+window.devpilotOpenTaskModal = function devpilotOpenTaskModal({projectId = '', source = 'dashboard'} = {}) {
   const modal = $('#task-modal');
-
   if (!modal) {
-    toast('Formulário de tarefa indisponível');
+    toast('Formulário de execução indisponível');
     return false;
   }
 
-  modal.dataset.taskSource = source;
+  /* Desativa o submit legado antes que o modal se torne interativo. */
+  const taskForm = $('#task-form');
+  if (taskForm) taskForm.onsubmit = null;
 
+  modal.dataset.taskSource = source;
   const select = $('#task-project');
 
-  /*
-   * Se os projetos já existem, seleção é instantânea.
-   */
-  if (
-    Array.isArray(state.projects) &&
-    state.projects.length
-  ) {
-    fillProjects(projectId);
+  if (Array.isArray(state.projects) && state.projects.length) fillProjects(projectId);
+  else if (select) select.innerHTML = '<option value="">Carregando projetos…</option>';
 
-  } else if (select) {
+  if (!modal.open) modal.showModal?.();
+  window.requestAnimationFrame(() => $('#task-context')?.focus?.());
 
-    select.innerHTML =
-      '<option value="">Carregando projetos…</option>';
-  }
-
-
-  /*
-   * REGRA PRINCIPAL:
-   *
-   * O MODAL ABRE ANTES DE API, PLUGIN, JOGO,
-   * ANALYTICS OU RENDER DE PROJETOS.
-   */
-  if (!modal.open) {
-    modal.showModal?.();
-  }
-
-
-  window.requestAnimationFrame(() => {
-    $('#task-context')?.focus?.();
+  void requestTaskFeature('taskModal').catch(error => {
+    console.warn('[DevPilot] task-modal enhancement', error);
+    toast('Não foi possível preparar todos os recursos da execução.');
   });
 
-
-  /*
-   * O AgentOS / modos enriquecem o formulário depois.
-   * Nenhum await aqui.
-   */
-  void requestTaskFeature('taskModal')
-    .catch(error => {
-      console.warn(
-        '[DevPilot] task-modal enhancement',
-        error
-      );
-    });
-
-
-  /*
-   * Armas existem SOMENTE se o jogo estiver realmente ativo.
-   */
-  if (
-    document.querySelector(
-      '#build-game-view.active'
-    )
-  ) {
-    void requestTaskFeature('gameWeapons')
-      .catch(error => {
-        console.warn(
-          '[DevPilot] game weapons',
-          error
-        );
-      });
+  if (document.querySelector('#build-game-view.active')) {
+    void requestTaskFeature('gameWeapons').catch(error => console.warn('[DevPilot] game weapons', error));
   }
 
-
-  /*
-   * Projetos entram depois que o usuário já vê o formulário.
-   */
-  if (
-    !Array.isArray(state.projects) ||
-    !state.projects.length
-  ) {
-    void ensureTaskProjectsForModal(projectId);
-  }
-
+  if (!Array.isArray(state.projects) || !state.projects.length) void ensureTaskProjectsForModal(projectId);
   return true;
-}
-
-
-function prewarmTaskModal() {
-  const run = () => {
-    void requestTaskFeature('taskModal')
-      .catch(() => {});
-  };
-
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(
-      run,
-      {timeout: 1600}
-    );
-  } else {
-    window.setTimeout(run, 700);
-  }
-}
+};
 
 function bindCoreControls() {
   $$('[data-view]').forEach(button => {
@@ -734,31 +555,17 @@ function bindCoreControls() {
   $$('[data-open]').forEach(button => {
     button.onclick = async () => {
       if (button.dataset.open === 'task-modal') {
-        window.devpilotOpenTaskModal?.({
-          source: 'global',
-        });
+        window.devpilotOpenTaskModal?.({source:'dashboard'});
         return;
       }
 
-      if (
-        button.dataset.open === 'organization-modal' &&
-        !isSuperAdmin()
-      ) {
-        return toast(
-          'Acesso exclusivo do Super Admin'
-        );
+      if (button.dataset.open === 'organization-modal' && !isSuperAdmin()) {
+        return toast('Acesso exclusivo do Super Admin');
       }
-
-      if (
-        button.dataset.open === 'organization-modal' &&
-        isSuperAdmin() &&
-        !state.organizations.length
-      ) {
+      if (button.dataset.open === 'organization-modal' && isSuperAdmin() && !state.organizations.length) {
         await loadOrganizations();
       }
-
-      $(`#${button.dataset.open}`)
-        ?.showModal?.();
+      $(`#${button.dataset.open}`)?.showModal?.();
     };
   });
 
@@ -774,11 +581,11 @@ function bindCoreControls() {
     event.preventDefault();
     if (!isSuperAdmin()) return toast('Acesso exclusivo do Super Admin');
     const form = new FormData(event.target);
-    const payload = {name: form.get('name'), slug: form.get('slug'), github_login: form.get('github_login')};
+    const payload = {name:form.get('name'), slug:form.get('slug'), github_login:form.get('github_login')};
     const accessToken = String(form.get('access_token') || '').trim();
     if (accessToken) payload.access_token = accessToken;
     try {
-      const organization = await api('/organizations', {method: 'POST', body: JSON.stringify(payload)});
+      const organization = await api('/organizations', {method:'POST', body:JSON.stringify(payload)});
       event.target.closest('dialog')?.close?.();
       event.target.reset();
       toast('Organização conectada. Sincronizando repositórios…');
@@ -793,190 +600,19 @@ function bindCoreControls() {
     event.preventDefault();
     const form = new FormData(event.target);
     const payload = {
-      name: form.get('name'), slug: form.get('slug'), repository_url: form.get('repository_url'),
-      organization_id: isSuperAdmin() ? (form.get('organization_id') || null) : null,
-      description: form.get('description'), agents_md: form.get('agents_md'), default_branch: form.get('default_branch'),
-      codex_config: {model: form.get('model'), reasoning_effort: 'medium', timeout_seconds: 1800},
+      name:form.get('name'), slug:form.get('slug'), repository_url:form.get('repository_url'),
+      organization_id:isSuperAdmin() ? (form.get('organization_id') || null) : null,
+      description:form.get('description'), agents_md:form.get('agents_md'), default_branch:form.get('default_branch'),
+      codex_config:{model:form.get('model'), reasoning_effort:'medium', timeout_seconds:1800},
     };
     try {
-      await api('/projects', {method: 'POST', body: JSON.stringify(payload)});
+      await api('/projects', {method:'POST', body:JSON.stringify(payload)});
       event.target.closest('dialog')?.close?.();
       event.target.reset();
       toast('Projeto conectado');
       state.projects = [];
       await loadProjects();
       await loadDashboard();
-    } catch (error) {
-      toast(error.message);
-    }
-  };
-
-  const taskForm = $('#task-form');
-
-  if (taskForm) taskForm.onsubmit = async event => {
-    event.preventDefault();
-
-    /*
-     * Impede clique duplo / tarefas duplicadas.
-     */
-    if (taskForm.dataset.submitting === '1') {
-      return;
-    }
-
-    const form = new FormData(event.target);
-
-    const projectId =
-      String(form.get('project_id') || '').trim();
-
-    const title =
-      String(form.get('title') || '').trim();
-
-    const prompt =
-      String(form.get('prompt') || '').trim();
-
-    if (!projectId) {
-      toast('Selecione um projeto');
-      $('#task-project')?.focus?.();
-      return;
-    }
-
-    if (!title) {
-      toast('Informe o título da tarefa');
-      event.target
-        .querySelector('[name="title"]')
-        ?.focus?.();
-      return;
-    }
-
-    if (!prompt) {
-      toast('Informe o contexto da tarefa');
-      $('#task-context')?.focus?.();
-      return;
-    }
-
-    const submit =
-      event.target.querySelector(
-        '#task-submit, [type="submit"]'
-      );
-
-    const originalSubmitText =
-      submit?.textContent || 'Registrar tarefa';
-
-    taskForm.dataset.submitting = '1';
-
-    if (submit) {
-      submit.disabled = true;
-      submit.setAttribute('aria-busy', 'true');
-      submit.textContent = 'Registrando…';
-    }
-
-    const modal = event.target.closest('dialog');
-
-    const payload = {
-      project_id: projectId,
-      title,
-      prompt,
-      priority: Number(
-        form.get('priority') || 50
-      ),
-      requires_approval:
-        form.get('requires_approval') === 'on',
-      source:
-        modal?.dataset.taskSource ||
-        'dashboard',
-    };
-
-    try {
-      await api('/tasks', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-
-      /*
-       * Retorno visual IMEDIATO.
-       * Dashboard/tabela não bloqueiam o submit.
-       */
-      modal?.close?.();
-
-      event.target.reset();
-
-      toast('Tarefa registrada');
-
-
-      /*
-       * Atualizações secundárias entram depois.
-       */
-      const refresh = async () => {
-        try {
-          await loadDashboard();
-
-          if (
-            $('#tasks-view')
-              ?.classList
-              .contains('active')
-          ) {
-            await loadAllTasks(true, 8);
-          }
-        } catch (error) {
-          console.warn(
-            '[DevPilot] atualização pós-tarefa',
-            error
-          );
-        }
-      };
-
-
-      if ('requestIdleCallback' in window) {
-        window.requestIdleCallback(
-          () => void refresh(),
-          {timeout: 1300}
-        );
-      } else {
-        window.setTimeout(
-          () => void refresh(),
-          120
-        );
-      }
-
-    } catch (error) {
-
-      toast(
-        error.message ||
-        'Não foi possível registrar a tarefa'
-      );
-
-    } finally {
-
-      delete taskForm.dataset.submitting;
-
-      if (submit) {
-        submit.disabled = false;
-        submit.removeAttribute('aria-busy');
-
-        if (
-          submit.textContent === 'Registrando…'
-        ) {
-          submit.textContent =
-            originalSubmitText;
-        }
-      }
-    }
-  };
-
-  const providerForm = $('#provider-form');
-  if (providerForm) providerForm.onsubmit = async event => {
-    event.preventDefault();
-    const form = new FormData(event.target);
-    const payload = {
-      provider: form.get('provider'), label: form.get('label'), api_key: form.get('api_key'),
-      models: String(form.get('models') || '').split(',').map(item => item.trim()).filter(Boolean),
-    };
-    try {
-      await api('/providers', {method: 'POST', body: JSON.stringify(payload)});
-      event.target.closest('dialog')?.close?.();
-      event.target.reset();
-      toast('Conexão protegida e salva');
-      await loadProviders();
     } catch (error) {
       toast(error.message);
     }
@@ -1020,7 +656,7 @@ function bindCoreControls() {
     const projectId = $('#voice-project')?.value || '';
     if (!transcript) return toast('Fale ou digite um comando');
     try {
-      const data = await api('/voice/commands', {method: 'POST', body: JSON.stringify({transcript, project_id: projectId})});
+      const data = await api('/voice/commands', {method:'POST', body:JSON.stringify({transcript, project_id:projectId})});
       $('#voice-modal')?.close?.();
       toast(data.message);
       if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
@@ -1033,42 +669,18 @@ function bindCoreControls() {
   };
 }
 
-
-/* devpilot-task-project-delegation */
 document.addEventListener('click', event => {
-  const trigger =
-    event.target.closest?.('[data-project-task]');
-
-  if (!trigger) return;
-
-  /*
-   * Se renderProjects já associou onclick,
-   * ele é o dono e não duplicamos a ação.
-   */
-  if (typeof trigger.onclick === 'function') {
-    return;
-  }
-
+  const trigger = event.target.closest?.('[data-project-task]');
+  if (!trigger || typeof trigger.onclick === 'function') return;
   event.preventDefault();
-
-  window.devpilotOpenTaskModal?.({
-    projectId:
-      trigger.dataset.projectTask || '',
-    source: 'project',
-  });
+  window.devpilotOpenTaskModal?.({projectId:trigger.dataset.projectTask || '', source:'project'});
 });
 
-
 bindCoreControls();
-
-window.setTimeout(
-  prewarmTaskModal,
-  250
-);
 if (state.token) void loadDashboard();
 else $('#auth-modal')?.showModal?.();
 
-/* Navegação mobile sem observers de atributos. */
+/* Navegação mobile base sem observers de atributos. */
 (() => {
   const sidebar = document.querySelector('.sidebar');
   const nav = sidebar?.querySelector('nav');
@@ -1108,11 +720,12 @@ else $('#auth-modal')?.showModal?.();
   previous.addEventListener('click', () => move(-1));
   next.addEventListener('click', () => move(1));
   nav.addEventListener('click', () => requestAnimationFrame(sync));
-  window.addEventListener('resize', sync, {passive: true});
+  window.addEventListener('resize', sync, {passive:true});
   document.addEventListener('devpilot:feature-ready', () => requestAnimationFrame(sync));
   sync();
 })();
-/* DevPilot lightweight development controls · 20260830 */
+
+/* Controles leves de Execuções: recursos opcionais continuam no feature-loader. */
 (() => {
   'use strict';
 
@@ -1127,7 +740,6 @@ else $('#auth-modal')?.showModal?.();
         more.disabled = true;
         const old = more.textContent;
         more.textContent = 'Carregando…';
-
         try {
           await loadAllTasks(true, 20);
         } finally {
@@ -1137,127 +749,31 @@ else $('#auth-modal')?.showModal?.();
       });
     }
 
-    if (
-      analytics &&
-      target &&
-      analytics.dataset.bound !== '1'
-    ) {
+    if (analytics && target && analytics.dataset.bound !== '1') {
       analytics.dataset.bound = '1';
-
       analytics.addEventListener('click', async () => {
         const opening = target.hidden;
         target.hidden = !opening;
-
         if (!opening) {
-          analytics.textContent = 'Gráficos';
+          analytics.textContent = 'Indicadores';
           return;
         }
-
         analytics.disabled = true;
+        analytics.setAttribute('aria-busy', 'true');
         analytics.textContent = 'Carregando…';
-
         try {
           await window.__devpilotLoadFeature?.('tasksAnalytics');
           window.renderTaskAnalytics?.();
-          analytics.textContent = 'Ocultar gráficos';
+          analytics.textContent = 'Ocultar indicadores';
         } finally {
           analytics.disabled = false;
+          analytics.removeAttribute('aria-busy');
         }
       });
     }
   };
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bind, {once:true});
-  } else {
-    bind();
-  }
-
-  document.addEventListener(
-    'devpilot:authenticated-ui-ready',
-    bind
-  );
-})();
-
-
-/* DevPilot Tasks Operational V9 loader */
-(() => {
-  'use strict';
-
-  let loading = false;
-
-  function loadTasksOperationalV9() {
-    if (
-      window.__devpilotTasksOperationalV9 ||
-      loading
-    ) {
-      return;
-    }
-
-    loading = true;
-
-    const script =
-      document.createElement('script');
-
-    script.src =
-      '/assets/tasks-operational-ui.js?v=20260830-1';
-
-    script.async = true;
-    script.dataset.tasksOperationalV9 = '1';
-
-    script.onload = () => {
-      loading = false;
-    };
-
-    script.onerror = () => {
-      loading = false;
-
-      console.error(
-        '[DevPilot] Falha ao carregar painel operacional de tarefas'
-      );
-    };
-
-    document.head.appendChild(script);
-  }
-
-  /*
-   * Capture roda antes dos enriquecedores opcionais.
-   * A navegação normal continua sem bloqueio.
-   */
-  document.addEventListener(
-    'click',
-    event => {
-      if (
-        event.target.closest?.(
-          '[data-view="tasks"]'
-        )
-      ) {
-        window.setTimeout(
-          loadTasksOperationalV9,
-          0
-        );
-      }
-    },
-    true
-  );
-
-  document.addEventListener(
-    'devpilot:view-changed',
-    event => {
-      if (
-        event.detail?.view === 'tasks' ||
-        event.detail === 'tasks'
-      ) {
-        loadTasksOperationalV9();
-      }
-    }
-  );
-
-  if (
-    document.querySelector(
-      '#tasks-view.active'
-    )
-  ) {
-    loadTasksOperationalV9();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind, {once:true});
+  else bind();
+  document.addEventListener('devpilot:authenticated-ui-ready', bind);
 })();
