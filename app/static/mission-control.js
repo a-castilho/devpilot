@@ -102,9 +102,9 @@
 
       <div class="mc-sector-grid">
         <article class="mc-sector"><span class="mc-sector-icon">⌖</span><div><small>NAVEGAÇÃO</small><strong id="mc-sector-navigation">—</strong><span>projetos conectados</span></div></article>
-        <article class="mc-sector"><span class="mc-sector-icon">⚙</span><div><small>ENGENHARIA</small><strong id="mc-sector-engineering">—</strong><span>tarefas em andamento</span></div></article>
+        <article class="mc-sector"><span class="mc-sector-icon">⚙</span><div><small>ENGENHARIA</small><strong id="mc-sector-engineering">—</strong><span>execuções em andamento</span></div></article>
         <article class="mc-sector"><span class="mc-sector-icon">◈</span><div><small>IA DE BORDO</small><strong id="mc-sector-ai">—</strong><span>conexões ativas</span></div></article>
-        <article class="mc-sector"><span class="mc-sector-icon">✓</span><div><small>HANGAR</small><strong id="mc-sector-hangar">—</strong><span>tarefas concluídas</span></div></article>
+        <article class="mc-sector"><span class="mc-sector-icon">✓</span><div><small>HANGAR</small><strong id="mc-sector-hangar">—</strong><span>execuções concluídas</span></div></article>
       </div>
 
       <div class="mc-main-grid">
@@ -113,7 +113,7 @@
           <div id="mc-fleet" class="mc-fleet"></div>
         </article>
         <article class="mc-module">
-          <div class="mc-module-title"><div><span class="mc-kicker">MISSÕES RECENTES</span><h3>Fluxo operacional</h3></div><button type="button" data-mc-action="tasks">Ver tarefas</button></div>
+          <div class="mc-module-title"><div><span class="mc-kicker">MISSÕES RECENTES</span><h3>Fluxo operacional</h3></div><button type="button" data-mc-action="tasks">Ver execuções</button></div>
           <div id="mc-task-feed" class="mc-task-feed"></div>
         </article>
       </div>
@@ -146,7 +146,7 @@
     const recentPending = (current.tasks || []).filter(task => String(task.status).toLowerCase() === 'awaiting_approval').length;
     const values = [
       ['PROJETOS', overview?.projects ?? (current.projects || []).length],
-      ['TAREFAS', overview?.tasks ?? '—'],
+      ['EXECUÇÕES', overview?.tasks ?? '—'],
       ['EM ANDAMENTO', overview?.active ?? '—'],
       ['CONCLUÍDAS', overview?.completed ?? '—'],
       ['APROVAÇÕES RECENTES', recentPending],
@@ -172,7 +172,7 @@
             <small>${escapeHtml(statusLabel(project.status)).toUpperCase()}</small>
             <strong>${escapeHtml(project.name)}</strong>
             <em>${escapeHtml(repo)}</em>
-            <span>branch ${escapeHtml(project.default_branch || '—')} · ${projectTaskCount(project.id)} tarefa(s) carregada(s)</span>
+            <span>branch ${escapeHtml(project.default_branch || '—')} · ${projectTaskCount(project.id)} execução(ões) carregada(s)</span>
           </span>
           <i class="mc-status-light ${tone}" aria-label="${escapeHtml(statusLabel(project.status))}"></i>
         </button>`;
@@ -212,7 +212,7 @@
       const value = Number(raw);
       if (!label || !Number.isFinite(value)) return;
       if (label === 'projetos') values.projects = value;
-      if (label === 'tarefas') values.tasks = value;
+      if (label === 'tarefas' || label === 'execuções') values.tasks = value;
       if (label === 'em andamento') values.active = value;
       if (label === 'concluídas') values.completed = value;
     });
@@ -251,14 +251,14 @@
 
     if (status) status.textContent = authenticated ? 'SESSÃO CONECTADA' : 'CONEXÃO NECESSÁRIA';
     if (detail) detail.textContent = authenticated
-      ? `${projects.length} projeto(s) carregado(s) · ${tasks.length} tarefa(s) recente(s) disponíveis no painel.`
+      ? `${projects.length} projeto(s) carregado(s) · ${tasks.length} execução(ões) recente(s) disponíveis no painel.`
       : 'Autentique-se para carregar os dados operacionais da nave.';
     if (missionSummary) missionSummary.textContent = projects.length
       ? `Frota carregada com ${projects.length} projeto(s). Selecione uma missão ou abra um setor.`
       : 'Conecte um projeto para iniciar a primeira missão.';
-    if (radarTitle) radarTitle.textContent = pending ? `${pending} aprovação(ões) recente(s)` : `${active || 0} tarefa(s) em andamento`;
+    if (radarTitle) radarTitle.textContent = pending ? `${pending} aprovação(ões) recente(s)` : `${active || 0} execução(ões) em andamento`;
     if (radarDetail) radarDetail.textContent = pending
-      ? 'Há tarefas recentes aguardando autorização.'
+      ? 'Há execuções recentes aguardando autorização.'
       : 'Radar calculado a partir dos dados atualmente carregados.';
   };
 
@@ -296,17 +296,69 @@
     }
   };
 
+  const openProfessionalView = (view, projectId = '') => {
+    setMode(MODE_PROFESSIONAL, true);
+
+    const nav = document.querySelector(`.sidebar .nav[data-view="${view}"]`);
+    if (nav) {
+      /*
+       * Use o clique real do menu. O feature-loader escuta esse evento e
+       * carrega o bundle específico (ex.: project-ships.js) antes/depois da
+       * navegação, mantendo o ciclo oficial do frontend.
+       */
+      nav.click();
+    } else if (typeof showView === 'function') {
+      showView(view);
+    }
+
+    if (view === 'projects') {
+      document.documentElement.dataset.devpilotFleetOpen = '1';
+      document.documentElement.dataset.devpilotFleetProject = String(projectId || '');
+
+      window.setTimeout(() => {
+        const viewNode = document.querySelector('#projects-view');
+        viewNode?.scrollIntoView?.({behavior: 'smooth', block: 'start'});
+        document.dispatchEvent(new CustomEvent('devpilot:fleet-opened', {
+          detail: {projectId: String(projectId || '')},
+        }));
+      }, 120);
+    }
+  };
+
   const bindActions = () => {
     document.addEventListener('click', event => {
       const action = event.target.closest('[data-mc-action]');
       if (action) {
         const name = action.dataset.mcAction;
-        if (name === 'new-task') document.querySelector('#task-modal')?.showModal();
-        if (name === 'projects' && typeof showView === 'function') showView('projects');
-        if (name === 'tasks' && typeof showView === 'function') showView('tasks');
+
+        if (name === 'new-task') {
+          event.preventDefault();
+          if (typeof window.devpilotOpenTaskModal === 'function') {
+            window.devpilotOpenTaskModal({source: 'mission-control'});
+          } else {
+            document.querySelector('[data-open="task-modal"]')?.click();
+          }
+          return;
+        }
+
+        if (name === 'projects') {
+          event.preventDefault();
+          openProfessionalView('projects');
+          return;
+        }
+
+        if (name === 'tasks') {
+          event.preventDefault();
+          openProfessionalView('tasks');
+          return;
+        }
       }
+
       const project = event.target.closest('[data-mc-project]');
-      if (project && typeof showView === 'function') showView('projects');
+      if (project) {
+        event.preventDefault();
+        openProfessionalView('projects', project.dataset.mcProject || '');
+      }
     });
   };
 
