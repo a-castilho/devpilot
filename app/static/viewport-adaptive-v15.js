@@ -111,7 +111,11 @@
 
     const script = document.createElement('script');
     script.src = src;
-    script.async = true;
+    /*
+     * Runtimes de correção têm dependências entre si. Execução fora de ordem
+     * reintroduziu regressões em modal, navegação e nomenclatura.
+     */
+    script.async = false;
     script.dataset[datasetKey] = '1';
     document.head.appendChild(script);
   }
@@ -157,7 +161,7 @@
   function loadExecutionsV18() {
     ensureScript(
       'script[data-executions-v18]',
-      '/assets/executions-v18.js?v=20260830-1',
+      '/assets/executions-v18.js?v=20260830-2',
       'executionsV18'
     );
   }
@@ -186,14 +190,6 @@
     );
   }
 
-  function loadExecutionsSubmitV27() {
-    ensureScript(
-      'script[data-executions-submit-v27]',
-      '/assets/executions-submit-v27.js?v=20260830-1',
-      'executionsSubmitV27'
-    );
-  }
-
   function loadExecutionResultsV28() {
     ensureScript(
       'script[data-execution-results-v28]',
@@ -215,7 +211,6 @@
   loadExecutionsFocusV19();
   loadDashboardUserV21();
   loadPageNavigationV26();
-  loadExecutionsSubmitV27();
   loadExecutionResultsV28();
   loadExecutionsSubmitV29();
   apply();
