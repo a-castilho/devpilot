@@ -1,5 +1,35 @@
 (() => {
   'use strict';
+
+  const TOKEN_KEY = 'devpilot-token';
+
+  function tokenExpired(token) {
+    try {
+      const parts = String(token || '').split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(
+        decodeURIComponent(
+          atob(parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '='))
+            .split('')
+            .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+            .join('')
+        )
+      );
+      const exp = Number(payload?.exp || 0);
+      if (!Number.isFinite(exp) || exp <= 0) return true;
+      return exp <= Math.floor(Date.now() / 1000) + 5;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  const storedToken = String(localStorage.getItem(TOKEN_KEY) || '').trim();
+  if (storedToken && tokenExpired(storedToken)) {
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.setItem('devpilot-auth-message', 'Sua sessão expirou. Entre novamente.');
+    document.documentElement.dataset.devpilotExpiredSessionCleared = '1';
+  }
+
   if (document.getElementById('acs-homolog-loader')) return;
 
   const stylesheetId = 'acs-homolog-loader-css';
