@@ -63,6 +63,10 @@
       'task-modal.js',
     ],
 
+    gameWeapons: [
+      'game-weapons.js',
+    ],
+
     /*
      * Desenvolvimento pertence ao app.js.
      *
@@ -467,9 +471,6 @@
   const TRIGGERS = [
     ['[data-project-builder-open]', 'projectBuilder'],
     ['[data-example-project]', 'example'],
-
-    ['[data-open="task-modal"]', 'taskModal'],
-    ['[data-project-task]', 'taskModal'],
 
     ['.nav[data-view="organizations"]', 'organizations'],
     ['.nav[data-view="projects"]', 'projects'],

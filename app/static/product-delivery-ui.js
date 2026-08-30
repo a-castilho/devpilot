@@ -220,5 +220,23 @@
     install();
   }
   window.setTimeout(install, 800);
-  window.setInterval(renderCards, 15000);
+  const refreshVisibleProjects = () => {
+    if (document.hidden) return;
+
+    if (!document.querySelector('#projects-view.active')) {
+      return;
+    }
+
+    renderCards();
+  };
+
+  document.addEventListener(
+    'visibilitychange',
+    refreshVisibleProjects
+  );
+
+  window.setInterval(
+    refreshVisibleProjects,
+    30000
+  );
 })();
