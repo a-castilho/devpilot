@@ -12,133 +12,24 @@
     const style = document.createElement('style');
     style.id = 'devpilot-dashboard-user-v21-style';
     style.textContent = `
-      #overview-view.dp-dashboard-v21 {
-        display:grid!important;
-        gap:14px!important;
-        width:100%!important;
-        max-width:100%!important;
-        min-width:0!important;
-        padding:0 0 28px!important;
-      }
-
-      #overview-view .dp-v21-topbar {
-        display:flex;
-        align-items:center;
-        justify-content:space-between;
-        gap:12px;
-        min-height:46px;
-        padding:10px 14px;
-        border:1px solid rgba(59,226,207,.22);
-        border-radius:14px;
-        background:linear-gradient(90deg,rgba(21,75,83,.30),rgba(7,22,36,.74));
-      }
-      #overview-view .dp-v21-topbar-copy{min-width:0}
-      #overview-view .dp-v21-topbar small{display:block;color:#59ddcf;font-size:9px;font-weight:900;letter-spacing:.09em}
-      #overview-view .dp-v21-topbar strong{display:block;margin-top:2px;color:#e8f7f4;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-      #overview-view .dp-v21-live{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;padding:7px 10px;border-radius:999px;color:#8fe9da;background:rgba(53,229,209,.07);font-size:10px;font-weight:800}
-      #overview-view .dp-v21-live::before{content:'';width:7px;height:7px;border-radius:50%;background:#50dcb9;box-shadow:0 0 13px rgba(80,220,185,.72)}
-
-      #overview-view .command-center {
-        display:grid!important;
-        grid-template-columns:minmax(0,1.55fr) minmax(290px,.75fr)!important;
-        gap:14px!important;
-        align-items:stretch!important;
-        padding:22px!important;
-        border-radius:22px!important;
-        border:1px solid rgba(76,156,197,.25)!important;
-        background:
-          linear-gradient(120deg,rgba(8,34,49,.98),rgba(7,22,37,.98) 58%,rgba(11,29,45,.98))!important;
-        box-shadow:0 18px 55px rgba(0,0,0,.24)!important;
-      }
-      #overview-view .command-center-copy h2{font-size:clamp(30px,3.3vw,48px)!important;max-width:780px!important;letter-spacing:-.04em!important}
-      #overview-view .command-center-copy>p{font-size:14px!important;max-width:720px!important;color:#96aebe!important}
-      #overview-view .command-center-copy>.eyebrow{color:#65e3d5!important}
-      #overview-view .attention-card{align-self:stretch!important;min-height:100%!important;border-radius:17px!important;background:linear-gradient(145deg,rgba(14,38,53,.92),rgba(5,19,30,.96))!important}
-      #overview-view .attention-card.danger{background:linear-gradient(145deg,rgba(58,23,31,.85),rgba(8,19,30,.97))!important}
-      #overview-view .attention-card.warning{background:linear-gradient(145deg,rgba(62,48,17,.55),rgba(8,20,30,.97))!important}
-
-      #overview-view .overview-metrics{
-        display:grid!important;
-        grid-template-columns:repeat(4,minmax(0,1fr))!important;
-        gap:10px!important;
-      }
-      #overview-view .overview-metric{
-        position:relative!important;
-        min-height:116px!important;
-        padding:16px 17px 15px 20px!important;
-        border-radius:16px!important;
-        background:linear-gradient(150deg,rgba(13,33,50,.98),rgba(6,20,33,.98))!important;
-      }
-      #overview-view .overview-metric::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:999px;background:#42d9c7;box-shadow:0 0 15px rgba(66,217,199,.30)}
-      #overview-view .overview-metric.approval::before{background:#f0c258}
-      #overview-view .overview-metric.completed::before{background:#56d6a9}
-      #overview-view .overview-metric.active::before{background:#52aef4}
-      #overview-view .overview-metric>strong{font-size:clamp(30px,3.1vw,43px)!important}
-
-      #overview-view .operations-strip{
-        display:grid!important;
-        grid-template-columns:minmax(210px,.55fr) minmax(0,1.45fr)!important;
-        grid-template-areas:'head progress' 'breakdown breakdown';
-        align-items:center!important;
-        gap:10px 16px!important;
-        padding:14px 16px!important;
-        border-radius:16px!important;
-      }
-      #overview-view .operation-heading{grid-area:head!important;align-items:center!important}
-      #overview-view .progress-track{grid-area:progress!important;height:9px!important}
-      #overview-view .status-breakdown{grid-area:breakdown!important}
-
-      #overview-view .overview-grid{
-        display:grid!important;
-        grid-template-columns:minmax(0,1.7fr) minmax(250px,.6fr)!important;
-        gap:12px!important;
-      }
-      #overview-view .activity-panel{padding:16px!important}
-      #overview-view .quick-panel{padding:16px!important;position:sticky;top:12px}
-      #overview-view .panel-title h3{font-size:18px!important}
-      #overview-view #recent-tasks{gap:7px!important}
-      #overview-view .recent-task{
-        min-height:60px!important;
-        grid-template-columns:11px minmax(0,1fr) auto!important;
-        padding:10px 12px!important;
-        border-color:rgba(92,139,170,.08)!important;
-        background:rgba(255,255,255,.021)!important;
-      }
-      #overview-view .recent-task:hover{border-color:rgba(65,222,203,.25)!important;background:rgba(55,214,194,.055)!important}
-      #overview-view .task-copy strong{font-size:13px!important}
-      #overview-view .task-copy small{font-size:10px!important}
-      #overview-view .quick-grid{gap:8px!important}
-      #overview-view .quick-action{min-height:59px!important;padding:9px 11px!important;border-color:rgba(91,140,173,.14)!important}
-      #overview-view .quick-action:hover{border-color:rgba(59,222,205,.27)!important;background:rgba(59,222,205,.045)!important}
-      #overview-view .quick-action strong{font-size:12px!important}
-      #overview-view .quick-action small{font-size:10px!important}
-
+      #overview-view.dp-dashboard-v21{display:grid!important;gap:14px!important;width:100%!important;max-width:100%!important;min-width:0!important;padding:0 0 28px!important}
+      #overview-view .dp-v21-topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:46px;padding:10px 14px;border:1px solid rgba(59,226,207,.22);border-radius:14px;background:linear-gradient(90deg,rgba(21,75,83,.30),rgba(7,22,36,.74))}
+      #overview-view .dp-v21-topbar-copy{min-width:0}#overview-view .dp-v21-topbar small{display:block;color:#59ddcf;font-size:9px;font-weight:900;letter-spacing:.09em}#overview-view .dp-v21-topbar strong{display:block;margin-top:2px;color:#e8f7f4;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #overview-view .dp-v21-live{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;padding:7px 10px;border-radius:999px;color:#8fe9da;background:rgba(53,229,209,.07);font-size:10px;font-weight:800}#overview-view .dp-v21-live::before{content:'';width:7px;height:7px;border-radius:50%;background:#50dcb9;box-shadow:0 0 13px rgba(80,220,185,.72)}
+      #overview-view .command-center{display:grid!important;grid-template-columns:minmax(0,1.55fr) minmax(290px,.75fr)!important;gap:14px!important;align-items:stretch!important;padding:22px!important;border-radius:22px!important;border:1px solid rgba(76,156,197,.25)!important;background:linear-gradient(120deg,rgba(8,34,49,.98),rgba(7,22,37,.98) 58%,rgba(11,29,45,.98))!important;box-shadow:0 18px 55px rgba(0,0,0,.24)!important}
+      #overview-view .command-center-copy h2{font-size:clamp(30px,3.3vw,48px)!important;max-width:780px!important;letter-spacing:-.04em!important}#overview-view .command-center-copy>p{font-size:14px!important;max-width:720px!important;color:#96aebe!important}#overview-view .command-center-copy>.eyebrow{color:#65e3d5!important}
+      #overview-view .attention-card{align-self:stretch!important;min-height:100%!important;border-radius:17px!important;background:linear-gradient(145deg,rgba(14,38,53,.92),rgba(5,19,30,.96))!important}#overview-view .attention-card.danger{background:linear-gradient(145deg,rgba(58,23,31,.85),rgba(8,19,30,.97))!important}#overview-view .attention-card.warning{background:linear-gradient(145deg,rgba(62,48,17,.55),rgba(8,20,30,.97))!important}
+      #overview-view .overview-metrics{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:10px!important}
+      #overview-view .overview-metric{position:relative!important;min-height:116px!important;padding:16px 17px 15px 20px!important;border-radius:16px!important;background:linear-gradient(150deg,rgba(13,33,50,.98),rgba(6,20,33,.98))!important}
+      #overview-view .overview-metric::before{content:'';position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:999px;background:#42d9c7;box-shadow:0 0 15px rgba(66,217,199,.30)}#overview-view .overview-metric.approval::before{background:#f0c258}#overview-view .overview-metric.completed::before{background:#56d6a9}#overview-view .overview-metric.active::before{background:#52aef4}#overview-view .overview-metric>strong{font-size:clamp(30px,3.1vw,43px)!important}
+      #overview-view .operations-strip{display:grid!important;grid-template-columns:minmax(210px,.55fr) minmax(0,1.45fr)!important;grid-template-areas:'head progress' 'breakdown breakdown';align-items:center!important;gap:10px 16px!important;padding:14px 16px!important;border-radius:16px!important}#overview-view .operation-heading{grid-area:head!important;align-items:center!important}#overview-view .progress-track{grid-area:progress!important;height:9px!important}#overview-view .status-breakdown{grid-area:breakdown!important}
+      #overview-view .overview-grid{display:grid!important;grid-template-columns:minmax(0,1.7fr) minmax(250px,.6fr)!important;gap:12px!important}#overview-view .activity-panel{padding:16px!important}#overview-view .quick-panel{padding:16px!important;position:sticky;top:12px}#overview-view .panel-title h3{font-size:18px!important}#overview-view #recent-tasks{gap:7px!important}
+      #overview-view .recent-task{min-height:60px!important;grid-template-columns:11px minmax(0,1fr) auto!important;padding:10px 12px!important;border-color:rgba(92,139,170,.08)!important;background:rgba(255,255,255,.021)!important}#overview-view .recent-task:hover{border-color:rgba(65,222,203,.25)!important;background:rgba(55,214,194,.055)!important}#overview-view .task-copy strong{font-size:13px!important}#overview-view .task-copy small{font-size:10px!important}
+      #overview-view .quick-grid{gap:8px!important}#overview-view .quick-action{min-height:59px!important;padding:9px 11px!important;border-color:rgba(91,140,173,.14)!important}#overview-view .quick-action:hover{border-color:rgba(59,222,205,.27)!important;background:rgba(59,222,205,.045)!important}#overview-view .quick-action strong{font-size:12px!important}#overview-view .quick-action small{font-size:10px!important}
       #overview-view .system-overview{min-height:50px!important;border-radius:13px!important;background:rgba(5,16,28,.76)!important}
-
-      @media(max-width:1100px){
-        #overview-view .command-center{grid-template-columns:minmax(0,1fr) minmax(250px,.7fr)!important}
-        #overview-view .overview-grid{grid-template-columns:minmax(0,1fr) minmax(230px,.58fr)!important}
-      }
-      @media(max-width:900px){
-        #overview-view .dp-v21-topbar{margin:0 2px}
-        #overview-view .command-center{grid-template-columns:minmax(0,1fr)!important;padding:15px!important}
-        #overview-view .attention-card{min-height:auto!important}
-        #overview-view .overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-        #overview-view .operations-strip{grid-template-columns:minmax(0,1fr)!important;grid-template-areas:'head' 'progress' 'breakdown'!important}
-        #overview-view .status-breakdown{grid-template-columns:repeat(2,minmax(0,1fr))!important}
-        #overview-view .overview-grid{grid-template-columns:minmax(0,1fr)!important}
-        #overview-view .quick-panel{position:static!important}
-      }
-      @media(max-width:520px){
-        #overview-view .dp-v21-topbar{align-items:flex-start;padding:10px 11px}
-        #overview-view .dp-v21-live{font-size:9px;padding:6px 8px}
-        #overview-view .command-center-copy h2{font-size:29px!important}
-        #overview-view .overview-metric{min-height:104px!important;padding:13px 13px 12px 17px!important}
-        #overview-view .overview-metric>strong{font-size:30px!important}
-        #overview-view .status-breakdown{grid-template-columns:minmax(0,1fr)!important}
-        #overview-view .recent-task{grid-template-columns:9px minmax(0,1fr)!important}
-        #overview-view .recent-task>.status{grid-column:2;justify-self:start}
-      }
+      @media(max-width:1100px){#overview-view .command-center{grid-template-columns:minmax(0,1fr) minmax(250px,.7fr)!important}#overview-view .overview-grid{grid-template-columns:minmax(0,1fr) minmax(230px,.58fr)!important}}
+      @media(max-width:900px){#overview-view .dp-v21-topbar{margin:0 2px}#overview-view .command-center{grid-template-columns:minmax(0,1fr)!important;padding:15px!important}#overview-view .attention-card{min-height:auto!important}#overview-view .overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))!important}#overview-view .operations-strip{grid-template-columns:minmax(0,1fr)!important;grid-template-areas:'head' 'progress' 'breakdown'!important}#overview-view .status-breakdown{grid-template-columns:repeat(2,minmax(0,1fr))!important}#overview-view .overview-grid{grid-template-columns:minmax(0,1fr)!important}#overview-view .quick-panel{position:static!important}}
+      @media(max-width:520px){#overview-view .dp-v21-topbar{align-items:flex-start;padding:10px 11px}#overview-view .dp-v21-live{font-size:9px;padding:6px 8px}#overview-view .command-center-copy h2{font-size:29px!important}#overview-view .overview-metric{min-height:104px!important;padding:13px 13px 12px 17px!important}#overview-view .overview-metric>strong{font-size:30px!important}#overview-view .status-breakdown{grid-template-columns:minmax(0,1fr)!important}#overview-view .recent-task{grid-template-columns:9px minmax(0,1fr)!important}#overview-view .recent-task>.status{grid-column:2;justify-self:start}}
     `;
     document.head.appendChild(style);
   }
@@ -151,9 +42,6 @@
     view.classList.add('dp-dashboard-v21');
 
     const command = qs('.command-center', view);
-    const metrics = qs('#metrics', view);
-    const operations = qs('.operations-strip', view);
-
     const topbar = document.createElement('section');
     topbar.className = 'dp-v21-topbar';
     topbar.setAttribute('aria-label', 'Central operacional');
@@ -162,8 +50,7 @@
         <small>CENTRAL OPERACIONAL</small>
         <strong>Veja o que está acontecendo, o que precisa de você e o que acabou de mudar.</strong>
       </div>
-      <span class="dp-v21-live">Sistema ao vivo</span>
-    `;
+      <span class="dp-v21-live">Sistema ao vivo</span>`;
 
     if (command) view.insertBefore(topbar, command);
     else view.prepend(topbar);
@@ -193,25 +80,24 @@
     if (quickExecution) quickExecution.textContent = 'Execuções';
 
     injectStyles();
-
-    document.documentElement.dataset.devpilotDashboard = 'v21';
+    document.documentElement.dataset.devpilotDashboard = 'v35';
     document.dispatchEvent(new CustomEvent('devpilot:dashboard-v21-ready'));
     return true;
   }
 
-  function bootstrap(attempt = 0) {
+  function installWhenAvailable() {
     if (install()) return;
-    if (attempt < 40) window.setTimeout(() => bootstrap(attempt + 1), 100);
+    console.warn('[DevPilot] Dashboard V21 aguardará o próximo evento de lifecycle.');
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => bootstrap(), {once: true});
+    document.addEventListener('DOMContentLoaded', installWhenAvailable, {once:true});
   } else {
-    bootstrap();
+    installWhenAvailable();
   }
 
-  document.addEventListener('devpilot:dashboard-revealed', () => bootstrap());
-  document.addEventListener('devpilot:view-changed', () => {
-    if (qs('#overview-view.active')) bootstrap();
+  document.addEventListener('devpilot:dashboard-revealed', installWhenAvailable);
+  document.addEventListener('devpilot:view-changed', event => {
+    if (event.detail?.view === 'overview' || qs('#overview-view.active')) installWhenAvailable();
   });
 })();
