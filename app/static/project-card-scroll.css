@@ -53,3 +53,77 @@
 #projects-view #projects-list .project-card > p::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
+
+/*
+ * DevPilot Projects runtime guard.
+ *
+ * O layout cru não pode usar a geometria de cinco naves antes que
+ * project-ships.js tenha sido inicializado.
+ */
+@media (min-width:901px) {
+  html:not(.devpilot-project-ships-ready)
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit,minmax(250px,1fr)) !important;
+  }
+
+  html.devpilot-project-ships-ready
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(5,minmax(0,1fr)) !important;
+  }
+}
+
+/* DevPilot complete project layout guard · 2026-08-30 */
+
+#projects-view #projects-list .project-card {
+  min-width:0!important;
+}
+
+#projects-view #projects-list .project-card > code,
+#projects-view #projects-list .project-card code,
+#projects-view #projects-list .project-card a {
+  display:block;
+  min-width:0!important;
+  max-width:100%!important;
+  overflow:hidden!important;
+  text-overflow:ellipsis!important;
+  white-space:nowrap!important;
+  word-break:normal!important;
+  overflow-wrap:normal!important;
+}
+
+#projects-view #projects-list .project-card button {
+  min-width:0;
+  max-width:100%;
+}
+
+@media (min-width:901px) {
+  html:not(.devpilot-project-ships-ready)
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit,minmax(260px,1fr))!important;
+  }
+
+  html.devpilot-project-ships-ready
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(5,minmax(0,1fr))!important;
+  }
+}
+
+@media (min-width:901px) and (max-width:1180px) {
+  html.devpilot-project-ships-ready
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(3,minmax(0,1fr))!important;
+  }
+}
+
+@media (min-width:1181px) and (max-width:1450px) {
+  html.devpilot-project-ships-ready
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(4,minmax(0,1fr))!important;
+  }
+}
