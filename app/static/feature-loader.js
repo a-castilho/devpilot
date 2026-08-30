@@ -36,6 +36,37 @@
 
   const nextPaint = () => new Promise(resolve => window.requestAnimationFrame(resolve));
 
+  const shortYield = () => new Promise(resolve => {
+    if (typeof window.scheduler?.yield === 'function') {
+      Promise.resolve(window.scheduler.yield())
+        .then(resolve)
+        .catch(() => window.setTimeout(resolve, 32));
+      return;
+    }
+    window.setTimeout(resolve, 32);
+  });
+
+  const idleYield = () => new Promise(resolve => {
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(() => resolve(), {timeout: 220});
+      return;
+    }
+    window.setTimeout(resolve, 48);
+  });
+
+  const detectedMemory = Number(navigator.deviceMemory || 0);
+  const detectedCpu = Number(navigator.hardwareConcurrency || 0);
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
+  const lowPowerDevice =
+    reducedMotion ||
+    (detectedMemory > 0 && detectedMemory <= 4) ||
+    (detectedCpu > 0 && detectedCpu <= 2);
+
+  document.documentElement.classList.toggle('devpilot-low-power', lowPowerDevice);
+
+  window.__devpilotFeaturePerf = window.__devpilotFeaturePerf || [];
+
+
   function waitForExistingFeatureScript(script, name) {
     const state = script.dataset.devpilotFeatureLoadState;
     if (state === 'loaded' || script.dataset.devpilotFeatureScript !== '1') {
@@ -102,25 +133,92 @@
     });
   }
 
-  async function loadFeature(feature) {
+  async function loadFeature(feature, options = {}) {
     const files = FEATURE_BUNDLES[feature];
     if (!Array.isArray(files)) return false;
+
     const current = featureState.get(feature);
     if (current?.status === 'loaded') return true;
     if (current?.promise) return current.promise;
 
+    const intentEpoch = Number.isInteger(options.intentEpoch)
+      ? options.intentEpoch
+      : null;
+
     const promise = (async () => {
       const failures = [];
-      for (const file of files) {
+      let cancelled = false;
+      const featureStarted = performance.now();
+
+      for (let index = 0; index < files.length; index += 1) {
+        if (intentEpoch !== null && intentEpoch !== navigationEpoch) {
+          cancelled = true;
+          break;
+        }
+
+        const file = files[index];
+        const started = performance.now();
         const ok = await loadScript(file);
+
         if (!ok) failures.push(file);
+
+        window.__devpilotFeaturePerf.push({
+          feature,
+          file,
+          durationMs: Math.round(performance.now() - started),
+          ok,
+          at: Date.now(),
+        });
+
+        /*
+         * IMPORTANTE:
+         * O JS recém carregado pode executar bastante trabalho síncrono.
+         * Entregamos o thread principal ao navegador antes do próximo módulo.
+         */
         await nextPaint();
+        await shortYield();
+
+        /*
+         * Bundles maiores deixam um intervalo de idle a cada dois arquivos.
+         * Evita executar 10-15 módulos pesados na mesma interação.
+         */
+        if (index > 0 && index % 2 === 0) {
+          await idleYield();
+        }
       }
-      featureState.set(feature, {status: failures.length ? 'partial' : 'loaded', failures, promise: null});
-      document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {detail: {feature, failures}}));
-      return failures.length === 0;
+
+      const status = cancelled
+        ? 'partial'
+        : failures.length
+          ? 'partial'
+          : 'loaded';
+
+      featureState.set(feature, {
+        status,
+        failures,
+        cancelled,
+        promise: null,
+      });
+
+      document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
+        detail: {
+          feature,
+          failures,
+          cancelled,
+          durationMs: Math.round(performance.now() - featureStarted),
+        },
+      }));
+
+      return !cancelled && failures.length === 0;
     })();
-    featureState.set(feature, {status: 'loading', failures: [], promise});
+
+    featureState.set(feature, {
+      status: 'loading',
+      failures: [],
+      cancelled: false,
+      promise,
+    });
+
     return promise;
   }
 
@@ -198,7 +296,7 @@
     button.setAttribute('aria-busy', 'true');
     button.textContent = `${original} · carregando…`;
     try {
-      const ok = await loadFeature(feature);
+      const ok = await loadFeature(feature, {intentEpoch});
       if (intentEpoch !== navigationEpoch) return restorePlaceholder(button, original);
       if (!ok) {
         window.toast?.(`Não foi possível carregar ${original}. Tente novamente.`);
@@ -274,7 +372,7 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     trigger.setAttribute('aria-busy', 'true');
-    void loadFeature(feature).then(ok => {
+    void loadFeature(feature, {intentEpoch}).then(ok => {
       trigger.removeAttribute('aria-busy');
       if (!ok || intentEpoch !== navigationEpoch || !trigger.isConnected) return;
       trigger.dataset.devpilotFeatureReplay = '1';
