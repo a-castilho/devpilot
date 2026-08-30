@@ -71,8 +71,6 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             assert session["status"] == 200
             assert session["body"]["role"] == "SUPER_ADMIN"
 
-            # A sessão persiste no mesmo origin, mas o produto exige confirmação explícita
-            # antes de religar o runtime autenticado após um reload.
             page.reload(wait_until="domcontentloaded", timeout=20_000)
             page.wait_for_function("() => Boolean(localStorage.getItem('devpilot-token'))", timeout=10_000)
             _resume_saved_session(page)
@@ -85,7 +83,7 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
                     method: 'POST', headers,
                     body: JSON.stringify({
                       name: 'Critical Matrix E2E', slug: 'critical-matrix-e2e',
-                      description: 'Fluxo crítico de tarefas da matriz de qualidade.',
+                      description: 'Fluxo crítico de execuções da matriz de qualidade.',
                       repository_url: 'https://github.com/example/critical-matrix-e2e.git',
                       default_branch: 'main'
                     })
@@ -96,8 +94,8 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
                     method: 'POST', headers,
                     body: JSON.stringify({
                       project_id: project.id,
-                      title: 'Tarefa E2E da matriz crítica',
-                      prompt: 'Validar criação e leitura da tarefa sem executar código.',
+                      title: 'Execução E2E da matriz crítica',
+                      prompt: 'Validar criação e leitura da execução sem executar código.',
                       source: 'dashboard', priority: 80, requires_approval: false
                     })
                   });
@@ -107,7 +105,7 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
                     method: 'POST', headers,
                     body: JSON.stringify({
                       project_id: project.id,
-                      title: 'Tarefa E2E removível',
+                      title: 'Execução E2E removível',
                       prompt: 'Alterar arquivos somente depois de aprovação explícita.',
                       source: 'dashboard', priority: 70, requires_approval: true
                     })
@@ -122,32 +120,39 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             assert created["deletable"]["id"]
             assert created["deletable"]["status"] == "awaiting_approval"
 
-            # Exercise the actual task navigation and on-demand task bundle.
+            # Execuções abre sem pagar o custo de analytics.
             page.locator('.nav[data-view="tasks"]').click()
             page.wait_for_selector("#tasks-view.active", timeout=10_000)
             page.wait_for_function(
-                "() => document.querySelector('#tasks-table')?.textContent?.includes('Tarefa E2E da matriz crítica')",
+                "() => document.querySelector('#tasks-table')?.textContent?.includes('Execução E2E da matriz crítica')",
+                timeout=15_000,
+            )
+            assert page.locator('script[src*="task-analytics.js"]').count() == 0
+
+            # Analytics é estritamente lazy: somente após intenção explícita.
+            page.locator('#tasks-v9-indicators').click()
+            page.wait_for_selector('script[src*="task-analytics.js"]', state="attached", timeout=15_000)
+            page.wait_for_function(
+                "() => document.querySelector('script[src*=\"task-analytics.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
                 timeout=15_000,
             )
             assert page.locator('script[src*="task-analytics.js"]').count() == 1
+
             page.wait_for_selector('script[src*="project-delete-ui.js"]', state="attached", timeout=15_000)
             page.wait_for_function(
                 "() => document.querySelector('script[src*=\"project-delete-ui.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
                 timeout=15_000,
             )
 
-            # The active queued task must not offer the destructive action.
-            active_row = page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E da matriz crítica")
+            active_row = page.locator("#tasks-table .task-main-row", has_text="Execução E2E da matriz crítica")
             active_row.wait_for(state="visible", timeout=10_000)
             assert active_row.locator("button.delete-task").count() == 0
 
-            # The awaiting-approval task must expose the real delete button to SUPER_ADMIN.
-            deletable_row = page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E removível")
+            deletable_row = page.locator("#tasks-table .task-main-row", has_text="Execução E2E removível")
             deletable_row.wait_for(state="visible", timeout=10_000)
             delete_button = deletable_row.locator("button.delete-task")
             delete_button.wait_for(state="visible", timeout=10_000)
 
-            # Cancelling confirmation must leave both UI and persistence untouched.
             page.once("dialog", lambda dialog: dialog.dismiss())
             delete_button.click()
             assert deletable_row.is_visible()
@@ -164,7 +169,6 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             )
             assert still_present == {"status": 200, "present": True}
 
-            # Accept confirmation, observe the actual HTTP DELETE, and require 204.
             page.once("dialog", lambda dialog: dialog.accept())
             with page.expect_response(
                 lambda response: response.request.method == "DELETE"
@@ -175,7 +179,6 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             assert delete_response_info.value.status == 204
             deletable_row.wait_for(state="detached", timeout=10_000)
 
-            # Persistence: the API must no longer return the deleted task.
             persisted = page.evaluate(
                 """async ({deletedId, activeId}) => {
                   const token = localStorage.getItem('devpilot-token');
@@ -193,7 +196,6 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             )
             assert persisted == {"status": 200, "deletedPresent": False, "activePresent": True}
 
-            # Protected status: even a SUPER_ADMIN receives 409 for an active task.
             blocked_delete = page.evaluate(
                 """async taskId => {
                   const token = localStorage.getItem('devpilot-token');
@@ -207,20 +209,17 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             assert blocked_delete["status"] == 409
             assert blocked_delete["body"]["detail"] == "Active task cannot be deleted"
 
-            # Full-page reload must not resurrect the deleted task.
             page.reload(wait_until="domcontentloaded", timeout=20_000)
             _resume_saved_session(page)
             page.locator('.nav[data-view="tasks"]').click()
             page.wait_for_selector("#tasks-view.active", timeout=10_000)
             page.wait_for_function(
-                "() => document.querySelector('#tasks-table')?.textContent?.includes('Tarefa E2E da matriz crítica')",
+                "() => document.querySelector('#tasks-table')?.textContent?.includes('Execução E2E da matriz crítica')",
                 timeout=15_000,
             )
-            assert page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E removível").count() == 0
-            assert page.locator("#tasks-table .task-main-row", has_text="Tarefa E2E da matriz crítica").count() == 1
+            assert page.locator("#tasks-table .task-main-row", has_text="Execução E2E removível").count() == 0
+            assert page.locator("#tasks-table .task-main-row", has_text="Execução E2E da matriz crítica").count() == 1
 
-            # First bootstrap user is SUPER_ADMIN. Loading the placeholder must boot the
-            # admin bundle on demand and the protected API must authorize the same session.
             admin_placeholder = page.locator('[data-devpilot-feature-placeholder="admin"]')
             admin_placeholder.wait_for(state="visible", timeout=10_000)
             admin_placeholder.click()
