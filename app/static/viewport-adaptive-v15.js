@@ -198,21 +198,12 @@
     );
   }
 
-  function loadExecutionsSubmitV29() {
-    ensureScript(
-      'script[data-executions-submit-v29]',
-      '/assets/executions-submit-v29.js?v=20260830-1',
-      'executionsSubmitV29'
-    );
-  }
-
   loadCss();
   loadExecutionsV18();
   loadExecutionsFocusV19();
   loadDashboardUserV21();
   loadPageNavigationV26();
   loadExecutionResultsV28();
-  loadExecutionsSubmitV29();
   apply();
 
   window.addEventListener('resize', schedule, {passive: true});
