@@ -1178,3 +1178,86 @@ else $('#auth-modal')?.showModal?.();
     bind
   );
 })();
+
+
+/* DevPilot Tasks Operational V9 loader */
+(() => {
+  'use strict';
+
+  let loading = false;
+
+  function loadTasksOperationalV9() {
+    if (
+      window.__devpilotTasksOperationalV9 ||
+      loading
+    ) {
+      return;
+    }
+
+    loading = true;
+
+    const script =
+      document.createElement('script');
+
+    script.src =
+      '/assets/tasks-operational-ui.js?v=20260830-1';
+
+    script.async = true;
+    script.dataset.tasksOperationalV9 = '1';
+
+    script.onload = () => {
+      loading = false;
+    };
+
+    script.onerror = () => {
+      loading = false;
+
+      console.error(
+        '[DevPilot] Falha ao carregar painel operacional de tarefas'
+      );
+    };
+
+    document.head.appendChild(script);
+  }
+
+  /*
+   * Capture roda antes dos enriquecedores opcionais.
+   * A navegação normal continua sem bloqueio.
+   */
+  document.addEventListener(
+    'click',
+    event => {
+      if (
+        event.target.closest?.(
+          '[data-view="tasks"]'
+        )
+      ) {
+        window.setTimeout(
+          loadTasksOperationalV9,
+          0
+        );
+      }
+    },
+    true
+  );
+
+  document.addEventListener(
+    'devpilot:view-changed',
+    event => {
+      if (
+        event.detail?.view === 'tasks' ||
+        event.detail === 'tasks'
+      ) {
+        loadTasksOperationalV9();
+      }
+    }
+  );
+
+  if (
+    document.querySelector(
+      '#tasks-view.active'
+    )
+  ) {
+    loadTasksOperationalV9();
+  }
+})();

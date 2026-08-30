@@ -140,8 +140,37 @@ def task_summaries(
     ).where(Task.workspace_id == ws.id)
     if project_id:
         query = query.where(Task.project_id == project_id)
-    rows = db.execute(query.order_by(Task.created_at.desc()).limit(limit)).all()
-    return [_task_summary(row) for row in rows]
+    rows = db.execute(
+        query.order_by(Task.created_at.desc()).limit(limit)
+    ).all()
+
+    # A listagem operacional precisa identificar o projeto sem obrigar
+    # o navegador a baixar/reprocessar toda a tela de Projetos.
+    project_ids = {
+        row.project_id
+        for row in rows
+        if row.project_id
+    }
+
+    projects: dict[str, str] = {}
+
+    if project_ids:
+        projects = {
+            item.id: item.name
+            for item in db.scalars(
+                select(Project).where(
+                    Project.id.in_(project_ids)
+                )
+            ).all()
+        }
+
+    return [
+        _task_summary(
+            row,
+            project_name=projects.get(row.project_id, ""),
+        )
+        for row in rows
+    ]
 
 
 @router.get("/super-admin/tasks")

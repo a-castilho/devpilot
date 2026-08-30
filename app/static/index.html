@@ -26,6 +26,7 @@
   <link rel="stylesheet" href="/assets/layout-projects-v6.css?v=20260830-1">
   <link rel="stylesheet" href="/assets/layout-dashboard-v7.css?v=20260830-1">
   <link rel="stylesheet" href="/assets/layout-super-admin-v8.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/tasks-operational-v9.css?v=20260830-1">
 </head>
 <body>
   <div class="shell">
@@ -214,24 +215,90 @@
       </section>
 
       <section class="view" id="tasks-view">
-        <div class="task-operational-header">
+
+        <div class="tasks-v9-header">
           <div>
             <span class="eyebrow">DESENVOLVIMENTO</span>
             <h2>Tarefas</h2>
-            <p>Veja apenas o que precisa de atenção agora.</p>
+            <p>
+              Acompanhe somente o que exige atenção.
+              Abra os detalhes quando precisar do contexto completo.
+            </p>
           </div>
 
-          <div class="task-operational-toolbar">
-            <button class="ghost" id="tasks-load-more" type="button">
-              Ver mais
+          <div class="tasks-v9-toolbar">
+            <button
+              class="ghost"
+              id="tasks-v9-back"
+              type="button"
+            >
+              ← Voltar
             </button>
-            <button class="ghost" id="tasks-show-analytics" type="button">
-              Gráficos
+
+            <button
+              class="ghost"
+              id="tasks-v9-refresh"
+              type="button"
+            >
+              Atualizar
             </button>
-            <button class="primary" data-open="task-modal">
+
+            <button
+              class="primary"
+              data-open="task-modal"
+              type="button"
+            >
               + Nova tarefa
             </button>
           </div>
+        </div>
+
+        <div class="tasks-v9-filters">
+
+          <label class="tasks-v9-search">
+            <span>Buscar</span>
+            <input
+              id="tasks-v9-search"
+              type="search"
+              placeholder="Tarefa ou projeto"
+              autocomplete="off"
+            >
+          </label>
+
+          <label>
+            <span>Projeto</span>
+            <select id="tasks-v9-project">
+              <option value="">Todos</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Estado</span>
+            <select id="tasks-v9-status">
+              <option value="">Todos</option>
+              <option value="active">Em andamento</option>
+              <option value="attention">Precisa atenção</option>
+              <option value="completed">Concluídas</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Tipo</span>
+            <select id="tasks-v9-type">
+              <option value="">Todos</option>
+              <option value="analysis">Análise</option>
+              <option value="execution">Execução</option>
+            </select>
+          </label>
+
+          <button
+            class="ghost tasks-v9-indicators"
+            id="tasks-v9-indicators"
+            type="button"
+          >
+            Indicadores
+          </button>
+
         </div>
 
         <section
@@ -241,21 +308,42 @@
           hidden
         ></section>
 
-        <div class="panel task-operational-list table-wrap">
-          <table>
+        <div class="tasks-v9-summary">
+          <span id="tasks-v9-count">
+            Carregando tarefas…
+          </span>
+        </div>
+
+        <div class="panel tasks-v9-table-wrap">
+
+          <table class="tasks-v9-table">
             <thead>
               <tr>
                 <th>Tarefa</th>
-                <th>Origem</th>
-                <th>Status</th>
-                <th>Prioridade</th>
-                <th>Ação</th>
+                <th>Estado</th>
+                <th>Ações</th>
               </tr>
             </thead>
+
             <tbody id="tasks-table"></tbody>
           </table>
+
         </div>
+
+        <div class="tasks-v9-footer">
+
+          <button
+            class="ghost"
+            id="tasks-v9-more"
+            type="button"
+          >
+            Carregar mais
+          </button>
+
+        </div>
+
       </section>
+
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
       <section class="view" id="reports-view">
         <div class="reports-shell">
