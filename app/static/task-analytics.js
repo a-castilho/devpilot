@@ -122,24 +122,29 @@
       '</div>';
   };
 
-  const observeTasks = () => {
-    const table = document.querySelector('#tasks-table');
-    if (!table || table.dataset.analyticsObserved === '1') return;
-    table.dataset.analyticsObserved = '1';
-    let scheduled = false;
-    new MutationObserver(() => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(() => {
-        scheduled = false;
-        if (document.querySelector('#tasks-view.active')) window.renderTaskAnalytics();
-      });
-    }).observe(table, {childList:true, subtree:true, characterData:true});
+  const scheduleAnalytics = () => {
+    if (!document.querySelector('#tasks-view.active')) return;
+
+    const run = () => {
+      if (document.querySelector('#tasks-view.active')) {
+        window.renderTaskAnalytics?.();
+      }
+    };
+
+    if ('requestIdleCallback' in window) {
+      window.requestIdleCallback(run, {timeout: 500});
+    } else {
+      window.setTimeout(run, 80);
+    }
   };
 
   const boot = () => {
-    observeTasks();
-    if (document.querySelector('#tasks-view.active')) window.renderTaskAnalytics();
+    document.addEventListener(
+      'devpilot:tasks-rendered',
+      scheduleAnalytics
+    );
+
+    scheduleAnalytics();
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true});
   else boot();

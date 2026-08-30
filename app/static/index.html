@@ -19,6 +19,8 @@
   <link rel="stylesheet" href="/assets/mobile-accordion-menu.css?v=20260824-1">
   <link rel="stylesheet" href="/assets/dashboard-command-center-recovered.css?v=golden-complete-1">
   <link id="devpilot-task-development-v2" rel="stylesheet" href="/assets/task-development-v2.css?v=complete-20260830">
+  <link rel="stylesheet" href="/assets/layout-responsive-v2.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-operational-v3.css?v=20260830-1">
 </head>
 <body>
   <div class="shell">
@@ -191,7 +193,49 @@
         </form>
       </section>
 
-      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><section id="task-analytics" class="task-analytics" aria-live="polite"></section><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
+      <section class="view" id="tasks-view">
+        <div class="task-operational-header">
+          <div>
+            <span class="eyebrow">DESENVOLVIMENTO</span>
+            <h2>Tarefas</h2>
+            <p>Veja apenas o que precisa de atenção agora.</p>
+          </div>
+
+          <div class="task-operational-toolbar">
+            <button class="ghost" id="tasks-load-more" type="button">
+              Ver mais
+            </button>
+            <button class="ghost" id="tasks-show-analytics" type="button">
+              Gráficos
+            </button>
+            <button class="primary" data-open="task-modal">
+              + Nova tarefa
+            </button>
+          </div>
+        </div>
+
+        <section
+          id="task-analytics"
+          class="task-analytics"
+          aria-live="polite"
+          hidden
+        ></section>
+
+        <div class="panel task-operational-list table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Tarefa</th>
+                <th>Origem</th>
+                <th>Status</th>
+                <th>Prioridade</th>
+                <th>Ação</th>
+              </tr>
+            </thead>
+            <tbody id="tasks-table"></tbody>
+          </table>
+        </div>
+      </section>
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
       <section class="view" id="reports-view">
         <div class="reports-shell">
