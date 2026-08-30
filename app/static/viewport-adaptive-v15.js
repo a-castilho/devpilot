@@ -22,11 +22,6 @@
     const ratio = width / screenWidth;
     const dpr = Number(window.devicePixelRatio || 1);
 
-    /*
-     * Em navegadores desktop, zoom reduzido costuma ampliar a viewport CSS em
-     * relação ao tamanho de tela informado por screen.availWidth. devicePixelRatio
-     * ajuda como segundo sinal, sem ser usado sozinho em telas HiDPI.
-     */
     const zoomedOut =
       width > 900 && (
         ratio >= 1.12 ||
@@ -111,6 +106,16 @@
     document.head.appendChild(link);
   }
 
+  function ensureScript(selector, src, datasetKey) {
+    if (document.querySelector(selector)) return;
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.dataset[datasetKey] = '1';
+    document.head.appendChild(script);
+  }
+
   function loadCss() {
     ensureStylesheet(
       'link[data-layout-adaptive-v15]',
@@ -118,10 +123,6 @@
       'layoutAdaptiveV15'
     );
 
-    /*
-     * V16 é carregada depois da V15 de propósito: ela é a autoridade final
-     * sobre geometria do menu e encerra conflitos com breakpoints históricos.
-     */
     ensureStylesheet(
       'link[data-sidebar-responsive-v16]',
       '/assets/sidebar-responsive-v16.css?v=20260830-1',
@@ -129,7 +130,16 @@
     );
   }
 
+  function loadExecutionsV18() {
+    ensureScript(
+      'script[data-executions-v18]',
+      '/assets/executions-v18.js?v=20260830-1',
+      'executionsV18'
+    );
+  }
+
   loadCss();
+  loadExecutionsV18();
   apply();
 
   window.addEventListener('resize', schedule, {passive: true});
