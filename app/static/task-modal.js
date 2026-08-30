@@ -13,12 +13,6 @@
   if (window.__devpilotCanonicalExecutionSubmitV34) return;
   window.__devpilotCanonicalExecutionSubmitV34 = true;
 
-  /*
-   * app.js é carregado antes deste módulo e historicamente instalava
-   * taskForm.onsubmit. Nova execução reutiliza o mesmo contrato /api/tasks,
-   * portanto deve existir um único dono do submit. Removemos apenas o handler
-   * legado do mesmo formulário; os demais controles do app.js permanecem.
-   */
   form.onsubmit = null;
   delete form.dataset.submitting;
 
@@ -168,10 +162,20 @@
     form.noValidate = true;
     form.setAttribute('novalidate', 'novalidate');
     form.querySelectorAll('[required]').forEach(field => field.removeAttribute('required'));
-    const title = form.querySelector('[name="title"]');
-    if (title) title.placeholder = 'Opcional · o DevPilot gera pelo contexto';
+
+    const titleInput = form.querySelector('[name="title"]');
+    if (titleInput) titleInput.placeholder = 'Opcional · o DevPilot gera pelo contexto';
+
     const eyebrow = form.querySelector('.task-modal-heading .eyebrow');
     if (eyebrow) eyebrow.textContent = 'NOVA EXECUÇÃO';
+
+    const modal = form.closest('dialog');
+    const heading = form.querySelector('.task-modal-heading h2');
+    if (modal && heading) {
+      if (!heading.id) heading.id = 'task-modal-title';
+      modal.setAttribute('aria-labelledby', heading.id);
+      modal.setAttribute('aria-describedby', 'task-mode-hint');
+    }
   }
 
   async function verifyCreated(id) {
@@ -206,9 +210,7 @@
 
   async function saveExecution(event) {
     if (event.target !== form) return;
-
     event.preventDefault();
-
     if (form.dataset.executionSubmitting === '1') return;
 
     prepareForm();
@@ -245,6 +247,7 @@
 
     const originalText = submit?.textContent || 'Salvar execução';
     form.dataset.executionSubmitting = '1';
+    form.setAttribute('aria-busy', 'true');
 
     if (submit) {
       submit.disabled = true;
@@ -259,9 +262,7 @@
       });
 
       const id = String(created?.id || '').trim();
-      if (!id) {
-        throw new Error('O servidor não retornou o identificador da execução.');
-      }
+      if (!id) throw new Error('O servidor não retornou o identificador da execução.');
 
       const persisted = await verifyCreated(id);
       if (!persisted) {
@@ -284,6 +285,7 @@
       notify(error?.message || 'Não foi possível salvar a execução.');
     } finally {
       delete form.dataset.executionSubmitting;
+      form.removeAttribute('aria-busy');
       if (submit) {
         submit.disabled = false;
         submit.removeAttribute('aria-busy');
@@ -314,29 +316,20 @@
     const lowerPrompt = prompt.toLowerCase();
     const legacyText = `${task?.title || ''}\n${prompt}`.toLowerCase();
     const actionSignals = [
-      'correção baseada na análise',
-      'correcao baseada na analise',
-      'ação recomendada',
-      'acao recomendada',
-      'execute as correções',
-      'execute as correcoes',
-      'não faça uma nova análise',
-      'nao faca uma nova analise'
+      'correção baseada na análise', 'correcao baseada na analise', 'ação recomendada',
+      'acao recomendada', 'execute as correções', 'execute as correcoes',
+      'não faça uma nova análise', 'nao faca uma nova analise'
     ];
 
     if (
-      source === 'analysis' ||
-      source === 'analysis-action' ||
-      lowerPrompt.includes('[analysis-action]') ||
-      lowerPrompt.includes('[analysis-run:') ||
-      lowerPrompt.includes('[devpilot_stage=execute]') ||
-      lowerPrompt.includes('[devpilot_stage=correct]') ||
+      source === 'analysis' || source === 'analysis-action' ||
+      lowerPrompt.includes('[analysis-action]') || lowerPrompt.includes('[analysis-run:') ||
+      lowerPrompt.includes('[devpilot_stage=execute]') || lowerPrompt.includes('[devpilot_stage=correct]') ||
       actionSignals.some(signal => legacyText.includes(signal))
     ) return 'action';
 
     if (
-      source === 'execution-verification' ||
-      lowerPrompt.includes('[post-execution-verification]') ||
+      source === 'execution-verification' || lowerPrompt.includes('[post-execution-verification]') ||
       lowerPrompt.includes('[devpilot_stage=verify]')
     ) return 'analysis';
 
@@ -345,19 +338,11 @@
     if (marker === 'develop' || marker === 'fix') return 'execution';
 
     const readOnlySignals = [
-      'somente leitura',
-      'não modifique arquivos',
-      'nao modifique arquivos',
-      'não implemente',
-      'nao implemente',
-      'análise técnica',
-      'analise tecnica',
-      'auditoria somente leitura'
+      'somente leitura', 'não modifique arquivos', 'nao modifique arquivos',
+      'não implemente', 'nao implemente', 'análise técnica', 'analise tecnica', 'auditoria somente leitura'
     ];
 
-    return readOnlySignals.some(signal => legacyText.includes(signal))
-      ? 'analysis'
-      : 'execution';
+    return readOnlySignals.some(signal => legacyText.includes(signal)) ? 'analysis' : 'execution';
   }
 
   function ensureTaskKindStyles() {
@@ -367,9 +352,7 @@
     style.textContent = `
       .task-kind-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
       .task-kind-badge::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 10px currentColor}
-      .task-kind-badge.analysis{color:#63e6be}
-      .task-kind-badge.action{color:#74c0fc}
-      .task-kind-badge.execution{color:#74c0fc}
+      .task-kind-badge.analysis{color:#63e6be}.task-kind-badge.action,.task-kind-badge.execution{color:#74c0fc}
     `;
     document.head.appendChild(style);
   }
@@ -377,10 +360,7 @@
   function enhanceTaskKindColumn() {
     if (!taskTableBody) return;
     ensureTaskKindStyles();
-
-    const tasks = typeof state !== 'undefined' && Array.isArray(state.tasks)
-      ? state.tasks
-      : [];
+    const tasks = typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : [];
     const rows = [...taskTableBody.querySelectorAll('tr.task-main-row')];
 
     rows.forEach((row, index) => {
@@ -411,20 +391,5 @@
     if (document.querySelector('#tasks-view.active')) scheduleEnhancement();
   }
 
-  window.__devpilotCanonicalExecutionSubmitV30 = true;
   console.info('[DevPilot] Execução Submit V34 canônico ativo');
-})();
-
-/* Runtime Experience V13: legado temporário; carregado somente após intenção explícita no modal. */
-(() => {
-  if (
-    window.__devpilotRuntimeExperienceV13 ||
-    document.querySelector('script[data-runtime-experience-v13]')
-  ) return;
-
-  const script = document.createElement('script');
-  script.src = '/assets/runtime-experience-v13.js?v=20260830-direct-1';
-  script.async = true;
-  script.dataset.runtimeExperienceV13 = '1';
-  document.head.appendChild(script);
 })();
