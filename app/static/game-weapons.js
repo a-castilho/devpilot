@@ -173,12 +173,25 @@
 
   document.querySelector('#task-mode')?.addEventListener('change', () => window.setTimeout(scheduleSync, 0));
 
-  new MutationObserver(scheduleSync).observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['class', 'open']
-  });
+  /*
+   * Somente eventos do próprio jogo.
+   * Nenhum observer no document.body.
+   */
+  document.addEventListener(
+    'devpilot:game:standalone-ready',
+    scheduleSync
+  );
+
+  document.addEventListener(
+    'devpilot:view-changed',
+    scheduleSync
+  );
+
+  document.querySelector('#task-modal')
+    ?.addEventListener(
+      'close',
+      scheduleSync
+    );
 
   sync();
 })();

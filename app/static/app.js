@@ -301,9 +301,11 @@ function renderProjects() {
   `).join('') || '<div class="empty">Conecte seu primeiro repositório.</div>';
 
   $$('[data-project-task]', target).forEach(button => {
-    button.onclick = async () => {
-      fillProjects(button.dataset.projectTask);
-      $('#task-modal')?.showModal?.();
+    button.onclick = () => {
+      window.devpilotOpenTaskModal?.({
+        projectId: button.dataset.projectTask || '',
+        source: 'project',
+      });
     };
   });
   $$('.analyze', target).forEach(button => {
@@ -528,6 +530,202 @@ async function loadAudit() {
   }
 }
 
+
+async function ensureTaskProjectsForModal(
+  selectedProjectId = ''
+) {
+  /*
+   * O modal precisa somente da lista.
+   *
+   * NÃO chamamos loadProjects(), porque loadProjects também
+   * redesenha cards, naves, delivery e outros complementos.
+   */
+  if (
+    Array.isArray(state.projects) &&
+    state.projects.length
+  ) {
+    fillProjects(selectedProjectId);
+    return state.projects;
+  }
+
+  const select = $('#task-project');
+
+  if (select) {
+    select.innerHTML =
+      '<option value="">Carregando projetos…</option>';
+  }
+
+  try {
+    const projects = await api('/ui/projects?limit=50');
+
+    state.projects = Array.isArray(projects)
+      ? projects
+      : [];
+
+    fillProjects(selectedProjectId);
+
+    return state.projects;
+
+  } catch (error) {
+
+    if (select) {
+      select.innerHTML =
+        '<option value="">Falha ao carregar projetos</option>';
+    }
+
+    toast(
+      error.message ||
+      'Não foi possível carregar os projetos'
+    );
+
+    return [];
+  }
+}
+
+
+function requestTaskFeature(name) {
+  const attempt = () => {
+    if (
+      typeof window.__devpilotLoadFeature === 'function'
+    ) {
+      return Promise.resolve(
+        window.__devpilotLoadFeature(name)
+      );
+    }
+
+    return Promise.resolve(false);
+  };
+
+  /*
+   * app.js entra antes do feature-loader.
+   * Em um clique normal ele já estará disponível.
+   */
+  if (
+    typeof window.__devpilotLoadFeature === 'function'
+  ) {
+    return attempt();
+  }
+
+  return new Promise(resolve => {
+    window.setTimeout(() => {
+      attempt()
+        .then(resolve)
+        .catch(() => resolve(false));
+    }, 60);
+  });
+}
+
+
+window.devpilotOpenTaskModal =
+function devpilotOpenTaskModal({
+  projectId = '',
+  source = 'dashboard',
+} = {}) {
+
+  const modal = $('#task-modal');
+
+  if (!modal) {
+    toast('Formulário de tarefa indisponível');
+    return false;
+  }
+
+  modal.dataset.taskSource = source;
+
+  const select = $('#task-project');
+
+  /*
+   * Se os projetos já existem, seleção é instantânea.
+   */
+  if (
+    Array.isArray(state.projects) &&
+    state.projects.length
+  ) {
+    fillProjects(projectId);
+
+  } else if (select) {
+
+    select.innerHTML =
+      '<option value="">Carregando projetos…</option>';
+  }
+
+
+  /*
+   * REGRA PRINCIPAL:
+   *
+   * O MODAL ABRE ANTES DE API, PLUGIN, JOGO,
+   * ANALYTICS OU RENDER DE PROJETOS.
+   */
+  if (!modal.open) {
+    modal.showModal?.();
+  }
+
+
+  window.requestAnimationFrame(() => {
+    $('#task-context')?.focus?.();
+  });
+
+
+  /*
+   * O AgentOS / modos enriquecem o formulário depois.
+   * Nenhum await aqui.
+   */
+  void requestTaskFeature('taskModal')
+    .catch(error => {
+      console.warn(
+        '[DevPilot] task-modal enhancement',
+        error
+      );
+    });
+
+
+  /*
+   * Armas existem SOMENTE se o jogo estiver realmente ativo.
+   */
+  if (
+    document.querySelector(
+      '#build-game-view.active'
+    )
+  ) {
+    void requestTaskFeature('gameWeapons')
+      .catch(error => {
+        console.warn(
+          '[DevPilot] game weapons',
+          error
+        );
+      });
+  }
+
+
+  /*
+   * Projetos entram depois que o usuário já vê o formulário.
+   */
+  if (
+    !Array.isArray(state.projects) ||
+    !state.projects.length
+  ) {
+    void ensureTaskProjectsForModal(projectId);
+  }
+
+  return true;
+}
+
+
+function prewarmTaskModal() {
+  const run = () => {
+    void requestTaskFeature('taskModal')
+      .catch(() => {});
+  };
+
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(
+      run,
+      {timeout: 1600}
+    );
+  } else {
+    window.setTimeout(run, 700);
+  }
+}
+
 function bindCoreControls() {
   $$('[data-view]').forEach(button => {
     button.onclick = () => showView(button.dataset.view);
@@ -535,10 +733,32 @@ function bindCoreControls() {
 
   $$('[data-open]').forEach(button => {
     button.onclick = async () => {
-      if (button.dataset.open === 'organization-modal' && !isSuperAdmin()) return toast('Acesso exclusivo do Super Admin');
-      if (button.dataset.open === 'task-modal' && !state.projects.length) await loadProjects();
-      if (button.dataset.open === 'organization-modal' && isSuperAdmin() && !state.organizations.length) await loadOrganizations();
-      $(`#${button.dataset.open}`)?.showModal?.();
+      if (button.dataset.open === 'task-modal') {
+        window.devpilotOpenTaskModal?.({
+          source: 'global',
+        });
+        return;
+      }
+
+      if (
+        button.dataset.open === 'organization-modal' &&
+        !isSuperAdmin()
+      ) {
+        return toast(
+          'Acesso exclusivo do Super Admin'
+        );
+      }
+
+      if (
+        button.dataset.open === 'organization-modal' &&
+        isSuperAdmin() &&
+        !state.organizations.length
+      ) {
+        await loadOrganizations();
+      }
+
+      $(`#${button.dataset.open}`)
+        ?.showModal?.();
     };
   });
 
@@ -592,22 +812,154 @@ function bindCoreControls() {
   };
 
   const taskForm = $('#task-form');
+
   if (taskForm) taskForm.onsubmit = async event => {
     event.preventDefault();
+
+    /*
+     * Impede clique duplo / tarefas duplicadas.
+     */
+    if (taskForm.dataset.submitting === '1') {
+      return;
+    }
+
     const form = new FormData(event.target);
+
+    const projectId =
+      String(form.get('project_id') || '').trim();
+
+    const title =
+      String(form.get('title') || '').trim();
+
+    const prompt =
+      String(form.get('prompt') || '').trim();
+
+    if (!projectId) {
+      toast('Selecione um projeto');
+      $('#task-project')?.focus?.();
+      return;
+    }
+
+    if (!title) {
+      toast('Informe o título da tarefa');
+      event.target
+        .querySelector('[name="title"]')
+        ?.focus?.();
+      return;
+    }
+
+    if (!prompt) {
+      toast('Informe o contexto da tarefa');
+      $('#task-context')?.focus?.();
+      return;
+    }
+
+    const submit =
+      event.target.querySelector(
+        '#task-submit, [type="submit"]'
+      );
+
+    const originalSubmitText =
+      submit?.textContent || 'Registrar tarefa';
+
+    taskForm.dataset.submitting = '1';
+
+    if (submit) {
+      submit.disabled = true;
+      submit.setAttribute('aria-busy', 'true');
+      submit.textContent = 'Registrando…';
+    }
+
+    const modal = event.target.closest('dialog');
+
     const payload = {
-      project_id: form.get('project_id'), title: form.get('title'), prompt: form.get('prompt'),
-      priority: Number(form.get('priority')), requires_approval: form.get('requires_approval') === 'on', source: 'dashboard',
+      project_id: projectId,
+      title,
+      prompt,
+      priority: Number(
+        form.get('priority') || 50
+      ),
+      requires_approval:
+        form.get('requires_approval') === 'on',
+      source:
+        modal?.dataset.taskSource ||
+        'dashboard',
     };
+
     try {
-      await api('/tasks', {method: 'POST', body: JSON.stringify(payload)});
-      event.target.closest('dialog')?.close?.();
+      await api('/tasks', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      /*
+       * Retorno visual IMEDIATO.
+       * Dashboard/tabela não bloqueiam o submit.
+       */
+      modal?.close?.();
+
       event.target.reset();
+
       toast('Tarefa registrada');
-      await loadDashboard();
-      if ($('#tasks-view')?.classList.contains('active')) await loadAllTasks(true);
+
+
+      /*
+       * Atualizações secundárias entram depois.
+       */
+      const refresh = async () => {
+        try {
+          await loadDashboard();
+
+          if (
+            $('#tasks-view')
+              ?.classList
+              .contains('active')
+          ) {
+            await loadAllTasks(true, 8);
+          }
+        } catch (error) {
+          console.warn(
+            '[DevPilot] atualização pós-tarefa',
+            error
+          );
+        }
+      };
+
+
+      if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(
+          () => void refresh(),
+          {timeout: 1300}
+        );
+      } else {
+        window.setTimeout(
+          () => void refresh(),
+          120
+        );
+      }
+
     } catch (error) {
-      toast(error.message);
+
+      toast(
+        error.message ||
+        'Não foi possível registrar a tarefa'
+      );
+
+    } finally {
+
+      delete taskForm.dataset.submitting;
+
+      if (submit) {
+        submit.disabled = false;
+        submit.removeAttribute('aria-busy');
+
+        if (
+          submit.textContent === 'Registrando…'
+        ) {
+          submit.textContent =
+            originalSubmitText;
+        }
+      }
     }
   };
 
@@ -681,7 +1033,38 @@ function bindCoreControls() {
   };
 }
 
+
+/* devpilot-task-project-delegation */
+document.addEventListener('click', event => {
+  const trigger =
+    event.target.closest?.('[data-project-task]');
+
+  if (!trigger) return;
+
+  /*
+   * Se renderProjects já associou onclick,
+   * ele é o dono e não duplicamos a ação.
+   */
+  if (typeof trigger.onclick === 'function') {
+    return;
+  }
+
+  event.preventDefault();
+
+  window.devpilotOpenTaskModal?.({
+    projectId:
+      trigger.dataset.projectTask || '',
+    source: 'project',
+  });
+});
+
+
 bindCoreControls();
+
+window.setTimeout(
+  prewarmTaskModal,
+  250
+);
 if (state.token) void loadDashboard();
 else $('#auth-modal')?.showModal?.();
 

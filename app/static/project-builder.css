@@ -1,1 +1,145 @@
 .project-builder{display:grid;grid-template-columns:minmax(0,1fr) minmax(280px,360px);gap:22px;align-items:start;padding-bottom:72px}.project-builder-main{min-width:0}.project-builder-hero{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:18px}.project-builder-hero h2{margin:4px 0 8px;font-size:clamp(24px,3vw,38px);line-height:1.05}.project-builder-hero p{margin:0;max-width:760px;color:var(--muted,#8fa3bf);line-height:1.55}.project-builder-back{white-space:nowrap}.builder-card{background:linear-gradient(180deg,rgba(20,34,54,.96),rgba(11,23,39,.96));border:1px solid rgba(129,155,191,.18);border-radius:20px;padding:18px;box-shadow:0 18px 44px rgba(0,0,0,.18);margin-bottom:16px}.builder-card h3{margin:0 0 6px}.builder-card>p{margin:0;color:var(--muted,#8fa3bf)}.builder-identity-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.builder-identity-grid label,.builder-card>label{display:grid;gap:7px}.builder-card input,.builder-card textarea,.builder-card select{width:100%;box-sizing:border-box}.builder-description{margin-top:14px}.builder-presets{display:flex;gap:10px;overflow-x:auto;padding:4px 1px 6px;scrollbar-width:thin}.builder-preset{flex:0 0 auto;border:1px solid rgba(130,157,191,.22);background:rgba(6,18,31,.72);color:inherit;border-radius:999px;padding:10px 14px;cursor:pointer;font-weight:700}.builder-preset.active{border-color:#42d392;background:rgba(66,211,146,.13);box-shadow:0 0 0 1px rgba(66,211,146,.18) inset}.builder-group{margin:18px 0 0}.builder-group-head{display:flex;justify-content:space-between;gap:12px;align-items:end;margin-bottom:10px}.builder-group-head h3{margin:0 0 4px;font-size:16px}.builder-group-head p{margin:0;color:var(--muted,#8fa3bf);font-size:13px}.builder-group-head>span{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#7f94b2;white-space:nowrap}.choice-strip{display:flex;gap:10px;overflow-x:auto;overscroll-behavior-inline:contain;scroll-snap-type:x proximity;padding:3px 2px 10px;cursor:grab;scrollbar-width:thin}.choice-strip.is-dragging{cursor:grabbing;user-select:none}.choice-card{position:relative;flex:0 0 min(210px,72vw);scroll-snap-align:start;min-height:94px;text-align:left;border:1px solid rgba(130,157,191,.18);background:rgba(4,14,26,.76);color:inherit;border-radius:16px;padding:14px 38px 14px 14px;cursor:pointer;transition:transform .16s ease,border-color .16s ease,background .16s ease,box-shadow .16s ease}.choice-card:hover{transform:translateY(-1px);border-color:rgba(130,157,191,.42)}.choice-card strong{display:block;font-size:14px;margin-bottom:6px}.choice-card small{display:block;color:var(--muted,#8fa3bf);line-height:1.35}.choice-card i{position:absolute;right:12px;top:12px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-size:12px;background:rgba(129,155,191,.12);color:transparent;border:1px solid rgba(129,155,191,.18)}.choice-card.selected{border-color:#42d392;background:linear-gradient(180deg,rgba(31,84,69,.4),rgba(7,29,28,.88));box-shadow:0 0 0 1px rgba(66,211,146,.16) inset,0 10px 24px rgba(0,0,0,.12)}.choice-card.selected i{background:#42d392;color:#07131d;border-color:#42d392}.builder-custom{margin-top:20px}.builder-repository-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.repository-choice{position:relative;display:block;border:1px solid rgba(130,157,191,.2);border-radius:16px;padding:14px;cursor:pointer;background:rgba(4,14,26,.7)}.repository-choice input{position:absolute;opacity:0;pointer-events:none}.repository-choice strong,.repository-choice small{display:block}.repository-choice small{color:var(--muted,#8fa3bf);margin-top:5px;line-height:1.35}.repository-choice.selected{border-color:#42d392;background:rgba(66,211,146,.1)}.repository-choice:has(input:disabled){opacity:.5;cursor:not-allowed}.builder-repository-fields{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}.builder-repository-fields #project-builder-existing-repository{grid-column:1/-1}.builder-notice{margin:12px 0 0;color:var(--muted,#8fa3bf);font-size:13px}.builder-delivery{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin-top:12px}.builder-delivery .check{margin:0}.project-builder-aside{position:sticky;top:18px}.builder-summary-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.builder-summary-head span{font-size:12px;color:#42d392;font-weight:800}.builder-summary{display:grid;gap:10px;margin-top:14px}.builder-summary div{display:grid;gap:3px;padding-bottom:9px;border-bottom:1px solid rgba(130,157,191,.12)}.builder-summary span{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:#7388a7}.builder-summary strong{font-size:13px;line-height:1.35}.builder-agents details{margin-top:14px}.builder-agents summary{cursor:pointer;font-weight:700}.builder-agents pre{max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-word;background:rgba(2,10,18,.72);border-radius:12px;padding:12px;font-size:11px;line-height:1.45;color:#b9c8da}.builder-submit{width:100%;margin-top:14px;min-height:46px}.builder-submit:disabled{opacity:.6;cursor:progress}.builder-help{display:block;margin-top:9px;color:#7085a3;text-align:center;line-height:1.4}@media(max-width:980px){.project-builder{grid-template-columns:1fr}.project-builder-aside{position:static}.builder-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:680px){.project-builder{gap:12px}.project-builder-hero{display:grid}.project-builder-back{justify-self:start}.builder-card{border-radius:16px;padding:14px}.builder-identity-grid,.builder-repository-grid,.builder-repository-fields,.builder-delivery{grid-template-columns:1fr}.builder-group-head{align-items:flex-start}.builder-group-head>span{display:none}.choice-card{flex-basis:min(190px,76vw);min-height:88px}.builder-summary{grid-template-columns:1fr}.project-builder-aside{padding-bottom:20px}}
+/* ==========================================================
+   DevPilot · ação persistente do novo projeto
+   ========================================================== */
+
+#new-project-view {
+  position:relative;
+  padding-bottom:88px !important;
+}
+
+.project-builder-sticky-action {
+  position:sticky;
+  z-index:80;
+  bottom:12px;
+
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+
+  gap:16px;
+
+  width:min(100%, 980px);
+  margin:18px auto 0;
+  padding:11px 12px 11px 16px;
+
+  border:1px solid rgba(53,229,209,.28);
+  border-radius:14px;
+
+  background:
+    linear-gradient(
+      135deg,
+      rgba(8,24,34,.97),
+      rgba(6,18,28,.97)
+    );
+
+  box-shadow:
+    0 16px 42px rgba(0,0,0,.48),
+    inset 0 1px 0 rgba(255,255,255,.05);
+
+  backdrop-filter:blur(12px);
+}
+
+.project-builder-sticky-copy {
+  min-width:0;
+}
+
+.project-builder-sticky-copy strong,
+.project-builder-sticky-copy small {
+  display:block;
+}
+
+.project-builder-sticky-copy strong {
+  color:#edf9f5;
+  font-size:14px;
+}
+
+.project-builder-sticky-copy small {
+  margin-top:2px;
+
+  color:#829a9d;
+  font-size:10px;
+}
+
+.project-builder-sticky-submit {
+  flex:0 0 auto;
+
+  min-width:160px;
+  min-height:42px !important;
+
+  margin:0 !important;
+}
+
+
+/*
+ * O botão original dentro do resumo continua existindo.
+ * Em desktop largo ambos podem existir, mas o original não precisa
+ * ficar sticky porque a ação inferior já garante acesso.
+ */
+.project-builder-aside .builder-submit {
+  position:static !important;
+}
+
+
+/* Notebook */
+@media (min-width:681px) and (max-width:1180px) {
+
+  #new-project-view {
+    padding-inline:14px !important;
+  }
+
+  .project-builder {
+    width:100% !important;
+    max-width:none !important;
+
+    grid-template-columns:
+      minmax(0,1fr) !important;
+  }
+
+  .project-builder-main,
+  .project-builder-aside {
+    width:100% !important;
+    max-width:none !important;
+    min-width:0 !important;
+  }
+
+  .project-builder-aside {
+    position:static !important;
+  }
+
+  .project-builder-sticky-action {
+    width:100%;
+    max-width:none;
+  }
+}
+
+
+/* Mobile */
+@media (max-width:680px) {
+
+  #new-project-view {
+    padding-bottom:108px !important;
+  }
+
+  .project-builder-sticky-action {
+    bottom:8px;
+
+    align-items:stretch;
+    flex-direction:column;
+
+    width:100%;
+
+    gap:8px;
+
+    padding:10px;
+  }
+
+  .project-builder-sticky-copy {
+    padding-inline:3px;
+  }
+
+  .project-builder-sticky-submit {
+    width:100%;
+    min-width:0;
+  }
+}
