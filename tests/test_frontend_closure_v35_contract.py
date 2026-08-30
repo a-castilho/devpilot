@@ -89,6 +89,35 @@ def test_navigation_protects_against_stale_transitions_and_supports_a11y():
     assert "document.title" in source
 
 
+def test_execution_labels_are_event_driven_without_retry_timers():
+    source = read("executions-v18.js")
+    assert "directOpenTaskModal" not in source
+    assert "[80, 250, 700, 1400]" not in source
+    assert "devpilot:tasks-rendered" in source
+    assert "devpilot:page-ready" in source
+
+
+def test_dashboard_does_not_poll_for_markup():
+    source = read("dashboard-user-v21.js")
+    assert "attempt < 40" not in source
+    assert "bootstrap(attempt" not in source
+    assert "devpilot:dashboard-revealed" in source
+    assert "devpilot:view-changed" in source
+
+
+def test_source_markup_starts_with_execution_vocabulary_and_accessibility():
+    source = read("index.html")
+    assert 'data-view="tasks">Execuções</button>' in source
+    assert ">+ Nova execução</button>" in source
+    assert '<span class="eyebrow">EXECUÇÕES</span>' in source
+    assert '<h2>Execuções</h2>' in source
+    assert 'placeholder="Execução ou projeto"' in source
+    assert '<th>Execução</th>' in source
+    assert '<span class="eyebrow">NOVA EXECUÇÃO</span>' in source
+    assert 'id="task-submit" type="submit">Salvar execução</button>' in source
+    assert 'id="toast" role="status" aria-live="polite"' in source
+
+
 def test_legacy_execution_submit_is_inert():
     source = read("executions-submit-v29.js")
     assert "addEventListener('submit'" not in source
