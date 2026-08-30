@@ -3,6 +3,15 @@
   const esc = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   let currentData = null;
 
+  function ensureMobileStyles() {
+    if (document.querySelector('link[data-super-admin-mobile-v12]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = '/assets/super-admin-mobile-v12.css?v=20260830-1';
+    link.dataset.superAdminMobileV12 = '1';
+    document.head.appendChild(link);
+  }
+
   async function api(path) {
     const response = await fetch(path, {headers: {Authorization: `Bearer ${token()}`}});
     const data = await response.json().catch(() => ({}));
@@ -27,6 +36,7 @@
   }
 
   function installShell() {
+    ensureMobileStyles();
     if (document.querySelector('[data-view="super-admin-system"]')) {
       return document.querySelector('[data-view="super-admin-system"]');
     }
@@ -242,6 +252,7 @@
   }
 
   async function boot() {
+    ensureMobileStyles();
     if (!token() || !(await isSuperAdmin())) return;
     const button = installShell();
     if (!button) return;
