@@ -80,8 +80,6 @@
     }, 0);
   });
 
-  // A classificação visual segue o mesmo contrato do worker: uma ação nunca
-  // volta a aparecer como análise só porque contém o diagnóstico de origem.
   const taskTableBody = document.querySelector('#tasks-table');
 
   function taskKind(task) {
@@ -234,4 +232,18 @@
       scheduleEnhancement();
     }
   }
+})();
+
+/* Runtime Experience V13: carregado por um ponto que já faz parte do boot autenticado. */
+(() => {
+  if (
+    window.__devpilotRuntimeExperienceV13 ||
+    document.querySelector('script[data-runtime-experience-v13]')
+  ) return;
+
+  const script = document.createElement('script');
+  script.src = '/assets/runtime-experience-v13.js?v=20260830-direct-1';
+  script.async = true;
+  script.dataset.runtimeExperienceV13 = '1';
+  document.head.appendChild(script);
 })();
