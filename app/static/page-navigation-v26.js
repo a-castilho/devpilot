@@ -20,6 +20,8 @@
 
   let switching = false;
   let pendingView = '';
+  let navigationEpoch = 0;
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
 
   const normalize = value => String(value || '')
     .normalize('NFD')
@@ -66,7 +68,10 @@
     });
 
     document.querySelectorAll(MAIN_NAV_SELECTOR).forEach(nav => {
-      nav.classList.toggle('active', resolveView(nav) === viewName);
+      const active = resolveView(nav) === viewName;
+      nav.classList.toggle('active', active);
+      if (active) nav.setAttribute('aria-current', 'page');
+      else nav.removeAttribute('aria-current');
     });
   }
 
@@ -81,7 +86,9 @@
   function updateTitle(viewName) {
     const title = document.querySelector('#page-title');
     const label = VIEW_TITLES[viewName];
-    if (title && label) title.textContent = label;
+    if (!label) return;
+    if (title) title.textContent = label;
+    document.title = `DevPilot — ${label}`;
   }
 
   function updateHistory(viewName, replace = false) {
@@ -107,13 +114,15 @@
     return false;
   }
 
-  function finish(viewName, options = {}) {
+  function finish(viewName, options = {}, epoch = navigationEpoch) {
+    if (epoch !== navigationEpoch || pendingView !== viewName) return;
+
     markOnlyView(viewName);
     restoreViewVisibility(viewName);
     updateTitle(viewName);
 
     const view = document.getElementById(`${viewName}-view`);
-    view?.classList.add('dp-page-entering');
+    if (!reducedMotion) view?.classList.add('dp-page-entering');
 
     window.scrollTo({top: 0, left: 0, behavior: 'auto'});
     document.querySelector('main')?.scrollTo?.({top: 0, left: 0, behavior: 'auto'});
@@ -125,8 +134,11 @@
     root.classList.add('dp-page-ready');
 
     window.requestAnimationFrame(() => {
+      if (epoch !== navigationEpoch) return;
       view?.classList.remove('dp-page-entering');
-      window.setTimeout(() => root.classList.remove('dp-page-ready'), 170);
+      window.setTimeout(() => {
+        if (epoch === navigationEpoch) root.classList.remove('dp-page-ready');
+      }, reducedMotion ? 0 : 170);
     });
 
     document.dispatchEvent(new CustomEvent('devpilot:view-changed', {
@@ -147,6 +159,8 @@
     const target = document.getElementById(`${viewName}-view`);
     if (!target && viewName !== 'users' && viewName !== 'profile') return false;
 
+    navigationEpoch += 1;
+    const epoch = navigationEpoch;
     switching = true;
     pendingView = viewName;
     closeMobileMenu();
@@ -154,17 +168,19 @@
     root.classList.remove('dp-page-ready');
     root.classList.add('dp-page-switching');
 
+    document.querySelectorAll('.dp-page-leaving').forEach(node => node.classList.remove('dp-page-leaving'));
     const current = document.querySelector('.view.active');
-    current?.classList.add('dp-page-leaving');
+    if (!reducedMotion) current?.classList.add('dp-page-leaving');
 
     window.setTimeout(() => {
+      if (epoch !== navigationEpoch || pendingView !== viewName) return;
       current?.classList.remove('dp-page-leaving');
       runNativeView(viewName);
 
       window.requestAnimationFrame(() => {
-        finish(viewName, options);
+        finish(viewName, options, epoch);
       });
-    }, options.immediate ? 0 : 72);
+    }, options.immediate || reducedMotion ? 0 : 72);
 
     return true;
   }
@@ -173,17 +189,11 @@
 
   document.addEventListener('click', event => {
     const item = event.target.closest?.(MAIN_NAV_SELECTOR);
-    if (!item) return;
-    if (item.dataset.devpilotFeaturePlaceholder) return;
+    if (!item || item.dataset.devpilotFeaturePlaceholder) return;
 
     const viewName = resolveView(item);
     if (!viewName) return;
 
-    /*
-     * O feature-loader roda antes deste controlador. Quando um bundle ainda
-     * não existe ele interrompe o primeiro clique e o reproduz após carregar.
-     * Este handler recebe apenas o clique já pronto e cuida da troca visual.
-     */
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
@@ -199,11 +209,8 @@
   function initializeCurrentView() {
     const active = document.querySelector('.view.active');
     const viewName = active?.id?.replace(/-view$/, '') || 'overview';
-    document.querySelectorAll('.view').forEach(view => {
-      const isActive = view === active;
-      view.hidden = !isActive;
-      view.setAttribute('aria-hidden', isActive ? 'false' : 'true');
-    });
+    markOnlyView(viewName);
+    updateTitle(viewName);
     root.dataset.devpilotView = viewName;
   }
 
@@ -213,5 +220,5 @@
     initializeCurrentView();
   }
 
-  console.info('[DevPilot] Page Navigation V26 ativo');
+  console.info('[DevPilot] Page Navigation V26 estável');
 })();
