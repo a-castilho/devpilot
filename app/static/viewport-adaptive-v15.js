@@ -58,7 +58,6 @@
 
   function apply() {
     frame = 0;
-
     const value = metrics();
 
     root.classList.toggle('dp-zoom-out', value.zoomedOut);
@@ -84,11 +83,9 @@
 
     root.dataset.dpZoom = value.zoomedOut ? 'out' : 'normal';
 
-    document.dispatchEvent(
-      new CustomEvent('devpilot:viewport-adapted', {
-        detail: value,
-      })
-    );
+    document.dispatchEvent(new CustomEvent('devpilot:viewport-adapted', {
+      detail: value,
+    }));
   }
 
   function schedule() {
@@ -98,26 +95,11 @@
 
   function ensureStylesheet(selector, href, datasetKey) {
     if (document.querySelector(selector)) return;
-
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = href;
     link.dataset[datasetKey] = '1';
     document.head.appendChild(link);
-  }
-
-  function ensureScript(selector, src, datasetKey) {
-    if (document.querySelector(selector)) return;
-
-    const script = document.createElement('script');
-    script.src = src;
-    /*
-     * Runtimes de correção têm dependências entre si. Execução fora de ordem
-     * reintroduziu regressões em modal, navegação e nomenclatura.
-     */
-    script.async = false;
-    script.dataset[datasetKey] = '1';
-    document.head.appendChild(script);
   }
 
   function loadCss() {
@@ -126,31 +108,26 @@
       '/assets/layout-adaptive-v15.css?v=20260830-1',
       'layoutAdaptiveV15'
     );
-
     ensureStylesheet(
       'link[data-sidebar-responsive-v16]',
       '/assets/sidebar-responsive-v16.css?v=20260830-1',
       'sidebarResponsiveV16'
     );
-
     ensureStylesheet(
       'link[data-sidebar-state-v24]',
       '/assets/sidebar-state-v24.css?v=20260830-1',
       'sidebarStateV24'
     );
-
     ensureStylesheet(
       'link[data-dashboard-user-v20]',
       '/assets/dashboard-user-v20.css?v=20260830-1',
       'dashboardUserV20'
     );
-
     ensureStylesheet(
       'link[data-users-layout-v25]',
       '/assets/users-layout-v25.css?v=20260830-1',
       'usersLayoutV25'
     );
-
     ensureStylesheet(
       'link[data-page-navigation-v26]',
       '/assets/page-navigation-v26.css?v=20260830-1',
@@ -158,60 +135,17 @@
     );
   }
 
-  function loadExecutionsV18() {
-    ensureScript(
-      'script[data-executions-v18]',
-      '/assets/executions-v18.js?v=20260830-2',
-      'executionsV18'
-    );
-  }
-
-  function loadExecutionsFocusV19() {
-    ensureScript(
-      'script[data-executions-focus-v19]',
-      '/assets/executions-focus-v19.js?v=20260830-1',
-      'executionsFocusV19'
-    );
-  }
-
-  function loadDashboardUserV21() {
-    ensureScript(
-      'script[data-dashboard-user-v21]',
-      '/assets/dashboard-user-v21.js?v=20260830-1',
-      'dashboardUserV21'
-    );
-  }
-
-  function loadPageNavigationV26() {
-    ensureScript(
-      'script[data-page-navigation-v26]',
-      '/assets/page-navigation-v26.js?v=20260830-1',
-      'pageNavigationV26'
-    );
-  }
-
-  function loadExecutionResultsV28() {
-    ensureScript(
-      'script[data-execution-results-v28]',
-      '/assets/execution-results-v28.js?v=20260830-1',
-      'executionResultsV28'
-    );
-  }
-
   loadCss();
-  loadExecutionsV18();
-  loadExecutionsFocusV19();
-  loadDashboardUserV21();
-  loadPageNavigationV26();
-  loadExecutionResultsV28();
   apply();
 
-  window.addEventListener('resize', schedule, {passive: true});
-  window.addEventListener('orientationchange', schedule, {passive: true});
-  window.visualViewport?.addEventListener('resize', schedule, {passive: true});
-  window.visualViewport?.addEventListener('scroll', schedule, {passive: true});
+  window.addEventListener('resize', schedule, {passive:true});
+  window.addEventListener('orientationchange', schedule, {passive:true});
+  window.visualViewport?.addEventListener('resize', schedule, {passive:true});
+  window.visualViewport?.addEventListener('scroll', schedule, {passive:true});
 
   document.addEventListener('devpilot:view-changed', schedule);
   document.addEventListener('devpilot:dashboard-revealed', schedule);
   document.addEventListener('devpilot:feature-ready', schedule);
+
+  console.info('[DevPilot] Viewport Adaptive V15 responsivo ativo');
 })();
