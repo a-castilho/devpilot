@@ -186,11 +186,20 @@
     );
   }
 
+  function loadExecutionsSubmitV27() {
+    ensureScript(
+      'script[data-executions-submit-v27]',
+      '/assets/executions-submit-v27.js?v=20260830-1',
+      'executionsSubmitV27'
+    );
+  }
+
   loadCss();
   loadExecutionsV18();
   loadExecutionsFocusV19();
   loadDashboardUserV21();
   loadPageNavigationV26();
+  loadExecutionsSubmitV27();
   apply();
 
   window.addEventListener('resize', schedule, {passive: true});
