@@ -26,7 +26,6 @@ def _login(page, base_url: str) -> None:
 
 
 def _resume_saved_session(page) -> None:
-    """Confirm the intentionally explicit saved-session handoff after a reload."""
     page.wait_for_selector("#auth-resume", state="visible", timeout=10_000)
     assert page.locator("#auth-resume-submit").is_visible()
     page.locator("#auth-resume-submit").click()
@@ -120,11 +119,51 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             assert created["deletable"]["id"]
             assert created["deletable"]["status"] == "awaiting_approval"
 
-            # Execuções abre sem pagar o custo de analytics.
+            # Fluxo crítico real da UI: + Nova execução -> modal -> POST 201 -> persistência.
+            new_execution = page.locator('[data-open="task-modal"]:visible').first
+            new_execution.click()
+            page.wait_for_selector("#task-modal[open]", state="visible", timeout=10_000)
+            page.wait_for_function("() => window.__devpilotCanonicalExecutionSubmitV34 === true", timeout=10_000)
+            page.locator("#task-project").select_option(created["project"]["id"])
+            page.locator('#task-form [name="title"]').fill("Execução criada pela UI E2E")
+            page.locator("#task-context").fill("Validar o cadastro completo de uma execução pela interface do DevPilot.")
+
+            with page.expect_response(
+                lambda response: response.request.method == "POST"
+                and response.url.endswith("/api/tasks"),
+                timeout=15_000,
+            ) as ui_create_response_info:
+                page.locator("#task-submit").click()
+
+            assert ui_create_response_info.value.status == 201
+            ui_created = ui_create_response_info.value.json()
+            assert ui_created["id"]
+            page.wait_for_selector("#task-modal", state="hidden", timeout=10_000)
+            assert page.locator('script[src*="executions-submit-v29.js"]').count() == 0
+
+            persisted_ui = page.evaluate(
+                """async taskId => {
+                  const token = localStorage.getItem('devpilot-token');
+                  const response = await fetch(`/api/ui/tasks/${encodeURIComponent(taskId)}`, {
+                    headers: {Authorization: `Bearer ${token}`}, cache: 'no-store'
+                  });
+                  return {status: response.status, body: await response.json()};
+                }""",
+                ui_created["id"],
+            )
+            assert persisted_ui["status"] == 200
+            assert persisted_ui["body"]["title"] == "Execução criada pela UI E2E"
+
+            # Execuções abre com renderer operacional, mas sem pagar o custo de analytics.
             page.locator('.nav[data-view="tasks"]').click()
             page.wait_for_selector("#tasks-view.active", timeout=10_000)
+            page.wait_for_selector('script[src*="tasks-operational-ui.js"]', state="attached", timeout=15_000)
             page.wait_for_function(
                 "() => document.querySelector('#tasks-table')?.textContent?.includes('Execução E2E da matriz crítica')",
+                timeout=15_000,
+            )
+            page.wait_for_function(
+                "() => document.querySelector('#tasks-table')?.textContent?.includes('Execução criada pela UI E2E')",
                 timeout=15_000,
             )
             assert page.locator('script[src*="task-analytics.js"]').count() == 0
@@ -223,11 +262,7 @@ def test_login_tasks_and_super_admin_critical_flow(e2e_server):
             admin_placeholder = page.locator('[data-devpilot-feature-placeholder="admin"]')
             admin_placeholder.wait_for(state="visible", timeout=10_000)
             admin_placeholder.click()
-            page.wait_for_selector(
-                'script[src*="super-admin-task-panel.js"]',
-                state="attached",
-                timeout=15_000,
-            )
+            page.wait_for_selector('script[src*="super-admin-task-panel.js"]', state="attached", timeout=15_000)
             page.wait_for_function(
                 "() => document.querySelector('script[src*=\"super-admin-task-panel.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
                 timeout=15_000,
