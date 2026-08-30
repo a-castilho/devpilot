@@ -63,10 +63,29 @@
       'task-modal.js',
     ],
 
+    /*
+     * Desenvolvimento pertence ao app.js.
+     *
+     * O clique no menu não deve aguardar plugins opcionais.
+     * A tela abre imediatamente com a listagem operacional.
+     */
     tasks: [
+    ],
+
+    /*
+     * Gráficos somente quando o usuário clicar em "Gráficos".
+     */
+    tasksAnalytics: [
+      'task-analytics.js',
+    ],
+
+    /*
+     * Funcionalidades avançadas preservadas.
+     * Não fazem parte do caminho crítico de abertura da tela.
+     */
+    tasksEnhancements: [
       'consolidated-ui.js',
       'task-modal.js',
-      'task-analytics.js',
       'project-delete-ui.js',
       'task-completion-documentation.js',
       'system-tests.js',

@@ -92,7 +92,10 @@ function showView(name) {
   setActiveView(name);
   if (name === 'projects') void loadProjects();
   if (name === 'organizations') void loadOrganizations();
-  if (name === 'tasks') void loadAllTasks();
+  if (name === 'tasks') {
+    renderTasks();
+    window.setTimeout(() => void loadAllTasks(false, 8), 60);
+  }
   if (name === 'providers') void loadProviders();
   if (name === 'audit') void loadAudit();
 }
@@ -316,15 +319,16 @@ function renderProjects() {
   });
 }
 
-async function loadAllTasks(force = false) {
+async function loadAllTasks(force = false, limit = 8) {
   if (state.tasksLoading) return state.tasksLoading;
   if (state.tasksLoadedAll && !force) return state.tasks;
 
   state.tasksLoading = (async () => {
     try {
-      const tasks = await api('/ui/tasks?limit=20');
+      const safeLimit = Math.max(1, Math.min(20, Number(limit) || 8));
+      const tasks = await api(`/ui/tasks?limit=${safeLimit}`);
       state.tasks = Array.isArray(tasks) ? tasks : [];
-      state.tasksLoadedAll = state.tasks.length < 20;
+      state.tasksLoadedAll = state.tasks.length < safeLimit;
       renderTasks();
       return state.tasks;
     } catch (error) {
@@ -361,32 +365,102 @@ async function loadTaskInstructions(taskId, container, button) {
 function renderTasks() {
   const table = $('#tasks-table');
   if (!table) return;
-  table.innerHTML = state.tasks.map(task => `
-    <tr class="task-main-row"><td><strong>${esc(task.title)}</strong><br><small>${new Date(task.created_at).toLocaleString('pt-BR')}</small></td><td>${esc(task.source)}</td><td>${status(task.status)}</td><td>${task.priority}</td><td>${task.status === 'awaiting_approval' ? `<button class="primary approve" data-id="${task.id}">Aprovar</button>` : '—'}</td></tr>
-    <tr class="task-instructions-row"><td colspan="5"><div data-task-instructions="${task.id}"><button class="link task-instructions-load" type="button" data-id="${task.id}">Ver instruções da análise</button></div></td></tr>
-  `).join('') || '<tr><td colspan="5" class="empty">Nenhuma tarefa registrada.</td></tr>';
+
+  const tasks = Array.isArray(state.tasks)
+    ? state.tasks.slice(0, 20)
+    : [];
+
+  table.innerHTML = tasks.map(task => `
+    <tr class="task-main-row" data-task-id="${esc(task.id)}">
+      <td class="task-primary-cell">
+        <strong title="${esc(task.title)}">${esc(task.title)}</strong>
+        <small>${new Date(task.created_at).toLocaleString('pt-BR')}</small>
+      </td>
+
+      <td class="task-secondary-cell">
+        ${esc(task.source || 'DevPilot')}
+      </td>
+
+      <td class="task-status-cell">
+        ${status(task.status)}
+      </td>
+
+      <td class="task-priority-cell">
+        ${esc(task.priority ?? '—')}
+      </td>
+
+      <td class="task-action-cell">
+        <div class="task-operational-actions">
+          ${task.status === 'awaiting_approval'
+            ? `<button class="primary approve" data-id="${esc(task.id)}">Aprovar</button>`
+            : ''}
+          <button
+            class="ghost task-instructions-load"
+            type="button"
+            data-id="${esc(task.id)}"
+          >Detalhes</button>
+        </div>
+        <div
+          class="task-inline-details"
+          data-task-instructions="${esc(task.id)}"
+          hidden
+        ></div>
+      </td>
+    </tr>
+  `).join('') ||
+    '<tr><td colspan="5" class="empty">Nenhuma tarefa registrada.</td></tr>';
 
   $$('.approve', table).forEach(button => {
     button.onclick = async () => {
       try {
-        await api(`/tasks/${button.dataset.id}/approve`, {method: 'POST'});
-        toast('Tarefa aprovada e enfileirada');
-        await loadAllTasks(true);
+        await api(
+          `/tasks/${button.dataset.id}/approve`,
+          {method: 'POST'}
+        );
+        toast('Tarefa aprovada');
+        await loadAllTasks(true, 8);
         await loadDashboard();
       } catch (error) {
         toast(error.message);
       }
     };
   });
+
   $$('.task-instructions-load', table).forEach(button => {
     button.onclick = () => {
-      const container = table.querySelector(`[data-task-instructions="${CSS.escape(button.dataset.id)}"]`);
-      void loadTaskInstructions(button.dataset.id, container, button);
+      const container = table.querySelector(
+        `[data-task-instructions="${CSS.escape(button.dataset.id)}"]`
+      );
+
+      if (!container) return;
+
+      const opening = container.hidden;
+      container.hidden = !opening;
+
+      if (!opening) {
+        button.textContent = 'Detalhes';
+        return;
+      }
+
+      button.textContent = 'Ocultar';
+
+      void loadTaskInstructions(
+        button.dataset.id,
+        container,
+        button
+      ).finally(() => {
+        if (!container.hidden) button.textContent = 'Ocultar';
+      });
     };
   });
-  decorateStatuses(table);
-  if (typeof window.renderTaskAnalytics === 'function') window.renderTaskAnalytics();
+
+  document.dispatchEvent(
+    new CustomEvent('devpilot:tasks-rendered', {
+      detail: {count: tasks.length},
+    })
+  );
 }
+
 
 function fillProjects(selected = '') {
   const options = state.projects.map(project => `<option value="${project.id}" ${String(project.id) === String(selected) ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
@@ -654,4 +728,70 @@ else $('#auth-modal')?.showModal?.();
   window.addEventListener('resize', sync, {passive: true});
   document.addEventListener('devpilot:feature-ready', () => requestAnimationFrame(sync));
   sync();
+})();
+/* DevPilot lightweight development controls · 20260830 */
+(() => {
+  'use strict';
+
+  const bind = () => {
+    const more = document.querySelector('#tasks-load-more');
+    const analytics = document.querySelector('#tasks-show-analytics');
+    const target = document.querySelector('#task-analytics');
+
+    if (more && more.dataset.bound !== '1') {
+      more.dataset.bound = '1';
+      more.addEventListener('click', async () => {
+        more.disabled = true;
+        const old = more.textContent;
+        more.textContent = 'Carregando…';
+
+        try {
+          await loadAllTasks(true, 20);
+        } finally {
+          more.disabled = false;
+          more.textContent = old;
+        }
+      });
+    }
+
+    if (
+      analytics &&
+      target &&
+      analytics.dataset.bound !== '1'
+    ) {
+      analytics.dataset.bound = '1';
+
+      analytics.addEventListener('click', async () => {
+        const opening = target.hidden;
+        target.hidden = !opening;
+
+        if (!opening) {
+          analytics.textContent = 'Gráficos';
+          return;
+        }
+
+        analytics.disabled = true;
+        analytics.textContent = 'Carregando…';
+
+        try {
+          await window.__devpilotLoadFeature?.('tasksAnalytics');
+          window.renderTaskAnalytics?.();
+          analytics.textContent = 'Ocultar gráficos';
+        } finally {
+          analytics.disabled = false;
+        }
+      });
+    }
+  };
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bind, {once:true});
+  } else {
+    bind();
+  }
+
+  document.addEventListener(
+    'devpilot:authenticated-ui-ready',
+    bind
+  );
 })();
