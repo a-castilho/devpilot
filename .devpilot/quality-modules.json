@@ -202,6 +202,7 @@
         "vercel.json"
       ],
       "tests": [
+        "tests/test_frontend_runtime_manifest.py",
         "tests/test_frontend_runtime_circuit_breaker.py",
         "tests/test_progressive_frontend_boot.py",
         "tests/test_spa_static_path_isolation.py",
