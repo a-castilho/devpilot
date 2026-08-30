@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 LOADER = ROOT / "app/static/acs-loader.js"
 MAIN = ROOT / "app/main.py"
 FEATURES = ROOT / "app/static/feature-loader.js"
+MANIFEST = ROOT / "app/static/runtime-manifest.js"
 
 
 def test_authenticated_boot_is_exactly_app_plus_feature_loader():
@@ -57,12 +58,19 @@ def test_acs_loader_is_visual_only():
     assert "loader.style.pointerEvents = 'none'" in source
 
 
-def test_optional_features_require_explicit_loader_actions():
+def test_optional_features_require_explicit_manifest_driven_loader_actions():
     source = FEATURES.read_text(encoding="utf-8")
+    manifest = MANIFEST.read_text(encoding="utf-8")
 
     assert "window.__devpilotLoadFeature = loadFeature" in source
-    assert "FEATURE_BUNDLES" in source
-    assert "document.addEventListener('click'" in source
-    assert "data-devpilot-feature-placeholder" in source
-    assert "requestIdleCallback" not in source
+    assert "window.__devpilotRuntimeManifest" in source
+    assert "MANIFEST_SRC" in source
+    assert "scheduleBackground" in source
+    assert "requestIdleCallback" in source
     assert "MutationObserver" not in source
+    assert "data-devpilot-feature-placeholder" in source
+
+    assert "window.__devpilotRuntimeManifest" in manifest
+    assert "project-ships.js" in manifest
+    assert "super-admin-task-panel.js" in manifest
+    assert "rag-admin-ui.js" in manifest
