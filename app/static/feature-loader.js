@@ -4,24 +4,153 @@
   if (window.__devpilotFeatureLoaderReady) return;
   window.__devpilotFeatureLoaderReady = true;
 
+
+  const FEATURE_ASSET_REVISION = (() => {
+    try {
+      const src = document.currentScript?.src || '';
+      return new URL(src, location.href).searchParams.get('v')
+        || 'devpilot-runtime';
+    } catch (_) {
+      return 'devpilot-runtime';
+    }
+  })();
+
   const loadedFiles = new Set();
   const featureState = new Map();
   const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
   let navigationEpoch = 0;
 
   const FEATURE_BUNDLES = Object.freeze({
-    mobileShell: ['mobile-accordion-menu.js'],
-    profile: ['profile.js'],
-    users: ['users.js'],
-    providers: ['provider-models.js', 'provider-ollama.js'],
-    projectBuilder: ['project-provisioning.js', 'project-builder.js', 'project-description-profile.js', 'mobile-project-card-compact.js'],
-    reports: ['reports.js'],
-    taskModal: ['task-modal.js'],
-    tasks: ['task-analytics.js', 'project-delete-ui.js', 'task-completion-documentation.js', 'system-tests.js', 'task-workflow-observability.js'],
-    example: ['example-project.js', 'example-project-mobile-training.js', 'example-project-graphs-fix.js', 'tws-example.js'],
-    voice: ['super-admin-voice.js', 'voice-project-start.js', 'voice-local-update.js', 'voice-microphone-permission.js', 'voice-playback.js', 'voice-enhanced-ui.js', 'voice-chatgpt-layout.js', 'voice-insecure-lan-guard.js', 'mobile-voice-capture-final.js', 'voice-project-autoload.js', 'mobile-chat-project-picker.js', 'voice-runtime-stability.js', 'chat-request-watchdog.js'],
-    admin: ['super-admin-task-panel.js', 'token-usage.js', 'token-usage-mobile-fix.js', 'deploy-admin.js', 'cloud-admin.js', 'super-admin-local-test.js', 'investia-admin.js', 'investia-homologation.js', 'game-rules-admin.js', 'linux-terminal.js', 'linux-beginner-coach.js', 'career-linkedin.js', 'mission-control.js', 'rag-admin-ui.js', 'rag-jobs-ui.js'],
-    audit: ['audit-integrity.js', 'telemetry-capture.js', 'telemetry-replay-capture.js'],
+    shell: [
+      'simplified-nav.js',
+    ],
+
+    mobileShell: [
+      'mobile-accordion-menu.js',
+    ],
+
+    profile: [
+      'profile.js',
+    ],
+
+    users: [
+      'users.js',
+    ],
+
+    providers: [
+      'provider-models.js',
+      'provider-ollama.js',
+    ],
+
+    projectBuilder: [
+      'project-provisioning.js',
+      'project-builder.js',
+      'project-description-profile.js',
+      'mobile-project-card-compact.js',
+    ],
+
+    projects: [
+      'project-provisioning.js',
+      'project-builder.js',
+      'project-description-profile.js',
+      'mobile-project-card-compact.js',
+      'project-delete-ui.js',
+      'project-ships.js',
+      'product-delivery-ui.js',
+    ],
+
+    taskModal: [
+      'task-modal.js',
+    ],
+
+    tasks: [
+      'consolidated-ui.js',
+      'task-modal.js',
+      'task-analytics.js',
+      'project-delete-ui.js',
+      'task-completion-documentation.js',
+      'system-tests.js',
+      'task-workflow-observability.js',
+      'task-failures.js',
+      'task-image-upload.js',
+      'analysis-commercial-proposal.js',
+      'analysis-failure-actions.js',
+      'analysis-incomplete-commercial.js',
+      'approval-slider.js',
+      'ui-literal-newline-cleanup.js',
+    ],
+
+    reports: [
+      'reports.js',
+      'repeatai-analysis-scroll.js',
+      'repeatai-live-graphs.js',
+      'repeatai-dashboard-graphs.js',
+      'repeatai-pattern-graphs.js',
+    ],
+
+    organizations: [
+      'organization-normalization-ui.js',
+    ],
+
+    example: [
+      'example-project.js',
+      'example-project-mobile-training.js',
+      'example-project-graphs-fix.js',
+      'tws-example.js',
+    ],
+
+    voice: [
+      'super-admin-voice.js',
+      'voice-project-start.js',
+      'voice-local-update.js',
+      'voice-microphone-permission.js',
+      'voice-playback.js',
+      'voice-enhanced-ui.js',
+      'voice-chatgpt-layout.js',
+      'voice-insecure-lan-guard.js',
+      'mobile-voice-capture-final.js',
+      'voice-project-autoload.js',
+      'mobile-chat-project-picker.js',
+      'voice-runtime-stability.js',
+      'chat-request-watchdog.js',
+    ],
+
+    admin: [
+      /*
+       * IMPORTANTE:
+       * super-admin-voice também instala Admin Voz e o Mapa do Sistema.
+       */
+      'super-admin-voice.js',
+
+      'super-admin-task-panel.js',
+      'token-usage.js',
+      'token-usage-mobile-fix.js',
+
+      'deploy-admin.js',
+      'cloud-admin.js',
+      'super-admin-local-test.js',
+
+      'investia-admin.js',
+      'investia-homologation.js',
+
+      'game-rules-admin.js',
+
+      'linux-terminal.js',
+      'linux-beginner-coach.js',
+
+      'career-linkedin.js',
+
+      'mission-control.js',
+
+      'rag-admin-ui.js',
+      'rag-jobs-ui.js',
+    ],
+
+    audit: [
+      'audit-integrity.js',
+      'telemetry-capture.js',
+      'telemetry-replay-capture.js',
+    ],
   });
 
   const scriptName = src => {
@@ -123,7 +252,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=ondemand-20260829-chat-voice-stable`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=${encodeURIComponent(FEATURE_ASSET_REVISION)}`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -317,11 +446,20 @@
   }
 
   const TRIGGERS = [
-    ['[data-project-builder-open]', 'projectBuilder'], ['[data-example-project]', 'example'],
-    ['[data-open="task-modal"]', 'taskModal'], ['.nav[data-view="providers"]', 'providers'],
-    ['.nav[data-view="reports"]', 'reports'], ['.nav[data-view="projects"]', 'tasks'],
-    ['.nav[data-view="tasks"]', 'tasks'], ['#voice-hero, #voice-dock', 'voice'],
+    ['[data-project-builder-open]', 'projectBuilder'],
+    ['[data-example-project]', 'example'],
+
+    ['[data-open="task-modal"]', 'taskModal'],
+    ['[data-project-task]', 'taskModal'],
+
+    ['.nav[data-view="organizations"]', 'organizations'],
+    ['.nav[data-view="projects"]', 'projects'],
+    ['.nav[data-view="tasks"]', 'tasks'],
+    ['.nav[data-view="providers"]', 'providers'],
+    ['.nav[data-view="reports"]', 'reports'],
     ['.nav[data-view="audit"]', 'audit'],
+
+    ['#voice-hero, #voice-dock, #voice-start, #voice-send', 'voice'],
   ];
 
   function matchFeatureTrigger(target) {
@@ -399,9 +537,41 @@
     void loadFeature('mobileShell').then(ok => { if (!ok) mobileShellRequested = false; });
   }
 
+
+  function initializeActiveViewFeature() {
+    const active = document.querySelector(
+      '.sidebar nav .nav.active[data-view]'
+    );
+
+    const view = String(active?.dataset?.view || '');
+
+    const featureByView = {
+      projects: 'projects',
+      tasks: 'tasks',
+      providers: 'providers',
+      reports: 'reports',
+      audit: 'audit',
+    };
+
+    const feature = featureByView[view];
+
+    if (feature) {
+      void loadFeature(feature);
+    }
+  }
+
   function initializeAuthenticatedUi() {
     initializePlaceholders();
-    initializeMobileShell();
+
+    if (window.matchMedia('(min-width: 901px)').matches) {
+      void loadFeature('shell');
+    } else {
+      initializeMobileShell();
+    }
+
+    if (typeof initializeActiveViewFeature === 'function') {
+      initializeActiveViewFeature();
+    }
   }
 
   const authModal = document.querySelector('#auth-modal');

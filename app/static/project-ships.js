@@ -609,6 +609,9 @@
   }
 
   function start() {
+    document.documentElement.classList.add(
+      'devpilot-project-ships-ready'
+    );
     ensureStyles();
     const root = document.querySelector(ROOT_SELECTOR);
     if (!root) return;

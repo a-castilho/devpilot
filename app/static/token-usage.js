@@ -99,7 +99,6 @@
   }
 
   async function pollUsage() {
-    if (document.hidden) return;
     if (typeof api !== 'function') return;
     try {
       const items = await api('/token-usage/me?limit=10');
