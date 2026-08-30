@@ -4,12 +4,10 @@
   if (window.__devpilotFeatureLoaderReady) return;
   window.__devpilotFeatureLoaderReady = true;
 
-
   const FEATURE_ASSET_REVISION = (() => {
     try {
       const src = document.currentScript?.src || '';
-      return new URL(src, location.href).searchParams.get('v')
-        || 'devpilot-runtime';
+      return new URL(src, location.href).searchParams.get('v') || 'devpilot-runtime';
     } catch (_) {
       return 'devpilot-runtime';
     }
@@ -21,6 +19,15 @@
   let navigationEpoch = 0;
 
   const FEATURE_BUNDLES = Object.freeze({
+    /* Shell comum: leve, determinístico e necessário em qualquer viewport. */
+    shellCommon: [
+      'viewport-adaptive-v15.js',
+      'page-navigation-v26.js',
+      'dashboard-user-v21.js',
+      'executions-v18.js',
+      'executions-focus-v19.js',
+    ],
+
     shell: [
       'simplified-nav.js',
     ],
@@ -29,13 +36,8 @@
       'mobile-accordion-menu.js',
     ],
 
-    profile: [
-      'profile.js',
-    ],
-
-    users: [
-      'users.js',
-    ],
+    profile: ['profile.js'],
+    users: ['users.js'],
 
     providers: [
       'provider-models.js',
@@ -59,43 +61,27 @@
       'product-delivery-ui.js',
     ],
 
-    taskModal: [
-      'task-modal.js',
-    ],
+    taskModal: ['task-modal.js'],
+    gameWeapons: ['game-weapons.js'],
 
-    gameWeapons: [
-      'game-weapons.js',
-    ],
-
-    /*
-     * Desenvolvimento pertence ao app.js.
-     *
-     * O clique no menu não deve aguardar plugins opcionais.
-     * A tela abre imediatamente com a listagem operacional.
-     */
+    /* A tela de Execuções abre imediatamente; só o controle de exclusão é essencial. */
     tasks: [
+      'project-delete-ui.js',
     ],
 
-    /*
-     * Gráficos somente quando o usuário clicar em "Gráficos".
-     */
     tasksAnalytics: [
       'task-analytics.js',
     ],
 
-    /*
-     * Funcionalidades avançadas preservadas.
-     * Não fazem parte do caminho crítico de abertura da tela.
-     */
-    tasksEnhancements: [
-      'consolidated-ui.js',
-      'task-modal.js',
-      'project-delete-ui.js',
+    tasksDetails: [
+      'execution-results-v28.js',
       'task-completion-documentation.js',
-      'system-tests.js',
-      'task-workflow-observability.js',
       'task-failures.js',
       'task-image-upload.js',
+    ],
+
+    tasksEnhancements: [
+      'consolidated-ui.js',
       'analysis-commercial-proposal.js',
       'analysis-failure-actions.js',
       'analysis-incomplete-commercial.js',
@@ -111,9 +97,7 @@
       'repeatai-pattern-graphs.js',
     ],
 
-    organizations: [
-      'organization-normalization-ui.js',
-    ],
+    organizations: ['organization-normalization-ui.js'],
 
     example: [
       'example-project.js',
@@ -139,32 +123,20 @@
     ],
 
     admin: [
-      /*
-       * IMPORTANTE:
-       * super-admin-voice também instala Admin Voz e o Mapa do Sistema.
-       */
       'super-admin-voice.js',
-
       'super-admin-task-panel.js',
       'token-usage.js',
       'token-usage-mobile-fix.js',
-
       'deploy-admin.js',
       'cloud-admin.js',
       'super-admin-local-test.js',
-
       'investia-admin.js',
       'investia-homologation.js',
-
       'game-rules-admin.js',
-
       'linux-terminal.js',
       'linux-beginner-coach.js',
-
       'career-linkedin.js',
-
       'mission-control.js',
-
       'rag-admin-ui.js',
       'rag-jobs-ui.js',
     ],
@@ -190,9 +162,7 @@
 
   const shortYield = () => new Promise(resolve => {
     if (typeof window.scheduler?.yield === 'function') {
-      Promise.resolve(window.scheduler.yield())
-        .then(resolve)
-        .catch(() => window.setTimeout(resolve, 32));
+      Promise.resolve(window.scheduler.yield()).then(resolve).catch(() => window.setTimeout(resolve, 32));
       return;
     }
     window.setTimeout(resolve, 32);
@@ -215,9 +185,7 @@
     (detectedCpu > 0 && detectedCpu <= 2);
 
   document.documentElement.classList.toggle('devpilot-low-power', lowPowerDevice);
-
   window.__devpilotFeaturePerf = window.__devpilotFeaturePerf || [];
-
 
   function waitForExistingFeatureScript(script, name) {
     const state = script.dataset.devpilotFeatureLoadState;
@@ -245,8 +213,8 @@
         resolve(ok);
       };
       const timeoutId = window.setTimeout(() => finish(false), FEATURE_SCRIPT_TIMEOUT_MS);
-      script.addEventListener('load', () => finish(true), {once: true});
-      script.addEventListener('error', () => finish(false), {once: true});
+      script.addEventListener('load', () => finish(true), {once:true});
+      script.addEventListener('error', () => finish(false), {once:true});
     });
   }
 
@@ -293,10 +261,7 @@
     if (current?.status === 'loaded') return true;
     if (current?.promise) return current.promise;
 
-    const intentEpoch = Number.isInteger(options.intentEpoch)
-      ? options.intentEpoch
-      : null;
-
+    const intentEpoch = Number.isInteger(options.intentEpoch) ? options.intentEpoch : null;
     const promise = (async () => {
       const failures = [];
       let cancelled = false;
@@ -311,66 +276,27 @@
         const file = files[index];
         const started = performance.now();
         const ok = await loadScript(file);
-
         if (!ok) failures.push(file);
 
         window.__devpilotFeaturePerf.push({
-          feature,
-          file,
-          durationMs: Math.round(performance.now() - started),
-          ok,
-          at: Date.now(),
+          feature, file, durationMs: Math.round(performance.now() - started), ok, at: Date.now(),
         });
 
-        /*
-         * IMPORTANTE:
-         * O JS recém carregado pode executar bastante trabalho síncrono.
-         * Entregamos o thread principal ao navegador antes do próximo módulo.
-         */
         await nextPaint();
         await shortYield();
-
-        /*
-         * Bundles maiores deixam um intervalo de idle a cada dois arquivos.
-         * Evita executar 10-15 módulos pesados na mesma interação.
-         */
-        if (index > 0 && index % 2 === 0) {
-          await idleYield();
-        }
+        if (index > 0 && index % 2 === 0) await idleYield();
       }
 
-      const status = cancelled
-        ? 'partial'
-        : failures.length
-          ? 'partial'
-          : 'loaded';
-
-      featureState.set(feature, {
-        status,
-        failures,
-        cancelled,
-        promise: null,
-      });
+      const status = cancelled ? 'partial' : failures.length ? 'partial' : 'loaded';
+      featureState.set(feature, {status, failures, cancelled, promise:null});
 
       document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
-        detail: {
-          feature,
-          failures,
-          cancelled,
-          durationMs: Math.round(performance.now() - featureStarted),
-        },
+        detail: {feature, failures, cancelled, durationMs:Math.round(performance.now() - featureStarted)},
       }));
-
       return !cancelled && failures.length === 0;
     })();
 
-    featureState.set(feature, {
-      status: 'loading',
-      failures: [],
-      cancelled: false,
-      promise,
-    });
-
+    featureState.set(feature, {status:'loading', failures:[], cancelled:false, promise});
     return promise;
   }
 
@@ -380,23 +306,19 @@
   function openChat() {
     const modal = document.querySelector('#voice-modal');
     if (modal && !modal.open) modal.showModal?.();
-
     const featurePromise = loadFeature('voice');
     const projectsPromise = typeof window.loadProjects === 'function'
       ? Promise.resolve(window.loadProjects()).catch(() => [])
       : Promise.resolve([]);
 
     return Promise.all([featurePromise, projectsPromise]).then(([ready]) => {
-      document.dispatchEvent(new CustomEvent('devpilot:chat-opened', {detail: {ready}}));
-      window.requestAnimationFrame(() => {
-        document.querySelector('#voice-transcript, #voice-chat-input')?.focus?.();
-      });
+      document.dispatchEvent(new CustomEvent('devpilot:chat-opened', {detail:{ready}}));
+      window.requestAnimationFrame(() => document.querySelector('#voice-transcript, #voice-chat-input')?.focus?.());
       return ready;
     });
   }
 
   window.devpilotOpenChat = openChat;
-
   const navRoot = () => document.querySelector('.sidebar nav');
 
   function addPlaceholder(feature, label, {superAdmin = false} = {}) {
@@ -425,7 +347,8 @@
   }
 
   function restorePendingPlaceholders() {
-    document.querySelectorAll('[data-devpilot-feature-placeholder][data-devpilot-busy="1"]').forEach(button => restorePlaceholder(button, button.dataset.devpilotOriginalLabel || ''));
+    document.querySelectorAll('[data-devpilot-feature-placeholder][data-devpilot-busy="1"]')
+      .forEach(button => restorePlaceholder(button, button.dataset.devpilotOriginalLabel || ''));
   }
 
   function featureTarget(feature) {
@@ -440,6 +363,7 @@
       window.location.assign('/game/index.html');
       return;
     }
+
     const intentEpoch = navigationEpoch;
     const original = button.textContent.replace(/\s*·\s*carregando…?\s*$/u, '');
     button.dataset.devpilotBusy = '1';
@@ -447,6 +371,7 @@
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
     button.textContent = `${original} · carregando…`;
+
     try {
       const ok = await loadFeature(feature, {intentEpoch});
       if (intentEpoch !== navigationEpoch) return restorePlaceholder(button, original);
@@ -471,6 +396,9 @@
   const TRIGGERS = [
     ['[data-project-builder-open]', 'projectBuilder'],
     ['[data-example-project]', 'example'],
+    ['[data-open="task-modal"]', 'taskModal'],
+    ['#tasks-v9-indicators', 'tasksAnalytics'],
+    ['.tasks-v9-details, .task-instructions-load', 'tasksDetails'],
 
     ['.nav[data-view="organizations"]', 'organizations'],
     ['.nav[data-view="projects"]', 'projects'],
@@ -478,7 +406,6 @@
     ['.nav[data-view="providers"]', 'providers'],
     ['.nav[data-view="reports"]', 'reports'],
     ['.nav[data-view="audit"]', 'audit'],
-
     ['#voice-hero, #voice-dock, #voice-start, #voice-send', 'voice'],
   ];
 
@@ -499,11 +426,13 @@
       void openPlaceholder(placeholder, placeholder.dataset.devpilotFeaturePlaceholder);
       return;
     }
+
     const navTarget = event.target.closest?.('.sidebar nav .nav');
     if (navTarget) {
       navigationEpoch += 1;
       restorePendingPlaceholders();
     }
+
     const match = matchFeatureTrigger(event.target);
     if (!match) return;
     const {trigger, feature} = match;
@@ -526,6 +455,7 @@
       return;
     }
     if (featureState.get(feature)?.status === 'loaded') return;
+
     const intentEpoch = navigationEpoch;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -547,7 +477,7 @@
     addPlaceholder('profile', 'Perfil');
     addPlaceholder('users', 'Usuários');
     addPlaceholder('game', 'Modo Jogo');
-    addPlaceholder('admin', 'Super Admin', {superAdmin: true});
+    addPlaceholder('admin', 'Super Admin', {superAdmin:true});
   }
 
   let mobileShellRequested = false;
@@ -557,31 +487,19 @@
     void loadFeature('mobileShell').then(ok => { if (!ok) mobileShellRequested = false; });
   }
 
-
   function initializeActiveViewFeature() {
-    const active = document.querySelector(
-      '.sidebar nav .nav.active[data-view]'
-    );
-
+    const active = document.querySelector('.sidebar nav .nav.active[data-view]');
     const view = String(active?.dataset?.view || '');
-
     const featureByView = {
-      projects: 'projects',
-      tasks: 'tasks',
-      providers: 'providers',
-      reports: 'reports',
-      audit: 'audit',
+      projects:'projects', tasks:'tasks', providers:'providers', reports:'reports', audit:'audit',
     };
-
     const feature = featureByView[view];
-
-    if (feature) {
-      void loadFeature(feature);
-    }
+    if (feature) void loadFeature(feature);
   }
 
   function initializeAuthenticatedUi() {
     initializePlaceholders();
+    void loadFeature('shellCommon');
 
     if (window.matchMedia('(min-width: 901px)').matches) {
       void loadFeature('shell');
@@ -589,9 +507,7 @@
       initializeMobileShell();
     }
 
-    if (typeof initializeActiveViewFeature === 'function') {
-      initializeActiveViewFeature();
-    }
+    initializeActiveViewFeature();
   }
 
   const authModal = document.querySelector('#auth-modal');
@@ -604,15 +520,18 @@
     document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi);
     authModal?.addEventListener('close', initializeIfAuthenticated);
     if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once: true});
+      document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once:true});
     } else {
       initializeIfAuthenticated();
     }
   } else if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once: true});
+    document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once:true});
   } else {
     initializeAuthenticatedUi();
   }
 
-  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => { if (event.matches) initializeMobileShell(); });
+  window.matchMedia('(max-width: 900px)').addEventListener?.('change', event => {
+    if (event.matches) initializeMobileShell();
+    else void loadFeature('shell');
+  });
 })();
