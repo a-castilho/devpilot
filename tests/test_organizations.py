@@ -95,6 +95,20 @@ def test_organization_ui_keeps_save_valid_and_non_blocking():
     assert "Informe o Fine-grained PAT da organização a-castilho." in script
 
 
+def test_organization_ui_refreshes_failed_sync_and_offers_credential_repair():
+    script = (
+        Path(__file__).parents[1] / "app" / "static" / "organization-normalization-ui.js"
+    ).read_text(encoding="utf-8")
+    assert "GITHUB · CREDENCIAL NECESSÁRIA" in script
+    assert "Atualizar credencial" in script
+    assert "credencial configurada · validação falhou" in script
+    assert "window.syncOrganization = async function syncOrganizationWithFreshState" in script
+    assert "state.organizations = [];" in script
+    assert "await loadOrganizations();" in script
+    assert "method: 'PATCH'" in script
+    assert "Salvar e validar" in script
+
+
 def test_project_slug_is_safe_for_devpilot_projects():
     assert project_slug("Marketplace Fiscal") == "marketplace-fiscal"
     assert project_slug("A") == "a-repo"

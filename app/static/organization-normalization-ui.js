@@ -19,6 +19,8 @@
   const githubLogin = form.querySelector('input[name="github_login"]');
   const accessToken = form.querySelector('input[name="access_token"]');
   const submit = form.querySelector('button[type="submit"]');
+  const modal = form.closest('dialog');
+  const modalTitle = form.querySelector('h2');
   let slugEdited = false;
 
   if (name) name.id ||= 'organization-name';
@@ -71,6 +73,48 @@
     }
   };
 
+  const credentialFailure = org => {
+    if (String(org?.sync_status || '').toLowerCase() !== 'failed') return false;
+    return /token|credential|credencial|expired|expirado|bad credentials|401|403|fine-grained/i
+      .test(String(org?.last_sync_error || ''));
+  };
+
+  const resetOrganizationEditor = () => {
+    form.dataset.editOrganizationId = '';
+    if (modalTitle) modalTitle.textContent = 'Conectar organização GitHub';
+    if (submit) submit.textContent = 'Conectar organização';
+    if (slug) slug.disabled = false;
+    if (githubLogin) githubLogin.disabled = false;
+  };
+
+  const openCredentialEditor = org => {
+    if (!org || !isSuperAdmin()) return;
+    form.reset();
+    form.dataset.editOrganizationId = String(org.id || '');
+    if (name) name.value = String(org.name || '');
+    if (slug) {
+      slug.value = String(org.slug || '');
+      slug.disabled = true;
+    }
+    if (githubLogin) {
+      githubLogin.value = String(org.external_login || '');
+      githubLogin.disabled = true;
+    }
+    if (accessToken) {
+      accessToken.value = '';
+      accessToken.required = true;
+      accessToken.placeholder = 'Cole o novo Fine-grained PAT';
+    }
+    if (ownerConfirmation) {
+      ownerConfirmation.checked = false;
+      ownerConfirmation.required = true;
+    }
+    if (modalTitle) modalTitle.textContent = 'Atualizar credencial GitHub';
+    if (submit) submit.textContent = 'Salvar e validar';
+    modal?.showModal?.();
+    accessToken?.focus();
+  };
+
   name?.addEventListener('input', () => {
     if (!slugEdited || !slug?.value) slug.value = normalize(name.value, 100);
   });
@@ -94,13 +138,14 @@
     }
 
     const formData = new FormData(form);
-    const normalizedSlug = normalize(formData.get('slug') || formData.get('name'), 100);
-    const normalizedLogin = normalize(formData.get('github_login'), 39);
+    const editingId = String(form.dataset.editOrganizationId || '').trim();
+    const normalizedSlug = normalize(formData.get('slug') || slug?.value || formData.get('name'), 100);
+    const normalizedLogin = normalize(formData.get('github_login') || githubLogin?.value, 39);
     const organizationName = String(formData.get('name') || '').trim();
     const token = String(formData.get('access_token') || '').trim();
 
-    if (slug) slug.value = normalizedSlug;
-    if (githubLogin) githubLogin.value = normalizedLogin;
+    if (!editingId && slug) slug.value = normalizedSlug;
+    if (!editingId && githubLogin) githubLogin.value = normalizedLogin;
 
     if (organizationName.length < 2 || normalizedSlug.length < 2 || normalizedLogin.length < 1) {
       if (typeof toast === 'function') toast('Informe nome, slug e login GitHub válidos.');
@@ -119,29 +164,39 @@
       return;
     }
 
-    const payload = {
-      name: organizationName,
-      slug: normalizedSlug,
-      github_login: normalizedLogin,
-    };
-    if (token) payload.access_token = token;
-
-    const original = submit?.textContent || 'Conectar organização';
+    const original = submit?.textContent || (editingId ? 'Salvar e validar' : 'Conectar organização');
     if (submit) {
       submit.disabled = true;
-      submit.textContent = 'Conectando…';
+      submit.textContent = editingId ? 'Salvando…' : 'Conectando…';
     }
 
     let organization;
     try {
-      organization = await api('/organizations', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      });
-      form.closest('dialog')?.close();
-      form.reset();
-      slugEdited = false;
-      if (typeof toast === 'function') toast('Organização conectada. Verificando acesso aos repositórios…');
+      if (editingId) {
+        organization = await api(`/organizations/${editingId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({name: organizationName, access_token: token}),
+        });
+        modal?.close();
+        form.reset();
+        resetOrganizationEditor();
+        if (typeof toast === 'function') toast('Credencial atualizada. Validando acesso ao GitHub…');
+      } else {
+        const payload = {
+          name: organizationName,
+          slug: normalizedSlug,
+          github_login: normalizedLogin,
+        };
+        if (token) payload.access_token = token;
+        organization = await api('/organizations', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        modal?.close();
+        form.reset();
+        slugEdited = false;
+        if (typeof toast === 'function') toast('Organização conectada. Verificando acesso aos repositórios…');
+      }
     } catch (error) {
       if (typeof toast === 'function') toast(error.message);
       return;
@@ -161,10 +216,54 @@
   form.addEventListener('reset', () => {
     slugEdited = false;
     if (ownerConfirmation) ownerConfirmation.checked = false;
-    if (submit) {
-      submit.disabled = false;
-      submit.textContent = 'Conectar organização';
-    }
+    resetOrganizationEditor();
+    if (submit) submit.disabled = false;
     setTimeout(syncManagedOrganizationRules, 0);
   });
+
+  const originalRenderOrganizations = window.renderOrganizations;
+  if (typeof originalRenderOrganizations === 'function') {
+    window.renderOrganizations = function renderOrganizationsWithCredentialState() {
+      originalRenderOrganizations();
+      const target = document.querySelector('#organizations-list');
+      if (!target || !Array.isArray(state?.organizations)) return;
+
+      state.organizations.forEach(org => {
+        const button = target.querySelector(`.sync-org[data-id="${CSS.escape(String(org.id))}"]`);
+        const card = button?.closest('.project-card');
+        if (!button || !card) return;
+
+        const failed = String(org.sync_status || '').toLowerCase() === 'failed';
+        if (!failed) return;
+
+        const authFailure = credentialFailure(org);
+        const eyebrow = card.querySelector('.eyebrow');
+        const credentialLabel = card.querySelector('code');
+        if (eyebrow) eyebrow.textContent = authFailure
+          ? 'GITHUB · CREDENCIAL NECESSÁRIA'
+          : 'GITHUB · FALHA';
+        if (credentialLabel && authFailure) {
+          credentialLabel.textContent = org.has_credentials
+            ? 'credencial configurada · validação falhou'
+            : 'sem credencial válida';
+        }
+        button.textContent = authFailure ? 'Atualizar credencial' : 'Tentar novamente';
+        button.onclick = authFailure
+          ? () => openCredentialEditor(org)
+          : () => void syncOrganization(org.id, button);
+      });
+    };
+  }
+
+  const originalSyncOrganization = window.syncOrganization;
+  if (typeof originalSyncOrganization === 'function') {
+    window.syncOrganization = async function syncOrganizationWithFreshState(id, button) {
+      try {
+        return await originalSyncOrganization(id, button);
+      } finally {
+        state.organizations = [];
+        await loadOrganizations();
+      }
+    };
+  }
 })();
