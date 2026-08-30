@@ -19,13 +19,13 @@
 
   async function start(){
     let current;try{current=await request('/api/auth/me')}catch(_){return}if(!MANAGERS.has(current.role))return;
-    const nav=document.createElement('button');nav.className='nav';nav.textContent='Usuários';document.querySelector('.sidebar nav')?.appendChild(nav);
+    const nav=document.createElement('button');nav.className='nav';nav.dataset.view='users';nav.textContent='Usuários';document.querySelector('.sidebar nav')?.appendChild(nav);
     const note=current.role==='SUPER_ADMIN'
       ?'Super Admin administra todos. Proprietário administra Admin/Analista/Leitura. Administrador administra Analista/Leitura.'
       :current.role==='OWNER'
         ?'Proprietário administra Administrador, Analista e Leitura.'
         :'Administrador administra Analista e Leitura.';
-    const section=document.createElement('section');section.className='view';section.id='users-view';section.innerHTML=`
+    const section=document.createElement('section');section.className='view';section.id='users-view';section.hidden=true;section.setAttribute('aria-hidden','true');section.innerHTML=`
       <div class="section-head"><div><p>Perfis de acesso no padrão RegulaAI.</p></div><button class="primary" id="new-user">+ Novo usuário</button></div>
       <div class="users-summary" id="users-summary"></div>
       <div class="users-toolbar"><input id="users-search" placeholder="Buscar por nome, e-mail ou perfil"><button class="ghost" id="users-refresh">Atualizar</button></div>
@@ -44,7 +44,25 @@
     }
     async function load(){try{const data=await request('/api/users');users=Array.isArray(data)?data.filter(visibleUser):[];render()}catch(e){window.toast?.(e.message)}}
     async function updateUser(id,patch){try{const updated=await request(`/api/users/${id}`,{method:'PATCH',body:JSON.stringify(patch)});if(visibleUser(updated))users=users.map(u=>u.id===id?updated:u);else users=users.filter(u=>u.id!==id);render();window.toast?.('Usuário atualizado')}catch(e){window.toast?.(e.message);await load()}}
-    nav.onclick=()=>{document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v===section));document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===nav));const t=document.querySelector('#page-title');if(t)t.textContent='Usuários';load()};search.oninput=render;document.querySelector('#users-refresh').onclick=load;document.querySelector('#new-user').onclick=()=>dialog.showModal();
+
+    nav.onclick=()=>{
+      if(typeof window.devpilotNavigate==='function'){
+        window.devpilotNavigate('users',{source:'users-menu'});
+      }else{
+        document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v===section));
+        document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===nav));
+        section.hidden=false;
+        section.setAttribute('aria-hidden','false');
+        const t=document.querySelector('#page-title');if(t)t.textContent='Usuários';
+      }
+      load();
+    };
+
+    document.addEventListener('devpilot:page-ready',event=>{
+      if(event.detail?.view==='users')load();
+    });
+
+    search.oninput=render;document.querySelector('#users-refresh').onclick=load;document.querySelector('#new-user').onclick=()=>dialog.showModal();
     document.querySelector('#user-create-form').onsubmit=async event=>{event.preventDefault();const f=new FormData(event.currentTarget);try{await request('/api/users',{method:'POST',body:JSON.stringify({full_name:String(f.get('full_name')||'').trim()||null,email:String(f.get('email')||'').trim(),password:String(f.get('password')||''),role:String(f.get('role')||'VIEWER')})});dialog.close();event.currentTarget.reset();roleSelect.innerHTML=optionsFor(current.role).map(role=>`<option value="${role}">${ROLE_LABELS[role]}</option>`).join('');window.toast?.('Usuário criado');await load()}catch(e){window.toast?.(e.message)}};
   }
   start();
