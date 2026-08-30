@@ -16,7 +16,6 @@ def test_dashboard_user_v20_contract():
     assert "overview.completed" in app
     assert "groups.approvals" in app
     assert "groups.failed" in app
-    assert "#recent-tasks" not in app  # selector is accessed through $('#recent-tasks')
     assert "$('#recent-tasks')" in app
 
     # V20 must be visual only: no API calls or fake datasets.
