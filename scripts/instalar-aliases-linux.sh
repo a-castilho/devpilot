@@ -21,6 +21,7 @@ cat >> "$TMP" <<'EOF'
 # >>> DEVPILOT ALIASES >>>
 export DEVPILOT_HOME="$HOME/Documents/devpilot"
 export DEVPILOT_URL="http://127.0.0.1:8080"
+export DEVPILOT_TERMINAL_CAPTURE="${DEVPILOT_TERMINAL_CAPTURE:-0}"
 
 # Estes nomes pertencem ao DevPilot. Neutralize aliases legados antes de
 # declarar funções: Bash interativo expande aliases durante o parsing e um
@@ -33,7 +34,10 @@ subir() { subir-projeto "$@"; }
 atualizar-local() {
   bash "$DEVPILOT_HOME/scripts/atualizar-local.sh" "$@"
   local rc=$?
-  if [ "$rc" -eq 0 ] && [ -f "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh" ]; then
+  if [ "$rc" -eq 0 ] && \
+     [ "${DEVPILOT_TERMINAL_CAPTURE:-0}" = "1" ] && \
+     [ -n "${DEVPILOT_TELEMETRY_TOKEN:-}" ] && \
+     [ -f "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh" ]; then
     source "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh"
   fi
   return "$rc"
@@ -42,9 +46,12 @@ atualizar() { atualizar-local "$@"; }
 reconstruir-sistema() { bash "$DEVPILOT_HOME/scripts/reconstruir-sistema.sh" "$@"; }
 reconstruir() { reconstruir-sistema "$@"; }
 
-# O hook só envia comandos quando há uma sessão de telemetria ativa.
-# O helper lê o token localmente do ambiente/.env sem imprimi-lo no terminal.
-if [[ $- == *i* ]] && [ -f "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh" ]; then
+# Captura de terminal é opt-in. Para habilitar, forneça explicitamente um token
+# de acesso válido para telemetria; nunca reutilize DEVPILOT_BOOTSTRAP_TOKEN.
+if [[ $- == *i* ]] && \
+   [ "${DEVPILOT_TERMINAL_CAPTURE:-0}" = "1" ] && \
+   [ -n "${DEVPILOT_TELEMETRY_TOKEN:-}" ] && \
+   [ -f "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh" ]; then
   source "$DEVPILOT_HOME/tools/devpilot_terminal_capture.sh"
 fi
 # <<< DEVPILOT ALIASES <<<
@@ -74,5 +81,6 @@ echo "  atualizar"
 echo "  reconstruir-sistema"
 echo "  reconstruir"
 echo
-echo "Telemetria de terminal: auto-carregamento Bash configurado em 127.0.0.1:8080"
+echo "Telemetria de terminal: desabilitada por padrão em 127.0.0.1:8080"
+echo "Habilite apenas com DEVPILOT_TERMINAL_CAPTURE=1 e DEVPILOT_TELEMETRY_TOKEN válido."
 echo "Execute agora: source ~/.bashrc"

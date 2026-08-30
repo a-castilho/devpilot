@@ -17,7 +17,7 @@ O primeiro estágio **não executa automações sozinho**. Ele calcula padrões,
 Abra:
 
 ```text
-http://127.0.0.1:8081/telemetry
+http://127.0.0.1:8080/telemetry
 ```
 
 A tela oferece exatamente os botões de 1 minuto e 2 minutos. A API continua preparada para sessões entre 10 segundos e 60 minutos caso outras durações sejam adicionadas no futuro.
@@ -26,15 +26,18 @@ Durante a gravação, a sessão continua ativa no backend mesmo ao voltar para o
 
 ## Ativar captura de terminal
 
-No repositório DevPilot:
+A captura de terminal é **opt-in**. No repositório DevPilot, habilite-a explicitamente com um token de acesso válido para as rotas normais autenticadas de telemetria:
 
 ```bash
-export DEVPILOT_URL=http://127.0.0.1:8081
-export DEVPILOT_BOOTSTRAP_TOKEN='seu-token-real'
-source tools/devpilot_terminal_capture.sh
+export DEVPILOT_URL=http://127.0.0.1:8080
+export DEVPILOT_TERMINAL_CAPTURE=1
+export DEVPILOT_TELEMETRY_TOKEN='seu-token-de-acesso'
+source "$HOME/Documents/devpilot/tools/devpilot_terminal_capture.sh"
 ```
 
-O hook é instalado apenas no shell Bash em que o arquivo foi carregado. Para tornar permanente, as três linhas podem ser adicionadas ao ambiente de inicialização escolhido pelo operador, mantendo o token fora do Git.
+`DEVPILOT_BOOTSTRAP_TOKEN` não deve ser usado para telemetria. O hook é instalado apenas no shell Bash em que o arquivo foi carregado. Para tornar permanente, essas variáveis podem ser adicionadas ao ambiente de inicialização escolhido pelo operador, mantendo o token fora do Git.
+
+Se a API responder 401 ou 403, o helper abre um circuit breaker persistente para a impressão digital do token atual. Invocações seguintes não criam novas requisições com a mesma credencial inválida. A troca do token constitui recuperação e permite novas tentativas sem persistir o segredo em disco.
 
 Sem sessão ativa, o servidor responde que nada foi capturado e nenhum evento é persistido.
 

@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -29,55 +31,68 @@ def sanitize_cwd(cwd: str) -> str:
     return re.sub(r"^/home/[^/]+", "~", cwd.strip())[:500]
 
 
-def read_env_value(path: Path, name: str) -> str:
-    try:
-        for raw in path.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            if key.strip() != name:
-                continue
-            return value.strip().strip("'\"")
-    except (OSError, UnicodeError):
-        return ""
-    return ""
-
-
 def resolve_token() -> str:
-    token = os.getenv("DEVPILOT_BOOTSTRAP_TOKEN", "").strip()
-    if token:
-        return token
-
-    home = Path(
-        os.getenv(
-            "DEVPILOT_HOME",
-            str(Path.home() / "Documents" / "devpilot"),
-        )
-    ).expanduser()
-
-    for name in (".env.local", ".env"):
-        token = read_env_value(home / name, "DEVPILOT_BOOTSTRAP_TOKEN")
-        if token:
-            return token
-
-    return ""
+    # Telemetry is a normal authenticated API. Never reuse the bootstrap secret
+    # here: bootstrap credentials are intentionally restricted to auth bootstrap.
+    return os.getenv("DEVPILOT_TELEMETRY_TOKEN", "").strip()
 
 
 def candidate_urls() -> list[str]:
     configured = os.getenv("DEVPILOT_URL", "").strip().rstrip("/")
+    return [configured or "http://127.0.0.1:8080"]
+
+
+def breaker_path() -> Path:
+    configured = os.getenv("DEVPILOT_TELEMETRY_BREAKER_FILE", "").strip()
     if configured:
-        return [configured]
-
-    # Docker/desktop local padrão atual. Mantemos 8081 apenas como fallback
-    # para instalações antigas ainda não migradas.
-    return [
-        "http://127.0.0.1:8080",
-        "http://127.0.0.1:8081",
-    ]
+        return Path(configured).expanduser()
+    runtime_dir = os.getenv("XDG_RUNTIME_DIR", "").strip()
+    if runtime_dir:
+        return Path(runtime_dir) / "devpilot-telemetry-auth-breaker.json"
+    return Path(tempfile.gettempdir()) / f"devpilot-telemetry-auth-breaker-{os.getuid()}.json"
 
 
-def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
+def token_fingerprint(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def auth_breaker_open(token: str) -> bool:
+    path = breaker_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return False
+    return data.get("token_sha256") == token_fingerprint(token)
+
+
+def open_auth_breaker(token: str, status: int) -> None:
+    path = breaker_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "token_sha256": token_fingerprint(token),
+                    "status": status,
+                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                },
+                separators=(",", ":"),
+            ),
+            encoding="utf-8",
+        )
+        path.chmod(0o600)
+    except OSError:
+        pass
+
+
+def clear_auth_breaker() -> None:
+    try:
+        breaker_path().unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
+def send(base_url: str, token: str, payload: dict[str, object]) -> str:
     request = urllib.request.Request(
         f"{base_url}/api/telemetry/terminal/command",
         data=json.dumps(payload, separators=(",", ":")).encode(),
@@ -90,21 +105,24 @@ def send(base_url: str, token: str, payload: dict[str, object]) -> bool:
     try:
         with urllib.request.urlopen(request, timeout=1.5) as response:
             response.read(256)
-        return True
+        return "ok"
     except urllib.error.HTTPError as exc:
-        # 404/409 normalmente significam que não existe sessão ativa; não é
-        # erro operacional do hook e não deve poluir o terminal.
+        if exc.code in {401, 403}:
+            return f"auth:{exc.code}"
         if exc.code in {404, 409}:
-            return True
+            return "benign"
     except (urllib.error.URLError, TimeoutError, OSError):
         pass
-    return False
+    return "retry"
 
 
 def main() -> int:
+    if os.getenv("DEVPILOT_TERMINAL_CAPTURE", "0").strip() != "1":
+        return 0
+
     token = resolve_token()
     command = os.getenv("DEVPILOT_CAPTURE_COMMAND", "").strip()
-    if not token or not command:
+    if not token or not command or auth_breaker_open(token):
         return 0
 
     command = redact_command(command)
@@ -125,7 +143,13 @@ def main() -> int:
     }
 
     for base_url in candidate_urls():
-        if send(base_url, token, payload):
+        result = send(base_url, token, payload)
+        if result.startswith("auth:"):
+            open_auth_breaker(token, int(result.split(":", 1)[1]))
+            break
+        if result in {"ok", "benign"}:
+            if result == "ok":
+                clear_auth_breaker()
             break
 
     return 0
