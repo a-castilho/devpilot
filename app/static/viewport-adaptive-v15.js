@@ -138,8 +138,17 @@
     );
   }
 
+  function loadExecutionsFocusV19() {
+    ensureScript(
+      'script[data-executions-focus-v19]',
+      '/assets/executions-focus-v19.js?v=20260830-1',
+      'executionsFocusV19'
+    );
+  }
+
   loadCss();
   loadExecutionsV18();
+  loadExecutionsFocusV19();
   apply();
 
   window.addEventListener('resize', schedule, {passive: true});
