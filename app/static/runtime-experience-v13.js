@@ -443,7 +443,21 @@
     if (attempt < 50) window.setTimeout(() => bootstrapMobileMenuEnhancement(attempt + 1), 120);
   }
 
+  function loadAdaptiveV15() {
+    if (
+      window.__devpilotViewportAdaptiveV15 ||
+      document.querySelector('script[data-viewport-adaptive-v15]')
+    ) return;
+
+    const script = document.createElement('script');
+    script.src = '/assets/viewport-adaptive-v15.js?v=20260830-1';
+    script.async = true;
+    script.dataset.viewportAdaptiveV15 = '1';
+    document.head.appendChild(script);
+  }
+
   injectStyles();
+  loadAdaptiveV15();
   void hydrateProjectCombos();
   bootstrapMobileMenuEnhancement();
   document.documentElement.dataset.devpilotExperience = 'v13';
