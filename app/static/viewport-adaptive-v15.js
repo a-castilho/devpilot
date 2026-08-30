@@ -146,6 +146,12 @@
       '/assets/users-layout-v25.css?v=20260830-1',
       'usersLayoutV25'
     );
+
+    ensureStylesheet(
+      'link[data-page-navigation-v26]',
+      '/assets/page-navigation-v26.css?v=20260830-1',
+      'pageNavigationV26'
+    );
   }
 
   function loadExecutionsV18() {
@@ -172,10 +178,19 @@
     );
   }
 
+  function loadPageNavigationV26() {
+    ensureScript(
+      'script[data-page-navigation-v26]',
+      '/assets/page-navigation-v26.js?v=20260830-1',
+      'pageNavigationV26'
+    );
+  }
+
   loadCss();
   loadExecutionsV18();
   loadExecutionsFocusV19();
   loadDashboardUserV21();
+  loadPageNavigationV26();
   apply();
 
   window.addEventListener('resize', schedule, {passive: true});
