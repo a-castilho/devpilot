@@ -280,3 +280,140 @@
   }
   if (descriptionInput.value.trim().length >= 3) scheduleDescriptionProfile();
 })();
+
+(() => {
+  const form = document.querySelector('#project-builder-form');
+  if (!form) return;
+
+  const repositoryGrid = form.querySelector('.builder-repository-grid');
+  const organizationSelect = form.querySelector('#project-builder-organization');
+  const repositoryLabel = form.querySelector('#project-builder-existing-repository');
+  const repositoryInput = form.elements.namedItem('repository_url');
+  const notice = form.querySelector('#project-builder-repository-notice');
+  const submit = form.querySelector('#project-builder-submit');
+
+  if (repositoryGrid && !repositoryGrid.querySelector('[data-repository-choice="deferred"]')) {
+    const independent = document.createElement('label');
+    independent.className = 'repository-choice selected';
+    independent.dataset.repositoryChoice = 'deferred';
+    independent.innerHTML = `
+      <input type="radio" name="repository_mode" value="deferred" checked>
+      <strong>Criar nave independente</strong>
+      <small>Cadastre agora sem organização, repositório ou escolhas técnicas. A nave pode entrar em uma frota depois.</small>
+    `;
+    repositoryGrid.prepend(independent);
+
+    repositoryGrid.querySelectorAll('[data-repository-choice]:not([data-repository-choice="deferred"])').forEach(choice => {
+      choice.classList.remove('selected');
+      const radio = choice.querySelector('input[name="repository_mode"]');
+      if (radio) radio.checked = false;
+    });
+  }
+
+  function mode() {
+    return form.elements.namedItem('repository_mode')?.value || 'deferred';
+  }
+
+  function syncIndependentMode() {
+    const independent = mode() === 'deferred';
+    if (repositoryLabel) repositoryLabel.hidden = independent || mode() === 'create';
+    if (repositoryInput) repositoryInput.required = !independent && mode() !== 'create';
+    if (organizationSelect) {
+      organizationSelect.disabled = independent || mode() === 'create';
+      if (independent) organizationSelect.value = '';
+    }
+    if (notice && independent) {
+      notice.textContent = 'Nave independente: você pode cadastrar agora e filiar a uma organização/frota mais tarde.';
+    }
+    if (submit) submit.textContent = independent ? 'Criar nave' : 'Criar projeto';
+
+    form.querySelectorAll('[data-repository-choice]').forEach(choice => {
+      choice.classList.toggle('selected', choice.dataset.repositoryChoice === mode());
+    });
+  }
+
+  const resetOrganizationDefault = () => {
+    if (mode() === 'deferred' && organizationSelect) organizationSelect.value = '';
+  };
+
+  if (organizationSelect) {
+    new MutationObserver(() => {
+      resetOrganizationDefault();
+      syncIndependentMode();
+    }).observe(organizationSelect, {childList: true});
+  }
+
+  form.addEventListener('change', event => {
+    if (event.target?.name === 'repository_mode') queueMicrotask(syncIndependentMode);
+  });
+
+  form.addEventListener('reset', () => {
+    queueMicrotask(() => {
+      const deferred = form.querySelector('input[name="repository_mode"][value="deferred"]');
+      if (deferred) deferred.checked = true;
+      resetOrganizationDefault();
+      syncIndependentMode();
+    });
+  });
+
+  form.addEventListener('submit', async event => {
+    if (mode() !== 'deferred') return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+
+    const name = String(form.elements.namedItem('name')?.value || '').trim();
+    const slug = String(form.elements.namedItem('slug')?.value || '').trim();
+    const description = String(form.elements.namedItem('description')?.value || '').trim();
+    const defaultBranch = String(form.elements.namedItem('default_branch')?.value || 'main').trim() || 'main';
+
+    if (!name || !slug) {
+      form.reportValidity();
+      return;
+    }
+
+    if (submit) {
+      submit.disabled = true;
+      submit.textContent = 'Criando nave…';
+    }
+
+    try {
+      await api('/projects/deferred', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          slug,
+          description,
+          agents_md: '',
+          codex_config: {
+            project_blueprint: {},
+            configuration_status: 'pending',
+            game_entity: 'ship',
+            affiliation_status: 'independent',
+          },
+          organization_id: null,
+          default_branch: defaultBranch,
+        }),
+      });
+      toast(`Nave ${name} criada como independente`);
+      form.reset();
+      await load();
+      showView('projects');
+    } catch (error) {
+      toast(error.message || 'Falha ao criar nave independente');
+    } finally {
+      if (submit) {
+        submit.disabled = false;
+        submit.textContent = 'Criar nave';
+      }
+    }
+  }, true);
+
+  const heroTitle = form.querySelector('.project-builder-hero h2');
+  const heroCopy = form.querySelector('.project-builder-hero p');
+  if (heroTitle) heroTitle.textContent = 'Crie a nave agora. Organize quando precisar.';
+  if (heroCopy) heroCopy.textContent = 'A nave pode nascer independente. Tecnologias, arquitetura, segurança, testes, deploy e filiação a uma frota podem ser definidos depois.';
+
+  resetOrganizationDefault();
+  syncIndependentMode();
+})();
