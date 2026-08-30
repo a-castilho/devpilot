@@ -1,0 +1,922 @@
+/*
+ * DevPilot · Super Admin V8
+ *
+ * Somente apresentação.
+ * Não altera runtime, APIs, tarefas, naves ou voz.
+ */
+
+
+/* ==========================================================
+   BASE
+   ========================================================== */
+
+.system-map-view,
+.voice-admin-view {
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+
+  padding-inline:
+    clamp(14px,2vw,26px) !important;
+}
+
+.system-map-view *,
+.voice-admin-view * {
+  box-sizing:border-box;
+}
+
+.system-map-view article,
+.system-map-view section,
+.voice-admin-view article,
+.voice-admin-view section {
+  min-width:0;
+}
+
+
+/* ==========================================================
+   SUPER ADMIN · HERO
+   ========================================================== */
+
+.system-map-hero {
+  display:grid !important;
+
+  grid-template-columns:
+    minmax(0,1fr) auto !important;
+
+  align-items:center !important;
+
+  gap:18px !important;
+
+  margin-bottom:15px !important;
+}
+
+.system-map-hero > div {
+  min-width:0;
+}
+
+.system-map-hero h2 {
+  margin:4px 0 7px !important;
+
+  font-size:
+    clamp(28px,3.2vw,38px) !important;
+
+  line-height:1.06 !important;
+}
+
+.system-map-hero p {
+  display:-webkit-box;
+
+  max-width:760px !important;
+
+  margin:0 !important;
+
+  overflow:hidden;
+
+  color:var(--muted,#91a0b8);
+
+  font-size:13px !important;
+  line-height:1.5 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+.system-map-hero button {
+  min-height:40px !important;
+  padding:8px 13px !important;
+}
+
+
+/* ==========================================================
+   ALERTAS
+   ========================================================== */
+
+.system-map-alerts {
+  gap:7px !important;
+  margin-bottom:12px !important;
+}
+
+.system-map-alerts > div {
+  min-width:0;
+
+  padding:10px 12px !important;
+
+  border-radius:11px !important;
+}
+
+.system-map-alerts span {
+  min-width:0;
+
+  font-size:11px !important;
+  line-height:1.4 !important;
+
+  overflow-wrap:break-word !important;
+  word-break:normal !important;
+}
+
+
+/* ==========================================================
+   FLUXO DO SISTEMA
+   ========================================================== */
+
+.system-map-flow {
+  display:flex !important;
+
+  width:100% !important;
+  max-width:100% !important;
+
+  align-items:stretch !important;
+
+  gap:7px !important;
+
+  padding:11px !important;
+  margin-bottom:13px !important;
+
+  overflow-x:auto !important;
+  overflow-y:hidden !important;
+
+  overscroll-behavior-inline:contain;
+  scroll-snap-type:x proximity;
+
+  scrollbar-width:thin;
+}
+
+.system-map-flow article {
+  display:flex !important;
+
+  min-width:180px !important;
+  max-width:210px !important;
+
+  flex:1 0 180px !important;
+
+  align-items:center;
+
+  gap:9px !important;
+
+  padding:6px !important;
+
+  scroll-snap-align:start;
+}
+
+.system-map-flow article > span {
+  width:32px !important;
+  height:32px !important;
+
+  flex:0 0 32px !important;
+
+  font-size:11px !important;
+}
+
+.system-map-flow article > div {
+  min-width:0;
+}
+
+.system-map-flow strong {
+  display:block;
+
+  overflow:hidden;
+
+  font-size:11px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.system-map-flow small {
+  display:-webkit-box !important;
+
+  margin-top:3px !important;
+
+  overflow:hidden;
+
+  font-size:9px !important;
+  line-height:1.35 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+.system-map-flow > i {
+  min-width:30px;
+
+  flex:0 0 30px;
+
+  display:grid !important;
+  place-items:center;
+
+  font-size:15px !important;
+}
+
+
+/* ==========================================================
+   MÉTRICAS
+   ========================================================== */
+
+.system-map-metrics {
+  display:grid !important;
+
+  grid-template-columns:
+    repeat(auto-fit,minmax(130px,1fr))
+    !important;
+
+  gap:8px !important;
+
+  margin-bottom:14px !important;
+}
+
+.system-map-metrics article {
+  min-height:88px !important;
+
+  padding:11px !important;
+
+  border-radius:12px !important;
+}
+
+.system-map-metrics span,
+.system-map-metrics small {
+  font-size:9px !important;
+}
+
+.system-map-metrics strong {
+  margin:4px 0 !important;
+
+  font-size:22px !important;
+}
+
+
+/* ==========================================================
+   MAPA / BOARD
+   ========================================================== */
+
+.system-map-layout {
+  display:grid !important;
+
+  grid-template-columns:
+    minmax(0,1fr)
+    minmax(250px,310px)
+    !important;
+
+  align-items:start;
+
+  gap:13px !important;
+}
+
+.system-map-board {
+  min-width:0;
+
+  padding:11px !important;
+
+  border-radius:15px !important;
+}
+
+.system-map-columns {
+  display:grid !important;
+
+  grid-template-columns:
+    repeat(3,minmax(0,1fr))
+    !important;
+
+  gap:9px !important;
+}
+
+.system-map-group {
+  min-width:0;
+
+  padding:8px !important;
+
+  border-radius:12px !important;
+}
+
+.system-map-group > header {
+  margin-bottom:7px !important;
+  padding-bottom:6px !important;
+}
+
+.system-map-group > header span {
+  font-size:9px !important;
+}
+
+.system-map-group-nodes {
+  gap:6px !important;
+}
+
+
+/* ==========================================================
+   NÓS
+   ========================================================== */
+
+.system-map-node {
+  grid-template-columns:
+    28px minmax(0,1fr) !important;
+
+  gap:7px !important;
+
+  padding:8px !important;
+
+  border-radius:10px !important;
+}
+
+.system-map-node-icon {
+  width:28px !important;
+  height:28px !important;
+
+  font-size:11px !important;
+}
+
+.system-map-node-copy strong {
+  display:block;
+
+  overflow:hidden;
+
+  font-size:10px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.system-map-node-copy small {
+  margin-top:2px !important;
+
+  font-size:8px !important;
+
+  -webkit-line-clamp:1 !important;
+}
+
+.system-map-node-meta {
+  gap:4px !important;
+
+  padding-top:2px !important;
+}
+
+.system-map-status {
+  padding:3px 5px !important;
+
+  font-size:7px !important;
+}
+
+
+/* ==========================================================
+   CONEXÕES
+   ========================================================== */
+
+.system-map-edge-list {
+  grid-template-columns:
+    repeat(2,minmax(0,1fr))
+    !important;
+
+  gap:6px !important;
+
+  margin-top:10px !important;
+  padding-top:10px !important;
+}
+
+.system-map-edge {
+  min-width:0;
+
+  padding:7px !important;
+}
+
+.system-map-edge > span {
+  font-size:9px !important;
+}
+
+.system-map-edge > small {
+  overflow:hidden;
+
+  font-size:7px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* ==========================================================
+   INSPECTOR
+   ========================================================== */
+
+.system-map-inspector {
+  top:10px !important;
+
+  min-width:0;
+
+  padding:13px !important;
+}
+
+.system-map-inspector-head {
+  grid-template-columns:
+    32px minmax(0,1fr) auto
+    !important;
+
+  gap:8px !important;
+}
+
+.system-map-inspector-head h3 {
+  overflow:hidden;
+
+  font-size:16px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+.system-map-inspector-value {
+  margin:14px 0 5px !important;
+
+  font-size:28px !important;
+}
+
+.system-map-inspector > p {
+  display:-webkit-box;
+
+  margin-bottom:11px !important;
+
+  overflow:hidden;
+
+  font-size:10px !important;
+  line-height:1.45 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+}
+
+
+/* ==========================================================
+   DEVPILVOZ · HERO
+   ========================================================== */
+
+.voice-admin-hero {
+  display:grid !important;
+
+  grid-template-columns:
+    minmax(0,1fr) auto !important;
+
+  align-items:center !important;
+
+  gap:16px !important;
+
+  padding:17px 18px !important;
+  margin-bottom:13px !important;
+}
+
+.voice-admin-hero > div {
+  min-width:0;
+}
+
+.voice-admin-hero h2 {
+  margin:3px 0 5px !important;
+
+  font-size:
+    clamp(26px,3vw,36px) !important;
+}
+
+.voice-admin-hero p {
+  display:-webkit-box;
+
+  max-width:720px !important;
+
+  overflow:hidden;
+
+  font-size:12px !important;
+  line-height:1.5 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+
+/* ==========================================================
+   VOZ · ÚLTIMO STATUS
+   ========================================================== */
+
+.voice-admin-last-status {
+  min-width:0;
+
+  gap:12px !important;
+
+  padding:10px 12px !important;
+
+  margin-bottom:10px !important;
+}
+
+.voice-admin-last-status strong {
+  max-width:100%;
+
+  font-size:13px !important;
+}
+
+
+/* ==========================================================
+   VOZ · MÉTRICAS
+   ========================================================== */
+
+.voice-admin-metrics {
+  grid-template-columns:
+    repeat(auto-fit,minmax(145px,1fr))
+    !important;
+
+  gap:8px !important;
+
+  margin-bottom:11px !important;
+}
+
+.voice-admin-metrics article {
+  min-height:82px !important;
+
+  padding:11px 12px !important;
+
+  border-radius:12px !important;
+}
+
+.voice-admin-metrics span,
+.voice-admin-metrics small {
+  font-size:9px !important;
+}
+
+.voice-admin-metrics strong {
+  margin:4px 0 2px !important;
+
+  font-size:
+    clamp(20px,2vw,25px)
+    !important;
+}
+
+
+/* ==========================================================
+   VOZ · GRÁFICOS
+   ========================================================== */
+
+.voice-admin-charts {
+  grid-template-columns:
+    minmax(0,1.25fr)
+    minmax(260px,.75fr)
+    !important;
+
+  gap:11px !important;
+
+  margin-bottom:11px !important;
+}
+
+.voice-admin-panel {
+  min-width:0;
+
+  padding:13px !important;
+}
+
+.voice-admin-panel .panel-title {
+  margin-bottom:10px !important;
+}
+
+.voice-admin-chart-panel {
+  min-height:225px !important;
+}
+
+.voice-admin-bars {
+  gap:10px !important;
+}
+
+.voice-admin-bar-label {
+  grid-template-columns:
+    minmax(60px,.3fr)
+    minmax(0,1fr)
+    auto !important;
+
+  gap:7px !important;
+}
+
+.voice-admin-bar-label strong {
+  font-size:10px !important;
+}
+
+.voice-admin-bar-label span {
+  font-size:8px !important;
+}
+
+.voice-admin-bar-track {
+  height:7px !important;
+}
+
+
+/* ==========================================================
+   VOZ · DONUT
+   ========================================================== */
+
+.voice-admin-outcome {
+  grid-template-columns:
+    120px minmax(0,1fr) !important;
+
+  gap:14px !important;
+
+  min-height:170px !important;
+}
+
+.voice-admin-donut {
+  width:120px !important;
+}
+
+.voice-admin-donut::after {
+  inset:15px !important;
+}
+
+.voice-admin-donut strong {
+  font-size:22px !important;
+}
+
+
+/* ==========================================================
+   VOZ · ROTA
+   ========================================================== */
+
+.voice-admin-route {
+  max-width:100%;
+
+  overflow-x:auto !important;
+
+  overscroll-behavior-inline:contain;
+
+  scroll-snap-type:x proximity;
+}
+
+.voice-admin-route-node {
+  grid-template-columns:
+    30px minmax(130px,1fr) auto
+    !important;
+
+  min-width:220px !important;
+
+  padding:9px 10px !important;
+
+  scroll-snap-align:start;
+}
+
+.voice-admin-route-node > span {
+  width:28px !important;
+  height:28px !important;
+}
+
+.voice-admin-route-node strong {
+  font-size:10px !important;
+}
+
+.voice-admin-route-node em {
+  max-width:150px !important;
+
+  font-size:8px !important;
+}
+
+.voice-admin-route-link {
+  min-width:44px !important;
+
+  padding-inline:5px !important;
+}
+
+
+/* ==========================================================
+   VOZ · CONEXÕES
+   ========================================================== */
+
+.voice-admin-lower-grid {
+  grid-template-columns:
+    minmax(0,1.3fr)
+    minmax(260px,.7fr)
+    !important;
+
+  gap:11px !important;
+}
+
+.voice-admin-connection-card {
+  grid-template-columns:
+    minmax(0,1fr)
+    auto !important;
+
+  gap:8px !important;
+
+  padding:10px !important;
+}
+
+.voice-admin-connection-main {
+  min-width:0;
+}
+
+.voice-admin-provider-mark {
+  width:32px !important;
+  height:32px !important;
+
+  flex-basis:32px !important;
+}
+
+.voice-admin-connection-title strong {
+  font-size:10px !important;
+}
+
+.voice-admin-connection-copy > span,
+.voice-admin-connection-copy > small {
+  font-size:8px !important;
+}
+
+.voice-admin-connection-copy > small {
+  max-width:420px !important;
+}
+
+.voice-admin-connection-flags {
+  display:none !important;
+}
+
+.voice-admin-connection-actions {
+  grid-column:1/-1;
+
+  display:flex;
+
+  justify-content:flex-end;
+
+  gap:5px !important;
+}
+
+.voice-admin-connection-actions button {
+  min-height:30px !important;
+
+  padding:5px 8px !important;
+
+  font-size:8px !important;
+}
+
+
+/* ==========================================================
+   NOTEBOOK 901 → 1180
+   ========================================================== */
+
+@media (min-width:901px) and (max-width:1180px) {
+
+  .system-map-view,
+  .voice-admin-view {
+    padding-inline:12px !important;
+  }
+
+
+  /* --- mapa --- */
+
+  .system-map-hero {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .system-map-hero button {
+    justify-self:start;
+  }
+
+  .system-map-metrics {
+    grid-template-columns:
+      repeat(3,minmax(0,1fr))
+      !important;
+  }
+
+  .system-map-layout {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .system-map-inspector {
+    position:static !important;
+  }
+
+  /*
+   * 3 colunas era apertado demais com menu aberto.
+   */
+  .system-map-columns {
+    grid-template-columns:
+      repeat(2,minmax(0,1fr))
+      !important;
+  }
+
+
+  /* --- voz --- */
+
+  .voice-admin-hero {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .voice-admin-hero .primary {
+    justify-self:start;
+  }
+
+  .voice-admin-metrics {
+    grid-template-columns:
+      repeat(2,minmax(0,1fr))
+      !important;
+  }
+
+  .voice-admin-charts,
+  .voice-admin-lower-grid {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .voice-admin-outcome {
+    grid-template-columns:
+      120px minmax(0,1fr)
+      !important;
+  }
+}
+
+
+/* ==========================================================
+   MOBILE
+   ========================================================== */
+
+@media (max-width:900px) {
+
+  .system-map-view,
+  .voice-admin-view {
+    padding:
+      10px 10px 30px !important;
+  }
+
+  .system-map-hero,
+  .voice-admin-hero {
+    grid-template-columns:
+      minmax(0,1fr) !important;
+  }
+
+  .system-map-metrics,
+  .voice-admin-metrics {
+    grid-template-columns:
+      repeat(2,minmax(0,1fr))
+      !important;
+  }
+
+  .system-map-columns {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .system-map-edge-list {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .system-map-flow {
+    display:grid !important;
+
+    grid-template-columns:
+      minmax(0,1fr) !important;
+
+    overflow:visible !important;
+  }
+
+  .system-map-flow article {
+    width:100% !important;
+    max-width:none !important;
+    min-width:0 !important;
+  }
+
+  .system-map-flow > i {
+    min-width:0;
+
+    transform:rotate(90deg);
+  }
+
+  .voice-admin-charts,
+  .voice-admin-lower-grid {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .voice-admin-outcome {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .voice-admin-connection-card {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .voice-admin-connection-actions {
+    justify-content:flex-start;
+  }
+}
+
+
+@media (max-width:520px) {
+
+  .system-map-metrics,
+  .voice-admin-metrics {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  .system-map-hero h2,
+  .voice-admin-hero h2 {
+    font-size:25px !important;
+  }
+}
