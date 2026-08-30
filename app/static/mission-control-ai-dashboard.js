@@ -2,12 +2,6 @@
   'use strict';
 
   const STYLE_ID = 'mission-control-ai-dashboard-style';
-  const CHAT_MODE_STORAGE_KEY = 'devpilot-chat-mode';
-  const ACTIVE_PROJECT_STORAGE_KEY = 'devpilot-chat-active-project-id';
-  const HISTORY_LIMIT = 8;
-
-  let chatHistory = [];
-  let chatBusy = false;
   let chartFrame = 0;
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -26,7 +20,7 @@
     if (document.querySelector(`link[data-${STYLE_ID}]`)) return;
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/assets/mission-control-ai-dashboard.css?v=20260824-1';
+    link.href = '/assets/mission-control-ai-dashboard.css?v=20260829-2';
     link.setAttribute(`data-${STYLE_ID}`, '1');
     document.head.appendChild(link);
   };
@@ -154,63 +148,29 @@
     scheduleCharts();
   };
 
-  const normalizeMode = value => value === 'build' ? 'build' : 'planning';
-  const currentMode = () => {
-    try {
-      return normalizeMode(window.devpilotChatMode?.getMode?.() || localStorage.getItem(CHAT_MODE_STORAGE_KEY));
-    } catch (_) {
-      return normalizeMode(localStorage.getItem(CHAT_MODE_STORAGE_KEY));
+  const openCanonicalChat = () => {
+    if (typeof window.devpilotOpenChat === 'function') {
+      void window.devpilotOpenChat();
+      return;
     }
+
+    const modal = document.querySelector('#voice-modal');
+    if (modal && !modal.open) modal.showModal?.();
+    void window.__devpilotLoadFeature?.('voice');
   };
 
-  const activeProjectId = () => {
-    try {
-      return String(window.devpilotChatProjectContext?.getProjectId?.() || localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || '').trim();
-    } catch (_) {
-      return String(localStorage.getItem(ACTIVE_PROJECT_STORAGE_KEY) || '').trim();
+  const createChatLaunchers = () => {
+    if (!document.querySelector('#mc-ai-launcher')) {
+      const launcher = document.createElement('button');
+      launcher.id = 'mc-ai-launcher';
+      launcher.className = 'mc-ai-launcher';
+      launcher.type = 'button';
+      launcher.setAttribute('aria-label', 'Abrir Chat DevPilot');
+      launcher.setAttribute('title', 'Chat DevPilot');
+      launcher.innerHTML = '<span aria-hidden="true">✦</span><strong>IA</strong>';
+      launcher.addEventListener('click', openCanonicalChat);
+      document.body.appendChild(launcher);
     }
-  };
-
-  const createAiChat = () => {
-    if (document.querySelector('#mc-ai-drawer')) return;
-
-    const launcher = document.createElement('button');
-    launcher.id = 'mc-ai-launcher';
-    launcher.className = 'mc-ai-launcher';
-    launcher.type = 'button';
-    launcher.setAttribute('aria-label', 'Abrir chat de IA');
-    launcher.setAttribute('title', 'Chat de IA');
-    launcher.innerHTML = '<span aria-hidden="true">✦</span><strong>IA</strong>';
-
-    const drawer = document.createElement('aside');
-    drawer.id = 'mc-ai-drawer';
-    drawer.className = 'mc-ai-drawer';
-    drawer.setAttribute('aria-hidden', 'true');
-    drawer.innerHTML = `
-      <header class="mc-ai-header">
-        <div><span>IA DE BORDO</span><strong>Chat DevPilot</strong></div>
-        <button type="button" data-mc-ai-close aria-label="Fechar chat">×</button>
-      </header>
-      <div class="mc-ai-context">
-        <label>Projeto
-          <select id="mc-ai-project"><option value="">Geral — sem projeto</option></select>
-        </label>
-        <div class="mc-ai-modes" role="group" aria-label="Modo do chat">
-          <button type="button" data-mc-ai-mode="planning">Planejar</button>
-          <button type="button" data-mc-ai-mode="build">Construir</button>
-        </div>
-      </div>
-      <div id="mc-ai-log" class="mc-ai-log" aria-live="polite">
-        <div class="mc-ai-empty">Chame a IA a qualquer momento. O contexto do projeto acompanha a conversa.</div>
-      </div>
-      <form id="mc-ai-form" class="mc-ai-composer">
-        <textarea id="mc-ai-input" rows="1" maxlength="4000" placeholder="Pergunte ou peça uma ação…" aria-label="Mensagem para o DevPilot"></textarea>
-        <button id="mc-ai-send" type="submit" aria-label="Enviar mensagem">↑</button>
-      </form>
-      <div id="mc-ai-status" class="mc-ai-status">Pronto</div>
-    `;
-
-    document.body.append(launcher, drawer);
 
     const headerActions = document.querySelector('header .header-actions');
     if (headerActions && !document.querySelector('#mc-ai-header-button')) {
@@ -219,201 +179,28 @@
       button.className = 'ghost mc-ai-header-button';
       button.type = 'button';
       button.textContent = '✦ Chat IA';
-      button.setAttribute('aria-label', 'Abrir chat de IA');
+      button.setAttribute('aria-label', 'Abrir Chat DevPilot');
+      button.addEventListener('click', openCanonicalChat);
       headerActions.prepend(button);
-      button.addEventListener('click', () => openAiChat(true));
-    }
-
-    launcher.addEventListener('click', () => openAiChat());
-    drawer.querySelector('[data-mc-ai-close]')?.addEventListener('click', closeAiChat);
-    drawer.querySelectorAll('[data-mc-ai-mode]').forEach(button => {
-      button.addEventListener('click', () => setMode(button.dataset.mcAiMode));
-    });
-    drawer.querySelector('#mc-ai-project')?.addEventListener('change', event => {
-      const projectId = String(event.target.value || '');
-      localStorage.setItem(ACTIVE_PROJECT_STORAGE_KEY, projectId);
-      try {
-        if (projectId) window.devpilotChatProjectContext?.setProjectId?.(projectId);
-      } catch (_) {}
-      window.dispatchEvent(new CustomEvent('devpilot:active-project-changed', {detail: {project_id: projectId || null}}));
-      chatHistory = [];
-      renderChatHistory();
-    });
-    drawer.querySelector('#mc-ai-form')?.addEventListener('submit', submitChat);
-    drawer.querySelector('#mc-ai-input')?.addEventListener('keydown', event => {
-      if (event.key === 'Enter' && !event.shiftKey) {
-        event.preventDefault();
-        drawer.querySelector('#mc-ai-form')?.requestSubmit();
-      }
-    });
-
-    syncProjects();
-    syncModeButtons();
-  };
-
-  const openAiChat = focusInput => {
-    const drawer = document.querySelector('#mc-ai-drawer');
-    if (!drawer) return;
-    syncProjects();
-    syncModeButtons();
-    drawer.classList.add('open');
-    drawer.setAttribute('aria-hidden', 'false');
-    document.body.classList.add('mc-ai-open');
-    if (focusInput !== false) window.setTimeout(() => drawer.querySelector('#mc-ai-input')?.focus(), 80);
-  };
-
-  const closeAiChat = () => {
-    const drawer = document.querySelector('#mc-ai-drawer');
-    if (!drawer) return;
-    drawer.classList.remove('open');
-    drawer.setAttribute('aria-hidden', 'true');
-    document.body.classList.remove('mc-ai-open');
-  };
-
-  const syncProjects = () => {
-    const select = document.querySelector('#mc-ai-project');
-    if (!select) return;
-    const projects = getAppState().projects || [];
-    const wanted = activeProjectId();
-    const options = ['<option value="">Geral — sem projeto</option>']
-      .concat(projects.map(project => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name)}</option>`));
-    select.innerHTML = options.join('');
-    if ([...select.options].some(option => String(option.value) === wanted)) select.value = wanted;
-  };
-
-  const setMode = mode => {
-    const value = normalizeMode(mode);
-    localStorage.setItem(CHAT_MODE_STORAGE_KEY, value);
-    try {
-      window.devpilotChatMode?.setMode?.(value);
-    } catch (_) {}
-    syncModeButtons();
-    chatHistory = [];
-    renderChatHistory();
-  };
-
-  const syncModeButtons = () => {
-    const mode = currentMode();
-    document.querySelectorAll('[data-mc-ai-mode]').forEach(button => {
-      const active = button.dataset.mcAiMode === mode;
-      button.dataset.active = active ? '1' : '0';
-      button.setAttribute('aria-pressed', active ? 'true' : 'false');
-    });
-  };
-
-  const renderChatHistory = () => {
-    const log = document.querySelector('#mc-ai-log');
-    if (!log) return;
-    if (!chatHistory.length) {
-      log.innerHTML = '<div class="mc-ai-empty">Chame a IA a qualquer momento. O contexto do projeto acompanha a conversa.</div>';
-      return;
-    }
-    log.innerHTML = chatHistory.map(turn => `
-      <article class="mc-ai-turn" data-role="${turn.role}">
-        <strong>${turn.role === 'assistant' ? 'DevPilot' : 'Você'}</strong>
-        <p>${escapeHtml(turn.text)}</p>
-      </article>
-    `).join('');
-    log.scrollTop = log.scrollHeight;
-  };
-
-  const setChatBusy = busy => {
-    chatBusy = busy;
-    const send = document.querySelector('#mc-ai-send');
-    const input = document.querySelector('#mc-ai-input');
-    if (send) send.disabled = busy;
-    if (input) input.disabled = busy;
-  };
-
-  const submitChat = async event => {
-    event?.preventDefault?.();
-    if (chatBusy) return;
-    const input = document.querySelector('#mc-ai-input');
-    const projectSelect = document.querySelector('#mc-ai-project');
-    const status = document.querySelector('#mc-ai-status');
-    const log = document.querySelector('#mc-ai-log');
-    const text = String(input?.value || '').trim();
-    const projectId = String(projectSelect?.value || '').trim();
-    const mode = currentMode();
-    if (!text) return;
-
-    if (mode === 'build' && !projectId) {
-      if (status) status.textContent = 'Selecione um projeto para usar Construir.';
-      projectSelect?.focus();
-      return;
-    }
-
-    if (typeof api !== 'function') {
-      if (status) status.textContent = 'API de IA indisponível.';
-      return;
-    }
-
-    const previousHistory = chatHistory.slice(-HISTORY_LIMIT);
-    chatHistory.push({role: 'user', text});
-    if (input) input.value = '';
-    renderChatHistory();
-    const thinking = document.createElement('div');
-    thinking.className = 'mc-ai-thinking';
-    thinking.innerHTML = '<i></i><i></i><i></i>';
-    log?.appendChild(thinking);
-    if (log) log.scrollTop = log.scrollHeight;
-    if (status) status.textContent = mode === 'build' ? 'Preparando construção…' : 'Analisando…';
-    setChatBusy(true);
-
-    try {
-      const data = await api('/chat', {
-        method: 'POST',
-        body: JSON.stringify({
-          transcript: text,
-          project_id: projectId || null,
-          history: previousHistory,
-          mode,
-        }),
-      });
-      thinking.remove();
-      const reply = String(data?.reply || 'Resposta recebida.').trim();
-      chatHistory.push({role: 'assistant', text: reply});
-      chatHistory = chatHistory.slice(-(HISTORY_LIMIT * 2));
-      renderChatHistory();
-      if (status) {
-        const execution = data?.execution;
-        status.textContent = execution?.task_id
-          ? `Tarefa ${execution.task_id} preparada · aguardando aprovação`
-          : `${data?.profile || 'DevPilot'} · ${data?.provider || 'IA'}`;
-      }
-      if (data?.execution?.task_id && typeof load === 'function') {
-        try { await load(); } catch (_) {}
-      }
-    } catch (error) {
-      thinking.remove();
-      const message = error?.message || 'Falha ao conversar com o DevPilot.';
-      chatHistory.push({role: 'assistant', text: message});
-      renderChatHistory();
-      if (status) status.textContent = message;
-      if (typeof toast === 'function') toast(message);
-    } finally {
-      setChatBusy(false);
-      input?.focus();
     }
   };
 
-  const bindGlobalSync = () => {
-    window.addEventListener('devpilot:active-project-changed', syncProjects);
-    window.addEventListener('devpilot:chat-mode-changed', syncModeButtons);
+  const bindKeyboardShortcut = () => {
+    if (document.documentElement.dataset.mcAiChatShortcut === '1') return;
+    document.documentElement.dataset.mcAiChatShortcut = '1';
     document.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && document.querySelector('#mc-ai-drawer.open')) closeAiChat();
       if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === 'i') {
         event.preventDefault();
-        openAiChat(true);
+        openCanonicalChat();
       }
     });
   };
 
   const init = () => {
     ensureStylesheet();
-    createAiChat();
+    createChatLaunchers();
     observeMetrics();
-    bindGlobalSync();
+    bindKeyboardShortcut();
 
     const panel = document.querySelector('#mission-control-panel');
     if (panel && panel.dataset.aiDashboardObserved !== '1') {
@@ -421,7 +208,6 @@
       new MutationObserver(() => {
         observeMetrics();
         scheduleCharts();
-        syncProjects();
       }).observe(panel, {childList: true, subtree: true});
     }
   };
