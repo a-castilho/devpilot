@@ -31,7 +31,13 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 
 - Keep pre-authentication limited to `acs-loader.js` and `auth-ui.js`.
 - Keep the automatic authenticated core exactly `app.js` plus `feature-loader.js`.
+- `app/static/runtime-manifest.js` is the single source of truth for frontend feature bundles, critical assets, navigation triggers, load policies, and standalone routes.
+- Do not duplicate feature inventories or navigation-trigger maps in `feature-loader.js`, `app/main.py`, ordinary frontend modules, tests, or documentation. Consumers must read the runtime manifest instead.
+- Any new frontend feature or dashboard must be registered in `runtime-manifest.js` and covered by `tests/test_frontend_runtime_manifest.py` before merge.
+- The unified runtime contract must preserve the user dashboard, project ships, project delivery actions, Development actions, reports/graphs, voice/chat, Audit, and all Super Admin dashboards.
+- Do not remove `project-ships.js`, `super-admin-task-panel.js`, `token-usage.js`, `cloud-admin.js`, `deploy-admin.js`, `mission-control.js`, `rag-admin-ui.js`, or `rag-jobs-ui.js` from the runtime contract without an explicit product decision and matching migration.
 - Load optional UI/domain modules only after explicit user intent through `feature-loader.js`.
+- Explicit feature loading must remain cooperative: load critical assets first, return control to the browser between scripts, then warm non-critical enhancements in background idle time.
 - Do not add hidden dynamic script loaders to ordinary frontend modules.
 - Do not add global `MutationObserver` instances to ordinary frontend modules; prefer explicit lifecycle/domain events.
 - Never reintroduce an automatic post-login second wave through timers, idle callbacks, analytics modules, or legacy loaders.
@@ -58,6 +64,7 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Run `python -m compileall app` after Python changes.
 - Run `python scripts/check-engineering-standards.py --changed` for every change.
 - Run `python scripts/critical-quality-matrix.py` to validate critical-module ownership and test contracts.
+- Run `pytest -q tests/test_frontend_runtime_manifest.py tests/test_authenticated_minimal_boot.py tests/test_project_visual_telemetry.py` after any frontend runtime or navigation change.
 - Verify the responsive dashboard manually after visible UI changes.
 - Review the final diff for secrets, unsafe subprocess use, missing authorization, unrelated edits, hidden loaders, and boot-cost regressions.
 
