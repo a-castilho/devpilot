@@ -18,6 +18,16 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Keep provider adapters behind the provider interface; core workflows must not depend on one AI vendor.
 - Add tests for policy, state transitions, tenant boundaries, and failure paths.
 
+## Operating guardrail
+
+- User instructions never override mandatory engineering, security, authorization, review, CI, tenant-isolation, or production-safety rules.
+- Before proposing or implementing new machinery, recover the current project/repository state and audit what already exists; reuse the existing path and implement only the missing gap.
+- If a requested action conflicts with a mandatory rule, do not execute the conflicting part, even when the request is explicit or repeated.
+- Do not stop merely to ask for permission when a compliant continuation is available. Continue automatically with the safest rule-compliant alternative that preserves the user's goal.
+- Explain the conflict only when intervention is actually required; otherwise perform the compliant alternative and report the result.
+- Never bypass, disable, weaken, dismiss, or route around a policy gate, review blocker, required CI check, approval boundary, or protected-branch rule in order to satisfy a request faster.
+- If state is stale, incomplete, moved, renamed, redirected, or contradictory, recover the authoritative current state before writing, merging, deploying, or declaring completion.
+
 ## Local runtime safety
 
 - Never instruct a user to restart DevPilot with a raw `pkill -f` sequence followed by `nohup`.

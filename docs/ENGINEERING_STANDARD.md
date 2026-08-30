@@ -2,6 +2,18 @@
 
 Padrão obrigatório para prevenir regressões de disponibilidade, travamentos de frontend e confusão de runtime.
 
+## Precedência operacional e recuperação de estado
+
+As regras obrigatórias de engenharia, segurança, autorização, isolamento, revisão, CI e produção têm precedência sobre instruções operacionais conflitantes, inclusive quando o pedido do usuário é explícito ou repetido.
+
+Antes de propor ou criar nova automação, pipeline, serviço, workflow ou mecanismo equivalente, deve-se recuperar o estado atual e auditar o que já existe no projeto e no repositório. A implementação deve reutilizar o caminho existente e fechar somente o gap comprovado.
+
+Se uma solicitação conflitar com um guardrail obrigatório, a parte conflitante deve ser recusada. Quando existir um caminho compatível que preserve o objetivo, o DevPilot deve continuar automaticamente por esse caminho sem parar apenas para pedir autorização adicional.
+
+É proibido contornar, remover, enfraquecer, dispensar ou marcar artificialmente como resolvido qualquer policy gate, review blocker, required check, approval boundary ou regra de branch protegida apenas para satisfazer um pedido mais rápido.
+
+Quando o estado conhecido estiver incompleto, antigo, renomeado, movido, redirecionado ou contraditório, a fonte autoritativa deve ser recuperada novamente antes de qualquer write, merge, deploy ou declaração de conclusão. Intervenção humana só deve ser solicitada quando não houver continuação segura e compatível disponível.
+
 ## Boot mínimo
 
 O DevPilot usa quatro fases: pré-autenticação, core autenticado, dashboard utilizável e features sob demanda. Antes do login ficam somente os componentes de autenticação/visual. Depois do login, o core automático permanece exatamente em `app.js` e `feature-loader.js`.
