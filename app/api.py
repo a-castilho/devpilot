@@ -183,17 +183,40 @@ def git_error(error: Exception) -> HTTPException:
 def overview(db: Session = Depends(get_db)):
     ws = workspace(db)
     projects = db.scalar(select(func.count(Project.id)).where(Project.workspace_id == ws.id)) or 0
-    tasks = db.scalar(select(func.count(Task.id)).where(Task.workspace_id == ws.id)) or 0
-    running = db.scalar(
-        select(func.count(Task.id)).where(
-            Task.workspace_id == ws.id,
-            Task.status.in_([TaskStatus.queued, TaskStatus.running, TaskStatus.review]),
-        )
-    ) or 0
-    completed = db.scalar(
-        select(func.count(Task.id)).where(Task.workspace_id == ws.id, Task.status == TaskStatus.completed)
-    ) or 0
-    return {"workspace": ws.name, "projects": projects, "tasks": tasks, "active": running, "completed": completed}
+    status_counts = {status.value: 0 for status in TaskStatus}
+    for task_status, count in db.execute(
+        select(Task.status, func.count(Task.id))
+        .where(Task.workspace_id == ws.id)
+        .group_by(Task.status)
+    ).all():
+        key = task_status.value if isinstance(task_status, TaskStatus) else str(task_status)
+        if key in status_counts:
+            status_counts[key] = int(count)
+
+    active_statuses = (
+        TaskStatus.queued,
+        TaskStatus.planning,
+        TaskStatus.running,
+        TaskStatus.review,
+    )
+    active = sum(status_counts[status.value] for status in active_statuses)
+    completed = status_counts[TaskStatus.completed.value]
+    failed = status_counts[TaskStatus.failed.value] + status_counts[TaskStatus.blocked.value]
+    approvals = status_counts[TaskStatus.awaiting_approval.value]
+
+    return {
+        "workspace": ws.name,
+        "projects": projects,
+        "tasks": sum(status_counts.values()),
+        "active": active,
+        "completed": completed,
+        "status_counts": status_counts,
+        "attention": {
+            "approvals": approvals,
+            "failed": failed,
+            "active": active,
+        },
+    }
 
 
 @router.get("/organizations")

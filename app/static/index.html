@@ -53,17 +53,17 @@
               <button class="ghost" data-view="projects">Ver projetos</button>
             </div>
           </div>
-          <aside class="attention-card" id="attention-card" aria-live="polite">
+          <button type="button" class="attention-card" id="attention-card" aria-live="polite">
             <span class="attention-icon">↻</span>
             <div><small>PRÓXIMA AÇÃO</small><strong>Atualizando operação…</strong><p>Aguarde um instante.</p></div>
-          </aside>
+          </button>
         </section>
 
         <div class="metrics overview-metrics" id="metrics"></div>
 
         <section class="operations-strip" aria-label="Resumo do fluxo">
           <div class="operation-heading">
-            <div><span class="eyebrow">FLUXO DE DESENVOLVIMENTO</span><h3>Progresso das tarefas recentes</h3></div>
+            <div><span class="eyebrow">FLUXO DE DESENVOLVIMENTO</span><h3>Progresso geral</h3></div>
             <strong id="completion-rate">0%</strong>
           </div>
           <div class="progress-track"><span id="completion-bar"></span></div>
@@ -90,8 +90,8 @@
           </article>
         </div>
 
-        <section class="system-overview" aria-label="Estado do sistema">
-          <div><span class="live-dot"></span><span><strong>DevPilot conectado</strong><small>Dashboard alimentado pelas APIs reais do sistema</small></span></div>
+        <section class="system-overview is-loading" id="system-overview" aria-label="Estado do sistema" aria-live="polite">
+          <div><span class="live-dot"></span><span><strong id="system-overview-status">Atualizando operação</strong><small id="system-overview-detail">Buscando o estado mais recente do DevPilot.</small></span></div>
           <button class="link" id="overview-refresh" type="button">Atualizar agora</button>
         </section>
       </section>
