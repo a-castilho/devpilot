@@ -101,14 +101,32 @@
     frame = window.requestAnimationFrame(apply);
   }
 
-  function loadCss() {
-    if (document.querySelector('link[data-layout-adaptive-v15]')) return;
+  function ensureStylesheet(selector, href, datasetKey) {
+    if (document.querySelector(selector)) return;
 
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = '/assets/layout-adaptive-v15.css?v=20260830-1';
-    link.dataset.layoutAdaptiveV15 = '1';
+    link.href = href;
+    link.dataset[datasetKey] = '1';
     document.head.appendChild(link);
+  }
+
+  function loadCss() {
+    ensureStylesheet(
+      'link[data-layout-adaptive-v15]',
+      '/assets/layout-adaptive-v15.css?v=20260830-1',
+      'layoutAdaptiveV15'
+    );
+
+    /*
+     * V16 é carregada depois da V15 de propósito: ela é a autoridade final
+     * sobre geometria do menu e encerra conflitos com breakpoints históricos.
+     */
+    ensureStylesheet(
+      'link[data-sidebar-responsive-v16]',
+      '/assets/sidebar-responsive-v16.css?v=20260830-1',
+      'sidebarResponsiveV16'
+    );
   }
 
   loadCss();
