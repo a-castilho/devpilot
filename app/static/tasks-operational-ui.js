@@ -342,6 +342,19 @@
       return;
     }
 
+    /*
+     * Fecha qualquer detalhe remanescente antes de redesenhar.
+     * Isso evita estado visual herdado de renderizações anteriores.
+     */
+    target
+      .querySelectorAll(
+        '.task-details-row, .task-instructions-row'
+      )
+      .forEach(row => {
+        row.hidden = true;
+        row.style.display = 'none';
+      });
+
     target.innerHTML = filtered.map(task => {
       const id = String(task.id || '');
       const type = taskType(task);
@@ -495,6 +508,7 @@
 
     if (!opening) {
       row.hidden = true;
+      row.style.display = 'none';
 
       button.textContent = 'Detalhes';
       button.setAttribute(
@@ -516,6 +530,7 @@
         if (other === row) return;
 
         other.hidden = true;
+        other.style.display = 'none';
 
         const otherId =
           other.dataset.taskDetailsRow;
@@ -535,6 +550,7 @@
       });
 
     row.hidden = false;
+    row.style.display = '';
 
     button.textContent = 'Ocultar';
     button.setAttribute(
