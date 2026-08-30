@@ -130,16 +130,21 @@
     );
 
     ensureStylesheet(
+      'link[data-sidebar-state-v24]',
+      '/assets/sidebar-state-v24.css?v=20260830-1',
+      'sidebarStateV24'
+    );
+
+    ensureStylesheet(
       'link[data-dashboard-user-v20]',
       '/assets/dashboard-user-v20.css?v=20260830-1',
       'dashboardUserV20'
     );
 
-    /* V24 é a autoridade final dos estados aberto/recolhido do sidebar. */
     ensureStylesheet(
-      'link[data-sidebar-state-v24]',
-      '/assets/sidebar-state-v24.css?v=20260830-1',
-      'sidebarStateV24'
+      'link[data-users-layout-v25]',
+      '/assets/users-layout-v25.css?v=20260830-1',
+      'usersLayoutV25'
     );
   }
 
