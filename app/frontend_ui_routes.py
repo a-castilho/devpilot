@@ -72,13 +72,7 @@ def _game_prompt_metadata(prompt: str | None) -> str:
 
 
 def _task_display_prompt(prompt: str | None) -> str:
-    """Return a human-facing task context without internal runtime markers.
-
-    The persisted prompt is intentionally kept untouched in the database.  This
-    function is used only by the lightweight UI detail endpoint so internal game
-    ids, DevPilot mode markers and orchestration metadata do not leak into the
-    normal task card.
-    """
+    """Return a human-facing task context without internal runtime markers."""
     text = str(prompt or "").strip()
     marker = "Contexto do usuário:"
     if marker in text:
@@ -116,6 +110,24 @@ def _task_display_prompt(prompt: str | None) -> str:
 
     cleaned = "\n".join(output).strip()
     return cleaned or "Nenhum contexto adicional registrado."
+
+
+def _task_source_label(task: Task) -> str:
+    title = str(task.title or "").strip().lower()
+    prompt = str(task.prompt or "")
+    if title.startswith("[jogo]") or _GAME_MARKER in prompt:
+        return "Modo Jogo"
+
+    source = str(task.source or "").strip()
+    labels = {
+        "dashboard": "DevPilot",
+        "project": "Projeto",
+        "voice": "DevPilVoz",
+        "super_admin": "Super Admin",
+        "analysis": "Análise",
+        "verification": "Validação",
+    }
+    return labels.get(source.lower(), source or "DevPilot")
 
 
 @router.get("/projects")
@@ -224,12 +236,7 @@ def super_admin_task_summaries(
     db: Session = Depends(get_db),
     principal: Principal = Depends(require_roles(Role.SUPER_ADMIN)),
 ):
-    """Return tasks owned by the current Super Admin, including latest PR link.
-
-    Besides the normal persisted queue, the first access opportunistically imports
-    known historical platform work. The bootstrap is idempotent and does nothing
-    when the corresponding project is not provisioned yet.
-    """
+    """Return tasks owned by the current Super Admin, including latest PR link."""
     bootstrap_regulaai_radar_admin_task(db.get_bind())
     db.expire_all()
 
@@ -338,7 +345,7 @@ def task_detail(task_id: str, db: Session = Depends(get_db)):
         "project_name": project.name if project else "",
         "title": item.title,
         "prompt": _task_display_prompt(item.prompt),
-        "source": item.source,
+        "source": _task_source_label(item),
         "status": item.status,
         "priority": item.priority,
         "requires_approval": item.requires_approval,
@@ -354,13 +361,7 @@ def game_task_summaries(
     limit: int = Query(24, ge=1, le=50),
     db: Session = Depends(get_db),
 ):
-    """Compact game history for constrained browsers.
-
-    The normal Task model carries the full execution prompt, which can be several
-    kilobytes per phase. The game only needs its marker and three metadata lines
-    to reconstruct progression, so this endpoint avoids serializing unrelated
-    tasks and strips the large mission body before it reaches the browser.
-    """
+    """Compact game history for constrained browsers."""
     ws = _workspace(db)
     rows = db.execute(
         select(
