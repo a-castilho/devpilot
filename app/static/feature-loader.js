@@ -19,7 +19,6 @@
   let navigationEpoch = 0;
 
   const FEATURE_BUNDLES = Object.freeze({
-    /* Shell comum: leve, determinístico e necessário em qualquer viewport. */
     shellCommon: [
       'viewport-adaptive-v15.js',
       'page-navigation-v26.js',
@@ -28,14 +27,8 @@
       'executions-focus-v19.js',
     ],
 
-    shell: [
-      'simplified-nav.js',
-    ],
-
-    mobileShell: [
-      'mobile-accordion-menu.js',
-    ],
-
+    shell: ['simplified-nav.js'],
+    mobileShell: ['mobile-accordion-menu.js'],
     profile: ['profile.js'],
     users: ['users.js'],
 
@@ -64,14 +57,13 @@
     taskModal: ['task-modal.js'],
     gameWeapons: ['game-weapons.js'],
 
-    /* A tela de Execuções abre imediatamente; só o controle de exclusão é essencial. */
+    /* Execuções: renderer operacional e exclusão entram somente após abrir a tela. */
     tasks: [
+      'tasks-operational-ui.js',
       'project-delete-ui.js',
     ],
 
-    tasksAnalytics: [
-      'task-analytics.js',
-    ],
+    tasksAnalytics: ['task-analytics.js'],
 
     tasksDetails: [
       'execution-results-v28.js',
@@ -170,7 +162,7 @@
 
   const idleYield = () => new Promise(resolve => {
     if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(() => resolve(), {timeout: 220});
+      window.requestIdleCallback(() => resolve(), {timeout:220});
       return;
     }
     window.setTimeout(resolve, 48);
@@ -272,16 +264,13 @@
           cancelled = true;
           break;
         }
-
         const file = files[index];
         const started = performance.now();
         const ok = await loadScript(file);
         if (!ok) failures.push(file);
-
         window.__devpilotFeaturePerf.push({
-          feature, file, durationMs: Math.round(performance.now() - started), ok, at: Date.now(),
+          feature, file, durationMs:Math.round(performance.now() - started), ok, at:Date.now(),
         });
-
         await nextPaint();
         await shortYield();
         if (index > 0 && index % 2 === 0) await idleYield();
@@ -289,9 +278,8 @@
 
       const status = cancelled ? 'partial' : failures.length ? 'partial' : 'loaded';
       featureState.set(feature, {status, failures, cancelled, promise:null});
-
       document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
-        detail: {feature, failures, cancelled, durationMs:Math.round(performance.now() - featureStarted)},
+        detail:{feature, failures, cancelled, durationMs:Math.round(performance.now() - featureStarted)},
       }));
       return !cancelled && failures.length === 0;
     })();
@@ -310,7 +298,6 @@
     const projectsPromise = typeof window.loadProjects === 'function'
       ? Promise.resolve(window.loadProjects()).catch(() => [])
       : Promise.resolve([]);
-
     return Promise.all([featurePromise, projectsPromise]).then(([ready]) => {
       document.dispatchEvent(new CustomEvent('devpilot:chat-opened', {detail:{ready}}));
       window.requestAnimationFrame(() => document.querySelector('#voice-transcript, #voice-chat-input')?.focus?.());
@@ -363,7 +350,6 @@
       window.location.assign('/game/index.html');
       return;
     }
-
     const intentEpoch = navigationEpoch;
     const original = button.textContent.replace(/\s*·\s*carregando…?\s*$/u, '');
     button.dataset.devpilotBusy = '1';
@@ -371,7 +357,6 @@
     button.disabled = true;
     button.setAttribute('aria-busy', 'true');
     button.textContent = `${original} · carregando…`;
-
     try {
       const ok = await loadFeature(feature, {intentEpoch});
       if (intentEpoch !== navigationEpoch) return restorePlaceholder(button, original);
@@ -399,7 +384,6 @@
     ['[data-open="task-modal"]', 'taskModal'],
     ['#tasks-v9-indicators', 'tasksAnalytics'],
     ['.tasks-v9-details, .task-instructions-load', 'tasksDetails'],
-
     ['.nav[data-view="organizations"]', 'organizations'],
     ['.nav[data-view="projects"]', 'projects'],
     ['.nav[data-view="tasks"]', 'tasks'],
@@ -500,13 +484,8 @@
   function initializeAuthenticatedUi() {
     initializePlaceholders();
     void loadFeature('shellCommon');
-
-    if (window.matchMedia('(min-width: 901px)').matches) {
-      void loadFeature('shell');
-    } else {
-      initializeMobileShell();
-    }
-
+    if (window.matchMedia('(min-width: 901px)').matches) void loadFeature('shell');
+    else initializeMobileShell();
     initializeActiveViewFeature();
   }
 
@@ -519,11 +498,8 @@
   if (document.documentElement.classList.contains('devpilot-auth-pending')) {
     document.addEventListener('devpilot:dashboard-revealed', initializeAuthenticatedUi);
     authModal?.addEventListener('close', initializeIfAuthenticated);
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once:true});
-    } else {
-      initializeIfAuthenticated();
-    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeIfAuthenticated, {once:true});
+    else initializeIfAuthenticated();
   } else if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initializeAuthenticatedUi, {once:true});
   } else {
