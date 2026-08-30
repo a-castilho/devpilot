@@ -105,6 +105,11 @@
     return `[DEVPILOT_MODE=${selectedMode}]\n${config.instruction}\n\nContexto do usuário:\n${raw}`;
   }
 
+  function canonicalSource(value) {
+    const source = String(value || '').trim().toLowerCase();
+    return source === 'voice' || source === 'api' ? source : 'dashboard';
+  }
+
   function applyApprovalByExceptionDefault() {
     if (approvalInput) approvalInput.checked = false;
     if (approvalLabel?.lastChild) {
@@ -198,7 +203,7 @@
         ? Math.max(0, Math.min(100, priorityValue))
         : 50,
       requires_approval: data.get('requires_approval') === 'on',
-      source: form.closest('dialog')?.dataset.taskSource || 'dashboard',
+      source: canonicalSource(form.closest('dialog')?.dataset.taskSource),
     };
 
     const originalText = submit?.textContent || 'Salvar execução';
