@@ -1,0 +1,43 @@
+name: DevPilot CI failure reaction
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devpilot-ci-failure-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+jobs:
+  create-remediation-task:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    env:
+      DEVPILOT_AUTOMATION_URL: ${{ vars.DEVPILOT_AUTOMATION_URL }}
+      DEVPILOT_AUTOMATION_TOKEN: ${{ secrets.DEVPILOT_AUTOMATION_TOKEN }}
+      DEVPILOT_CI_RUN_ID: ${{ github.event.workflow_run.id }}
+      DEVPILOT_CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+      DEVPILOT_CI_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+
+    steps:
+      - name: Checkout automation bridge
+        uses: actions/checkout@v4
+
+      - name: Verify bridge configuration
+        run: |
+          if [[ -z "$DEVPILOT_AUTOMATION_URL" ]]; then
+            echo "Repository variable DEVPILOT_AUTOMATION_URL is required." >&2
+            exit 1
+          fi
+          if [[ -z "$DEVPILOT_AUTOMATION_TOKEN" ]]; then
+            echo "Repository secret DEVPILOT_AUTOMATION_TOKEN is required." >&2
+            exit 1
+          fi
+
+      - name: Create or reuse DevPilot remediation task
+        run: python3 scripts/ci-failure-to-task.py
