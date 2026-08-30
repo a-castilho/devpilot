@@ -594,7 +594,10 @@
   let scheduled = false;
   function enhanceAll() {
     scheduled = false;
-    const cards = Array.from(document.querySelectorAll(`${ROOT_SELECTOR} > .project-card`));
+    const root = document.querySelector(ROOT_SELECTOR);
+    const cards = root
+      ? Array.from(root.children).filter(node => node.classList?.contains('project-card'))
+      : [];
     cards.forEach((card, index) => enhance(card, index));
     renderOverview(cards);
   }
@@ -611,7 +614,7 @@
     if (!root) return;
     enhanceAll();
     const observer = new MutationObserver(scheduleEnhance);
-    observer.observe(root, {childList: true, subtree: true, characterData: true});
+    observer.observe(root, {childList: true});
   }
 
   if (document.readyState === 'loading') {

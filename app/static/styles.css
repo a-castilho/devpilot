@@ -124,3 +124,45 @@
 .system-overview{margin-top:18px;padding:13px 18px;display:flex;align-items:center;justify-content:space-between;gap:18px}.system-overview>div{display:flex;align-items:center;gap:10px}.system-overview strong,.system-overview small{display:block}.system-overview small{color:var(--muted);font-size:10px}.live-dot{width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 13px var(--cyan)}
 @media(max-width:900px){.command-center,.overview-grid{grid-template-columns:1fr}.command-center{margin-top:16px}.command-center-copy{padding:23px}.attention-card{padding:18px}.overview-actions .ghost{display:none}.overview-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.status-breakdown{display:grid;grid-template-columns:1fr 1fr}.quick-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:520px){.command-center-copy h2{font-size:31px}.overview-actions{display:grid;grid-template-columns:1fr}.overview-actions button{width:100%}.overview-metric{padding:14px}.overview-metric strong{font-size:25px}.operations-strip{padding:17px}.operation-heading h3{font-size:17px}.status-breakdown{grid-template-columns:1fr}.overview-task{grid-template-columns:8px minmax(0,1fr)}.overview-task .status{grid-column:2;justify-self:start}.quick-grid{grid-template-columns:1fr}.system-overview{align-items:flex-start}.system-overview .link{white-space:nowrap}}
+
+
+/* DevPilot frontend freeze guard 20260830
+ * Mantém o layout atual e reduz somente efeitos que pressionam CPU/GPU.
+ */
+html.devpilot-low-power #projects-list .project-ship-svg {
+  animation: none !important;
+  filter: none !important;
+}
+
+html.devpilot-low-power #projects-list .project-ship-svg * {
+  filter: none !important;
+}
+
+html.devpilot-low-power #projects-list .project-card.project-ship-card,
+html.devpilot-low-power #projects-list .project-ship-card button,
+html.devpilot-low-power .attention-card,
+html.devpilot-low-power .metric {
+  transition: none !important;
+}
+
+html.devpilot-low-power main > header,
+html.devpilot-low-power .sidebar {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html.devpilot-low-power .pulse-orb,
+html.devpilot-low-power .attention-card.active .attention-icon {
+  animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #projects-list .project-ship-svg {
+    animation: none !important;
+    filter: none !important;
+  }
+
+  #projects-list .project-ship-svg * {
+    filter: none !important;
+  }
+}
