@@ -219,3 +219,17 @@
     if (window.innerWidth <= 900 && !document.querySelector('.mobile-simple-nav')) bootstrapMobileMenu();
   });
 })();
+
+/* Runtime Experience V13: garantia adicional no shell mobile. */
+(() => {
+  if (
+    window.__devpilotRuntimeExperienceV13 ||
+    document.querySelector('script[data-runtime-experience-v13]')
+  ) return;
+
+  const script = document.createElement('script');
+  script.src = '/assets/runtime-experience-v13.js?v=20260830-direct-1';
+  script.async = true;
+  script.dataset.runtimeExperienceV13 = '1';
+  document.head.appendChild(script);
+})();
