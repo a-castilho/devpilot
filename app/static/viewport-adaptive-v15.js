@@ -128,6 +128,17 @@
       '/assets/sidebar-responsive-v16.css?v=20260830-1',
       'sidebarResponsiveV16'
     );
+
+    /*
+     * V20 usa somente os dados já renderizados por app.js e não adiciona
+     * chamadas, polling ou escritas. Carrega depois das camadas históricas
+     * para ser a autoridade visual final da Visão geral.
+     */
+    ensureStylesheet(
+      'link[data-dashboard-user-v20]',
+      '/assets/dashboard-user-v20.css?v=20260830-1',
+      'dashboardUserV20'
+    );
   }
 
   function loadExecutionsV18() {
