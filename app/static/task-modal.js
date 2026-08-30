@@ -65,9 +65,37 @@
     return `Não foi possível salvar a execução${status ? ` (HTTP ${status})` : ''}`;
   }
 
+  function tokenExpired(token) {
+    try {
+      const parts = String(token || '').split('.');
+      if (parts.length !== 3) return true;
+      const payload = JSON.parse(
+        decodeURIComponent(
+          atob(parts[1].replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(parts[1].length / 4) * 4, '='))
+            .split('')
+            .map(char => `%${char.charCodeAt(0).toString(16).padStart(2, '0')}`)
+            .join('')
+        )
+      );
+      const exp = Number(payload?.exp || 0);
+      return !Number.isFinite(exp) || exp <= Math.floor(Date.now() / 1000) + 5;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  function requireFreshLogin(message = 'Sua sessão expirou. Entre novamente para continuar.') {
+    localStorage.removeItem('devpilot-token');
+    sessionStorage.setItem('devpilot-auth-message', message);
+    window.setTimeout(() => window.location.reload(), 0);
+  }
+
   async function apiJson(path, options = {}) {
     const token = String(localStorage.getItem('devpilot-token') || '').trim();
-    if (!token) throw new Error('Autenticação necessária para salvar a execução.');
+    if (!token || tokenExpired(token)) {
+      requireFreshLogin();
+      throw new Error('Sessão expirada. Faça login novamente.');
+    }
 
     const response = await fetch(`/api${path}`, {
       ...options,
@@ -82,9 +110,8 @@
     const body = await response.json().catch(() => ({}));
 
     if (response.status === 401) {
-      localStorage.removeItem('devpilot-token');
-      document.querySelector('#auth-modal')?.showModal?.();
-      throw new Error('Autenticação necessária');
+      requireFreshLogin('Sua sessão não é mais válida. Entre novamente para continuar.');
+      throw new Error('Sessão expirada. Faça login novamente.');
     }
 
     if (!response.ok) throw new Error(detailMessage(body, response.status));
