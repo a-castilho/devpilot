@@ -25,6 +25,7 @@ def test_subphase_engine_is_not_owned_by_dashboard_feature_loader():
 def test_real_failures_create_corrective_subphases():
     source = SUBPHASES_JS.read_text(encoding="utf-8")
     assert "[DEVPILOT_BUILD_GAME_SUBPHASE_V1]" in source
+    assert "[DEVPILOT_BUILD_GAME_PIPELINE_V2]" in source
     assert "api('/task-runs/latest?limit=500')" in source
     assert "new Set(['failed', 'blocked'])" in source
     assert "createCorrection" in source
@@ -33,6 +34,9 @@ def test_real_failures_create_corrective_subphases():
     assert "MOTIVO_DA_SUBFASE:" in source
     assert "CATEGORIA_FALHA:" in source
     assert "CODIGO_FALHA:" in source
+    assert "const TOTAL_PHASES = PHASE_NAMES.length" in source
+    assert "phaseId <= TOTAL_PHASES" in source
+    assert "'Entrega e revisão'" in source
 
 
 def test_corrective_subphase_is_real_fix_task_and_preserves_security():
@@ -43,7 +47,7 @@ def test_corrective_subphase_is_real_fix_task_and_preserves_security():
     assert "requires_approval: Boolean(failure?.requires_authorization)" in source
     assert "não contorne autenticação ou autorização" in source
     assert "não introduza mock indevido" in source
-    assert "Não avance para a próxima fase" in source
+    assert "Não avance para a próxima etapa" in source
 
 
 def test_subphases_are_visible_and_bounded():
