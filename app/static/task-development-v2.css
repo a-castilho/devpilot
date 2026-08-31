@@ -1,6 +1,5 @@
 /* Desenvolvimento · tarefas responsivas
- * Mantém a tabela legível em desktop compacto e transforma o conteúdo de
- * execução/aprendizado em blocos próprios, sem esmagar a coluna de ações.
+ * Autoridade de layout das ações e dos complementos de execução.
  */
 
 #tasks-view .task-actions-cell {
@@ -178,7 +177,22 @@
   overflow-wrap:anywhere;
 }
 
-/* Notebook/tablet com menu aberto: preserva colunas e rola somente a tabela. */
+/* Hidden precisa vencer o display:grid!important do layout de cards. */
+#tasks-view tr.task-main-row[hidden],
+#tasks-view tr.tasks-v9-row[hidden],
+#tasks-view tr.task-main-row[hidden] + tr.task-details-row,
+#tasks-view tr.task-main-row[hidden] + tr.task-instructions-row,
+#tasks-view tr.task-main-row[hidden] + tr.task-details-row + tr.task-instructions-row {
+  display:none!important;
+  visibility:hidden!important;
+  height:0!important;
+  min-height:0!important;
+  max-height:0!important;
+  margin:0!important;
+  padding:0!important;
+  overflow:hidden!important;
+}
+
 @media (min-width:901px) and (max-width:1180px) {
   #tasks-view .panel.table-wrap {
     overflow-x:auto!important;
@@ -197,12 +211,18 @@
   }
 }
 
-/* V1.1.2: uma única autoridade para ações no modo cartão mobile. */
+/* Mobile: existe uma única grade para ações; o TD não cria uma segunda grade. */
 @media (max-width:900px) {
   #tasks-view .task-actions-cell {
     min-width:0!important;
     width:100%!important;
     overflow:visible!important;
+  }
+
+  #tasks-view .tasks-v9-actions:has(.task-orchestrator-actions),
+  #tasks-view .task-actions-cell:has(.task-orchestrator-actions) {
+    display:block!important;
+    grid-template-columns:none!important;
   }
 
   #tasks-view .task-orchestrator-actions {
@@ -216,9 +236,7 @@
   }
 
   #tasks-view .task-orchestrator-actions > button,
-  #tasks-view .task-orchestrator-actions > a,
-  #tasks-view .task-actions-cell > button,
-  #tasks-view .task-actions-cell > a {
+  #tasks-view .task-orchestrator-actions > a {
     position:static!important;
     inset:auto!important;
     transform:none!important;
@@ -228,12 +246,14 @@
     width:100%!important;
     max-width:100%!important;
     min-width:0!important;
-    min-height:44px!important;
+    min-height:46px!important;
     margin:0!important;
     padding:9px 10px!important;
     white-space:normal!important;
     overflow-wrap:anywhere!important;
+    word-break:normal!important;
     text-align:center!important;
+    line-height:1.2!important;
   }
 
   #tasks-view .task-action-auto {
