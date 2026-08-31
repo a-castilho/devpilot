@@ -21,6 +21,9 @@
 #tasks-view .task-orchestrator-actions > a,
 #tasks-view .task-actions-cell > button,
 #tasks-view .task-actions-cell > a {
+  position:static!important;
+  inset:auto!important;
+  transform:none!important;
   width:auto!important;
   min-width:0!important;
   min-height:34px!important;
@@ -28,6 +31,7 @@
   padding:7px 10px!important;
   line-height:1.15!important;
   white-space:nowrap!important;
+  box-sizing:border-box!important;
 }
 
 #tasks-view .task-action-next,
@@ -193,21 +197,47 @@
   }
 }
 
-/* No modo cartão existente, ações e aprendizado ocupam a largura útil. */
+/* V1.1.2: uma única autoridade para ações no modo cartão mobile. */
 @media (max-width:900px) {
   #tasks-view .task-actions-cell {
     min-width:0!important;
+    width:100%!important;
+    overflow:visible!important;
   }
 
   #tasks-view .task-orchestrator-actions {
-    gap:6px;
+    display:grid!important;
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    align-items:stretch!important;
+    gap:8px!important;
+    width:100%!important;
+    min-width:0!important;
+    overflow:visible!important;
   }
 
   #tasks-view .task-orchestrator-actions > button,
   #tasks-view .task-orchestrator-actions > a,
   #tasks-view .task-actions-cell > button,
   #tasks-view .task-actions-cell > a {
-    flex:0 1 auto;
+    position:static!important;
+    inset:auto!important;
+    transform:none!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    width:100%!important;
+    max-width:100%!important;
+    min-width:0!important;
+    min-height:44px!important;
+    margin:0!important;
+    padding:9px 10px!important;
+    white-space:normal!important;
+    overflow-wrap:anywhere!important;
+    text-align:center!important;
+  }
+
+  #tasks-view .task-action-auto {
+    grid-column:1/-1!important;
   }
 
   #tasks-view .task-learning-grid {
@@ -216,13 +246,12 @@
 }
 
 @media (max-width:560px) {
-  #tasks-view .task-orchestrator-actions > button,
-  #tasks-view .task-orchestrator-actions > a,
-  #tasks-view .task-actions-cell > button,
-  #tasks-view .task-actions-cell > a {
-    flex:1 1 calc(50% - 6px);
-    justify-content:center;
-    text-align:center;
+  #tasks-view .task-orchestrator-actions {
+    grid-template-columns:minmax(0,1fr)!important;
+  }
+
+  #tasks-view .task-action-auto {
+    grid-column:auto!important;
   }
 
   #tasks-view .task-runtime-chip {
