@@ -16,6 +16,7 @@ from app.services.policy import evaluate_task
 router = APIRouter(prefix="/api/ui", dependencies=[Depends(require_access)])
 
 _GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
+_GAME_PIPELINE_MARKER = "[DEVPILOT_BUILD_GAME_PIPELINE_V2]"
 _GAME_METADATA_LABELS = ("PARTIDA", "FASE", "OBJETIVO")
 
 
@@ -58,9 +59,12 @@ def _project_summary(row) -> dict:
 
 
 def _game_prompt_metadata(prompt: str | None) -> str:
+    raw_prompt = str(prompt or "")
     lines = [_GAME_MARKER]
+    if _GAME_PIPELINE_MARKER in raw_prompt:
+        lines.append(_GAME_PIPELINE_MARKER)
     wanted = {label: "" for label in _GAME_METADATA_LABELS}
-    for raw_line in str(prompt or "").splitlines():
+    for raw_line in raw_prompt.splitlines():
         line = raw_line.strip()
         for label in _GAME_METADATA_LABELS:
             prefix = f"{label}:"
