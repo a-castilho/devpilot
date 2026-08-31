@@ -1,6 +1,4 @@
-"""DevPilot release version.
-
-This module is the single source of truth for the application/package version.
-"""
-
-__version__ = "1.1.0"
+__version__ = "1.1.1"
+RELEASE_CHANNEL = "stable"
+SUPPORTED_PYTHON = ("3.11", "3.12")
+SUPPORTED_POSTGRES = ("15", "16")

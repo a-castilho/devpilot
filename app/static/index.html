@@ -17,6 +17,17 @@
   <link rel="stylesheet" href="/assets/project-card-scroll.css?v=20260821-1">
   <link rel="stylesheet" href="/assets/simplified-nav.css?v=20260822-1">
   <link rel="stylesheet" href="/assets/mobile-accordion-menu.css?v=20260824-1">
+  <link rel="stylesheet" href="/assets/dashboard-command-center-recovered.css?v=golden-complete-1">
+  <link id="devpilot-task-development-v2" rel="stylesheet" href="/assets/task-development-v2.css?v=complete-20260830">
+  <link rel="stylesheet" href="/assets/layout-responsive-v2.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-operational-v3.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-cards-admin-v4.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-projects-v5.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-projects-v6.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-dashboard-v7.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/layout-super-admin-v8.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/tasks-operational-v9.css?v=20260830-1">
+  <link rel="stylesheet" href="/assets/tasks-mobile-v10.css?v=20260830-1">
 </head>
 <body>
   <div class="shell">
@@ -27,7 +38,7 @@
         <button class="nav" data-view="organizations"><span style="font-size:18px">◎</span> Organizações</button>
         <button class="nav" data-view="projects">Projetos</button>
         <button class="nav" type="button" data-example-project="repeatai">Exemplo de projeto</button>
-        <button class="nav" data-view="tasks">Desenvolvimento</button>
+        <button class="nav" data-view="tasks">Execuções</button>
         <button class="nav" data-view="providers">Modelos de IA</button>
         <button class="nav" data-view="reports">Relatórios</button>
         <button class="nav" data-view="audit">Auditoria</button>
@@ -37,8 +48,8 @@
 
     <main>
       <header>
-        <div><p class="eyebrow">Central de desenvolvimento</p><h1 id="page-title">Visão geral</h1></div>
-        <div class="header-actions"><button class="ghost" id="refresh">Atualizar</button><button class="primary" data-open="task-modal">+ Nova tarefa</button></div>
+        <div><p class="eyebrow">Central operacional</p><h1 id="page-title">Visão geral</h1></div>
+        <div class="header-actions"><button class="ghost" id="refresh">Atualizar</button><button class="primary" data-open="task-modal">+ Nova execução</button></div>
       </header>
 
       <section class="view active" id="overview-view">
@@ -46,9 +57,9 @@
           <div class="command-center-copy">
             <span class="eyebrow">CENTRAL DO USUÁRIO · TEMPO REAL</span>
             <h2 id="command-center-title">Tudo o que está acontecendo, em um só lugar.</h2>
-            <p id="overview-summary">Carregando o estado dos seus projetos e desenvolvimentos…</p>
+            <p id="overview-summary">Carregando o estado dos seus projetos e execuções…</p>
             <div class="overview-actions">
-              <button class="primary" data-open="task-modal">+ Novo desenvolvimento</button>
+              <button class="primary" data-open="task-modal">+ Nova execução</button>
               <button class="voice" id="voice-hero">● Falar com o DevPilot</button>
               <button class="ghost" data-view="projects">Ver projetos</button>
             </div>
@@ -63,7 +74,7 @@
 
         <section class="operations-strip" aria-label="Resumo do fluxo">
           <div class="operation-heading">
-            <div><span class="eyebrow">FLUXO DE DESENVOLVIMENTO</span><h3>Progresso das tarefas recentes</h3></div>
+            <div><span class="eyebrow">FLUXO DE EXECUÇÕES</span><h3>Progresso das execuções recentes</h3></div>
             <strong id="completion-rate">0%</strong>
           </div>
           <div class="progress-track"><span id="completion-bar"></span></div>
@@ -83,7 +94,7 @@
             <div class="panel-title"><div><span class="eyebrow">ATALHOS</span><h3>Acesse rapidamente</h3></div></div>
             <div class="quick-grid">
               <button type="button" class="quick-action" data-view="projects"><b>▦</b><span><strong>Projetos</strong><small>Repositórios e análises</small></span></button>
-              <button type="button" class="quick-action" data-view="tasks"><b>✓</b><span><strong>Desenvolvimento</strong><small>Fila, aprovações e resultados</small></span></button>
+              <button type="button" class="quick-action" data-view="tasks"><b>✓</b><span><strong>Execuções</strong><small>Fila, aprovações e resultados</small></span></button>
               <button type="button" class="quick-action" data-view="reports"><b>≣</b><span><strong>Relatórios</strong><small>Documentação e decisões</small></span></button>
               <button type="button" class="quick-action" data-view="audit"><b>⌁</b><span><strong>Auditoria</strong><small>Histórico verificável</small></span></button>
             </div>
@@ -187,9 +198,56 @@
             </section>
           </aside>
         </form>
+        <div class="project-builder-sticky-action" id="project-builder-sticky-action">
+          <div class="project-builder-sticky-copy">
+            <strong>Novo projeto</strong>
+            <small>Revise as opções e finalize o cadastro.</small>
+          </div>
+          <button class="primary project-builder-sticky-submit" type="submit" form="project-builder-form">+ Criar projeto</button>
+        </div>
       </section>
 
-      <section class="view" id="tasks-view"><div class="section-head"><p>Acompanhe cada etapa, aprovação e resultado.</p><button class="primary" data-open="task-modal">+ Nova tarefa</button></div><section id="task-analytics" class="task-analytics" aria-live="polite"></section><div class="panel table-wrap"><table><thead><tr><th>Tarefa</th><th>Origem</th><th>Status</th><th>Prioridade</th><th>Ação</th></tr></thead><tbody id="tasks-table"></tbody></table></div></section>
+      <section class="view" id="tasks-view">
+        <div class="tasks-v9-header">
+          <div>
+            <span class="eyebrow">EXECUÇÕES</span>
+            <h2>Execuções</h2>
+            <p>Acompanhe análises, correções e implementações em execução. Abra os detalhes somente quando precisar do contexto completo.</p>
+          </div>
+
+          <div class="tasks-v9-toolbar">
+            <button class="ghost" id="tasks-v9-back" type="button">← Voltar</button>
+            <button class="ghost" id="tasks-v9-refresh" type="button">Atualizar</button>
+            <button class="primary" data-open="task-modal" type="button">+ Nova execução</button>
+          </div>
+        </div>
+
+        <div class="tasks-v9-filters">
+          <label class="tasks-v9-search">
+            <span>Buscar</span>
+            <input id="tasks-v9-search" type="search" placeholder="Execução ou projeto" autocomplete="off">
+          </label>
+
+          <label><span>Projeto</span><select id="tasks-v9-project"><option value="">Todos</option></select></label>
+          <label><span>Estado</span><select id="tasks-v9-status"><option value="">Todos</option><option value="active">Em andamento</option><option value="attention">Precisa atenção</option><option value="completed">Concluídas</option></select></label>
+          <label><span>Tipo</span><select id="tasks-v9-type"><option value="">Todos</option><option value="analysis">Análise</option><option value="execution">Execução</option></select></label>
+          <button class="ghost tasks-v9-indicators" id="tasks-v9-indicators" type="button" aria-expanded="false" aria-controls="task-analytics">Indicadores</button>
+        </div>
+
+        <section id="task-analytics" class="task-analytics" aria-live="polite" hidden></section>
+
+        <div class="tasks-v9-summary"><span id="tasks-v9-count">Carregando execuções…</span></div>
+
+        <div class="panel tasks-v9-table-wrap">
+          <table class="tasks-v9-table">
+            <thead><tr><th>Execução</th><th>Estado</th><th>Ações</th></tr></thead>
+            <tbody id="tasks-table"></tbody>
+          </table>
+        </div>
+
+        <div class="tasks-v9-footer"><button class="ghost" id="tasks-v9-more" type="button">Carregar mais</button></div>
+      </section>
+
       <section class="view" id="providers-view"><div class="section-head"><p>Conecte várias IAs sem acoplar o fluxo a um único fornecedor.</p><button class="primary" data-open="provider-modal">+ Conectar IA</button></div><div class="cards" id="providers-list"></div></section>
       <section class="view" id="reports-view">
         <div class="reports-shell">
@@ -204,63 +262,49 @@
   </div>
 
   <div class="voice-dock"><button id="voice-dock" aria-label="Comando de voz">●</button><span>Comando de voz</span></div>
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <dialog id="auth-modal"><form method="dialog" class="modal"><span class="eyebrow">ACESSO</span><h2>Conectar ao DevPilot</h2><p>Informe o token configurado em <code>DEVPILOT_BOOTSTRAP_TOKEN</code>.</p><label>Token<input id="token" type="password" autocomplete="current-password" required></label><button class="primary" id="save-token" value="default">Entrar</button></form></dialog>
   <dialog id="organization-modal"><form class="modal" id="organization-form"><button class="close" type="button">×</button><span class="eyebrow">ORGANIZAÇÃO GIT</span><h2>Conectar organização GitHub</h2><div class="form-grid"><label>Nome<input name="name" placeholder="A Castilho" required></label><label>Slug<input name="slug" placeholder="a-castilho" pattern="[a-z0-9][a-z0-9-]+" required></label></div><label>Login da organização no GitHub<input name="github_login" placeholder="a-castilho" required></label><p class="hint">As credenciais GitHub são gerenciadas pelo DevPilot e ficam restritas à administração. Ao conectar a organização, os repositórios são sincronizados automaticamente.</p><button class="primary" type="submit">Conectar e sincronizar</button></form></dialog>
   <dialog id="project-modal"><form class="modal" id="project-form"><button class="close" type="button">×</button><span class="eyebrow">NOVO PROJETO</span><h2>Conectar ou criar repositório</h2><div class="form-grid"><label>Nome<input name="name" required></label><label>Slug<input name="slug" pattern="[a-z0-9][a-z0-9-]+" required></label></div><label>Organização<select name="organization_id" id="project-organization"><option value="">Sem organização</option></select></label><label class="check"><input name="create_repository" id="project-create-repository" type="checkbox"> Não tenho URL Git — criar repositório privado na organização A Castilho</label><p class="hint" id="project-provision-hint">A criação automática usa a credencial GitHub gerenciada pelo DevPilot quando o usuário possui autorização.</p><label id="project-repository-field">Repositório existente<input name="repository_url" id="project-repository-url" placeholder="a-castilho/projeto ou https://github.com/a-castilho/projeto"></label><label>Descrição<textarea name="description" rows="2"></textarea></label><label>AGENTS.md<textarea name="agents_md" rows="7" placeholder="# Regras do projeto..."></textarea></label><div class="form-grid"><label>Branch padrão<input name="default_branch" value="main"></label><label>Modelo Codex<input name="model" value="gpt-5.4"></label></div><button class="primary" id="project-submit" type="submit">Criar projeto</button></form></dialog>
+
   <dialog id="task-modal">
-    <form class="modal task-modal-form" id="task-form">
+    <form class="modal task-modal-form" id="task-form" novalidate>
       <button class="close" type="button" aria-label="Fechar">×</button>
       <div class="task-modal-heading">
-        <span class="eyebrow">NOVA TAREFA</span>
-        <h2>O que você quer que a IA faça?</h2>
+        <span class="eyebrow">NOVA EXECUÇÃO</span>
+        <h2 id="task-modal-title">O que você quer que a IA faça?</h2>
         <p>Informe o contexto com suas próprias palavras. O DevPilot organiza a instrução e combina o texto com as regras do projeto antes da análise.</p>
       </div>
 
-      <label>Projeto
-        <select name="project_id" id="task-project" required></select>
-      </label>
+      <label>Projeto<select name="project_id" id="task-project"></select></label>
 
       <div class="task-top-grid">
-        <label>Modo
-          <select name="mode" id="task-mode">
-            <option value="analysis-read-only" selected>Analisar / diagnosticar</option>
-            <option value="develop">Desenvolver / implementar</option>
-            <option value="fix">Corrigir / depurar</option>
-            <option value="review">Revisar / validar</option>
-          </select>
-        </label>
-        <label>Título
-          <input name="title" placeholder="Ex.: Auditoria técnica da arquitetura" required>
-        </label>
+        <label>Modo<select name="mode" id="task-mode"><option value="analysis-read-only" selected>Analisar / diagnosticar</option><option value="develop">Desenvolver / implementar</option><option value="fix">Corrigir / depurar</option><option value="review">Revisar / validar</option></select></label>
+        <label>Título<input name="title" placeholder="Opcional · o DevPilot gera pelo contexto"></label>
       </div>
 
-      <label class="task-context">Contexto para análise
-        <textarea name="prompt" id="task-context" rows="9" placeholder="Cole aqui o problema, comportamento observado, requisitos, regras de negócio ou qualquer contexto que a IA deve considerar..." required></textarea>
+      <label class="task-context">Contexto para execução
+        <textarea name="prompt" id="task-context" rows="9" placeholder="Descreva o problema, comportamento observado, requisito, regra de negócio ou resultado esperado..."></textarea>
         <small id="task-mode-hint">A IA analisará este contexto junto com o repositório, sem persistir alterações.</small>
       </label>
 
       <div class="task-assist-card" aria-live="polite">
         <span class="task-assist-icon" aria-hidden="true">✦</span>
-        <div>
-          <strong id="task-assist-title">Análise assistida pelo AgentOS</strong>
-          <p id="task-assist-text">O repositório será consultado em uma área isolada. Nenhuma alteração será persistida; a resposta destacará evidências, riscos, impacto e recomendações.</p>
-        </div>
+        <div><strong id="task-assist-title">Análise assistida pelo AgentOS</strong><p id="task-assist-text">O repositório será consultado em uma área isolada. Nenhuma alteração será persistida; a resposta destacará evidências, riscos, impacto e recomendações.</p></div>
       </div>
 
       <div class="task-bottom-grid">
-        <label>Prioridade
-          <input name="priority" type="number" min="0" max="100" value="50">
-        </label>
-        <label class="check task-approval"><input name="requires_approval" type="checkbox" checked> Exigir aprovação</label>
+        <label>Prioridade<input name="priority" type="number" min="0" max="100" value="50"></label>
+        <label class="check task-approval"><input name="requires_approval" type="checkbox"> Exigir aprovação manual mesmo para ação segura</label>
       </div>
 
-      <button class="primary task-submit" id="task-submit" type="submit">Registrar análise</button>
+      <button class="primary task-submit" id="task-submit" type="submit">Salvar execução</button>
     </form>
   </dialog>
+
   <dialog id="provider-modal"><form class="modal" id="provider-form"><button class="close" type="button">×</button><span class="eyebrow">PROVEDOR DE IA</span><h2>Conectar modelo</h2><div class="form-grid"><label>Provedor<select name="provider"><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="google">Google</option><option value="custom">Custom</option></select></label><label>Nome da conexão<input name="label" value="Principal" required></label></div><label>API key<input name="api_key" type="password" required></label><label>Modelos, separados por vírgula<input name="models" value="gpt-5.4,gpt-realtime-2.1"></label><p class="hint">A chave é criptografada no servidor e nunca retorna pela API.</p><button class="primary" type="submit">Salvar conexão</button></form></dialog>
-  <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja desenvolver.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
+  <dialog id="voice-modal"><div class="modal voice-modal"><button class="close" type="button">×</button><span class="eyebrow">ASSISTENTE DE VOZ</span><h2>Fale com o DevPilot</h2><select id="voice-project"></select><div class="voice-visual"><div class="pulse-orb listening"><span></span></div><p id="voice-status">Toque em iniciar e diga o que deseja executar.</p></div><textarea id="voice-transcript" rows="5" placeholder="A transcrição aparecerá aqui..."></textarea><div class="hero-actions"><button class="voice" id="voice-start">● Iniciar</button><button class="primary" id="voice-send">Revisar comando</button></div></div></dialog>
 
   <script src="/assets/app.js" defer></script>
   <script src="/assets/project-provisioning.js?v=20260821-1" defer></script>

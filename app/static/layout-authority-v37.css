@@ -1,0 +1,324 @@
+/* DevPilot Layout Authority V37
+ * Autoridade final para escala, largura, overflow e breakpoints.
+ * Deve ser carregado depois de todas as camadas históricas.
+ */
+
+:root {
+  --dp-page-max: none;
+  --dp-page-pad: clamp(14px, 2.1vw, 34px);
+  --dp-section-gap: clamp(12px, 1.6vw, 20px);
+}
+
+html,
+body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+.shell,
+main,
+main > header,
+main > .view,
+.view,
+.view.active,
+.panel,
+.cards,
+.section-head,
+.tasks-v9-table-wrap,
+#new-project-view,
+#project-builder-form,
+.project-builder-main,
+.project-builder-aside {
+  min-width: 0 !important;
+  max-width: var(--dp-page-max) !important;
+}
+
+main,
+main > .view,
+.view.active {
+  width: 100% !important;
+}
+
+main {
+  padding-inline: var(--dp-page-pad) !important;
+}
+
+.view.active {
+  overflow-x: clip !important;
+}
+
+img,
+svg,
+canvas,
+video,
+iframe {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
+}
+
+/* ---------- grids gerais ---------- */
+.metrics,
+.overview-metrics,
+.quick-grid,
+.cards,
+.form-grid,
+.builder-identity-grid,
+.builder-repository-grid,
+.builder-repository-fields,
+.builder-delivery,
+.system-map-columns,
+.system-map-group-nodes {
+  min-width: 0 !important;
+}
+
+.cards {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)) !important;
+}
+
+.form-grid,
+.builder-identity-grid,
+.builder-repository-fields,
+.builder-delivery {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)) !important;
+}
+
+/* ---------- textos nunca devem virar coluna de letras ---------- */
+.tasks-v9-title,
+.tasks-v9-meta,
+.tasks-v9-meta > span,
+.tasks-v9-project,
+.tasks-v9-status,
+.tasks-v9-actions,
+.project-card,
+.project-card *,
+.builder-card,
+.builder-card *,
+.system-map-node,
+.system-map-node * {
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+.tasks-v9-meta > span,
+.tasks-v9-status {
+  overflow-wrap: normal !important;
+}
+
+/* ---------- novo projeto ---------- */
+#new-project-view,
+#project-builder-form.project-builder,
+.project-builder-main,
+.project-builder-aside {
+  width: 100% !important;
+  max-width: none !important;
+}
+
+#project-builder-form.project-builder {
+  grid-template-columns: minmax(0, 1fr) minmax(270px, 340px) !important;
+  gap: var(--dp-section-gap) !important;
+}
+
+.choice-strip {
+  max-width: 100% !important;
+}
+
+@media (min-width: 901px) and (max-width: 1280px) {
+  #project-builder-form.project-builder {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .project-builder-aside {
+    position: static !important;
+  }
+
+  .choice-strip {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr)) !important;
+    gap: 10px !important;
+    overflow: visible !important;
+    scroll-snap-type: none !important;
+  }
+
+  .choice-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+}
+
+/* ---------- execuções ---------- */
+#tasks-view,
+#tasks-view .tasks-v9-table-wrap,
+#tasks-view .tasks-v9-table,
+#tasks-view #tasks-table {
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+}
+
+#tasks-view .tasks-v9-table {
+  table-layout: auto !important;
+}
+
+#tasks-view .tasks-v9-main,
+#tasks-view .tasks-v9-state,
+#tasks-view .tasks-v9-actions {
+  min-width: 0 !important;
+}
+
+#tasks-view .tasks-v9-title {
+  max-width: 100% !important;
+}
+
+/* Notebook/desktop compacto: card é a autoridade, não tabela comprimida. */
+@media (min-width: 901px) and (max-width: 1280px) {
+  #tasks-view .tasks-v9-table-wrap {
+    overflow: visible !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #tasks-view .tasks-v9-table,
+  #tasks-view .tasks-v9-table tbody {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  #tasks-view .tasks-v9-table thead {
+    display: none !important;
+  }
+
+  #tasks-view .tasks-v9-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 12px 16px !important;
+    width: 100% !important;
+    margin-bottom: 12px !important;
+    padding: 16px !important;
+    border: 1px solid rgba(80,150,204,.24) !important;
+    border-radius: 16px !important;
+    background: linear-gradient(145deg,rgba(12,29,46,.96),rgba(8,22,36,.96)) !important;
+  }
+
+  #tasks-view .tasks-v9-row > td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+  }
+
+  #tasks-view .tasks-v9-main {
+    grid-column: 1 / -1 !important;
+  }
+
+  #tasks-view .tasks-v9-title {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    font-size: 18px !important;
+    line-height: 1.3 !important;
+  }
+
+  #tasks-view .tasks-v9-meta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 7px 12px !important;
+  }
+
+  #tasks-view .tasks-v9-meta > span,
+  #tasks-view .tasks-v9-status {
+    white-space: nowrap !important;
+  }
+
+  #tasks-view .tasks-v9-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
+  }
+
+  #tasks-view .task-details-row:not([hidden]),
+  #tasks-view .task-instructions-row:not([hidden]) {
+    display: block !important;
+    width: 100% !important;
+  }
+
+  #tasks-view .task-details-row:not([hidden]) > td,
+  #tasks-view .task-instructions-row:not([hidden]) > td {
+    display: block !important;
+    width: 100% !important;
+  }
+}
+
+/* ---------- zoom reduzido ---------- */
+html.dp-zoom-out {
+  --dp-page-pad: clamp(18px, calc(16px * var(--dp-ui-boost)), 52px);
+}
+
+html.dp-zoom-out main,
+html.dp-zoom-out .view.active {
+  width: 100% !important;
+}
+
+html.dp-zoom-out .panel,
+html.dp-zoom-out .builder-card,
+html.dp-zoom-out .project-card,
+html.dp-zoom-out .tasks-v9-row {
+  border-radius: clamp(14px, calc(12px * var(--dp-ui-boost)), 24px) !important;
+}
+
+/* ---------- mobile ---------- */
+@media (max-width: 900px) {
+  :root {
+    --dp-page-pad: clamp(10px, 3vw, 16px);
+  }
+
+  .shell,
+  main,
+  .view,
+  .view.active,
+  #new-project-view,
+  #tasks-view,
+  #projects-view {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #project-builder-form.project-builder,
+  .overview-grid,
+  .grid-two,
+  .system-map-layout,
+  .system-map-columns {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+
+  .project-builder-aside {
+    position: static !important;
+  }
+}
+
+@media (max-width: 520px) {
+  .cards,
+  .form-grid,
+  .builder-identity-grid,
+  .builder-repository-grid,
+  .builder-repository-fields,
+  .builder-delivery {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+}
