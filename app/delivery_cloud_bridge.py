@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.services.vault import Vault
 
 _CLOUD_ADMIN_LABEL = "cloud-admin"
 _CLOUD_ADMIN_PREFIX = "cloud:"
+_SCOPE_DISCOVERY_TIMEOUT = 10.0
 _ORIGINAL_CONNECTION = delivery.connection
 _ORIGINAL_REQUEST_JSON = delivery.request_json
 
@@ -32,13 +34,100 @@ def _cloud_admin_row(
     )
 
 
+def _scope_candidates(provider: str, data: Any) -> list[str]:
+    normalized = provider.strip().lower()
+    source: list[Any]
+
+    if normalized == "neon":
+        if isinstance(data, list):
+            source = data
+        elif isinstance(data, dict):
+            raw = data.get("organizations")
+            if not isinstance(raw, list):
+                raw = data.get("items")
+            source = raw if isinstance(raw, list) else []
+    elif normalized == "render":
+        if isinstance(data, list):
+            source = data
+        elif isinstance(data, dict):
+            raw = data.get("owners")
+            source = raw if isinstance(raw, list) else []
+    else:
+        return []
+
+    candidates: list[str] = []
+    for item in source:
+        if not isinstance(item, dict):
+            continue
+        raw = item
+        if normalized == "neon" and isinstance(item.get("organization"), dict):
+            raw = item["organization"]
+        elif normalized == "render" and isinstance(item.get("owner"), dict):
+            raw = item["owner"]
+
+        value = str(
+            raw.get("id")
+            or raw.get("org_id")
+            or raw.get("ownerId")
+            or raw.get("owner_id")
+            or ""
+        ).strip()
+        if value and value not in candidates:
+            candidates.append(value)
+    return candidates
+
+
+def _discover_scope(provider: str, token: str) -> str:
+    """Resolve the account scope required for create operations from the API key.
+
+    Neon personal API keys need ``org_id`` for organization projects and Render
+    requires ``ownerId`` when creating a service. The Cloud Admin form allows the
+    scope field to be empty, so delivery must be able to derive the single
+    accessible organization/workspace from the token itself.
+    """
+    normalized = provider.strip().lower()
+    if normalized == "neon":
+        url = "https://console.neon.tech/api/v2/users/me/organizations"
+        params: dict[str, Any] | None = None
+    elif normalized == "render":
+        url = "https://api.render.com/v1/owners"
+        params = {"limit": 100}
+    else:
+        return ""
+
+    try:
+        response = httpx.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/json",
+                "User-Agent": "DevPilot-Cloud-Delivery/1.0",
+            },
+            params=params,
+            timeout=_SCOPE_DISCOVERY_TIMEOUT,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError:
+        return ""
+    if response.status_code >= 400:
+        return ""
+    try:
+        data = response.json()
+    except ValueError:
+        return ""
+
+    candidates = _scope_candidates(normalized, data)
+    return candidates[0] if len(candidates) == 1 else ""
+
+
 def cloud_admin_connection(
     db: Session,
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
     """Read a credential managed by Super Admin > Clouds without exposing it to the browser."""
-    item = _cloud_admin_row(db, workspace_id, provider)
+    normalized = provider.strip().lower()
+    item = _cloud_admin_row(db, workspace_id, normalized)
     if not item or not item.enabled:
         return None
 
@@ -55,7 +144,11 @@ def cloud_admin_connection(
         metadata = {}
     if not isinstance(metadata, dict):
         metadata = {}
-    return token, str(metadata.get("scope") or "").strip()
+
+    scope = str(metadata.get("scope") or "").strip()
+    if not scope and normalized in {"neon", "render"}:
+        scope = _discover_scope(normalized, token)
+    return token, scope
 
 
 def managed_trial_connection(
@@ -117,20 +210,43 @@ def _request_json_with_cloud_scope(
     payload: Any | None = None,
     params: dict[str, Any] | None = None,
 ):
-    normalized = dict(params) if isinstance(params, dict) else params
-    if provider == "vercel" and isinstance(normalized, dict):
-        scope = str(normalized.get("teamId") or "").strip()
+    normalized_provider = provider.strip().lower()
+    normalized_params = dict(params) if isinstance(params, dict) else params
+    normalized_payload = payload
+
+    if normalized_provider == "vercel" and isinstance(normalized_params, dict):
+        scope = str(normalized_params.get("teamId") or "").strip()
         if scope and not scope.startswith("team_"):
-            normalized.pop("teamId", None)
-            normalized["slug"] = scope
+            normalized_params.pop("teamId", None)
+            normalized_params["slug"] = scope
+
+    # Neon expects org_id as a request parameter when a personal API key is
+    # used. The original delivery flow put org_id inside the nested project
+    # object, which Neon rejects with HTTP 400.
+    if (
+        normalized_provider == "neon"
+        and method.upper() == "POST"
+        and url.rstrip("/").endswith("/projects")
+        and isinstance(payload, dict)
+        and isinstance(payload.get("project"), dict)
+    ):
+        project_payload = dict(payload["project"])
+        org_id = str(project_payload.pop("org_id", "") or "").strip()
+        normalized_payload = dict(payload)
+        normalized_payload["project"] = project_payload
+        if org_id:
+            if not isinstance(normalized_params, dict):
+                normalized_params = {}
+            normalized_params["org_id"] = org_id
+
     return _ORIGINAL_REQUEST_JSON(
         client,
         provider,
         method,
         url,
         token,
-        payload=payload,
-        params=normalized,
+        payload=normalized_payload,
+        params=normalized_params,
     )
 
 
