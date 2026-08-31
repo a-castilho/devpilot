@@ -3,6 +3,7 @@
   'use strict';
 
   const MARKER = '[DEVPILOT_BUILD_GAME_V1]';
+  const PIPELINE_MARKER = '[DEVPILOT_BUILD_GAME_PIPELINE_V2]';
   const PROJECT_KEY = 'devpilot-build-game-project';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const GOAL_KEY = 'devpilot-build-game-goal';
@@ -11,51 +12,66 @@
   const phases = [
     {
       id: 1,
-      icon: '🗺️',
-      name: 'Mapa da missão',
+      icon: '🧭',
+      name: 'Planejamento',
       xp: 100,
-      summary: 'Entender o sistema, definir vitória e deixar a base verificável.',
-      mission: `Leia AGENTS.md, documentação e o repositório antes de agir. Transforme o objetivo da partida em critérios de aceite objetivos e registre o plano em .devpilot/build-game.md. Detecte a stack, os comandos reais de instalação, build, lint e testes. Execute uma verificação de baseline. Se houver bloqueios que impeçam a missão, corrija somente o necessário e repita a verificação. A própria criação/atualização de .devpilot/build-game.md deve registrar o estado inicial e o próximo incremento concreto. Não invente resultado nem marque sucesso sem evidência executada.`
+      summary: 'Transformar o pedido da rodada em plano e critérios de aceite verificáveis.',
+      evidence: 'Plano persistido, baseline executado e critérios de aceite ligados ao pedido da rodada.',
+      mission: `Leia AGENTS.md, a documentação e o repositório antes de agir. Preserve literalmente o objetivo informado pelo usuário e transforme-o em critérios de aceite objetivos, incluindo regras de negócio, perfis de acesso, fluxos, estados de erro e limites de segurança aplicáveis. Registre o contrato da rodada em .devpilot/build-game.md com: objetivo, estado inicial, escopo, fora de escopo, critérios de aceite, riscos, arquivos prováveis e comandos reais de instalação, execução, lint, build e testes. Execute a verificação de baseline. Não implemente a funcionalidade nesta etapa e não invente resultado.`
     },
     {
       id: 2,
       icon: '⚙️',
-      name: 'Primeiro circuito',
-      xp: 120,
-      summary: 'Construir a menor fatia funcional de ponta a ponta.',
-      mission: `Implemente a menor fatia vertical realmente utilizável que avance o objetivo da partida. Esta fase NÃO pode terminar apenas com análise, relatório, URL, deploy já existente ou validação do estado atual: precisa haver mudança material no repositório que altere comportamento observável do sistema. Reutilize a arquitetura e padrões do projeto. Inclua ou atualize testes automáticos para o comportamento criado. Execute os testes relevantes e o smoke mínimo. Antes de concluir, mostre a evidência do delta com git status --short e git diff --stat (ou equivalente seguro) e descreva exatamente o que passou a funcionar que não funcionava antes. Se não houver delta funcional real, a fase deve permanecer incompleta ou falhar; não transforme ausência de implementação em sucesso. Não altere requisitos só para fazer o teste passar; corrija a implementação quando houver falha.`
+      name: 'Implementação',
+      xp: 220,
+      summary: 'Construir no projeto a funcionalidade completa descrita pelo usuário.',
+      evidence: 'Delta funcional real no repositório, ligado a todos os critérios de aceite aplicáveis.',
+      mission: `Implemente no projeto selecionado a funcionalidade descrita no objetivo da rodada e no contrato .devpilot/build-game.md. Entregue uma fatia vertical completa e utilizável, cobrindo modelo de dados, backend, frontend, autorização, validações, migrações e configuração quando aplicáveis. No exemplo de login e senha por perfil, isso inclui armazenamento seguro da senha, autenticação, sessão, perfis, autorização por perfil, telas ou contratos de API e cenários de erro. Reutilize a arquitetura do projeto. Esta etapa NÃO pode terminar apenas com análise, relatório, URL, deploy existente ou validação do estado atual: precisa haver mudança material que altere o comportamento observável. Registre o delta com git status --short e git diff --stat e relacione cada mudança aos critérios de aceite. Se a implementação pedida estiver parcial, mantenha a etapa incompleta ou bloqueada.`
     },
     {
       id: 3,
-      icon: '🛡️',
-      name: 'Regras blindadas',
-      xp: 140,
-      summary: 'Fechar regras de negócio, limites de acesso e cenários negativos.',
-      mission: `Implemente as regras de negócio restantes para o objetivo da partida e valide fronteiras de autorização, autenticação, isolamento de dados e validação de entrada quando existirem no sistema. Crie testes positivos e negativos. A fase precisa deixar um delta verificável no repositório e não pode ser concluída apenas por inspeção. Não exponha segredos, não use credenciais reais em fixtures e não introduza bypass para satisfazer testes.`
+      icon: '▶️',
+      name: 'Execução',
+      xp: 100,
+      summary: 'Subir o sistema real e provar que o novo fluxo pode ser utilizado.',
+      evidence: 'Comandos de execução, migrações, health check e smoke do fluxo real com resultado registrado.',
+      mission: `Execute o sistema pela forma oficial do repositório, aplique migrações e gere build quando aplicável. Verifique health check, logs e o fluxo principal da funcionalidade da rodada com dados de teste seguros. Corrija erros de inicialização, integração ou runtime encontrados e repita a execução. Registre os comandos realmente executados, os serviços envolvidos e o resultado observável. Esta etapa pode ser concluída sem novo delta somente quando a implementação da etapa anterior executa corretamente e há evidência real de runtime; uma mensagem simulada não conta.`
     },
     {
       id: 4,
-      icon: '🎮',
-      name: 'Interface jogável',
+      icon: '🧪',
+      name: 'Testes',
       xp: 160,
-      summary: 'Deixar o fluxo principal claro, utilizável e resistente a erro.',
-      mission: `Finalize a experiência do fluxo principal relacionado ao objetivo: interface web/mobile ou contrato de API, conforme a stack real. Cubra carregamento, vazio, sucesso e erro; preserve acessibilidade e responsividade quando houver UI. Rode testes de interface/API existentes e adicione cobertura para o fluxo alterado. A fase só termina se houver evolução observável do fluxo principal registrada no código. Não apresente dados fictícios como reais.`
+      summary: 'Validar critérios de aceite, regressões, segurança e cenários negativos.',
+      evidence: 'Testes focados e suíte aplicável verdes, com comandos e resultados reais.',
+      mission: `Crie ou atualize testes automáticos que provem os critérios de aceite da rodada. Cubra caminho feliz, validações, falhas, autorização, isolamento de dados e regressões aplicáveis; para UI, valide o fluxo responsivo e acessível. Execute testes unitários, integração, browser/sistema, lint, typecheck e build existentes conforme a stack. Corrija falhas e repita até ficar verde. Não silencie testes, não remova asserts válidos e não use fallback que transforme falha em sucesso. Se uma verificação obrigatória continuar falhando, a etapa não pode ser concluída.`
     },
     {
       id: 5,
-      icon: '🧪',
-      name: 'Batalha de testes',
-      xp: 180,
-      summary: 'Enfrentar a suíte completa e corrigir falhas reais.',
-      mission: `Execute a suíte completa aplicável ao projeto: testes unitários, integração, sistema/smoke, lint, typecheck e build quando existirem. Corrija as falhas causadas ou expostas pela implementação desta partida e repita os comandos até obter evidência real. Se a suíte já estiver verde, melhore cobertura ou feche uma lacuna verificável ligada ao objetivo, de modo que a fase ainda produza evolução real no repositório. Não silencie testes, não remova asserts válidos, não use fallback que transforme falha em sucesso e não declare aprovação de comando que não foi executado.`
+      icon: '📚',
+      name: 'Documentação',
+      xp: 80,
+      summary: 'Registrar uso, decisões, configuração e evidências da funcionalidade entregue.',
+      evidence: 'Documentação atualizada e contrato da rodada com critérios e resultados rastreáveis.',
+      mission: `Atualize a documentação do projeto para explicar a funcionalidade da rodada, como configurar, executar, testar e usar, quais perfis ou permissões existem e quais decisões técnicas foram tomadas. Atualize .devpilot/build-game.md com os critérios atendidos, comandos e evidências das etapas anteriores. Documente limitações reais sem esconder pendências. Não exponha segredos, tokens ou valores brutos de ambiente. A documentação deve permitir que outra pessoa valide a entrega.`
     },
     {
       id: 6,
+      icon: '🔀',
+      name: 'Git',
+      xp: 100,
+      summary: 'Revisar o delta e deixar a entrega versionada, auditável e reversível.',
+      evidence: 'Status e diff revisados, segredos ausentes e commit/branch registrados; push ou PR somente com autorização.',
+      mission: `Revise git status --short e git diff, confirme que somente arquivos da rodada foram alterados e verifique que não há credenciais ou artefatos indevidos. Use branch e commit local reversíveis conforme AGENTS.md, com mensagem que descreva a entrega. Registre branch, commit e diff stat em .devpilot/build-game.md. Push, Pull Request, merge ou deploy só podem ocorrer quando já autorizados pelas regras do projeto; se a autorização externa for necessária, pare de forma segura e informe exatamente o gate. Não force push e não reescreva mudanças válidas existentes.`
+    },
+    {
+      id: 7,
       icon: '🏁',
-      name: 'Chefe final',
-      xp: 200,
-      summary: 'Validar prontidão de entrega e encerrar a missão com evidência.',
-      mission: `Faça a revisão final do objetivo da partida contra os critérios de aceite registrados em .devpilot/build-game.md. Execute build e smoke final; revise migrações, configuração, segurança, documentação e deploy quando aplicáveis. Corrija regressões encontradas e repita a validação. Atualize .devpilot/build-game.md com evidências finais e pendências reais. Uma URL pública é somente evidência de entrega; nunca substitui implementação ausente. A missão só vence se os critérios de aceite estiverem atendidos, houver evolução real acumulada no repositório e as verificações aplicáveis estiverem aprovadas.`
+      name: 'Entrega e revisão',
+      xp: 140,
+      summary: 'Revisar o pedido original e entregar o fluxo funcionando no sistema.',
+      evidence: 'Todos os critérios atendidos, smoke final verde e entrega identificada por arquivos, testes, commit e URL quando aplicável.',
+      mission: `Faça a revisão final do objetivo literal da rodada contra cada critério de aceite registrado em .devpilot/build-game.md. Execute o smoke final do fluxo como o usuário o utilizará, revise migrações, segurança, responsividade, documentação, configuração e evidências Git. Corrija regressões encontradas e repita a validação. Atualize .devpilot/build-game.md com uma seção ENTREGA DA RODADA contendo: objetivo recebido, o que foi entregue no sistema, como testar, arquivos principais, testes executados, commit/PR quando houver e pendências reais. A rodada só vence se a funcionalidade descrita pelo usuário existir de ponta a ponta e todos os critérios estiverem atendidos. URL pública é evidência adicional e nunca substitui implementação ausente.`
     }
   ];
 
@@ -77,7 +93,10 @@
   const phaseFromTask = task => Number(promptValue(task, 'FASE').split('/')[0]) || 0;
   const missionFromTask = task => promptValue(task, 'PARTIDA');
   const goalFromTask = task => promptValue(task, 'OBJETIVO');
-  const isGameTask = task => String(task?.prompt || '').includes(MARKER);
+  const isGameTask = task => {
+    const prompt = String(task?.prompt || '');
+    return prompt.includes(MARKER) && prompt.includes(PIPELINE_MARKER);
+  };
 
   const installStyle = () => {
     if (document.querySelector('#build-game-style')) return;
@@ -92,6 +111,11 @@
       .build-game-config{display:grid;grid-template-columns:minmax(180px,.7fr) minmax(280px,1.3fr) auto;gap:10px;margin-top:18px;align-items:end}
       .build-game-config label{display:grid;gap:6px;font-size:.76rem;color:var(--muted,#9eacc2)}
       .build-game-config select,.build-game-config input{min-height:44px;width:100%}
+      .build-game-config input[readonly]{border-color:rgba(104,240,187,.25);background:rgba(12,42,39,.5);color:#c8fff0;cursor:not-allowed}
+      .build-game-goal-note{display:block;margin-top:5px;color:var(--muted,#9eacc2);font-size:.68rem;font-weight:500}
+      .build-game-round-contract{padding:14px 16px;border:1px solid rgba(101,223,255,.22);border-radius:14px;background:rgba(8,31,45,.62)}
+      .build-game-round-contract span{display:block;color:#65dfff;font-size:.66rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+      .build-game-round-contract strong{display:block;margin-top:5px;overflow-wrap:anywhere}.build-game-round-contract small{display:block;margin-top:5px;color:var(--muted,#9eacc2)}
       .build-game-score{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
       .build-game-score>div{padding:14px;border:1px solid var(--line,#233047);border-radius:14px;background:rgba(7,17,31,.56)}
       .build-game-score span{display:block;font-size:.68rem;color:var(--muted,#9eacc2);text-transform:uppercase;letter-spacing:.08em}
@@ -128,10 +152,12 @@
       localStorage.setItem(MISSION_KEY, missionId);
     }
     const missionTasks = gameTasks.filter(task => missionFromTask(task) === missionId);
-    const storedGoal = localStorage.getItem(activeGoalKey());
     const historicalGoal = missionTasks.map(goalFromTask).find(Boolean);
+    const storedGoal = localStorage.getItem(activeGoalKey());
     const projectGoal = projectById(selectedProjectId)?.description || '';
-    return {missionTasks, goal: storedGoal || historicalGoal || projectGoal};
+    const goal = missionTasks.length ? historicalGoal : (storedGoal || projectGoal);
+    if (historicalGoal) localStorage.setItem(activeGoalKey(), historicalGoal);
+    return {missionTasks, goal: goal || ''};
   };
 
   const latestForPhase = (tasks, phaseId) => tasks.find(task => phaseFromTask(task) === phaseId);
@@ -160,7 +186,8 @@
     const game = gameState(missionTasks);
     const project = projectById(selectedProjectId);
     const percent = Math.round(game.passed / phases.length * 100);
-    const goal = localStorage.getItem(activeGoalKey()) || initialGoal || '';
+    const goalLocked = missionTasks.length > 0;
+    const goal = goalLocked ? (initialGoal || '') : (localStorage.getItem(activeGoalKey()) || initialGoal || '');
 
     const projectOptions = (state.projects || []).map(item =>
       `<option value="${esc(item.id)}" ${String(item.id) === String(selectedProjectId) ? 'selected' : ''}>${esc(item.name)}</option>`
@@ -173,41 +200,47 @@
       const unlocked = phase.id <= game.current;
       const failed = ['failed', 'cancelled'].includes(normalize(task?.status));
       const className = passed ? 'passed' : (!unlocked ? 'locked' : phase.id === game.current ? 'current' : '');
-      let action = '<span class="build-game-lock">🔒 Conclua a fase anterior</span>';
+      let action = '<span class="build-game-lock">🔒 Conclua a etapa anterior</span>';
       if (passed) action = `<span>${status('completed')}</span>`;
       else if (unlocked && active) action = `<span>${status(task.status)}</span><button class="ghost" type="button" data-game-refresh>Atualizar</button>`;
       else if (unlocked) action = `<button class="primary" type="button" data-play-phase="${phase.id}">${failed ? '↻ Tentar novamente' : '▶ Jogar fase'}</button>`;
       return `<article class="build-game-phase ${className}">
         <div class="build-game-phase-icon" aria-hidden="true">${phase.icon}</div>
-        <div class="build-game-phase-copy"><small>FASE ${phase.id}/${phases.length} · +${phase.xp} XP</small><strong>${esc(phase.name)}</strong><p>${esc(phase.summary)}</p></div>
+        <div class="build-game-phase-copy"><small>ETAPA ${phase.id}/${phases.length} · +${phase.xp} XP</small><strong>${esc(phase.name)}</strong><p>${esc(phase.summary)}</p></div>
         <div class="build-game-phase-actions">${action}</div>
       </article>`;
     }).join('');
 
     const history = missionTasks.slice(0, 8).map(task =>
-      `<div class="build-game-history-row"><div><strong>Fase ${phaseFromTask(task)} · ${esc(task.title)}</strong><small>${new Date(task.created_at).toLocaleString('pt-BR')}</small></div>${status(task.status)}</div>`
-    ).join('') || '<div class="empty">A partida começa quando você jogar a primeira fase.</div>';
+      `<div class="build-game-history-row"><div><strong>Etapa ${phaseFromTask(task)} · ${esc(task.title)}</strong><small>${new Date(task.created_at).toLocaleString('pt-BR')}</small></div>${status(task.status)}</div>`
+    ).join('') || '<div class="empty">A rodada começa quando você iniciar o Planejamento.</div>';
 
     view.innerHTML = `<div class="build-game-shell">
       <section class="build-game-hero">
-        <span class="eyebrow">DEV + TESTE · PROGRESSÃO REAL</span>
+        <span class="eyebrow">UMA RODADA · UMA ENTREGA REAL</span>
         <h2>Jogo de construção</h2>
-        <p>Construa um sistema por fases. Cada fase cria uma tarefa real no DevPilot, exige mudança verificável no repositório e só libera a próxima quando a execução anterior termina como concluída com evidência técnica.</p>
+        <p>Descreva o que deve ficar pronto. O DevPilot conduz a mesma esteira do desenvolvimento real e só encerra a rodada quando a funcionalidade estiver implementada, testada, versionada e revisada.</p>
         <div class="build-game-config">
           <label>Projeto<select id="build-game-project">${projectOptions}</select></label>
-          <label>Objetivo da partida<input id="build-game-goal" maxlength="500" value="${esc(goal)}" placeholder="Ex.: criar cadastro de clientes com login e testes"></label>
-          <button class="ghost" type="button" id="build-game-new">Nova partida</button>
+          <label>Entrega da rodada<input id="build-game-goal" maxlength="500" value="${esc(goal)}" placeholder="Ex.: criar login e senha com acesso por perfil" ${goalLocked ? 'readonly aria-readonly="true" data-round-goal-locked="true"' : ''}><small class="build-game-goal-note">${goalLocked ? 'Objetivo fixado pela primeira etapa. Abra uma nova rodada para pedir outra entrega.' : 'Escreva uma funcionalidade objetiva que possa ser implementada e verificada.'}</small></label>
+          <button class="ghost" type="button" id="build-game-new">Nova rodada</button>
         </div>
       </section>
 
+      <section class="build-game-round-contract" aria-live="polite">
+        <span>Contrato da rodada</span>
+        <strong>${esc(goal || 'Descreva a funcionalidade que deve ser entregue.')}</strong>
+        <small>Planejamento → Implementação → Execução → Testes → Documentação → Git → Entrega/revisão</small>
+      </section>
+
       <section class="build-game-score" aria-label="Placar da partida">
-        <div><span>Progresso</span><strong>${game.passed}/${phases.length} fases</strong></div>
+        <div><span>Progresso</span><strong>${game.passed}/${phases.length} etapas</strong></div>
         <div><span>Experiência</span><strong>${game.xp}/${game.totalXp} XP</strong></div>
         <div><span>Projeto</span><strong>${esc(project?.name || '—')}</strong></div>
       </section>
       <div class="build-game-progress" aria-label="${percent}% concluído"><i style="width:${percent}%"></i></div>
 
-      ${game.passed === phases.length ? `<section class="build-game-victory"><span class="eyebrow">MISSÃO CONCLUÍDA</span><h3>🏆 Sistema passou pelo chefe final</h3><p>${esc(goal || 'Objetivo da partida')} · ${game.totalXp} XP conquistados. O histórico técnico permanece nas tarefas e no repositório.</p></section>` : ''}
+      ${game.passed === phases.length ? `<section class="build-game-victory"><span class="eyebrow">ESTEIRA CONCLUÍDA</span><h3>🏆 Entrega da rodada pronta para o usuário</h3><p>${esc(goal || 'Objetivo da rodada')} · ${game.totalXp} XP conquistados. Implementação, execução, testes, documentação, Git e revisão permanecem rastreáveis.</p></section>` : ''}
 
       <section class="build-game-map">${phaseCards}</section>
 
@@ -227,13 +260,13 @@
     };
 
     const goalInput = view.querySelector('#build-game-goal');
-    if (goalInput) {
+    if (goalInput && !goalLocked) {
       goalInput.onchange = () => setGoal(goalInput.value);
       goalInput.oninput = () => setGoal(goalInput.value);
     }
 
     view.querySelector('#build-game-new')?.addEventListener('click', () => {
-      if (missionTasks.length && !window.confirm('Começar uma nova partida? O histórico atual será preservado nas tarefas.')) return;
+      if (missionTasks.length && !window.confirm('Começar uma nova rodada? O histórico e a entrega atual serão preservados nas tarefas.')) return;
       missionId = newMissionId();
       localStorage.setItem(MISSION_KEY, missionId);
       localStorage.removeItem(activeGoalKey());
@@ -247,6 +280,7 @@
   };
 
   const buildPrompt = (phase, goal) => `${MARKER}
+${PIPELINE_MARKER}
 [DEVPILOT_MODE=develop]
 PARTIDA: ${missionId}
 FASE: ${phase.id}/${phases.length}
@@ -256,10 +290,13 @@ MISSÃO DA FASE: ${phase.name}
 ${phase.mission}
 
 CONTRATO DE PROGRESSÃO REAL:
-- Toda fase precisa deixar um delta persistente e verificável no projeto. Análise, diagnóstico, explicação, URL, deploy existente ou simples reexecução de teste não contam sozinhos como evolução.
-- Registre o estado antes de alterar e, ao final, registre evidência do delta com git status --short e git diff --stat (ou equivalente seguro quando Git não estiver disponível).
-- Descreva no resultado o ANTES, a MUDANÇA IMPLEMENTADA e o DEPOIS observável pelo usuário ou pela API.
-- Se a missão da fase não produzir nenhuma mudança material no repositório, NÃO marque a tarefa como concluída. Corrija a implementação ou encerre como falha/bloqueio com a causa real.
+- Esta etapa corresponde à etapa real "${phase.name}" da esteira e não pode executar ou antecipar outra etapa sem necessidade técnica registrada.
+- Evidência obrigatória desta etapa: ${phase.evidence}
+- Preserve o objetivo literal da rodada em todas as decisões; não reduza nem troque o pedido para conseguir concluir.
+- Na Implementação deve existir delta funcional persistente. Nas demais etapas, a evidência específica acima é obrigatória mesmo quando nenhum novo delta de código for necessário.
+- Registre o estado antes e depois. Quando houver alteração, inclua git status --short e git diff --stat.
+- Descreva no resultado o ANTES, a AÇÃO REALIZADA, a EVIDÊNCIA e o DEPOIS observável pelo usuário ou pela API.
+- Se a evidência desta etapa ou algum critério de aceite estiver ausente, NÃO marque a tarefa como concluída. Corrija ou encerre como falha/bloqueio com a causa real.
 - URL pública é evidência de entrega, não prêmio que substitui código. Nunca conclua uma fase apenas porque uma URL responde.
 
 REGRAS DO JOGO:
@@ -272,19 +309,19 @@ REGRAS DO JOGO:
 - Não avance para outra fase nesta tarefa. A próxima fase será liberada pelo Jogo de construção somente após esta tarefa ficar concluída.
 
 CRITÉRIO DE VITÓRIA:
-A fase termina somente quando existe evolução real no repositório, a entrega descrita acima existe de fato, o delta foi evidenciado e as verificações aplicáveis foram executadas sem falhas não resolvidas.`;
+A etapa termina somente quando sua evidência obrigatória existe de fato, continua ligada ao objetivo imutável da rodada e as verificações aplicáveis foram executadas sem falhas não resolvidas. A rodada só termina após as sete etapas e a entrega final do pedido do usuário.`;
 
   const playPhase = async (phaseId, button) => {
     const phase = phases.find(item => item.id === phaseId);
     if (!phase) return;
     await ensureProjects();
     const game = gameState(currentTasks);
-    if (phaseId !== game.current) return toast('Conclua a fase atual antes de avançar');
+    if (phaseId !== game.current) return toast('Conclua a etapa atual antes de avançar');
     const goalInput = document.querySelector('#build-game-goal');
     const goal = String(goalInput?.value || '').trim();
     if (!goal) {
       goalInput?.focus();
-      return toast('Defina o objetivo da partida');
+      return toast('Descreva o que deve ser entregue nesta rodada');
     }
     setGoal(goal);
     if (!missionId) {
@@ -299,14 +336,14 @@ A fase termina somente quando existe evolução real no repositório, a entrega 
         method: 'POST',
         body: JSON.stringify({
           project_id: selectedProjectId,
-          title: `[Jogo] Fase ${phase.id} · ${phase.name}`,
+          title: `[Jogo] Etapa ${phase.id} · ${phase.name}`,
           prompt: buildPrompt(phase, goal),
           source: 'dashboard',
           priority: Math.min(100, 68 + phase.id * 5),
           requires_approval: false
         })
       });
-      toast(`Fase ${phase.id} iniciada · ${phase.xp} XP em jogo`);
+      toast(`Etapa ${phase.id} iniciada · ${phase.xp} XP em jogo`);
       await window.loadBuildGame();
       if (typeof load === 'function') load();
       return task;
