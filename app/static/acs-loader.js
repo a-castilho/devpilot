@@ -29,26 +29,68 @@
         <div class="acs-loader__tagline">Software · Produto · IA</div>
       </div>
       <div class="acs-loader__progress-wrap" aria-hidden="true">
-        <div class="acs-loader__progress-track">
-          <span class="acs-loader__progress-fill"></span>
-        </div>
+        <div class="acs-loader__progress-track"><span class="acs-loader__progress-fill"></span></div>
       </div>
-      <div class="acs-loader__status" aria-hidden="true">
-        <span>Inicializando experiência</span>
-      </div>
+      <div class="acs-loader__status" aria-hidden="true"><span>Inicializando experiência</span></div>
     </main>`;
-
   document.body.prepend(loader);
 
   let removed = false;
   let leaving = false;
+  let projectsRuntimePromise = null;
 
-  const removeNow = () => {
-    if (removed) return;
-    removed = true;
-    loader.remove();
+  const scriptName = src => {
+    try { return new URL(src, location.href).pathname.split('/').pop() || ''; }
+    catch (_) { return ''; }
   };
 
+  const loadRuntimeScript = name => new Promise(resolve => {
+    const existing = Array.from(document.scripts).find(script => scriptName(script.src) === name);
+    if (existing) {
+      if (existing.dataset.devpilotProjectsRuntimeState === 'loading') {
+        existing.addEventListener('load', () => resolve(true), {once: true});
+        existing.addEventListener('error', () => resolve(false), {once: true});
+      } else resolve(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = `/assets/${encodeURIComponent(name)}?v=1.1.4-projects-runtime`;
+    script.async = false;
+    script.dataset.devpilotProjectsRuntime = '1';
+    script.dataset.devpilotProjectsRuntimeState = 'loading';
+    script.onload = () => { script.dataset.devpilotProjectsRuntimeState = 'loaded'; resolve(true); };
+    script.onerror = () => { script.dataset.devpilotProjectsRuntimeState = 'failed'; resolve(false); };
+    document.body.appendChild(script);
+  });
+
+  const ensureProjectsRuntime = () => {
+    if (projectsRuntimePromise) return projectsRuntimePromise;
+    projectsRuntimePromise = (async () => {
+      const ships = await loadRuntimeScript('project-ships.js');
+      const compact = await loadRuntimeScript('mobile-project-card-compact.js');
+      const ready = ships && compact;
+      document.dispatchEvent(new CustomEvent('devpilot:projects-runtime-ready', {detail: {ready}}));
+      return ready;
+    })();
+    return projectsRuntimePromise;
+  };
+
+  const projectsVisible = () => {
+    const view = document.querySelector('#projects-view');
+    return Boolean(view && !view.hidden && getComputedStyle(view).display !== 'none');
+  };
+
+  document.addEventListener('click', event => {
+    if (event.target.closest?.('.nav[data-view="projects"], [data-view="projects"], [data-mobile-view="projects"]')) {
+      void ensureProjectsRuntime();
+    }
+  }, true);
+
+  document.addEventListener('devpilot:authenticated-core-ready', () => {
+    if (projectsVisible()) void ensureProjectsRuntime();
+  });
+
+  const removeNow = () => { if (!removed) { removed = true; loader.remove(); } };
   const dismiss = () => {
     if (removed || leaving) return;
     leaving = true;

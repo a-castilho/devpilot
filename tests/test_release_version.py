@@ -7,10 +7,10 @@ from app.main import app, health
 from app.version import __version__
 
 
-RELEASE_VERSION = "1.1.3"
+RELEASE_VERSION = "1.1.4"
 
 
-def test_release_version_is_1_1_3():
+def test_release_version_is_1_1_4():
     assert __version__ == RELEASE_VERSION
     assert app.version == RELEASE_VERSION
     assert health()["version"] == RELEASE_VERSION
