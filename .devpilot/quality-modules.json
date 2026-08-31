@@ -188,6 +188,7 @@
       "tests": [
         "tests/test_cloud_admin.py",
         "tests/test_delivery_cloud_bridge.py",
+        "tests/test_delivery_cloud_reconciliation.py",
         "tests/test_product_delivery.py",
         "tests/test_render_homolog_deployment.py",
         "tests/test_runtime_image_packaging.py"

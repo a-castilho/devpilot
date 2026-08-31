@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import re
+import time
 from typing import Any
 
 import httpx
@@ -19,6 +21,9 @@ _CLOUD_ADMIN_PREFIX = "cloud:"
 _SCOPE_DISCOVERY_TIMEOUT = 10.0
 _ORIGINAL_CONNECTION = delivery.connection
 _ORIGINAL_REQUEST_JSON = delivery.request_json
+_ORIGINAL_PROVISION_NEON = delivery.provision_neon
+_ORIGINAL_PROVISION_RENDER = delivery.provision_render
+_ORIGINAL_PROVISION_VERCEL = delivery.provision_vercel
 _ORIGINAL_CLOUD_PROVIDER_REQUEST = cloud_admin._provider_request
 
 
@@ -54,6 +59,10 @@ def _scope_candidates(provider: str, data: Any) -> list[str]:
         elif isinstance(data, dict):
             raw = data.get("owners")
             source = raw if isinstance(raw, list) else []
+    elif normalized == "vercel":
+        if isinstance(data, dict):
+            raw = data.get("teams")
+            source = raw if isinstance(raw, list) else []
     else:
         return []
 
@@ -80,19 +89,16 @@ def _scope_candidates(provider: str, data: Any) -> list[str]:
 
 
 def _discover_scope(provider: str, token: str) -> str:
-    """Resolve the account scope required for create operations from the API key.
-
-    Neon personal API keys need ``org_id`` for organization projects and Render
-    requires ``ownerId`` when creating a service. The Cloud Admin form allows the
-    scope field to be empty, so delivery must be able to derive the single
-    accessible organization/workspace from the token itself.
-    """
+    """Resolve the account scope required for cloud operations from the API key."""
     normalized = provider.strip().lower()
     if normalized == "neon":
         url = "https://console.neon.tech/api/v2/users/me/organizations"
         params: dict[str, Any] | None = None
     elif normalized == "render":
         url = "https://api.render.com/v1/owners"
+        params = {"limit": 100}
+    elif normalized == "vercel":
+        url = "https://api.vercel.com/v2/teams"
         params = {"limit": 100}
     else:
         return ""
@@ -148,7 +154,7 @@ def cloud_admin_connection(
         metadata = {}
 
     scope = str(metadata.get("scope") or "").strip()
-    if not scope and normalized in {"neon", "render"}:
+    if not scope and normalized in {"neon", "render", "vercel"}:
         scope = _discover_scope(normalized, token)
     return token, scope
 
@@ -158,14 +164,7 @@ def managed_trial_connection(
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    """Use DevPilot's platform credential for an unconfigured trial workspace.
-
-    Trial users never receive the token. The credential remains encrypted in the
-    platform workspace and is consumed only by the backend. A workspace that has
-    its own Cloud Admin row is considered self-managed, even when that row is
-    intentionally disabled, so an explicit customer configuration is never
-    silently replaced by DevPilot's credential.
-    """
+    """Use DevPilot's platform credential for an unconfigured trial workspace."""
     settings = get_settings()
     normalized = provider.strip().lower()
     if not settings.managed_trial_clouds_enabled:
@@ -188,17 +187,14 @@ def _connection_with_cloud_admin(
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    # 1. A purchased/self-managed installation or workspace always wins.
     current = cloud_admin_connection(db, workspace_id, provider)
     if current is not None:
         return current
 
-    # 2. Preserve the legacy local credential format while older installations migrate.
     legacy = _ORIGINAL_CONNECTION(db, workspace_id, provider)
     if legacy is not None:
         return legacy
 
-    # 3. Trial workspaces get the frictionless DevPilot-managed experience.
     return managed_trial_connection(db, workspace_id, provider)
 
 
@@ -211,7 +207,7 @@ def _cloud_admin_provider_request_with_scope(
 ):
     normalized = provider.strip().lower()
     resolved_scope = scope.strip()
-    if not resolved_scope and normalized in {"neon", "render"}:
+    if not resolved_scope and normalized in {"neon", "render", "vercel"}:
         resolved_scope = _discover_scope(normalized, secret)
     return _ORIGINAL_CLOUD_PROVIDER_REQUEST(
         provider,
@@ -219,6 +215,11 @@ def _cloud_admin_provider_request_with_scope(
         resolved_scope,
         resources=resources,
     )
+
+
+def _error_status(error: RuntimeError) -> int:
+    match = re.search(r"\bHTTP\s+(\d{3})\b", str(error))
+    return int(match.group(1)) if match else 0
 
 
 def _request_json_with_cloud_scope(
@@ -241,9 +242,6 @@ def _request_json_with_cloud_scope(
             normalized_params.pop("teamId", None)
             normalized_params["slug"] = scope
 
-    # Neon expects org_id as a request parameter when a personal API key is
-    # used. The original delivery flow put org_id inside the nested project
-    # object, which Neon rejects with HTTP 400.
     if (
         normalized_provider == "neon"
         and method.upper() == "POST"
@@ -260,25 +258,294 @@ def _request_json_with_cloud_scope(
                 normalized_params = {}
             normalized_params["org_id"] = org_id
 
-    return _ORIGINAL_REQUEST_JSON(
+    attempts = 6 if normalized_provider == "neon" else 1
+    for attempt in range(attempts):
+        try:
+            return _ORIGINAL_REQUEST_JSON(
+                client,
+                provider,
+                method,
+                url,
+                token,
+                payload=normalized_payload,
+                params=normalized_params,
+            )
+        except RuntimeError as error:
+            status = _error_status(error)
+            if normalized_provider != "neon" or status not in {423, 503} or attempt >= attempts - 1:
+                raise
+            time.sleep(min(0.5 * (2**attempt), 3.0))
+    return None
+
+
+def _optional_request_json(
+    client,
+    provider: str,
+    method: str,
+    url: str,
+    token: str,
+    *,
+    payload: Any | None = None,
+    params: dict[str, Any] | None = None,
+):
+    try:
+        return _request_json_with_cloud_scope(
+            client,
+            provider,
+            method,
+            url,
+            token,
+            payload=payload,
+            params=params,
+        )
+    except RuntimeError as error:
+        if _error_status(error) == 404:
+            return None
+        raise
+
+
+def _items(data: Any, key: str) -> list[dict[str, Any]]:
+    if not isinstance(data, dict):
+        return []
+    value = data.get(key)
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _neon_existing_project(
+    client,
+    token: str,
+    account_id: str,
+    project_name: str,
+) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": 100, "search": project_name}
+    if account_id:
+        params["org_id"] = account_id
+    data = _request_json_with_cloud_scope(
         client,
-        provider,
-        method,
-        url,
+        "neon",
+        "GET",
+        f"{delivery.NEON_API}/projects",
         token,
-        payload=normalized_payload,
-        params=normalized_params,
+        params=params,
+    ) or {}
+    exact = [item for item in _items(data, "projects") if str(item.get("name") or "") == project_name]
+    if not exact:
+        return None
+    exact.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+    return exact[0]
+
+
+def _hydrate_existing_neon(
+    client,
+    token: str,
+    project_data: dict[str, Any],
+    state: dict[str, Any],
+) -> None:
+    project_id = str(project_data.get("id") or "").strip()
+    if not project_id:
+        return
+    neon = state.setdefault("providers", {}).setdefault("neon", {})
+    neon["project_id"] = project_id
+    neon["reused"] = True
+
+    branches_data = _request_json_with_cloud_scope(
+        client,
+        "neon",
+        "GET",
+        f"{delivery.NEON_API}/projects/{project_id}/branches",
+        token,
+        params={"limit": 100},
+    ) or {}
+    branches = _items(branches_data, "branches")
+    if not branches:
+        return
+
+    main = next((item for item in branches if str(item.get("name") or "") == "main"), None)
+    if main is None:
+        main = next((item for item in branches if item.get("default") or item.get("primary")), branches[0])
+    homolog = next((item for item in branches if str(item.get("name") or "") == "homolog"), None)
+
+    main_branch_id = str(main.get("id") or "").strip()
+    if main_branch_id:
+        neon["main_branch_id"] = main_branch_id
+    if homolog:
+        homolog_branch_id = str(homolog.get("id") or "").strip()
+        if homolog_branch_id:
+            neon["homolog_branch_id"] = homolog_branch_id
+
+    if not main_branch_id:
+        return
+
+    databases_data = _request_json_with_cloud_scope(
+        client,
+        "neon",
+        "GET",
+        f"{delivery.NEON_API}/projects/{project_id}/branches/{main_branch_id}/databases",
+        token,
+    ) or {}
+    databases = _items(databases_data, "databases")
+    if databases:
+        preferred = next((item for item in databases if str(item.get("name") or "") == "app"), databases[0])
+        database_name = str(preferred.get("name") or "").strip()
+        if database_name:
+            neon["database_name"] = database_name
+
+    roles_data = _request_json_with_cloud_scope(
+        client,
+        "neon",
+        "GET",
+        f"{delivery.NEON_API}/projects/{project_id}/branches/{main_branch_id}/roles",
+        token,
+    ) or {}
+    roles = _items(roles_data, "roles")
+    if roles:
+        preferred_role = next((item for item in roles if str(item.get("name") or "") == "app"), None)
+        if preferred_role is None:
+            preferred_role = next((item for item in roles if not item.get("protected")), roles[0])
+        role_name = str(preferred_role.get("name") or "").strip()
+        if role_name:
+            neon["role_name"] = role_name
+
+
+def _provision_neon_reconciled(
+    client,
+    token: str,
+    account_id: str,
+    project,
+    state: dict[str, Any],
+) -> str:
+    neon = state.setdefault("providers", {}).setdefault("neon", {})
+    if not neon.get("project_id"):
+        existing = _neon_existing_project(client, token, account_id, project.slug)
+        if existing:
+            _hydrate_existing_neon(client, token, existing, state)
+    return _ORIGINAL_PROVISION_NEON(client, token, account_id, project, state)
+
+
+def _render_service(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return {}
+    service = raw.get("service")
+    return service if isinstance(service, dict) else raw
+
+
+def _hydrate_existing_render(
+    client,
+    token: str,
+    account_id: str,
+    project_name: str,
+    state: dict[str, Any],
+) -> None:
+    params: dict[str, Any] = {"limit": 100, "name": project_name}
+    if account_id:
+        params["ownerId"] = account_id
+    data = _request_json_with_cloud_scope(
+        client,
+        "render",
+        "GET",
+        f"{delivery.RENDER_API}/services",
+        token,
+        params=params,
+    ) or []
+    source = data if isinstance(data, list) else []
+    matches = []
+    for wrapper in source:
+        service = _render_service(wrapper)
+        if str(service.get("name") or "") == project_name:
+            matches.append(service)
+    if not matches:
+        return
+    matches.sort(key=lambda item: str(item.get("createdAt") or item.get("created_at") or ""), reverse=True)
+    service = matches[0]
+    service_id = str(service.get("id") or "").strip()
+    details = service.get("serviceDetails") if isinstance(service.get("serviceDetails"), dict) else {}
+    url = str(details.get("url") or service.get("url") or "").strip()
+    if service_id and not url:
+        detail = _optional_request_json(
+            client,
+            "render",
+            "GET",
+            f"{delivery.RENDER_API}/services/{service_id}",
+            token,
+        ) or {}
+        detail_service = _render_service(detail)
+        detail_details = (
+            detail_service.get("serviceDetails")
+            if isinstance(detail_service.get("serviceDetails"), dict)
+            else {}
+        )
+        url = str(detail_details.get("url") or detail_service.get("url") or "").strip()
+    if service_id and url:
+        render = state.setdefault("providers", {}).setdefault("render", {})
+        render.update({"service_id": service_id, "url": url, "status": "provisioned", "reused": True})
+
+
+def _provision_render_reconciled(
+    client,
+    token: str,
+    account_id: str,
+    project,
+    state: dict[str, Any],
+    database_url: str | None,
+) -> str:
+    render = state.setdefault("providers", {}).setdefault("render", {})
+    if not render.get("service_id") or not render.get("url"):
+        _hydrate_existing_render(client, token, account_id, f"{project.slug}-homolog", state)
+    return _ORIGINAL_PROVISION_RENDER(client, token, account_id, project, state, database_url)
+
+
+def _provision_vercel_reconciled(
+    client,
+    token: str,
+    account_id: str,
+    project,
+    state: dict[str, Any],
+    backend_url: str | None,
+    repo_full_name: str,
+) -> str:
+    vercel = state.setdefault("providers", {}).setdefault("vercel", {})
+    if not vercel.get("project_id"):
+        params = {"teamId": account_id} if account_id else None
+        existing = _optional_request_json(
+            client,
+            "vercel",
+            "GET",
+            f"{delivery.VERCEL_API}/v9/projects/{project.slug}",
+            token,
+            params=params,
+        )
+        if isinstance(existing, dict):
+            project_id = str(existing.get("id") or "").strip()
+            if project_id:
+                vercel.update({"project_id": project_id, "reused": True})
+    return _ORIGINAL_PROVISION_VERCEL(
+        client,
+        token,
+        account_id,
+        project,
+        state,
+        backend_url,
+        repo_full_name,
     )
 
 
 def install_delivery_cloud_bridge() -> None:
-    """Make product delivery consume self-managed or DevPilot-managed cloud credentials."""
+    """Make delivery idempotent and reuse credentials/resources managed by Super Admin."""
     if not getattr(delivery.connection, "_devpilot_cloud_admin_bridge", False):
         setattr(_connection_with_cloud_admin, "_devpilot_cloud_admin_bridge", True)
         delivery.connection = _connection_with_cloud_admin
     if not getattr(delivery.request_json, "_devpilot_cloud_scope_bridge", False):
         setattr(_request_json_with_cloud_scope, "_devpilot_cloud_scope_bridge", True)
         delivery.request_json = _request_json_with_cloud_scope
+    if not getattr(delivery.provision_neon, "_devpilot_cloud_reconcile", False):
+        setattr(_provision_neon_reconciled, "_devpilot_cloud_reconcile", True)
+        delivery.provision_neon = _provision_neon_reconciled
+    if not getattr(delivery.provision_render, "_devpilot_cloud_reconcile", False):
+        setattr(_provision_render_reconciled, "_devpilot_cloud_reconcile", True)
+        delivery.provision_render = _provision_render_reconciled
+    if not getattr(delivery.provision_vercel, "_devpilot_cloud_reconcile", False):
+        setattr(_provision_vercel_reconciled, "_devpilot_cloud_reconcile", True)
+        delivery.provision_vercel = _provision_vercel_reconciled
     if not getattr(cloud_admin._provider_request, "_devpilot_cloud_scope_bridge", False):
         setattr(_cloud_admin_provider_request_with_scope, "_devpilot_cloud_scope_bridge", True)
         cloud_admin._provider_request = _cloud_admin_provider_request_with_scope
