@@ -44,7 +44,7 @@
 
   function gameSnapshot(view) {
     const project = view.querySelector('.build-game-score > div:nth-child(3) strong')?.textContent?.trim() || 'Projeto';
-    const progress = view.querySelector('.build-game-score > div:nth-child(1) strong')?.textContent?.trim() || '0/6 fases';
+    const progress = view.querySelector('.build-game-score > div:nth-child(1) strong')?.textContent?.trim() || '0/7 etapas';
     const xp = view.querySelector('.build-game-score > div:nth-child(2) strong')?.textContent?.trim() || '0 XP';
     const current = view.querySelector('.build-game-phase.current .build-game-phase-copy strong')?.textContent?.trim()
       || (view.querySelector('.build-game-victory') ? 'Missão concluída' : 'Aguardando rota');
@@ -57,25 +57,13 @@
     return projects.find(project => String(project?.id) === projectId) || null;
   }
 
-  function automaticGoal(view) {
-    const project = currentProject(view);
-    const description = String(project?.description || '').trim();
-    if (description) return description;
-    const selectedName = view.querySelector('#build-game-project')?.selectedOptions?.[0]?.textContent?.trim();
-    const scoreName = view.querySelector('.build-game-score > div:nth-child(3) strong')?.textContent?.trim();
-    const projectName = String(project?.name || selectedName || scoreName || 'selecionado').trim();
-    return `Evoluir o projeto ${projectName} com uma entrega funcional, testada e verificável.`;
-  }
-
   function ensurePlayableGoal(button) {
     const view = button?.closest?.('#build-game-view') || document.querySelector('#build-game-view');
     const input = view?.querySelector('#build-game-goal');
-    if (!view || !input || String(input.value || '').trim()) return false;
-    input.value = automaticGoal(view);
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-    input.dispatchEvent(new Event('change', {bubbles: true}));
-    toastMessage('Objetivo definido automaticamente. Iniciando a fase…');
-    return true;
+    if (!view || !input || String(input.value || '').trim()) return true;
+    input.focus();
+    toastMessage('Descreva o que deve ser entregue nesta rodada. O jogo não inventa o objetivo.');
+    return false;
   }
 
   function installGoalGuard() {
