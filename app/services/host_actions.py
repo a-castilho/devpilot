@@ -9,7 +9,8 @@ from uuid import uuid4
 from app.config import get_settings
 
 
-ALLOWED_HOST_ACTIONS = {"update_local", "manual_deploy"}
+RESOURCE_JOB_ACTION = "resource_job"
+ALLOWED_HOST_ACTIONS = {"update_local", "manual_deploy", RESOURCE_JOB_ACTION}
 
 
 def queue_host_action(action: str, *, actor: str, transcript: str = "", **data) -> dict:
@@ -43,3 +44,35 @@ def queue_host_action(action: str, *, actor: str, transcript: str = "", **data) 
         "created_at": created_at,
         "queue_file": str(Path("pending") / target.name),
     }
+
+
+def queue_resource_job(
+    command: str,
+    *,
+    actor: str,
+    workdir: str,
+    timeout_seconds: int = 900,
+    project_id: str = "",
+    project_name: str = "",
+    branch: str = "",
+) -> dict:
+    """Queue an auxiliary build/test job for the host resource router.
+
+    The host runner performs the authoritative command allow-list check. Keeping
+    the SSH credentials and routing logic on the host avoids mounting host SSH
+    material into the DevPilot containers.
+    """
+    normalized = str(command or "").strip()
+    if not normalized:
+        raise ValueError("Resource job command cannot be empty")
+
+    return queue_host_action(
+        RESOURCE_JOB_ACTION,
+        actor=actor,
+        command=normalized,
+        workdir=workdir,
+        timeout_seconds=min(max(int(timeout_seconds), 30), 3600),
+        project_id=project_id,
+        project_name=project_name,
+        branch=branch,
+    )
