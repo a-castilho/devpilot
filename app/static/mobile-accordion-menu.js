@@ -1,21 +1,11 @@
 (() => {
-  function ensureResponseManager() {
-    if (window.DevPilotResponses || document.querySelector('script[data-response-manager="1"]')) return;
-    const responses = document.createElement('script');
-    responses.src = '/assets/response-manager.js?v=20260825-1';
-    responses.defer = true;
-    responses.dataset.responseManager = '1';
-    document.head.appendChild(responses);
-  }
+  'use strict';
 
-  function ensureGameEntry() {
-    if (window.__devpilotGameEntryReady || document.querySelector('script[data-game-entry="1"]')) return;
-    const script = document.createElement('script');
-    script.src = '/assets/game-entry.js?v=20260825-1';
-    script.defer = true;
-    script.dataset.gameEntry = '1';
-    document.head.appendChild(script);
-  }
+  if (window.__devpilotMobileAccordionMenuStable) return;
+  window.__devpilotMobileAccordionMenuStable = true;
+
+  let mounted = false;
+  let syncFrame = 0;
 
   function ensureMobileRouteOverrides() {
     if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
@@ -24,81 +14,77 @@
     style.textContent = `
       @media (max-width: 900px) {
         body.mobile-route .sidebar {
-          display: flex !important;
-          grid-template-columns: none !important;
-          align-items: stretch !important;
-          height: calc(68px + env(safe-area-inset-bottom)) !important;
-          padding: 6px max(6px, env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)) !important;
+          display:flex!important;
+          grid-template-columns:none!important;
+          align-items:stretch!important;
+          height:calc(68px + env(safe-area-inset-bottom))!important;
+          padding:6px max(6px,env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) max(6px,env(safe-area-inset-left))!important;
         }
         body.mobile-route .sidebar > nav,
         body.mobile-route .sidebar > .mobile-nav-arrow,
-        body.mobile-route .sidebar > :not(.mobile-simple-nav) {
-          display: none !important;
-        }
+        body.mobile-route .sidebar > :not(.mobile-simple-nav) {display:none!important}
         body.mobile-route .sidebar > .mobile-simple-nav {
-          display: grid !important;
-          grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-          gap: 4px !important;
-          width: 100% !important;
-          height: 52px !important;
-          margin: 0 !important;
+          display:grid!important;
+          grid-template-columns:repeat(4,minmax(0,1fr))!important;
+          gap:4px!important;
+          width:100%!important;
+          height:52px!important;
+          margin:0!important;
         }
         body.mobile-route .mobile-simple-item {
-          width: 100% !important;
-          min-width: 0 !important;
-          max-width: none !important;
-          height: 52px !important;
-          min-height: 52px !important;
-          padding: 3px 2px !important;
-          border-radius: 11px !important;
-          font-size: inherit !important;
+          width:100%!important;
+          min-width:0!important;
+          max-width:none!important;
+          height:52px!important;
+          min-height:52px!important;
+          padding:3px 2px!important;
+          border-radius:11px!important;
+          font-size:inherit!important;
         }
-        body.mobile-route .mobile-simple-item > span {
-          display: block !important;
-          font-size: 19px !important;
-          line-height: 1 !important;
-        }
-        body.mobile-route .mobile-simple-item > small {
-          display: block !important;
-          font-size: 9px !important;
-          line-height: 1.1 !important;
-        }
-        body.mobile-route .mobile-simple-item[data-simple-menu-open] {
-          flex: initial !important;
-          width: 100% !important;
-          min-width: 0 !important;
-          max-width: none !important;
-        }
+        body.mobile-route .mobile-simple-item > span {display:block!important;font-size:19px!important;line-height:1!important}
+        body.mobile-route .mobile-simple-item > small {display:block!important;font-size:9px!important;line-height:1.1!important}
+        body.mobile-route .mobile-simple-item[data-simple-menu-open] {flex:initial!important;width:100%!important;min-width:0!important;max-width:none!important}
       }
     `;
     document.head.appendChild(style);
   }
 
-  let waitObserver = null;
+  function sourceElements() {
+    const sidebar = document.querySelector('.sidebar');
+    return {
+      sidebar,
+      sourceNav: sidebar?.querySelector(':scope > nav') || null,
+      root: sidebar?.querySelector(':scope > .mobile-simple-nav') || null,
+      sheet: document.querySelector('.mobile-simple-sheet'),
+      backdrop: document.querySelector('.mobile-simple-backdrop'),
+    };
+  }
 
   function mountMobileMenu() {
-    ensureResponseManager();
-    ensureGameEntry();
     ensureMobileRouteOverrides();
     if (window.innerWidth > 900) return false;
-    if (document.querySelector('.mobile-simple-nav')) return true;
 
-    const sidebar = document.querySelector('.sidebar');
-    const sourceNav = sidebar?.querySelector(':scope > nav');
+    const {sidebar, sourceNav, root: existingRoot} = sourceElements();
     if (!sidebar || !sourceNav) return false;
+    if (existingRoot) {
+      mounted = true;
+      scheduleSync();
+      return true;
+    }
 
     const icons = {
-      overview: '⌂', projects: '▦', tasks: '✓', providers: '✦', organizations: '◎',
-      reports: '≣', audit: '⌁', linux: '>_', 'token-usage': '◫', 'cloud-admin': '☁', 'investia-admin': '◇',
+      overview:'⌂', projects:'▦', tasks:'✓', providers:'✦', organizations:'◎',
+      reports:'≣', audit:'⌁', linux:'>_', 'token-usage':'◫', 'cloud-admin':'☁', 'investia-admin':'◇',
     };
 
     const root = document.createElement('div');
     root.className = 'mobile-simple-nav';
+    root.setAttribute('aria-label', 'Navegação principal');
     root.innerHTML = `
-      <button type="button" class="mobile-simple-item" data-simple-target="overview"><span>⌂</span><small>Início</small></button>
-      <button type="button" class="mobile-simple-item" data-simple-target="projects"><span>▦</span><small>Projetos</small></button>
-      <button type="button" class="mobile-simple-item" data-simple-target="tasks"><span>✓</span><small>Tarefas</small></button>
-      <button type="button" class="mobile-simple-item" data-simple-menu-open aria-label="Abrir menu"><span>☰</span><small>Menu</small></button>
+      <button type="button" class="mobile-simple-item" data-simple-target="overview"><span aria-hidden="true">⌂</span><small>Início</small></button>
+      <button type="button" class="mobile-simple-item" data-simple-target="projects"><span aria-hidden="true">▦</span><small>Projetos</small></button>
+      <button type="button" class="mobile-simple-item" data-simple-target="tasks"><span aria-hidden="true">✓</span><small>Execuções</small></button>
+      <button type="button" class="mobile-simple-item" data-simple-menu-open aria-label="Abrir menu" aria-expanded="false"><span aria-hidden="true">☰</span><small>Menu</small></button>
     `;
 
     const backdrop = document.createElement('div');
@@ -121,48 +107,55 @@
 
     document.body.append(backdrop, sheet);
     sidebar.appendChild(root);
+    mounted = true;
 
     const list = sheet.querySelector('.mobile-simple-list');
     const openButton = root.querySelector('[data-simple-menu-open]');
+    const closeButton = sheet.querySelector('.mobile-simple-close');
 
-    function items() {
-      return [...sourceNav.querySelectorAll(':scope > .nav')].filter(item => !item.hidden && !item.classList.contains('nav-super-admin-forbidden'));
-    }
+    const items = () => [...sourceNav.querySelectorAll(':scope > .nav')]
+      .filter(item => !item.hidden && !item.classList.contains('nav-super-admin-forbidden'));
 
-    function label(item) {
-      return String(item.textContent || item.getAttribute('aria-label') || 'Abrir').replace(/\s+/g, ' ').trim();
-    }
+    const label = item => String(item.textContent || item.getAttribute('aria-label') || 'Abrir')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/^Tarefas$/i, 'Execuções')
+      .replace(/^Desenvolvimento$/i, 'Execuções');
 
-    function icon(item) {
+    const icon = item => {
       if (item.dataset.exampleProject) return '◫';
       if (item.dataset.linuxView === '1') return icons.linux;
       return icons[item.dataset.view] || '•';
-    }
+    };
 
-    function close() {
+    function close({restoreFocus = false} = {}) {
       sheet.hidden = true;
       backdrop.hidden = true;
       document.body.classList.remove('mobile-simple-open');
       openButton.setAttribute('aria-expanded', 'false');
+      if (restoreFocus) openButton.focus?.();
     }
 
     function navigate(item) {
       if (!item) return;
       close();
       item.click();
-      requestAnimationFrame(sync);
+      scheduleSync();
     }
 
     function renderMenu() {
-      list.replaceChildren();
+      const fragment = document.createDocumentFragment();
       items().forEach(item => {
         const button = document.createElement('button');
+        const active = item.classList.contains('active');
         button.type = 'button';
-        button.className = `mobile-simple-row${item.classList.contains('active') ? ' active' : ''}`;
-        button.innerHTML = `<span class="mobile-simple-icon">${icon(item)}</span><span>${label(item)}</span><span class="mobile-simple-arrow">›</span>`;
+        button.className = `mobile-simple-row${active ? ' active' : ''}`;
+        if (active) button.setAttribute('aria-current', 'page');
+        button.innerHTML = `<span class="mobile-simple-icon" aria-hidden="true">${icon(item)}</span><span>${label(item)}</span><span class="mobile-simple-arrow" aria-hidden="true">›</span>`;
         button.addEventListener('click', () => navigate(item));
-        list.appendChild(button);
+        fragment.appendChild(button);
       });
+      list.replaceChildren(fragment);
     }
 
     function open() {
@@ -171,51 +164,81 @@
       backdrop.hidden = false;
       document.body.classList.add('mobile-simple-open');
       openButton.setAttribute('aria-expanded', 'true');
-    }
-
-    function sync() {
-      root.querySelectorAll('[data-simple-target]').forEach(button => {
-        const source = sourceNav.querySelector(`.nav[data-view="${CSS.escape(button.dataset.simpleTarget)}"]`);
-        button.classList.toggle('active', Boolean(source?.classList.contains('active')));
-      });
-      if (!sheet.hidden) renderMenu();
+      window.requestAnimationFrame(() => closeButton?.focus?.());
     }
 
     root.querySelectorAll('[data-simple-target]').forEach(button => {
-      button.addEventListener('click', () => navigate(sourceNav.querySelector(`.nav[data-view="${CSS.escape(button.dataset.simpleTarget)}"]`)));
+      button.addEventListener('click', () => {
+        navigate(sourceNav.querySelector(`.nav[data-view="${CSS.escape(button.dataset.simpleTarget)}"]`));
+      });
     });
-    openButton.setAttribute('aria-expanded', 'false');
-    openButton.addEventListener('click', open);
-    sheet.querySelector('.mobile-simple-close').addEventListener('click', close);
-    backdrop.addEventListener('click', close);
-    document.addEventListener('keydown', event => { if (event.key === 'Escape' && !sheet.hidden) close(); });
-    new MutationObserver(sync).observe(sourceNav, {subtree:true, childList:true, attributes:true, attributeFilter:['class','hidden']});
-    sync();
 
-    waitObserver?.disconnect();
-    waitObserver = null;
+    openButton.addEventListener('click', open);
+    closeButton?.addEventListener('click', () => close({restoreFocus:true}));
+    backdrop.addEventListener('click', () => close({restoreFocus:true}));
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && !sheet.hidden) close({restoreFocus:true});
+    });
+
+    scheduleSync();
     return true;
   }
 
-  function bootstrapMobileMenu() {
-    if (mountMobileMenu()) return;
-    if (waitObserver) return;
-    waitObserver = new MutationObserver(() => {
-      if (mountMobileMenu()) {
-        waitObserver?.disconnect();
-        waitObserver = null;
-      }
+  function sync() {
+    syncFrame = 0;
+    if (!mounted && !mountMobileMenu()) return;
+
+    const {sourceNav, root, sheet} = sourceElements();
+    if (!sourceNav || !root) return;
+
+    root.querySelectorAll('[data-simple-target]').forEach(button => {
+      const source = sourceNav.querySelector(`.nav[data-view="${CSS.escape(button.dataset.simpleTarget)}"]`);
+      const active = Boolean(source?.classList.contains('active'));
+      button.classList.toggle('active', active);
+      if (active) button.setAttribute('aria-current', 'page');
+      else button.removeAttribute('aria-current');
     });
-    waitObserver.observe(document.documentElement, {childList: true, subtree: true});
+
+    if (sheet && !sheet.hidden) {
+      const list = sheet.querySelector('.mobile-simple-list');
+      if (list) {
+        const rows = [...list.querySelectorAll('.mobile-simple-row')];
+        const navItems = [...sourceNav.querySelectorAll(':scope > .nav')]
+          .filter(item => !item.hidden && !item.classList.contains('nav-super-admin-forbidden'));
+        if (rows.length !== navItems.length) {
+          sheet.hidden = true;
+          document.querySelector('.mobile-simple-backdrop')?.setAttribute('hidden', '');
+          document.body.classList.remove('mobile-simple-open');
+          root.querySelector('[data-simple-menu-open]')?.setAttribute('aria-expanded', 'false');
+        }
+      }
+    }
+  }
+
+  function scheduleSync() {
+    if (syncFrame) return;
+    syncFrame = window.requestAnimationFrame(sync);
+  }
+
+  function boot() {
+    if (window.innerWidth <= 900) mountMobileMenu();
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', bootstrapMobileMenu, {once: true});
+    document.addEventListener('DOMContentLoaded', boot, {once:true});
   } else {
-    bootstrapMobileMenu();
+    boot();
   }
 
   window.addEventListener('resize', () => {
-    if (window.innerWidth <= 900 && !document.querySelector('.mobile-simple-nav')) bootstrapMobileMenu();
-  });
+    if (window.innerWidth <= 900) mountMobileMenu();
+    scheduleSync();
+  }, {passive:true});
+
+  document.addEventListener('devpilot:view-changed', scheduleSync);
+  document.addEventListener('devpilot:page-ready', scheduleSync);
+  document.addEventListener('devpilot:feature-ready', scheduleSync);
+  document.addEventListener('devpilot:login-complete', scheduleSync);
+
+  console.info('[DevPilot] Menu mobile estável e orientado a eventos');
 })();

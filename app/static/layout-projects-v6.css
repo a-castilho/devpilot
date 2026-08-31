@@ -1,0 +1,351 @@
+/*
+ * DevPilot · Projects / Ships V6
+ * Corrige sobreposição e largura útil.
+ */
+
+
+/* ==========================================================
+   ÁREA ÚTIL TOTAL
+   ========================================================== */
+
+#projects-view,
+#projects-view.active,
+main #projects-view,
+main .view#projects-view {
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+  margin:0 !important;
+  padding-inline:clamp(12px, 1.8vw, 24px) !important;
+}
+
+#projects-view > *,
+#projects-view .panel,
+#projects-view .section-head,
+#projects-view .project-visual-overview,
+#projects-view #projects-list {
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+}
+
+
+/* ==========================================================
+   GRID DOS CARDS
+   ========================================================== */
+
+#projects-view #projects-list.cards {
+  display:grid !important;
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+
+  /*
+   * Regra principal:
+   * largura mínima maior para impedir esmagamento.
+   */
+  grid-template-columns:
+    repeat(auto-fit, minmax(min(100%, 270px), 1fr))
+    !important;
+
+  align-items:start !important;
+  gap:16px !important;
+}
+
+
+/* Se o menu estiver aberto em notebook, menos densidade. */
+@media (min-width:901px) and (max-width:1180px) {
+  html:not(.sidebar-collapsed)
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit, minmax(min(100%, 290px), 1fr))
+      !important;
+  }
+
+  html.sidebar-collapsed
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit, minmax(min(100%, 245px), 1fr))
+      !important;
+  }
+}
+
+@media (min-width:1181px) and (max-width:1450px) {
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit, minmax(min(100%, 255px), 1fr))
+      !important;
+  }
+}
+
+@media (min-width:1451px) {
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit, minmax(min(100%, 265px), 1fr))
+      !important;
+  }
+}
+
+@media (max-width:900px) {
+  #projects-view #projects-list.cards {
+    grid-template-columns:minmax(0,1fr) !important;
+    gap:12px !important;
+  }
+}
+
+
+/* ==========================================================
+   CARD BASE
+   ========================================================== */
+
+#projects-view #projects-list .project-card,
+#projects-view #projects-list .project-card.project-ship-card {
+  position:relative !important;
+  display:flex !important;
+  flex-direction:column !important;
+
+  width:100% !important;
+  max-width:none !important;
+  min-width:0 !important;
+
+  min-height:0 !important;
+  height:auto !important;
+
+  padding:14px !important;
+  overflow:hidden !important;
+
+  border-radius:14px !important;
+  box-sizing:border-box !important;
+}
+
+
+/* Título e descrição */
+
+#projects-list .project-card.project-ship-card > h3 {
+  margin:0 0 6px !important;
+
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+  white-space:nowrap !important;
+
+  font-size:20px !important;
+  line-height:1.16 !important;
+}
+
+#projects-list .project-card.project-ship-card > h3 + p {
+  display:block !important;
+  margin:0 0 8px !important;
+
+  min-height:18px !important;
+  max-height:18px !important;
+
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+  white-space:nowrap !important;
+
+  font-size:11px !important;
+  line-height:18px !important;
+  color:#8ea0a7 !important;
+}
+
+#projects-list .project-card.project-ship-card > code {
+  display:none !important;
+}
+
+
+/* ==========================================================
+   HANGAR / NAVE
+   ========================================================== */
+
+#projects-list .project-ship-hangar {
+  position:relative !important;
+
+  width:100% !important;
+  min-width:0 !important;
+
+  min-height:160px !important;
+  height:160px !important;
+
+  margin:10px 0 !important;
+  flex:0 0 160px !important;
+
+  overflow:hidden !important;
+  border-radius:12px !important;
+}
+
+#projects-list .project-ship-svg {
+  display:block !important;
+  width:100% !important;
+  height:100px !important;
+  margin-top:22px !important;
+}
+
+#projects-list .project-ship-hud {
+  left:8px !important;
+  right:8px !important;
+  bottom:8px !important;
+
+  display:grid !important;
+  grid-template-columns:repeat(3, minmax(0,1fr)) !important;
+  gap:6px !important;
+}
+
+#projects-list .project-ship-gauge-wrap {
+  min-width:0 !important;
+  overflow:hidden !important;
+}
+
+#projects-list .project-ship-gauge-label {
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+  white-space:nowrap !important;
+  font-size:7px !important;
+}
+
+
+/* ==========================================================
+   STATUS / COMPLEMENTOS
+   ========================================================== */
+
+#projects-list .project-status-strip {
+  margin:0 0 8px !important;
+  padding:6px 8px !important;
+  min-height:0 !important;
+}
+
+#projects-list .project-status-strip strong {
+  font-size:9px !important;
+}
+
+/*
+ * Tudo que for complementar fica pequeno e limitado.
+ */
+#projects-list .product-delivery-status,
+#projects-list .project-delivery-status,
+#projects-list .project-delivery-panel,
+#projects-list .project-ships-secondary,
+#projects-list .project-verbose-copy {
+  display:block !important;
+  max-height:36px !important;
+  overflow:hidden !important;
+  font-size:10px !important;
+  line-height:1.35 !important;
+}
+
+/* Se algum módulo injeta textos demais, escondemos os extras. */
+#projects-list .project-card.project-ship-card .project-delivery-status p,
+#projects-list .project-card.project-ship-card .project-delivery-panel p,
+#projects-list .project-card.project-ship-card .project-verbose-copy p {
+  display:-webkit-box !important;
+  overflow:hidden !important;
+  -webkit-line-clamp:2 !important;
+  -webkit-box-orient:vertical !important;
+}
+
+
+/* ==========================================================
+   ÁREA DE AÇÕES
+   ========================================================== */
+
+#projects-list .project-card.project-ship-card .list-row {
+  display:flex !important;
+  flex-direction:column !important;
+  align-items:stretch !important;
+  justify-content:flex-start !important;
+
+  gap:8px !important;
+
+  width:100% !important;
+  min-width:0 !important;
+
+  margin-top:auto !important;
+  padding-top:8px !important;
+}
+
+/* branch / texto pequeno sai do visual */
+#projects-list .project-card.project-ship-card .list-row > small {
+  display:none !important;
+}
+
+/* container dos botões */
+#projects-list .project-card.project-ship-card .list-row > div {
+  display:grid !important;
+  grid-template-columns:repeat(2, minmax(0,1fr)) !important;
+  gap:6px !important;
+
+  width:100% !important;
+  min-width:0 !important;
+}
+
+#projects-list .project-card.project-ship-card button,
+#projects-list .project-card.project-ship-card .project-ship-action,
+#projects-list .project-card.project-ship-card .ghost,
+#projects-list .project-card.project-ship-card .primary,
+#projects-list .project-card.project-ship-card .danger {
+  width:100% !important;
+  min-width:0 !important;
+  max-width:100% !important;
+
+  min-height:34px !important;
+  padding:6px 8px !important;
+
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+  white-space:nowrap !important;
+
+  font-size:10px !important;
+  line-height:1.2 !important;
+}
+
+
+/* ==========================================================
+   MÉTRICAS DA FROTA
+   ========================================================== */
+
+.project-visual-overview {
+  display:grid !important;
+  grid-template-columns:
+    repeat(auto-fit, minmax(150px, 1fr))
+    !important;
+  gap:10px !important;
+  margin-bottom:16px !important;
+}
+
+.project-visual-metric {
+  min-width:0 !important;
+  min-height:66px !important;
+  padding:8px 10px !important;
+}
+
+
+/* ==========================================================
+   MOBILE
+   ========================================================== */
+
+@media (max-width:900px) {
+  #projects-list .project-card.project-ship-card > h3 + p {
+    display:none !important;
+  }
+
+  #projects-list .project-ship-hangar {
+    min-height:145px !important;
+    height:145px !important;
+    flex-basis:145px !important;
+  }
+
+  #projects-list .project-ship-svg {
+    height:90px !important;
+  }
+}
+
+@media (max-width:430px) {
+  #projects-list .project-card.project-ship-card .list-row > div {
+    grid-template-columns:minmax(0,1fr) !important;
+  }
+
+  .project-visual-overview {
+    grid-template-columns:
+      repeat(2, minmax(0,1fr))
+      !important;
+  }
+}

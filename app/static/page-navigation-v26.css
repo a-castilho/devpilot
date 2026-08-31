@@ -1,0 +1,98 @@
+/*
+ * DevPilot Page Navigation V26
+ * Faz cada item do menu se comportar como uma tela própria dentro da SPA.
+ */
+
+html[data-devpilot-view] main {
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-devpilot-view] main .view {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+html[data-devpilot-view] main .view[hidden] {
+  display: none !important;
+}
+
+html.dp-page-switching main {
+  pointer-events: none;
+}
+
+html.dp-page-switching main .view.active,
+html[data-devpilot-view] main .view.dp-page-leaving {
+  opacity: 0 !important;
+  transform: translateY(5px) scale(.998);
+  transition:
+    opacity 72ms ease,
+    transform 72ms ease;
+}
+
+html[data-devpilot-view] main .view.dp-page-entering {
+  animation: devpilot-page-enter-v26 150ms cubic-bezier(.2,.8,.2,1) both;
+}
+
+@keyframes devpilot-page-enter-v26 {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/*
+ * Componentes da Visão Geral nunca vazam para outra tela.
+ */
+html[data-devpilot-view]:not([data-devpilot-view="overview"]) #overview-view,
+html[data-devpilot-view]:not([data-devpilot-view="overview"]) #devpilot-game-entry,
+html[data-devpilot-view]:not([data-devpilot-view="overview"]) #mission-control-panel {
+  display: none !important;
+}
+
+/*
+ * Em telas de menu, somente a view selecionada participa do layout.
+ */
+html[data-devpilot-view="projects"] #projects-view,
+html[data-devpilot-view="tasks"] #tasks-view,
+html[data-devpilot-view="providers"] #providers-view,
+html[data-devpilot-view="reports"] #reports-view,
+html[data-devpilot-view="audit"] #audit-view,
+html[data-devpilot-view="organizations"] #organizations-view,
+html[data-devpilot-view="users"] #users-view,
+html[data-devpilot-view="profile"] #profile-view,
+html[data-devpilot-view="overview"] #overview-view {
+  display: block;
+}
+
+@media (max-width: 900px) {
+  html.dp-page-switching .mobile-simple-sheet,
+  html.dp-page-switching .mobile-simple-backdrop {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  html[data-devpilot-view] main {
+    min-height: calc(100dvh - 68px - env(safe-area-inset-bottom, 0px));
+  }
+
+  html[data-devpilot-view] main .view.active {
+    min-height: calc(100dvh - 68px - env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.dp-page-switching main .view.active,
+  html[data-devpilot-view] main .view.dp-page-leaving,
+  html[data-devpilot-view] main .view.dp-page-entering {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+}

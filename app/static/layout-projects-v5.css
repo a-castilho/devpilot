@@ -1,0 +1,467 @@
+/*
+ * DevPilot · Projects / Ships V5
+ *
+ * Não modifica comportamento das naves.
+ * Corrige somente geometria, densidade e legibilidade.
+ */
+
+
+/* ==========================================================
+   ÁREA DE PROJETOS
+   ========================================================== */
+
+#projects-view {
+  width:100%;
+  max-width:none !important;
+  min-width:0;
+}
+
+#projects-view > .section-head {
+  width:100%;
+  max-width:none;
+  margin-bottom:18px;
+}
+
+#projects-view #projects-list.cards {
+  width:100% !important;
+  max-width:none !important;
+  min-width:0;
+
+  /*
+   * Regra principal:
+   * nunca mais forçar exatamente cinco colunas.
+   */
+  display:grid !important;
+  grid-template-columns:
+    repeat(auto-fit, minmax(min(100%, 238px), 1fr))
+    !important;
+
+  align-items:start;
+  gap:16px !important;
+}
+
+
+/* ==========================================================
+   CARDS
+   ========================================================== */
+
+#projects-view #projects-list .project-card {
+  width:100% !important;
+  min-width:0 !important;
+  max-width:none !important;
+
+  padding:15px !important;
+  border-radius:15px !important;
+}
+
+
+/* Card nave não precisa ter texto demais. */
+
+#projects-list .project-card.project-ship-card {
+  display:flex;
+  flex-direction:column;
+
+  min-height:390px;
+  overflow:hidden;
+}
+
+
+/* status */
+
+#projects-list
+.project-card.project-ship-card
+> .eyebrow:first-child {
+  align-self:flex-start;
+
+  margin-bottom:8px;
+  padding:4px 8px;
+
+  font-size:9px !important;
+}
+
+
+/* nome */
+
+#projects-list
+.project-card.project-ship-card
+> h3 {
+  margin:0 0 5px !important;
+
+  max-width:100%;
+
+  overflow:hidden;
+
+  color:#edf6f9;
+
+  font-size:21px !important;
+  font-weight:760;
+  line-height:1.16;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* descrição: somente uma linha */
+
+#projects-list
+.project-card.project-ship-card
+> h3 + p {
+  display:block !important;
+
+  min-height:20px !important;
+  max-height:20px !important;
+
+  margin:0 0 8px !important;
+
+  overflow:hidden;
+
+  color:#869da0 !important;
+
+  font-size:11px !important;
+  line-height:20px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* URL não é informação principal */
+
+#projects-list
+.project-card.project-ship-card
+> code {
+  display:none !important;
+}
+
+
+/* ==========================================================
+   HANGAR / NAVE
+   ========================================================== */
+
+#projects-list .project-ship-hangar {
+  width:100%;
+
+  min-height:170px !important;
+  height:170px !important;
+
+  margin:10px 0 11px !important;
+
+  flex:0 0 170px;
+
+  border-radius:13px !important;
+}
+
+#projects-list .project-ship-svg {
+  width:100% !important;
+  height:108px !important;
+
+  margin-top:23px !important;
+}
+
+
+/* HUD */
+
+#projects-list .project-ship-hud {
+  right:8px !important;
+  bottom:8px !important;
+  left:8px !important;
+
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr))
+    !important;
+
+  gap:6px !important;
+}
+
+#projects-list .project-ship-gauge-wrap {
+  min-width:0;
+
+  padding:4px 5px !important;
+}
+
+#projects-list .project-ship-gauge {
+  width:30px !important;
+  height:30px !important;
+
+  flex:0 0 30px !important;
+}
+
+#projects-list .project-ship-gauge-label {
+  min-width:0;
+
+  overflow:hidden;
+
+  font-size:7px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* ==========================================================
+   ESTADO OPERACIONAL
+   ========================================================== */
+
+#projects-list .project-status-strip {
+  min-height:30px !important;
+
+  margin:0 0 8px !important;
+  padding:6px 8px !important;
+}
+
+#projects-list .project-status-strip strong {
+  font-size:9px !important;
+}
+
+
+/* ==========================================================
+   AÇÕES
+   ========================================================== */
+
+#projects-list
+.project-card.project-ship-card
+.list-row {
+  display:flex !important;
+
+  align-items:center;
+  justify-content:space-between;
+
+  gap:8px;
+
+  margin-top:auto;
+  padding-top:9px !important;
+
+  min-width:0;
+}
+
+
+/* branch é secundária */
+
+#projects-list
+.project-card.project-ship-card
+.list-row > small {
+  display:none !important;
+}
+
+
+/* container dos botões */
+
+#projects-list
+.project-card.project-ship-card
+.list-row > div {
+  display:grid !important;
+
+  grid-template-columns:
+    repeat(4, minmax(34px, 1fr));
+
+  width:100% !important;
+  min-width:0;
+
+  gap:6px !important;
+}
+
+
+/* botões nunca esmagam texto */
+
+#projects-list
+.project-card.project-ship-card
+button {
+  min-width:0 !important;
+  max-width:100% !important;
+}
+
+
+/* ações das naves em formato compacto */
+
+#projects-list
+.project-card.project-ship-card
+button.project-ship-action {
+  width:100%;
+
+  min-height:36px !important;
+
+  margin:0 !important;
+  padding:6px !important;
+
+  border-radius:9px !important;
+}
+
+
+/* ==========================================================
+   INFORMAÇÕES COMPLEMENTARES
+   ========================================================== */
+
+/*
+ * Alguns módulos adicionam texto abaixo do card.
+ * Evitamos que cresça verticalmente sem limite.
+ */
+
+#projects-list
+.project-card.project-ship-card
+.project-verbose-copy {
+  display:none !important;
+}
+
+#projects-list
+.project-card.project-ship-card
+.product-delivery-status,
+#projects-list
+.project-card.project-ship-card
+.project-delivery-status {
+  max-height:40px;
+
+  overflow:hidden;
+}
+
+
+/* ==========================================================
+   MÉTRICAS DA FROTA
+   ========================================================== */
+
+.project-visual-overview {
+  width:100% !important;
+
+  grid-template-columns:
+    repeat(auto-fit, minmax(150px, 1fr))
+    !important;
+
+  gap:10px !important;
+
+  margin-bottom:16px !important;
+}
+
+.project-visual-metric {
+  min-width:0;
+
+  min-height:66px !important;
+
+  padding:8px 10px !important;
+}
+
+.project-visual-ring {
+  width:48px !important;
+  height:48px !important;
+}
+
+.project-visual-copy strong {
+  font-size:13px !important;
+}
+
+
+/* ==========================================================
+   NOTEBOOK 901–1100
+   ========================================================== */
+
+@media (min-width:901px) and (max-width:1100px) {
+
+  #projects-view #projects-list.cards {
+    /*
+     * Com menu aberto:
+     * geralmente teremos 2 ou 3 automaticamente.
+     */
+    grid-template-columns:
+      repeat(auto-fit, minmax(225px, 1fr))
+      !important;
+
+    gap:12px !important;
+  }
+
+  #projects-list
+  .project-card.project-ship-card {
+    min-height:365px;
+  }
+
+  #projects-list .project-ship-hangar {
+    min-height:155px !important;
+    height:155px !important;
+
+    flex-basis:155px;
+  }
+
+  #projects-list .project-ship-svg {
+    height:98px !important;
+  }
+}
+
+
+/* ==========================================================
+   DESKTOP LARGO
+   ========================================================== */
+
+@media (min-width:1450px) {
+
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(auto-fit, minmax(250px, 1fr))
+      !important;
+  }
+}
+
+
+/* ==========================================================
+   MOBILE
+   ========================================================== */
+
+@media (max-width:900px) {
+
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      minmax(0, 1fr)
+      !important;
+
+    gap:12px !important;
+  }
+
+  #projects-list
+  .project-card.project-ship-card {
+    min-height:0;
+  }
+
+  #projects-list
+  .project-card.project-ship-card
+  > h3 {
+    font-size:20px !important;
+  }
+
+  #projects-list
+  .project-card.project-ship-card
+  > h3 + p {
+    display:none !important;
+  }
+
+  #projects-list .project-ship-hangar {
+    min-height:145px !important;
+    height:145px !important;
+
+    flex-basis:145px;
+  }
+
+  #projects-list .project-ship-svg {
+    height:90px !important;
+  }
+
+  #projects-list
+  .project-card.project-ship-card
+  .list-row > div {
+    grid-template-columns:
+      repeat(4, minmax(40px, 1fr));
+  }
+}
+
+
+@media (max-width:430px) {
+
+  .project-visual-overview {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr))
+      !important;
+  }
+
+  #projects-list
+  .project-card.project-ship-card
+  .list-row > div {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}

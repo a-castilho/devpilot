@@ -1,0 +1,454 @@
+/*
+ * DevPilot Layout V4
+ * Projetos / Naves + Super Admin
+ * Não altera runtime nem funcionalidades.
+ */
+
+
+/* ==========================================================
+   PROJETOS · INFORMAÇÃO ESSENCIAL
+   ========================================================== */
+
+#projects-view,
+#projects-view #projects-list,
+#projects-view #projects-list .project-card {
+  min-width: 0;
+}
+
+#projects-view .section-head {
+  align-items: center;
+  gap: 16px;
+}
+
+#projects-view .section-head p {
+  max-width: 680px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+
+/* Nome é a informação principal. */
+
+#projects-list .project-card h3 {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: clamp(19px, 2vw, 24px);
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* Descrição e URL não podem deformar card. */
+
+#projects-list .project-card > p {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  color: #8ea5a0;
+  font-size: 11px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+#projects-list .project-card > code {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ==========================================================
+   VISÃO DA FROTA
+   ========================================================== */
+
+.project-visual-overview {
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr)) !important;
+}
+
+.project-visual-metric {
+  min-width: 0;
+}
+
+.project-visual-copy strong,
+.project-visual-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ==========================================================
+   NAVES
+   ========================================================== */
+
+#projects-list .project-card.project-ship-card {
+  min-width: 0 !important;
+}
+
+#projects-list .project-ship-hangar {
+  min-height: 168px !important;
+}
+
+#projects-list .project-ship-svg {
+  height: 108px !important;
+  margin-top: 20px !important;
+}
+
+#projects-list .project-ship-hud {
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr)) !important;
+}
+
+#projects-list .project-ship-gauge-wrap {
+  min-width: 0;
+  overflow: hidden;
+}
+
+#projects-list .project-ship-gauge-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ==========================================================
+   NOTEBOOK · 901 → 1100
+   ========================================================== */
+
+@media (min-width: 901px) and (max-width: 1100px) {
+
+  .project-visual-overview {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  html:not(.sidebar-collapsed)
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  html.sidebar-collapsed
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+  }
+
+  #projects-view #projects-list .project-card {
+    padding: 11px !important;
+  }
+
+  #projects-list .project-ship-hangar {
+    min-height: 150px !important;
+  }
+
+  #projects-list .project-ship-svg {
+    height: 94px !important;
+  }
+}
+
+
+/* ==========================================================
+   DESKTOP MÉDIO · 1101 → 1366
+   ========================================================== */
+
+@media (min-width: 1101px) and (max-width: 1366px) {
+
+  html:not(.sidebar-collapsed)
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  html.sidebar-collapsed
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      repeat(4, minmax(0, 1fr)) !important;
+  }
+}
+
+
+/* ==========================================================
+   SUPER ADMIN · SISTEMA
+   ========================================================== */
+
+.system-map-view,
+.system-map-content,
+.system-map-layout,
+.system-map-board,
+.system-map-columns {
+  min-width: 0;
+}
+
+.system-map-hero {
+  display: grid !important;
+  grid-template-columns:
+    minmax(0, 1fr) auto !important;
+  align-items: center !important;
+  gap: 20px !important;
+}
+
+.system-map-hero > div {
+  min-width: 0;
+}
+
+.system-map-hero h2 {
+  margin-bottom: 8px !important;
+  font-size: clamp(26px, 3vw, 36px) !important;
+  line-height: 1.08 !important;
+}
+
+.system-map-hero p {
+  max-width: 760px !important;
+  margin: 0 !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+.system-map-alerts {
+  display: grid;
+  gap: 8px;
+}
+
+.system-map-alerts > div {
+  min-width: 0;
+}
+
+.system-map-alerts span {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+
+/* Fluxo: nunca quebrar palavras em coluna estreita. */
+
+.system-map-flow {
+  max-width: 100%;
+  overflow-x: auto !important;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: thin;
+}
+
+.system-map-flow article {
+  min-width: 150px !important;
+}
+
+.system-map-flow strong,
+.system-map-flow small,
+.system-map-node strong,
+.system-map-node small {
+  word-break: normal !important;
+  overflow-wrap: break-word !important;
+}
+
+
+/* Métricas. */
+
+.system-map-metrics {
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr)) !important;
+}
+
+.system-map-metrics article {
+  min-width: 0;
+}
+
+
+/* Board + inspector. */
+
+.system-map-layout {
+  grid-template-columns:
+    minmax(0, 1fr) minmax(260px, 330px) !important;
+  align-items: start !important;
+}
+
+.system-map-group,
+.system-map-group-nodes,
+.system-map-node {
+  min-width: 0;
+}
+
+.system-map-node {
+  overflow: hidden;
+}
+
+.system-map-node-copy {
+  min-width: 0;
+}
+
+.system-map-node-copy strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
+/* ==========================================================
+   SUPER ADMIN / VOZ
+   ========================================================== */
+
+.voice-admin-view,
+.voice-admin-view * {
+  box-sizing: border-box;
+}
+
+.voice-admin-metrics {
+  grid-template-columns:
+    repeat(4, minmax(0, 1fr)) !important;
+}
+
+.voice-admin-charts {
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr)) !important;
+}
+
+.voice-admin-lower-grid {
+  grid-template-columns:
+    minmax(0, 1.25fr)
+    minmax(280px, .75fr) !important;
+}
+
+.voice-admin-panel,
+.voice-admin-connection-card {
+  min-width: 0;
+}
+
+
+/* ==========================================================
+   NOTEBOOK · SUPER ADMIN
+   ========================================================== */
+
+@media (max-width: 1180px) {
+
+  .system-map-hero {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  .system-map-hero > button {
+    justify-self: start;
+  }
+
+  .system-map-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .system-map-layout {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  .system-map-inspector {
+    position: static !important;
+    width: 100% !important;
+  }
+
+  .system-map-columns {
+    display: grid !important;
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+
+  .voice-admin-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .voice-admin-charts,
+  .voice-admin-lower-grid {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+}
+
+
+/* ==========================================================
+   MOBILE
+   ========================================================== */
+
+@media (max-width: 900px) {
+
+  #projects-view .section-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  #projects-view .section-head > button {
+    width: 100%;
+  }
+
+  .project-visual-overview {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #projects-view #projects-list.cards {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  /*
+   * Recupera a ideia histórica de cards mobile compactos:
+   * informação secundária desaparece, ações permanecem.
+   */
+  #projects-view .project-card > p,
+  #projects-view .project-card > code,
+  #projects-view .project-card .list-row > small {
+    display: none !important;
+  }
+
+  #projects-list .project-ship-hangar {
+    min-height: 145px !important;
+  }
+
+  #projects-list .project-ship-svg {
+    height: 92px !important;
+  }
+
+  .system-map-columns {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  .system-map-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .system-map-flow article {
+    min-width: 138px !important;
+  }
+}
+
+
+@media (max-width: 520px) {
+
+  .project-visual-overview,
+  .system-map-metrics,
+  .voice-admin-metrics {
+    grid-template-columns:
+      minmax(0, 1fr) !important;
+  }
+
+  .system-map-hero h2 {
+    font-size: 25px !important;
+  }
+
+  .system-map-hero p {
+    font-size: 13px !important;
+  }
+}

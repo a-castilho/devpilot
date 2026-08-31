@@ -1,0 +1,304 @@
+/*
+ * DevPilot Users Layout V25
+ * Tela administrativa de usuários isolada do dashboard e do modo jogo.
+ * Somente frontend; nenhuma alteração de banco.
+ */
+
+#users-view {
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  padding-bottom: 32px;
+}
+
+#users-view .section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 16px;
+  padding: 18px;
+  border: 1px solid rgba(88,138,173,.18);
+  border-radius: 18px;
+  background: linear-gradient(145deg,rgba(10,28,45,.9),rgba(6,18,31,.94));
+  box-sizing: border-box;
+}
+
+#users-view .section-head > div {
+  min-width: 0;
+}
+
+#users-view .section-head > div::before {
+  content: 'GESTÃO DE ACESSO';
+  display: block;
+  margin-bottom: 5px;
+  color: #4fe0cf;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+
+#users-view .section-head p {
+  margin: 0;
+  color: var(--muted,#8fa5b8);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+#users-view #new-user {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding-inline: 18px;
+}
+
+#users-view .users-summary {
+  display: grid !important;
+  grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  gap: 10px !important;
+  width: 100%;
+  margin: 0 0 14px !important;
+}
+
+#users-view .users-summary .metric {
+  min-width: 0;
+  min-height: 100px;
+  padding: 14px 16px;
+  border-radius: 16px;
+}
+
+#users-view .users-summary .metric span {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+#users-view .users-summary .metric strong {
+  display: block;
+  margin-top: 7px;
+  font-size: clamp(26px,3vw,38px);
+}
+
+#users-view .users-toolbar {
+  display: grid !important;
+  grid-template-columns: minmax(0,1fr) auto;
+  gap: 10px !important;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+#users-view .users-toolbar input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+}
+
+#users-view #users-refresh {
+  min-height: 44px;
+  padding-inline: 18px;
+}
+
+#users-view .table-wrap {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0 !important;
+  overflow-x: auto;
+  border-radius: 16px;
+  -webkit-overflow-scrolling: touch;
+}
+
+#users-view .users-table {
+  width: 100%;
+  min-width: 720px;
+}
+
+#users-view .users-note {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(88,138,173,.13);
+  border-radius: 12px;
+  background: rgba(255,255,255,.018);
+  line-height: 1.45;
+}
+
+/* Quando Usuários está ativo, nenhum conteúdo do dashboard deve vazar para a tela. */
+main:has(#users-view.active) #overview-view,
+main:has(#users-view.active) #devpilot-game-entry,
+body:has(#users-view.active) #mission-control-panel {
+  display: none !important;
+}
+
+/* Ações globais não devem dominar a tela administrativa em mobile. */
+@media (max-width: 900px) {
+  body:has(#users-view.active) header {
+    min-height: 0 !important;
+    padding-bottom: 10px !important;
+  }
+
+  body:has(#users-view.active) header .header-actions {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 7px !important;
+    width: auto !important;
+  }
+
+  body:has(#users-view.active) header .header-actions > button:not(#logout):not(#mission-control-toggle),
+  body:has(#users-view.active) header .header-actions > [data-open="task-modal"] {
+    display: none !important;
+  }
+
+  body:has(#users-view.active) header #logout {
+    min-height: 36px !important;
+    width: auto !important;
+    padding: 7px 13px !important;
+  }
+
+  #users-view {
+    padding: 0 14px max(100px,calc(76px + env(safe-area-inset-bottom,0px))) !important;
+  }
+
+  #users-view .section-head {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr) auto;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 14px;
+    border-radius: 16px;
+  }
+
+  #users-view .section-head > div::before {
+    font-size: 9px;
+  }
+
+  #users-view .section-head p {
+    font-size: 12px;
+  }
+
+  #users-view #new-user {
+    min-height: 40px;
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  #users-view .users-summary {
+    grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+    gap: 7px !important;
+  }
+
+  #users-view .users-summary .metric {
+    min-height: 82px;
+    padding: 11px;
+    border-radius: 14px;
+  }
+
+  #users-view .users-summary .metric span {
+    font-size: 8px;
+  }
+
+  #users-view .users-summary .metric strong {
+    font-size: 26px;
+  }
+
+  #users-view .users-toolbar {
+    grid-template-columns: minmax(0,1fr) auto !important;
+    gap: 7px !important;
+  }
+
+  #users-view .users-toolbar input,
+  #users-view #users-refresh {
+    min-height: 42px !important;
+  }
+
+  #users-view #users-refresh {
+    padding-inline: 12px;
+    font-size: 12px;
+  }
+
+  #users-view .table-wrap {
+    border: 0 !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  #users-view .users-table {
+    display: block;
+    min-width: 0 !important;
+  }
+
+  #users-view .users-table thead {
+    display: none;
+  }
+
+  #users-view .users-table tbody,
+  #users-view .users-table tr,
+  #users-view .users-table td {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  #users-view .users-table tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  #users-view .users-table tr {
+    padding: 14px;
+    border: 1px solid rgba(88,138,173,.2);
+    border-radius: 16px;
+    background: linear-gradient(145deg,rgba(10,28,45,.9),rgba(6,18,31,.94));
+  }
+
+  #users-view .users-table td {
+    padding: 6px 0 !important;
+    border: 0 !important;
+  }
+
+  #users-view .users-table td:nth-child(2)::before,
+  #users-view .users-table td:nth-child(3)::before,
+  #users-view .users-table td:nth-child(4)::before {
+    display: block;
+    margin-bottom: 4px;
+    color: #72899c;
+    font-size: 9px;
+    font-weight: 850;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  #users-view .users-table td:nth-child(2)::before { content: 'Perfil'; }
+  #users-view .users-table td:nth-child(3)::before { content: 'Status'; }
+  #users-view .users-table td:nth-child(4)::before { content: 'Ação'; }
+
+  #users-view .users-table select,
+  #users-view .users-table button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  #users-view .user-name {
+    font-size: 16px;
+  }
+
+  #users-view .user-email {
+    margin-top: 3px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  #users-view .section-head {
+    grid-template-columns: minmax(0,1fr);
+  }
+
+  #users-view #new-user {
+    width: 100%;
+  }
+
+  #users-view .users-summary {
+    grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  }
+}

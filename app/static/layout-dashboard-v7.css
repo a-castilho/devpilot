@@ -1,0 +1,692 @@
+/*
+ * DevPilot Dashboard V7
+ *
+ * Somente apresentação.
+ * Não altera APIs, runtime, tarefas, naves ou Super Admin.
+ */
+
+
+/* ==========================================================
+   VIEW
+   ========================================================== */
+
+#overview-view {
+  width:100%;
+  max-width:none !important;
+  min-width:0;
+
+  padding-inline:
+    clamp(14px, 2vw, 28px) !important;
+  padding-bottom:36px !important;
+}
+
+#overview-view > * {
+  min-width:0;
+}
+
+
+/* ==========================================================
+   HERO / COMMAND CENTER
+   ========================================================== */
+
+#overview-view .command-center {
+  display:grid !important;
+
+  grid-template-columns:
+    minmax(0, 1.55fr)
+    minmax(260px, .7fr) !important;
+
+  align-items:stretch;
+
+  gap:18px !important;
+
+  margin-bottom:16px !important;
+}
+
+#overview-view .command-center-copy {
+  min-width:0;
+
+  padding:
+    clamp(18px, 2.4vw, 28px) !important;
+
+  border-radius:18px !important;
+}
+
+#overview-view .command-center-copy .eyebrow {
+  font-size:10px !important;
+  letter-spacing:.1em;
+}
+
+#overview-view .command-center-copy h2 {
+  max-width:780px;
+
+  margin:
+    7px 0 9px !important;
+
+  color:#f0f7fb;
+
+  font-size:
+    clamp(28px, 3.4vw, 44px) !important;
+
+  line-height:1.04 !important;
+
+  letter-spacing:-.025em;
+}
+
+#overview-view .command-center-copy > p {
+  display:-webkit-box;
+
+  max-width:720px;
+
+  margin:0 !important;
+
+  overflow:hidden;
+
+  color:#8ca4b7 !important;
+
+  font-size:13px !important;
+  line-height:1.55 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+
+/* ==========================================================
+   AÇÕES PRINCIPAIS
+   ========================================================== */
+
+#overview-view .overview-actions {
+  display:flex !important;
+
+  flex-wrap:wrap;
+
+  gap:8px !important;
+
+  margin-top:18px !important;
+}
+
+#overview-view .overview-actions button {
+  min-height:40px !important;
+
+  padding:
+    8px 13px !important;
+
+  font-size:11px !important;
+
+  border-radius:10px !important;
+}
+
+#overview-view .overview-actions .primary {
+  font-weight:800;
+}
+
+
+/* ==========================================================
+   PRÓXIMA AÇÃO
+   ========================================================== */
+
+#overview-view .attention-card {
+  display:flex !important;
+
+  min-width:0;
+
+  align-items:flex-start;
+
+  gap:12px !important;
+
+  padding:
+    18px !important;
+
+  border-radius:18px !important;
+}
+
+#overview-view .attention-icon {
+  width:38px !important;
+  height:38px !important;
+
+  flex:0 0 38px !important;
+}
+
+#overview-view .attention-card > div {
+  min-width:0;
+}
+
+#overview-view .attention-card small {
+  font-size:9px !important;
+  letter-spacing:.09em;
+}
+
+#overview-view .attention-card strong {
+  display:block;
+
+  margin-top:5px;
+
+  overflow:hidden;
+
+  color:#eef8fa;
+
+  font-size:17px !important;
+  line-height:1.25;
+
+  text-overflow:ellipsis;
+}
+
+#overview-view .attention-card p {
+  display:-webkit-box;
+
+  margin:
+    7px 0 0 !important;
+
+  overflow:hidden;
+
+  color:#839cac;
+
+  font-size:11px !important;
+  line-height:1.45 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+}
+
+
+/* ==========================================================
+   MÉTRICAS
+   ========================================================== */
+
+#overview-view .overview-metrics {
+  display:grid !important;
+
+  grid-template-columns:
+    repeat(auto-fit, minmax(155px, 1fr))
+    !important;
+
+  gap:10px !important;
+
+  margin:
+    0 0 14px !important;
+}
+
+#overview-view .overview-metrics .metric {
+  min-width:0;
+
+  min-height:104px !important;
+
+  padding:
+    14px !important;
+
+  border-radius:14px !important;
+}
+
+#overview-view .overview-metrics .metric span,
+#overview-view .overview-metrics .metric small {
+  font-size:9px !important;
+
+  letter-spacing:.07em;
+}
+
+#overview-view .overview-metrics .metric strong {
+  display:block;
+
+  margin-top:6px;
+
+  overflow:hidden;
+
+  font-size:
+    clamp(23px, 2.4vw, 31px)
+    !important;
+
+  line-height:1;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+#overview-view .overview-metrics .metric p {
+  display:-webkit-box;
+
+  margin:
+    7px 0 0 !important;
+
+  overflow:hidden;
+
+  color:#8197aa;
+
+  font-size:10px !important;
+  line-height:1.4 !important;
+
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:2;
+}
+
+
+/* ==========================================================
+   PROGRESSO
+   ========================================================== */
+
+#overview-view .operations-strip {
+  min-width:0;
+
+  margin-bottom:14px !important;
+
+  padding:
+    15px 17px !important;
+
+  border-radius:15px !important;
+}
+
+#overview-view .operation-heading {
+  display:flex !important;
+
+  align-items:flex-end;
+  justify-content:space-between;
+
+  gap:16px !important;
+}
+
+#overview-view .operation-heading h3 {
+  margin:
+    3px 0 0 !important;
+
+  font-size:17px !important;
+}
+
+#overview-view #completion-rate {
+  flex:0 0 auto;
+
+  font-size:24px !important;
+}
+
+#overview-view .progress-track {
+  height:7px !important;
+
+  margin:
+    12px 0 10px !important;
+
+  border-radius:999px;
+
+  overflow:hidden;
+}
+
+#overview-view .status-breakdown {
+  display:flex !important;
+
+  flex-wrap:wrap;
+
+  gap:
+    6px 12px !important;
+
+  min-width:0;
+}
+
+#overview-view .status-breakdown > * {
+  min-width:0;
+
+  font-size:10px !important;
+}
+
+
+/* ==========================================================
+   ATIVIDADE + ATALHOS
+   ========================================================== */
+
+#overview-view .overview-grid {
+  display:grid !important;
+
+  grid-template-columns:
+    minmax(0, 1.35fr)
+    minmax(300px, .65fr)
+    !important;
+
+  align-items:start;
+
+  gap:14px !important;
+}
+
+#overview-view .overview-grid > .panel {
+  min-width:0;
+
+  padding:
+    16px !important;
+
+  border-radius:16px !important;
+}
+
+#overview-view .panel-title {
+  display:flex !important;
+
+  align-items:center;
+  justify-content:space-between;
+
+  gap:12px;
+
+  margin-bottom:12px;
+}
+
+#overview-view .panel-title h3 {
+  margin:
+    3px 0 0 !important;
+
+  font-size:18px !important;
+}
+
+
+/* ==========================================================
+   ATIVIDADE RECENTE
+   ========================================================== */
+
+#overview-view #recent-tasks {
+  display:grid;
+
+  gap:7px !important;
+}
+
+#overview-view .overview-task,
+#overview-view #recent-tasks > * {
+  min-width:0;
+}
+
+#overview-view .overview-task {
+  padding:
+    10px 11px !important;
+
+  border-radius:10px !important;
+}
+
+#overview-view .overview-task strong {
+  display:block;
+
+  overflow:hidden;
+
+  font-size:12px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+#overview-view .overview-task small {
+  display:block;
+
+  margin-top:3px;
+
+  overflow:hidden;
+
+  color:#7890a3;
+
+  font-size:9px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* ==========================================================
+   ATALHOS
+   ========================================================== */
+
+#overview-view .quick-grid {
+  display:grid !important;
+
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr))
+    !important;
+
+  gap:8px !important;
+}
+
+#overview-view .quick-action {
+  display:flex !important;
+
+  min-width:0;
+
+  align-items:center;
+
+  gap:10px !important;
+
+  min-height:74px !important;
+
+  padding:
+    11px !important;
+
+  text-align:left;
+
+  border-radius:12px !important;
+}
+
+#overview-view .quick-action > b {
+  display:grid;
+
+  width:32px;
+  height:32px;
+
+  flex:0 0 32px;
+
+  place-items:center;
+
+  border-radius:9px;
+}
+
+#overview-view .quick-action > span {
+  min-width:0;
+}
+
+#overview-view .quick-action strong {
+  display:block;
+
+  overflow:hidden;
+
+  font-size:11px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+#overview-view .quick-action small {
+  display:block;
+
+  margin-top:3px;
+
+  overflow:hidden;
+
+  color:#73899a;
+
+  font-size:9px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* ==========================================================
+   STATUS DO SISTEMA
+   ========================================================== */
+
+#overview-view .system-overview {
+  display:flex !important;
+
+  align-items:center;
+  justify-content:space-between;
+
+  gap:14px;
+
+  margin-top:14px !important;
+
+  padding:
+    11px 14px !important;
+
+  border-radius:12px !important;
+}
+
+#overview-view .system-overview > div {
+  min-width:0;
+}
+
+#overview-view .system-overview strong {
+  font-size:11px !important;
+}
+
+#overview-view .system-overview small {
+  display:block;
+
+  overflow:hidden;
+
+  color:#7890a1;
+
+  font-size:9px !important;
+
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+
+
+/* ==========================================================
+   NOTEBOOK 901 → 1180
+   ========================================================== */
+
+@media (min-width:901px) and (max-width:1180px) {
+
+  #overview-view {
+    padding-inline:
+      14px !important;
+  }
+
+  #overview-view .command-center {
+    grid-template-columns:
+      minmax(0, 1fr)
+      minmax(230px, .55fr)
+      !important;
+
+    gap:11px !important;
+  }
+
+  #overview-view .command-center-copy {
+    padding:18px !important;
+  }
+
+  #overview-view .command-center-copy h2 {
+    font-size:
+      clamp(26px, 3.2vw, 34px)
+      !important;
+  }
+
+  #overview-view .overview-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr))
+      !important;
+  }
+
+  #overview-view .overview-grid {
+    grid-template-columns:
+      minmax(0, 1fr)
+      !important;
+  }
+
+  #overview-view .quick-grid {
+    grid-template-columns:
+      repeat(4, minmax(0, 1fr))
+      !important;
+  }
+
+  #overview-view .quick-action {
+    flex-direction:column;
+
+    align-items:flex-start;
+
+    min-height:88px !important;
+  }
+}
+
+
+/* ==========================================================
+   TABLET / MOBILE
+   ========================================================== */
+
+@media (max-width:900px) {
+
+  #overview-view {
+    padding-inline:
+      11px !important;
+  }
+
+  #overview-view .command-center {
+    grid-template-columns:
+      minmax(0,1fr) !important;
+  }
+
+  #overview-view .command-center-copy,
+  #overview-view .attention-card {
+    padding:
+      15px !important;
+  }
+
+  #overview-view .command-center-copy h2 {
+    font-size:
+      clamp(25px, 7vw, 34px)
+      !important;
+  }
+
+  #overview-view .overview-actions {
+    display:grid !important;
+
+    grid-template-columns:
+      repeat(2, minmax(0,1fr))
+      !important;
+  }
+
+  #overview-view .overview-actions button {
+    width:100%;
+  }
+
+  #overview-view .overview-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0,1fr))
+      !important;
+  }
+
+  #overview-view .operation-heading {
+    align-items:flex-start;
+  }
+
+  #overview-view .overview-grid {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  #overview-view .quick-grid {
+    grid-template-columns:
+      repeat(2, minmax(0,1fr))
+      !important;
+  }
+}
+
+
+@media (max-width:520px) {
+
+  #overview-view .overview-actions {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  #overview-view .overview-metrics {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  #overview-view .quick-grid {
+    grid-template-columns:
+      minmax(0,1fr)
+      !important;
+  }
+
+  #overview-view .operation-heading {
+    flex-direction:column;
+  }
+
+  #overview-view .system-overview {
+    align-items:flex-start;
+    flex-direction:column;
+  }
+}

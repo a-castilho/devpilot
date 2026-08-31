@@ -1,0 +1,215 @@
+/*
+ * DevPilot Sidebar State V24
+ * Autoridade final para os dois estados do menu desktop.
+ * Recolhido = ícones apenas. Aberto = largura integral e labels legíveis.
+ */
+
+@media (min-width: 901px) {
+  :root {
+    --dp-sidebar-v24-open: clamp(252px, 20vw, 296px);
+    --dp-sidebar-v24-closed: 72px;
+  }
+
+  /* =========================================================
+     ABERTO
+     ========================================================= */
+  html:not(.sidebar-collapsed) .shell {
+    grid-template-columns: var(--dp-sidebar-v24-open) minmax(0, 1fr) !important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar {
+    width: var(--dp-sidebar-v24-open) !important;
+    min-width: var(--dp-sidebar-v24-open) !important;
+    max-width: var(--dp-sidebar-v24-open) !important;
+    padding: 10px !important;
+    overflow: hidden !important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar > nav {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 3px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar > nav > .nav,
+  html:not(.sidebar-collapsed) .nav-group-toggle {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 40px !important;
+    padding: 8px 10px !important;
+    font-size: 13px !important;
+    line-height: 1.25 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+
+  html:not(.sidebar-collapsed) .nav-group-label,
+  html:not(.sidebar-collapsed) .sidebar .nav > span,
+  html:not(.sidebar-collapsed) .sidebar .nav > strong,
+  html:not(.sidebar-collapsed) .sidebar .nav > small {
+    display: initial !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    max-width: none !important;
+  }
+
+  html:not(.sidebar-collapsed) .sidebar-search,
+  html:not(.sidebar-collapsed) .system-card {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  /* =========================================================
+     RECOLHIDO
+     ========================================================= */
+  html.sidebar-collapsed .shell {
+    grid-template-columns: var(--dp-sidebar-v24-closed) minmax(0, 1fr) !important;
+  }
+
+  html.sidebar-collapsed .sidebar {
+    width: var(--dp-sidebar-v24-closed) !important;
+    min-width: var(--dp-sidebar-v24-closed) !important;
+    max-width: var(--dp-sidebar-v24-closed) !important;
+    padding: 8px 7px !important;
+    overflow: hidden !important;
+  }
+
+  html.sidebar-collapsed .brand {
+    justify-content: center !important;
+    width: 100% !important;
+    padding: 6px 0 !important;
+  }
+
+  html.sidebar-collapsed .brand > span:last-child,
+  html.sidebar-collapsed .brand small,
+  html.sidebar-collapsed .sidebar-search,
+  html.sidebar-collapsed .system-card,
+  html.sidebar-collapsed .nav-group-label,
+  html.sidebar-collapsed .nav-group-caret {
+    display: none !important;
+  }
+
+  html.sidebar-collapsed .sidebar > nav {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 5px !important;
+    width: 100% !important;
+    padding: 4px 0 12px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    scrollbar-width: none !important;
+  }
+
+  html.sidebar-collapsed .sidebar > nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  html.sidebar-collapsed .sidebar > nav > .nav,
+  html.sidebar-collapsed .nav-group-toggle {
+    position: relative !important;
+    display: grid !important;
+    place-items: center !important;
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+    height: 42px !important;
+    min-height: 42px !important;
+    max-height: 42px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border-radius: 10px !important;
+    overflow: hidden !important;
+    font-size: 0 !important;
+    line-height: 0 !important;
+    text-indent: 0 !important;
+    white-space: nowrap !important;
+  }
+
+  html.sidebar-collapsed .sidebar > nav > .nav::before,
+  html.sidebar-collapsed .nav-group-icon {
+    display: grid !important;
+    place-items: center !important;
+    width: 22px !important;
+    min-width: 22px !important;
+    height: 22px !important;
+    margin: 0 !important;
+    font-size: 16px !important;
+    line-height: 1 !important;
+    text-indent: 0 !important;
+  }
+
+  /* Esconde qualquer label legado ou inserido por plugins quando recolhido. */
+  html.sidebar-collapsed .sidebar > nav > .nav > *,
+  html.sidebar-collapsed .sidebar > nav > .nav .nav-label,
+  html.sidebar-collapsed .sidebar > nav > .nav .menu-label,
+  html.sidebar-collapsed .sidebar > nav > .nav .sidebar-label,
+  html.sidebar-collapsed .nav-group-toggle > *:not(.nav-group-icon) {
+    display: none !important;
+  }
+
+  html.sidebar-collapsed .sidebar > nav > .nav[data-nav-group],
+  html.sidebar-collapsed .sidebar > nav > .nav.nav-super-admin-item {
+    width: 42px !important;
+    min-width: 42px !important;
+    max-width: 42px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border-left: 0 !important;
+    border-radius: 10px !important;
+  }
+
+  html.sidebar-collapsed .sidebar-collapse-toggle {
+    right: 5px !important;
+    top: 10px !important;
+    z-index: 10 !important;
+  }
+
+  html.sidebar-collapsed .sidebar .nav-group-collapsed-item {
+    display: none !important;
+  }
+
+  /* Tooltip nativo permanece via title/aria-label; nada de texto cortado. */
+  html.sidebar-collapsed .sidebar .nav,
+  html.sidebar-collapsed .nav-group-toggle {
+    text-overflow: clip !important;
+  }
+
+  /* Em monitor baixo compactamos altura, nunca largura do menu aberto. */
+  @media (max-height: 820px) {
+    html:not(.sidebar-collapsed) .sidebar > nav > .nav,
+    html:not(.sidebar-collapsed) .nav-group-toggle {
+      min-height: 34px !important;
+      padding-block: 6px !important;
+      font-size: 12px !important;
+    }
+
+    html.sidebar-collapsed .sidebar > nav > .nav,
+    html.sidebar-collapsed .nav-group-toggle {
+      width: 38px !important;
+      min-width: 38px !important;
+      max-width: 38px !important;
+      height: 38px !important;
+      min-height: 38px !important;
+      max-height: 38px !important;
+    }
+  }
+}
+
+@media (max-width: 900px) {
+  /* Mobile usa o menu próprio em tela cheia; o sidebar desktop não interfere. */
+  html.sidebar-collapsed .sidebar {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 0 !important;
+  }
+}
