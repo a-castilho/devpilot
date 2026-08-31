@@ -26,6 +26,10 @@
     return typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : [];
   }
 
+  function normalizeStatus(value) {
+    return String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  }
+
   function canSeeRunner() {
     return typeof isSuperAdmin === 'function' && isSuperAdmin();
   }
@@ -43,7 +47,35 @@
     if (runner.status === 'online' && runner.service_enabled) return 'online · auto-restart';
     if (runner.status === 'online') return 'online · sem auto-restart';
     if (runner.status === 'offline') return 'offline';
-    return 'estado desconhecido';
+    return 'não verificável neste runtime';
+  }
+
+  function taskWorkerHealth() {
+    const tasks = taskList();
+    const runningTasks = tasks.filter(task => normalizeStatus(task?.status) === 'running');
+    const queuedTasks = tasks.filter(task => normalizeStatus(task?.status) === 'queued');
+    const persistedRunning = [...latestRunsByTask.values()].filter(run => normalizeStatus(run?.run_status) === 'running');
+    const activeCount = Math.max(runningTasks.length, persistedRunning.length);
+
+    if (activeCount > 0) {
+      return {
+        tone: 'ok',
+        label: 'Worker de tarefas ativo',
+        detail: `${activeCount} execução(ões) ativa(s) confirmada(s) por estado persistido.`,
+      };
+    }
+    if (queuedTasks.length > 0) {
+      return {
+        tone: 'warn',
+        label: 'Fila aguardando worker',
+        detail: `${queuedTasks.length} tarefa(s) aguardando consumo; a fila sozinha não prova falha do processo.`,
+      };
+    }
+    return {
+      tone: 'unknown',
+      label: 'Worker sem execução ativa',
+      detail: 'Nenhuma execução ativa foi encontrada no estado persistido neste momento.',
+    };
   }
 
   function ensureStyles() {
@@ -56,6 +88,7 @@
       .task-workflow-pill{display:inline-flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid currentColor;border-radius:999px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.035em}
       .task-workflow-pill::before{content:'';width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
       .task-workflow-pill.ok{color:#63e6be}.task-workflow-pill.warn{color:#ffd43b}.task-workflow-pill.bad{color:#ff8787}.task-workflow-pill.unknown{color:#adb5bd}
+      .task-workflow-secondary{font-size:11px;opacity:.78}
       .task-flow-button{white-space:nowrap}.task-workflow-row>td{padding-top:0!important}
       .task-workflow-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px 12px;margin:0 0 8px;border:1px solid var(--border,#2a3342);border-radius:10px;background:rgba(0,0,0,.12)}
       .task-workflow-stage{min-width:0;padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}
@@ -92,13 +125,18 @@
   function renderHealth() {
     const host = healthHost();
     if (!host) return;
+    const worker = taskWorkerHealth();
+    const workerMarkup = `<span class="task-workflow-pill ${worker.tone}">${escapeHtml(worker.label)}</span><small>${escapeHtml(worker.detail)}</small>`;
+
     if (!canSeeRunner()) {
-      host.innerHTML = '<strong>Esteira de execução</strong><small>Acompanhe o estado real de cada tarefa; nenhum estado é presumido. Informações de infraestrutura do runner ficam restritas ao Super Admin.</small>';
+      host.innerHTML = `<strong>Esteira de execução</strong>${workerMarkup}`;
       return;
     }
-    const tone = runnerTone(runnerState);
-    const detail = runnerState?.detail || 'Consultando o serviço supervisionado do GitHub Actions Runner…';
-    host.innerHTML = `<strong>Esteira de execução</strong><span class="task-workflow-pill ${tone}">Runner ${escapeHtml(runnerLabel(runnerState))}</span><small>${escapeHtml(detail)}</small>`;
+
+    const ciTone = runnerTone(runnerState);
+    const ciLabel = runnerLabel(runnerState);
+    const ciDetail = runnerState?.detail || 'Consultando o serviço supervisionado do GitHub Actions Runner…';
+    host.innerHTML = `<strong>Esteira de execução</strong>${workerMarkup}<span class="task-workflow-secondary">GitHub Actions: <span class="task-workflow-pill ${ciTone}">${escapeHtml(ciLabel)}</span> ${escapeHtml(ciDetail)}</span>`;
   }
 
   async function loadRunner(force = false) {
@@ -108,7 +146,7 @@
     runnerPromise = api('/voice/runner-status')
       .then(value => { runnerState = value || null; return runnerState; })
       .catch(error => {
-        runnerState = {status: 'unknown', online: false, service_enabled: false, detail: error?.message || 'Falha ao consultar runner'};
+        runnerState = {status: 'unknown', online: false, service_enabled: false, scope: 'github_actions', detail: error?.message || 'Falha ao consultar GitHub Actions Runner'};
         return runnerState;
       })
       .finally(() => { runnerPromise = null; renderHealth(); scheduleEnhancement(); });
@@ -124,7 +162,7 @@
         (Array.isArray(items) ? items : []).forEach(item => latestRunsByTask.set(String(item.task_id), item));
         return latestRunsByTask;
       })
-      .finally(() => { latestRunsPromise = null; scheduleEnhancement(); });
+      .finally(() => { latestRunsPromise = null; renderHealth(); scheduleEnhancement(); });
     return latestRunsPromise;
   }
 
@@ -157,6 +195,16 @@
 
   function taskStatusText(task) {
     return String(task?.status || 'unknown').replaceAll('_', ' ') || 'unknown';
+  }
+
+  function workerStage(task) {
+    const taskState = normalizeStatus(task?.status);
+    const latest = latestRunsByTask.get(String(task.id));
+    const runState = normalizeStatus(latest?.run_status);
+    if (taskState === 'running' || runState === 'running') return '<span>Worker de tarefas executando esta tarefa.</span>';
+    if (taskState === 'queued') return '<span>Tarefa na fila aguardando consumo pelo worker.</span>';
+    if (latest?.run_id) return `<span>Última execução persistida: ${escapeHtml(latest.run_status || 'sem status')}.</span>`;
+    return '<span>Sem execução persistida para esta tarefa.</span>';
   }
 
   function executionStage(task) {
@@ -195,16 +243,21 @@
     return parts.join('');
   }
 
+  function githubRunnerStage() {
+    if (!canSeeRunner()) return '<span>Infraestrutura protegida por RBAC.</span>';
+    const label = runnerLabel(runnerState);
+    const detail = runnerState?.detail || 'ainda não consultado';
+    return `<span>${escapeHtml(label)} · ${escapeHtml(detail)}</span>`;
+  }
+
   function detailMarkup(task) {
-    const runnerVisible = canSeeRunner();
-    const runnerValue = runnerVisible ? runnerLabel(runnerState) : 'restrito ao Super Admin';
-    const runnerDetail = runnerVisible ? (runnerState?.detail || 'ainda não consultado') : 'infraestrutura protegida por RBAC';
     return `
       <div class="task-workflow-detail">
         <div class="task-workflow-stage"><b>Tarefa</b><span>${escapeHtml(taskStatusText(task))}</span></div>
+        <div class="task-workflow-stage"><b>Worker de tarefas</b>${workerStage(task)}</div>
         <div class="task-workflow-stage"><b>Execução</b>${executionStage(task)}</div>
         <div class="task-workflow-stage"><b>Commit / PR</b>${codeStage(task)}</div>
-        <div class="task-workflow-stage"><b>Runner</b><span>${escapeHtml(runnerValue)} · ${escapeHtml(runnerDetail)}</span></div>
+        <div class="task-workflow-stage"><b>GitHub Actions Runner</b>${githubRunnerStage()}</div>
         <div class="task-workflow-stage"><b>CI</b>${ciStage(task)}</div>
         <div class="task-workflow-stage"><b>Deploy / Health</b><span>Será exibido somente após evidência correlacionada ao mesmo commit/deploy.</span></div>
       </div>`;
@@ -213,7 +266,7 @@
   async function hydrateExpandedTask(task, row) {
     const latest = latestRunsByTask.get(String(task.id));
     if (latest?.run_id && !runDetailCache.has(String(latest.run_id))) {
-      try { await loadRunDetail(latest.run_id); } catch (_) { /* mantém estado desconhecido */ }
+      try { await loadRunDetail(latest.run_id); } catch (_) { /* mantém evidência parcial */ }
     }
     if (latest?.run_id) await loadWorkflowEvidence(task.id);
     const detailRow = row.nextElementSibling;

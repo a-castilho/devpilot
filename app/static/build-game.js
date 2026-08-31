@@ -154,8 +154,7 @@
     const missionTasks = gameTasks.filter(task => missionFromTask(task) === missionId);
     const historicalGoal = missionTasks.map(goalFromTask).find(Boolean);
     const storedGoal = localStorage.getItem(activeGoalKey());
-    const projectGoal = projectById(selectedProjectId)?.description || '';
-    const goal = missionTasks.length ? historicalGoal : (storedGoal || projectGoal);
+    const goal = missionTasks.length ? historicalGoal : storedGoal;
     if (historicalGoal) localStorage.setItem(activeGoalKey(), historicalGoal);
     return {missionTasks, goal: goal || ''};
   };

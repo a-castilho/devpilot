@@ -29,6 +29,7 @@ def test_runner_status_reports_supervised_online(monkeypatch):
     assert status["online"] is True
     assert status["service_enabled"] is True
     assert status["label"] == "devpilot-ci"
+    assert status["scope"] == "github_actions"
 
 
 def test_runner_status_reports_offline_without_exposing_process_details(monkeypatch):
@@ -45,6 +46,17 @@ def test_runner_status_reports_offline_without_exposing_process_details(monkeypa
     assert status["online"] is False
     assert "CI pode permanecer aguardando runner" in str(status["detail"])
     assert "token" not in str(status).lower()
+
+
+def test_runner_status_unknown_does_not_claim_task_worker_is_down(monkeypatch):
+    monkeypatch.setattr(runner_status_module.shutil, "which", lambda _name: None)
+
+    status = runner_status_module.runner_status()
+
+    assert status["status"] == "unknown"
+    assert status["scope"] == "github_actions"
+    assert "GitHub Actions Runner" in str(status["detail"])
+    assert "não representa o estado do worker de tarefas" in str(status["detail"])
 
 
 def test_runner_setup_is_systemd_supervised_and_has_no_nohup():

@@ -18,8 +18,20 @@ def test_task_workflow_observability_reuses_protected_runner_health():
 
     assert "api('/voice/runner-status')" in source
     assert "isSuperAdmin" in source
-    assert "restritas ao Super Admin" in source
-    assert "nenhum estado é presumido" in source
+    assert "GitHub Actions Runner" in source
+    assert "Infraestrutura protegida por RBAC" in source
+
+
+def test_task_workflow_observability_separates_task_worker_from_github_runner():
+    source = (ROOT / "app/static/task-workflow-observability.js").read_text()
+
+    assert "function taskWorkerHealth()" in source
+    assert "Worker de tarefas ativo" in source
+    assert "Fila aguardando worker" in source
+    assert "a fila sozinha não prova falha do processo" in source
+    assert "<b>Worker de tarefas</b>" in source
+    assert "<b>GitHub Actions Runner</b>" in source
+    assert "Runner ${escapeHtml(runnerLabel" not in source
 
 
 def test_task_workflow_observability_reuses_task_identity_and_has_no_global_observer():
@@ -48,4 +60,4 @@ def test_task_workflow_observability_does_not_eager_load_runner_for_regular_user
     source = (ROOT / "app/static/task-workflow-observability.js").read_text()
 
     assert "if (!canSeeRunner()) return null" in source
-    assert "infraestrutura protegida por RBAC" in source
+    assert "Infraestrutura protegida por RBAC" in source
