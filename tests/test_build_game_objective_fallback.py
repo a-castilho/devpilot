@@ -1,6 +1,7 @@
 from pathlib import Path
 
 
+BUILD_GAME_JS = Path("app/static/build-game.js")
 BUILD_GAME_COCKPIT_JS = Path("app/static/build-game-cockpit.js")
 
 
@@ -17,9 +18,15 @@ def test_blank_game_objective_is_rejected_before_play_handler_runs():
 
 
 def test_game_goal_must_come_from_user_without_automatic_fallback():
-    source = BUILD_GAME_COCKPIT_JS.read_text(encoding="utf-8")
+    cockpit = BUILD_GAME_COCKPIT_JS.read_text(encoding="utf-8")
+    game = BUILD_GAME_JS.read_text(encoding="utf-8")
 
-    assert "function automaticGoal" not in source
-    assert "input.value = automaticGoal(view)" not in source
-    assert "Objetivo definido automaticamente" not in source
-    assert "Descreva o que deve ser entregue nesta rodada" in source
+    assert "function automaticGoal" not in cockpit
+    assert "input.value = automaticGoal(view)" not in cockpit
+    assert "Objetivo definido automaticamente" not in cockpit
+    assert "Descreva o que deve ser entregue nesta rodada" in cockpit
+
+    assert "projectGoal" not in game
+    assert "projectById(selectedProjectId)?.description" not in game
+    assert "const goal = missionTasks.length ? historicalGoal : storedGoal;" in game
+    assert "Descreva o que deve ser entregue nesta rodada" in game
