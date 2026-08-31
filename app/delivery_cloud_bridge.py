@@ -7,6 +7,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app import cloud_admin_routes as cloud_admin
 from app import product_delivery_routes as delivery
 from app.config import get_settings
 from app.models import ProviderCredential, Workspace
@@ -18,6 +19,7 @@ _CLOUD_ADMIN_PREFIX = "cloud:"
 _SCOPE_DISCOVERY_TIMEOUT = 10.0
 _ORIGINAL_CONNECTION = delivery.connection
 _ORIGINAL_REQUEST_JSON = delivery.request_json
+_ORIGINAL_CLOUD_PROVIDER_REQUEST = cloud_admin._provider_request
 
 
 def _cloud_admin_row(
@@ -36,7 +38,7 @@ def _cloud_admin_row(
 
 def _scope_candidates(provider: str, data: Any) -> list[str]:
     normalized = provider.strip().lower()
-    source: list[Any]
+    source: list[Any] = []
 
     if normalized == "neon":
         if isinstance(data, list):
@@ -200,6 +202,25 @@ def _connection_with_cloud_admin(
     return managed_trial_connection(db, workspace_id, provider)
 
 
+def _cloud_admin_provider_request_with_scope(
+    provider: str,
+    secret: str,
+    scope: str,
+    *,
+    resources: bool,
+):
+    normalized = provider.strip().lower()
+    resolved_scope = scope.strip()
+    if not resolved_scope and normalized in {"neon", "render"}:
+        resolved_scope = _discover_scope(normalized, secret)
+    return _ORIGINAL_CLOUD_PROVIDER_REQUEST(
+        provider,
+        secret,
+        resolved_scope,
+        resources=resources,
+    )
+
+
 def _request_json_with_cloud_scope(
     client,
     provider: str,
@@ -258,3 +279,6 @@ def install_delivery_cloud_bridge() -> None:
     if not getattr(delivery.request_json, "_devpilot_cloud_scope_bridge", False):
         setattr(_request_json_with_cloud_scope, "_devpilot_cloud_scope_bridge", True)
         delivery.request_json = _request_json_with_cloud_scope
+    if not getattr(cloud_admin._provider_request, "_devpilot_cloud_scope_bridge", False):
+        setattr(_cloud_admin_provider_request_with_scope, "_devpilot_cloud_scope_bridge", True)
+        cloud_admin._provider_request = _cloud_admin_provider_request_with_scope
