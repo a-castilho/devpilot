@@ -5,10 +5,16 @@
   if (!tableBody) return;
 
   const TASK_STYLE_ID = 'devpilot-task-development-v2';
-  const TASK_STYLE_HREF = '/assets/task-development-v2.css?v=20260829-1';
+  const TASK_STYLE_HREF = '/assets/task-development-v2.css?v=20260831-v112';
+  const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
+  const PIPELINE_MARKER = '[DEVPILOT_BUILD_GAME_PIPELINE_V2]';
 
   function ensureStylesheet() {
-    if (document.getElementById(TASK_STYLE_ID)) return;
+    const current = document.getElementById(TASK_STYLE_ID);
+    if (current) {
+      if (current.getAttribute('href') !== TASK_STYLE_HREF) current.setAttribute('href', TASK_STYLE_HREF);
+      return;
+    }
     const link = document.createElement('link');
     link.id = TASK_STYLE_ID;
     link.rel = 'stylesheet';
@@ -32,6 +38,40 @@
       row = row.nextElementSibling;
     }
     return null;
+  }
+
+  function taskPrompt(task) {
+    return String(task?.prompt || '');
+  }
+
+  function isLegacyGameTask(task) {
+    const prompt = taskPrompt(task);
+    return prompt.includes(GAME_MARKER) && !prompt.includes(PIPELINE_MARKER);
+  }
+
+  function isV2GameTask(task) {
+    return taskPrompt(task).includes(PIPELINE_MARKER);
+  }
+
+  function sameProject(left, right) {
+    const leftId = left?.project_id ?? left?.project?.id ?? '';
+    const rightId = right?.project_id ?? right?.project?.id ?? '';
+    return String(leftId) === String(rightId);
+  }
+
+  function shouldHideLegacyGameTask(task) {
+    if (!isLegacyGameTask(task)) return false;
+    const tasks = typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : [];
+    return tasks.some(candidate => isV2GameTask(candidate) && sameProject(task, candidate));
+  }
+
+  function applyLegacyVisibility(row, task) {
+    const hidden = shouldHideLegacyGameTask(task);
+    row.toggleAttribute('hidden', hidden);
+    detailsRowFor(row)?.toggleAttribute('hidden', hidden);
+    if (hidden) row.dataset.taskLegacyGame = '1';
+    else delete row.dataset.taskLegacyGame;
+    return hidden;
   }
 
   function downloadMarkdown(filename, content) {
@@ -227,6 +267,8 @@
       if (!task) return;
       row.dataset.taskId = String(task.id);
 
+      if (applyLegacyVisibility(row, task)) return;
+
       const actionCell = row.lastElementChild;
       if (!actionCell || actionCell.dataset.taskOrchestratorEnhanced === '1') return;
       actionCell.dataset.taskOrchestratorEnhanced = '1';
@@ -268,10 +310,14 @@
         const task = taskByRow(row, index);
         const runtime = task ? states[String(task.id)] : null;
         const archived = runtime?.state === 'archived';
-        row.toggleAttribute('hidden', archived);
-        detailsRowFor(row)?.toggleAttribute('hidden', archived);
+        const legacy = task ? shouldHideLegacyGameTask(task) : false;
+        const hidden = archived || legacy;
+        row.toggleAttribute('hidden', hidden);
+        detailsRowFor(row)?.toggleAttribute('hidden', hidden);
         if (archived) row.dataset.taskArchived = '1';
         else delete row.dataset.taskArchived;
+        if (legacy) row.dataset.taskLegacyGame = '1';
+        else delete row.dataset.taskLegacyGame;
       });
     } catch (error) {
       console.warn('[DevPilot] Falha ao sincronizar estado do orquestrador', error);
