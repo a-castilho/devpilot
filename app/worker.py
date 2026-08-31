@@ -49,6 +49,27 @@ def _failure_text(result: dict | None, error: Exception | None) -> str:
     return str(result.get("stderr") or result.get("summary") or "Execution failed")
 
 
+def _detected_failure_message(decision, fallback: str = "") -> str:
+    for step in decision.steps or []:
+        if str(step.get("state") or "") == "detected":
+            message = str(step.get("message") or "").strip()
+            if message:
+                return message
+    return str(fallback or "").strip()
+
+
+def _preserve_executor_failure(result: dict, decision, failure_text: str) -> None:
+    original_summary = str(result.get("summary") or "").strip()
+    detected = _detected_failure_message(decision, failure_text)
+    if original_summary and original_summary != decision.message:
+        result["summary"] = original_summary
+    elif detected and detected != decision.message:
+        result["summary"] = detected
+    else:
+        result["summary"] = decision.message
+    result["recovery_message"] = decision.message
+
+
 def _self_healing_payload(events: list[dict], final_status: str) -> dict:
     last = events[-1] if events else {}
     steps: list[dict] = []
@@ -352,16 +373,18 @@ def process_one() -> bool:
                 continue
             if result is None:
                 result = recovery.failure_result(decision, failure_text)
+                _preserve_executor_failure(result, decision, failure_text)
             else:
                 result["self_healing"] = _self_healing_payload(recovery_events, decision.status)
                 if decision.requires_authorization or decision.status in {"needs_attention", "needs_authorization"}:
-                    result["summary"] = decision.message
+                    _preserve_executor_failure(result, decision, failure_text)
             break
 
         if result is None:
             decision = recovery.recover(project, task, str(final_error or "Execution failed"), recovery.MAX_ATTEMPTS)
             recovery_events.append(decision.to_dict())
             result = recovery.failure_result(decision, str(final_error or "Execution failed"))
+            _preserve_executor_failure(result, decision, str(final_error or "Execution failed"))
 
         run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
         run.summary = result.get("summary", "Execution completed")
