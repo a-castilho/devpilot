@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.db import Base
 from app.delivery_cloud_bridge import (
+    _cloud_admin_provider_request_with_scope,
     _discover_scope,
     _request_json_with_cloud_scope,
     _scope_candidates,
@@ -31,6 +32,7 @@ def test_scope_candidates_support_neon_and_render_wrappers():
         "render",
         [{"owner": {"id": "tea-example"}}],
     ) == ["tea-example"]
+    assert _scope_candidates("neon", "unexpected") == []
 
 
 def test_neon_scope_is_discovered_from_api_key(monkeypatch):
@@ -89,6 +91,40 @@ def test_existing_cloud_admin_key_uses_discovered_scope(monkeypatch):
             )
     finally:
         engine.dispose()
+
+
+def test_cloud_admin_neon_test_uses_discovered_scope(monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(
+        "app.delivery_cloud_bridge._discover_scope",
+        lambda provider, token: "org-example",
+    )
+
+    def fake_provider_request(provider, secret, scope, *, resources):
+        captured.update(
+            provider=provider,
+            secret=secret,
+            scope=scope,
+            resources=resources,
+        )
+        return {"projects": []}
+
+    monkeypatch.setattr(
+        "app.delivery_cloud_bridge._ORIGINAL_CLOUD_PROVIDER_REQUEST",
+        fake_provider_request,
+    )
+
+    result = _cloud_admin_provider_request_with_scope(
+        "neon",
+        "neon-token-123456",
+        "",
+        resources=False,
+    )
+
+    assert result == {"projects": []}
+    assert captured["scope"] == "org-example"
+    assert captured["resources"] is False
 
 
 def test_neon_org_id_is_moved_from_project_body_to_query_params(monkeypatch):
