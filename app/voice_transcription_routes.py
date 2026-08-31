@@ -301,13 +301,16 @@ async def _transcribe_openai(
     raise _provider_error("openai", statuses)
 
 
-def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
-    try:
-        payload = response.json()
-    except ValueError:
-        return "", {}
+def _google_response_text(response: httpx.Response | dict) -> str:
+    if isinstance(response, dict):
+        payload = response
+    else:
+        try:
+            payload = response.json()
+        except ValueError:
+            return ""
     if not isinstance(payload, dict):
-        return "", {}
+        return ""
     collected: list[str] = []
     for candidate in payload.get("candidates") or []:
         if not isinstance(candidate, dict):
@@ -317,12 +320,23 @@ def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
             if isinstance(part, dict) and isinstance(part.get("text"), str) and part["text"].strip():
                 collected.append(part["text"].strip())
     text = " ".join(collected).strip()
-    if not text:
-        for key in ("text", "output_text", "response"):
-            value = payload.get(key)
-            if isinstance(value, str) and value.strip():
-                text = value.strip()
-                break
+    if text:
+        return text
+    for key in ("text", "output_text", "response"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return "", {}
+    if not isinstance(payload, dict):
+        return "", {}
+    text = _google_response_text(payload)
     usage = payload.get("usageMetadata")
     return text, usage if isinstance(usage, dict) else {}
 
