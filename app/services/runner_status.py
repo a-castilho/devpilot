@@ -24,7 +24,12 @@ def _systemctl(*args: str) -> subprocess.CompletedProcess[str] | None:
 
 
 def runner_status() -> dict[str, object]:
-    """Return secret-free local health for the self-hosted GitHub Actions runner."""
+    """Return secret-free health for the host self-hosted GitHub Actions runner.
+
+    This endpoint intentionally describes the GitHub Actions runner only. The
+    DevPilot task worker is a different runtime and its activity is derived from
+    persisted task/run state by the task observability UI.
+    """
     active = _systemctl("is-active", SERVICE_NAME)
     enabled = _systemctl("is-enabled", SERVICE_NAME)
 
@@ -35,7 +40,11 @@ def runner_status() -> dict[str, object]:
             "service_enabled": False,
             "service": SERVICE_NAME,
             "label": RUNNER_LABEL,
-            "detail": "systemd de usuário indisponível; estado do runner não pôde ser confirmado.",
+            "scope": "github_actions",
+            "detail": (
+                "systemd de usuário não é visível neste runtime; o estado do GitHub Actions Runner "
+                "não pôde ser confirmado daqui. Isso não representa o estado do worker de tarefas."
+            ),
         }
 
     is_active = active.returncode == 0 and active.stdout.strip() == "active"
@@ -63,5 +72,6 @@ def runner_status() -> dict[str, object]:
         "service_enabled": is_enabled,
         "service": SERVICE_NAME,
         "label": RUNNER_LABEL,
+        "scope": "github_actions",
         "detail": detail,
     }
