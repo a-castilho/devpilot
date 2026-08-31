@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,12 +15,14 @@ from app.db import get_db
 from app.models import Project
 from app.security import Principal, Role, require_roles
 from app.services.audit import record
+from app.services.deployment_policy import deployment_risk, evaluate_deployment, normalize_environment
 from app.services.host_actions import queue_host_action
 
 
 router = APIRouter(prefix="/api/admin/deployments", tags=["admin-deployments"])
 manage_deployments = require_roles(Role.SUPER_ADMIN)
 _CONFIG_KEY = "manual_deploy"
+_AUTH_KEY = "deployment_authorization"
 
 
 class ManualDeployConfig(BaseModel):
@@ -39,6 +42,11 @@ class ManualDeployConfig(BaseModel):
         if "\x00" in value:
             raise ValueError("Valor inválido")
         return value
+
+
+class DeploymentAuthorizationInput(BaseModel):
+    approved: bool = True
+    note: str = Field(default="", max_length=500)
 
 
 def _project(db: Session, principal: Principal, project_id: str) -> Project:
@@ -80,6 +88,47 @@ def _deploy_config(project: Project) -> dict[str, Any]:
         "command": str(raw.get("command") or ""),
         "timeout_seconds": int(raw.get("timeout_seconds") or 900),
     }
+
+
+def _authorization(project: Project, environment: str) -> dict[str, Any]:
+    raw = _root_config(project).get(_AUTH_KEY)
+    source = raw if isinstance(raw, dict) else {}
+    env = normalize_environment(environment)
+    item = source.get(env)
+    if not isinstance(item, dict):
+        item = {}
+    return {
+        "environment": env,
+        "approved": bool(item.get("approved", False)),
+        "approved_by": str(item.get("approved_by") or ""),
+        "approved_at": str(item.get("approved_at") or ""),
+        "note": str(item.get("note") or ""),
+        "risk": deployment_risk(environment),
+    }
+
+
+def _save_authorization(
+    project: Project,
+    environment: str,
+    *,
+    approved: bool,
+    actor: str,
+    note: str,
+) -> dict[str, Any]:
+    root = _root_config(project)
+    authorizations = root.get(_AUTH_KEY)
+    if not isinstance(authorizations, dict):
+        authorizations = {}
+    env = normalize_environment(environment)
+    authorizations[env] = {
+        "approved": approved,
+        "approved_by": actor if approved else "",
+        "approved_at": datetime.now(timezone.utc).isoformat() if approved else "",
+        "note": note.strip(),
+    }
+    root[_AUTH_KEY] = authorizations
+    project.codex_config = json.dumps(root, ensure_ascii=False, separators=(",", ":"))
+    return _authorization(project, environment)
 
 
 def _read_action_file(action_id: str) -> dict[str, Any] | None:
@@ -125,7 +174,16 @@ def _recent_project_action(project_id: str) -> dict[str, Any] | None:
         ):
             return {
                 key: payload.get(key)
-                for key in ("id", "status", "created_at", "finished_at", "detail", "environment")
+                for key in (
+                    "id",
+                    "status",
+                    "created_at",
+                    "finished_at",
+                    "detail",
+                    "environment",
+                    "risk",
+                    "authorization",
+                )
             }
     return None
 
@@ -140,18 +198,34 @@ def list_manual_deployments(
         .where(Project.workspace_id == principal.workspace_id)
         .order_by(Project.name)
     ).all()
-    return [
-        {
-            "project_id": project.id,
-            "project_name": project.name,
-            "project_slug": project.slug,
-            "repository_url": project.repository_url,
-            "default_branch": project.default_branch,
-            "config": _deploy_config(project),
-            "last_run": _recent_project_action(project.id),
-        }
-        for project in projects
-    ]
+    response = []
+    for project in projects:
+        config = _deploy_config(project)
+        authorization = _authorization(project, config["environment"])
+        decision = evaluate_deployment(
+            principal.role,
+            config["environment"],
+            explicitly_approved=authorization["approved"],
+        )
+        response.append(
+            {
+                "project_id": project.id,
+                "project_name": project.name,
+                "project_slug": project.slug,
+                "repository_url": project.repository_url,
+                "default_branch": project.default_branch,
+                "config": config,
+                "authorization": authorization,
+                "gate": {
+                    "allowed": decision.allowed,
+                    "risk": decision.risk,
+                    "reason": decision.reason,
+                    "requires_explicit_approval": decision.requires_explicit_approval,
+                },
+                "last_run": _recent_project_action(project.id),
+            }
+        )
+    return response
 
 
 @router.put("/{project_id}")
@@ -162,9 +236,19 @@ def save_manual_deployment(
     principal: Principal = Depends(manage_deployments),
 ):
     project = _project(db, principal, project_id)
+    previous = _deploy_config(project)
     root_config = _root_config(project)
     root_config[_CONFIG_KEY] = payload.model_dump()
     project.codex_config = json.dumps(root_config, ensure_ascii=False, separators=(",", ":"))
+
+    if normalize_environment(previous["environment"]) != normalize_environment(payload.environment):
+        _save_authorization(
+            project,
+            payload.environment,
+            approved=False,
+            actor=principal.actor,
+            note="Autorização invalidada após mudança de ambiente de deploy.",
+        )
 
     record(
         db,
@@ -178,6 +262,7 @@ def save_manual_deployment(
             "workdir": payload.workdir,
             "enabled": payload.enabled,
             "timeout_seconds": payload.timeout_seconds,
+            "risk": deployment_risk(payload.environment),
         },
     )
     db.commit()
@@ -185,7 +270,42 @@ def save_manual_deployment(
         "project_id": project.id,
         "project_name": project.name,
         "config": payload.model_dump(),
+        "authorization": _authorization(project, payload.environment),
     }
+
+
+@router.put("/{project_id}/authorization")
+def authorize_manual_deployment(
+    project_id: str,
+    payload: DeploymentAuthorizationInput,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(manage_deployments),
+):
+    project = _project(db, principal, project_id)
+    config = _deploy_config(project)
+    authorization = _save_authorization(
+        project,
+        config["environment"],
+        approved=payload.approved,
+        actor=principal.actor,
+        note=payload.note,
+    )
+    record(
+        db,
+        workspace_id=project.workspace_id,
+        project_id=project.id,
+        actor=principal.actor,
+        action="deployment.authorization_updated",
+        outcome="success" if payload.approved else "revoked",
+        details={
+            "environment": config["environment"],
+            "risk": authorization["risk"],
+            "approved": payload.approved,
+            "note": payload.note.strip(),
+        },
+    )
+    db.commit()
+    return authorization
 
 
 @router.post("/{project_id}/run", status_code=202)
@@ -203,6 +323,29 @@ def run_manual_deployment(
     if not config.enabled:
         raise HTTPException(status_code=409, detail="Deploy manual está desativado para este projeto")
 
+    authorization = _authorization(project, config.environment)
+    decision = evaluate_deployment(
+        principal.role,
+        config.environment,
+        explicitly_approved=authorization["approved"],
+    )
+    if not decision.allowed:
+        record(
+            db,
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            actor=principal.actor,
+            action="deployment.blocked_by_authorization_gate",
+            outcome="blocked",
+            details={
+                "environment": config.environment,
+                "risk": decision.risk,
+                "reason": decision.reason,
+            },
+        )
+        db.commit()
+        raise HTTPException(status_code=409, detail=decision.reason)
+
     request = queue_host_action(
         "manual_deploy",
         actor=principal.actor,
@@ -214,6 +357,12 @@ def run_manual_deployment(
         workdir=config.workdir,
         command=config.command,
         timeout_seconds=config.timeout_seconds,
+        risk=decision.risk,
+        authorization={
+            "approved": authorization["approved"],
+            "approved_by": authorization["approved_by"],
+            "approved_at": authorization["approved_at"],
+        },
     )
     record(
         db,
@@ -226,14 +375,18 @@ def run_manual_deployment(
             "environment": config.environment,
             "branch": config.branch,
             "workdir": config.workdir,
+            "risk": decision.risk,
+            "authorization": authorization,
         },
     )
     db.commit()
     return {
         "project_id": project.id,
         "project_name": project.name,
+        "risk": decision.risk,
+        "authorization": authorization,
         "host_action": request,
-        "message": "Deploy manual enviado para execução no host.",
+        "message": "Deploy autorizado e enviado para execução no host.",
     }
 
 
@@ -255,6 +408,8 @@ def manual_deployment_status(
             "project_name",
             "environment",
             "branch",
+            "risk",
+            "authorization",
             "status",
             "created_at",
             "finished_at",
