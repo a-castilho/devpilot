@@ -18,6 +18,7 @@
 
   let observer = null;
   let reconcileFrame = 0;
+  let activeDetailsId = '';
 
   const tasks = () => (
     typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : []
@@ -33,6 +34,38 @@
     style.textContent = `
       #tasks-view .tasks-v9-table-wrap{overflow:visible!important;min-width:0!important}
       #tasks-view .tasks-v9-table,#tasks-view .tasks-v9-table tbody{width:100%!important}
+
+      /* Autoridade final: somente um detalhe de execução pode permanecer visível. */
+      #tasks-view[data-dp-details-single-open="1"] [data-task-details-row][hidden],
+      #tasks-view[data-dp-details-single-open="1"] [data-task-details-row][data-dp-details-active="0"],
+      #tasks-view[data-dp-details-single-open="1"] .task-inline-details[hidden],
+      #tasks-view[data-dp-details-single-open="1"] .task-inline-details[data-dp-details-active="0"]{
+        display:none!important;visibility:hidden!important;width:0!important;min-width:0!important;
+        height:0!important;min-height:0!important;max-height:0!important;margin:0!important;padding:0!important;
+        border:0!important;overflow:hidden!important;
+      }
+      #tasks-view[data-dp-details-single-open="1"] [data-task-details-row][hidden]>td,
+      #tasks-view[data-dp-details-single-open="1"] [data-task-details-row][data-dp-details-active="0"]>td{
+        display:none!important;width:0!important;min-width:0!important;height:0!important;min-height:0!important;
+        margin:0!important;padding:0!important;border:0!important;overflow:hidden!important;
+      }
+      #tasks-view[data-dp-details-single-open="1"] [data-task-details-row][data-dp-details-active="1"]{
+        visibility:visible!important;width:100%!important;min-width:0!important;max-width:100%!important;
+      }
+      #tasks-view[data-dp-details-single-open="1"] [data-task-details-row][data-dp-details-active="1"]>td,
+      #tasks-view[data-dp-details-single-open="1"] .tasks-v9-details-panel,
+      #tasks-view[data-dp-details-single-open="1"] .dp-v28-result,
+      #tasks-view[data-dp-details-single-open="1"] .dp-v28-output,
+      #tasks-view[data-dp-details-single-open="1"] .dp-v28-output pre{
+        min-width:0!important;max-width:100%!important;box-sizing:border-box!important;
+      }
+      #tasks-view[data-dp-details-single-open="1"] .tasks-v9-details-panel{width:100%!important;overflow:hidden!important}
+      #tasks-view[data-dp-details-single-open="1"] .dp-v28-output pre{
+        width:100%!important;white-space:pre-wrap!important;overflow-wrap:anywhere!important;word-break:break-word!important;
+      }
+      #tasks-view[data-dp-details-single-open="1"] .tasks-v9-details.dp-details-open{
+        border-color:rgba(69,219,255,.5)!important;box-shadow:inset 0 0 0 1px rgba(69,219,255,.08)!important;
+      }
 
       /* Autoridade final: tarefas internas nunca voltam a aparecer mesmo se V40 aplicar display:grid depois. */
       #tasks-view #tasks-table > tr.tasks-render-stable-v40[data-devpilot-internal-task="1"],
@@ -190,6 +223,79 @@
     }
   }
 
+  function detailRows() {
+    const view = document.querySelector('#tasks-view');
+    if (!view) return [];
+    return [...view.querySelectorAll('[data-task-details-row], .task-inline-details[data-task-instructions]')];
+  }
+
+  function detailRowId(row) {
+    return String(row?.dataset?.taskDetailsRow || row?.dataset?.taskInstructions || '');
+  }
+
+  function detailRowIsOpen(row) {
+    if (!row || row.hidden || row.getAttribute('aria-hidden') === 'true') return false;
+    return row.style.getPropertyValue('display') !== 'none';
+  }
+
+  function detailButtons(id) {
+    if (!id) return [];
+    return [...document.querySelectorAll('#tasks-view .tasks-v9-details[data-id], #tasks-view .task-instructions-load[data-id]')]
+      .filter(button => String(button.dataset.id || '') === String(id));
+  }
+
+  function setDetailRowState(row, open) {
+    if (!row) return;
+    const next = open ? '1' : '0';
+
+    if (row.dataset.dpDetailsActive !== next) row.dataset.dpDetailsActive = next;
+    if (row.dataset.dpV13Open !== next) row.dataset.dpV13Open = next;
+    if (row.hidden === open) row.hidden = !open;
+
+    const ariaHidden = open ? 'false' : 'true';
+    if (row.getAttribute('aria-hidden') !== ariaHidden) row.setAttribute('aria-hidden', ariaHidden);
+
+    if (open) {
+      if (row.style.getPropertyValue('display')) row.style.removeProperty('display');
+    } else if (row.style.getPropertyValue('display') !== 'none' || row.style.getPropertyPriority('display') !== 'important') {
+      row.style.setProperty('display', 'none', 'important');
+    }
+
+    detailButtons(detailRowId(row)).forEach(button => {
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      button.classList.toggle('dp-v13-open', open);
+      button.classList.toggle('dp-details-open', open);
+      if (button.classList.contains('tasks-v9-details')) {
+        const label = open ? 'Ocultar' : 'Detalhes';
+        if (button.textContent !== label) button.textContent = label;
+      }
+    });
+  }
+
+  function reconcileDetailRows(preferredId = activeDetailsId) {
+    const view = document.querySelector('#tasks-view');
+    if (!view) return;
+
+    view.dataset.dpDetailsSingleOpen = '1';
+    const rows = detailRows();
+    let keeper = null;
+
+    if (preferredId) {
+      const preferred = rows.find(row => detailRowId(row) === String(preferredId));
+      if (preferred && detailRowIsOpen(preferred)) keeper = preferred;
+    }
+    if (!keeper) keeper = rows.find(detailRowIsOpen) || null;
+
+    rows.forEach(row => setDetailRowState(row, row === keeper));
+    activeDetailsId = keeper ? detailRowId(keeper) : '';
+  }
+
+  function settleDetailRows(preferredId = activeDetailsId) {
+    [0, 24, 90].forEach(delay => {
+      window.setTimeout(() => reconcileDetailRows(preferredId), delay);
+    });
+  }
+
   function updateContainerMode() {
     const view = document.querySelector('#tasks-view');
     if (!view) return;
@@ -247,11 +353,23 @@
     updateContainerMode();
     hideInternalRows();
     installRendererHook();
+    reconcileDetailRows(activeDetailsId);
   }
 
   injectStyle();
   installRendererHook();
-  document.addEventListener('devpilot:tasks-rendered', settleReconcile);
+  window.addEventListener('click', event => {
+    const button = event.target.closest?.('.tasks-v9-details[data-id], .task-instructions-load[data-id]');
+    if (!button || !button.closest('#tasks-view')) return;
+    const id = String(button.dataset.id || '');
+    if (!id) return;
+    activeDetailsId = id;
+    settleDetailRows(id);
+  }, true);
+  document.addEventListener('devpilot:tasks-rendered', () => {
+    activeDetailsId = '';
+    settleReconcile();
+  });
   document.addEventListener('devpilot:view-changed', event => {
     if (event.detail?.view === 'tasks') settleReconcile();
   });
