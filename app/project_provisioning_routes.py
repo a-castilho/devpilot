@@ -230,25 +230,22 @@ def provision_project(
             },
         )
 
-        # A falha do GitHub não deve impedir o Super Admin de cadastrar o projeto.
-        # O projeto fica explicitamente pendente de repositório e pode ser conectado depois.
-        if principal.role is Role.SUPER_ADMIN:
-            return persist_deferred_project(
-                db,
-                ws=ws,
-                name=payload.name,
-                slug=payload.slug,
-                description=payload.description,
-                agents_md=payload.agents_md,
-                codex_config=payload.codex_config,
-                organization=organization,
-                default_branch="main",
-                actor=actor,
-                source="automatic_provision_fallback",
-            )
-
-        db.commit()
-        raise provisioning_client_error(principal, error) from error
+        # O cadastro do projeto não pode depender da disponibilidade/configuração do GitHub.
+        # A falha detalhada continua restrita à auditoria; o projeto é preservado com Git pendente
+        # para qualquer perfil autorizado a usar o fluxo automático.
+        return persist_deferred_project(
+            db,
+            ws=ws,
+            name=payload.name,
+            slug=payload.slug,
+            description=payload.description,
+            agents_md=payload.agents_md,
+            codex_config=payload.codex_config,
+            organization=organization,
+            default_branch="main",
+            actor=actor,
+            source="automatic_provision_fallback",
+        )
 
     item = Project(
         workspace_id=ws.id,
