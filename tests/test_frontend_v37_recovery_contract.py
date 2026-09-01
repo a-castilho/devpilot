@@ -16,6 +16,11 @@ def test_preauth_loader_never_recovers_projects_runtime():
     assert "__devpilotLoadFeature('projects')" not in loader
     assert "project-ships.js" not in loader
     assert "mobile-project-card-compact.js" not in loader
+    assert "installMobileProjectCircuitBreaker" not in loader
+    assert "showProjectsSafe" not in loader
+    assert "mobileLoadProjects" not in loader
+    assert "/api/ui/projects" not in loader
+    assert "stopImmediatePropagation" not in loader
 
 
 def test_projects_runtime_is_owned_by_feature_loader():
