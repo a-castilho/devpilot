@@ -1,7 +1,10 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi import HTTPException
 from starlette.requests import Request
 
+import app.project_provisioning_routes as provisioning_routes
 from app.project_provisioning_routes import (
     GENERIC_PROJECT_CREATE_ERROR,
     provisioning_client_error,
@@ -102,3 +105,56 @@ def test_super_admin_keeps_manual_project_repository_option():
     actor = require_access(request("POST", "/api/projects"), principal(Role.SUPER_ADMIN))
 
     assert actor == "user:user-1"
+
+
+def test_regular_user_keeps_project_when_github_provisioning_fails(monkeypatch):
+    db = SimpleNamespace(scalar=lambda _statement: None)
+    ws = SimpleNamespace(id="workspace-1")
+    organization = SimpleNamespace(id="organization-1")
+    persisted_project = object()
+    persisted = {}
+
+    monkeypatch.setattr(provisioning_routes, "workspace", lambda _db: ws)
+    monkeypatch.setattr(
+        provisioning_routes,
+        "authorized_organization",
+        lambda _db, _workspace_id: organization,
+    )
+    monkeypatch.setattr(
+        provisioning_routes,
+        "organization_access_token",
+        lambda _db, _workspace_id, _organization: "secret-token",
+    )
+
+    def fail_github(*_args, **_kwargs):
+        raise GitHubProvisioningError("detalhe interno do provedor", 403)
+
+    monkeypatch.setattr(provisioning_routes, "create_github_repository", fail_github)
+    monkeypatch.setattr(provisioning_routes, "record", lambda *_args, **_kwargs: None)
+
+    def persist_fallback(_db, **kwargs):
+        persisted.update(kwargs)
+        return persisted_project
+
+    monkeypatch.setattr(provisioning_routes, "persist_deferred_project", persist_fallback)
+
+    payload = provisioning_routes.ProjectProvisionCreate(
+        name="André Tonal",
+        slug="andre-tonal",
+        description="Site musical",
+        agents_md="# AGENTS.md",
+        codex_config={"project_blueprint": {"project_type": ["landing-page"]}},
+    )
+
+    result = provisioning_routes.provision_project(
+        payload,
+        db=db,
+        principal=principal(Role.OWNER),
+        actor="user:user-1",
+    )
+
+    assert result is persisted_project
+    assert persisted["organization"] is organization
+    assert persisted["source"] == "automatic_provision_fallback"
+    assert persisted["slug"] == "andre-tonal"
+    assert persisted["codex_config"] == payload.codex_config
