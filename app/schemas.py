@@ -69,12 +69,14 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=12, max_length=4096)
     role: str = Field(default="VIEWER", min_length=4, max_length=30)
     full_name: str | None = Field(default=None, max_length=160)
+    confirmation_password: str | None = Field(default=None, min_length=8, max_length=4096)
 
 
 class UserUpdate(BaseModel):
     role: str | None = Field(default=None, min_length=4, max_length=30)
     active: bool | None = None
     full_name: str | None = Field(default=None, max_length=160)
+    confirmation_password: str | None = Field(default=None, min_length=8, max_length=4096)
 
 
 class UserResponse(BaseModel):

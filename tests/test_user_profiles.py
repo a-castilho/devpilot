@@ -15,7 +15,7 @@ from app.security import (
     require_access,
     require_roles,
 )
-from app.user_routes import create_user, list_users, update_user
+from app.user_routes import create_user, list_roles, list_users, update_user
 
 
 @pytest.fixture
@@ -35,10 +35,16 @@ def principal(user, role=None):
     return Principal(user.id, user.workspace_id, user.email, role or Role(user.role))
 
 
-def test_super_admin_creates_owner_and_users_are_scoped(profile_db):
+def test_super_admin_creates_owner_with_step_up_and_users_are_scoped(profile_db):
     db, ws, root = profile_db
     owner = create_user(
-        UserCreate(email="OWNER@example.com", full_name="Workspace Owner", password="owner password 123", role="OWNER"),
+        UserCreate(
+            email="OWNER@example.com",
+            full_name="Workspace Owner",
+            password="owner password 123",
+            role="OWNER",
+            confirmation_password="root password 123",
+        ),
         db,
         principal(root),
     )
@@ -69,6 +75,112 @@ def test_admin_cannot_manage_owner_and_self_cannot_be_deactivated(profile_db):
     with pytest.raises(HTTPException) as error:
         update_user(admin.id, UserUpdate(active=False), db, principal(admin))
     assert error.value.status_code == 400
+
+
+def test_role_catalog_only_returns_roles_actor_can_assign(profile_db):
+    db, ws, root = profile_db
+    owner = User(workspace_id=ws.id, email="owner@example.com", password_hash=hash_password("owner password 123"), role="OWNER", active=True)
+    admin = User(workspace_id=ws.id, email="admin@example.com", password_hash=hash_password("admin password 123"), role="ADMIN", active=True)
+    db.add_all([owner, admin]); db.flush(); db.add_all([UserProfile(user_id=owner.id), UserProfile(user_id=admin.id)]); db.commit()
+
+    assert [item["value"] for item in list_roles(principal(root))] == ["OWNER", "ADMIN", "ANALYST", "VIEWER"]
+    assert [item["value"] for item in list_roles(principal(owner))] == ["ADMIN", "ANALYST", "VIEWER"]
+    assert [item["value"] for item in list_roles(principal(admin))] == ["ANALYST", "VIEWER"]
+    assert all(item["value"] != "SUPER_ADMIN" for item in list_roles(principal(root)))
+
+
+def test_super_admin_is_not_assignable_even_by_super_admin(profile_db):
+    db, ws, root = profile_db
+    with pytest.raises(HTTPException) as error:
+        create_user(
+            UserCreate(email="second-root@example.com", password="second root password", role="SUPER_ADMIN"),
+            db,
+            principal(root),
+        )
+    assert error.value.status_code == 403
+
+    analyst = User(workspace_id=ws.id, email="analyst@example.com", password_hash=hash_password("analyst password 123"), role="ANALYST", active=True)
+    db.add(analyst); db.flush(); db.add(UserProfile(user_id=analyst.id)); db.commit()
+    with pytest.raises(HTTPException) as error:
+        update_user(analyst.id, UserUpdate(role="SUPER_ADMIN"), db, principal(root))
+    assert error.value.status_code == 403
+    db.refresh(analyst)
+    assert analyst.role == "ANALYST"
+
+
+def test_owner_privilege_changes_require_current_super_admin_password(profile_db):
+    db, ws, root = profile_db
+    analyst = User(workspace_id=ws.id, email="analyst@example.com", password_hash=hash_password("analyst password 123"), role="ANALYST", active=True)
+    db.add(analyst); db.flush(); db.add(UserProfile(user_id=analyst.id)); db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        update_user(analyst.id, UserUpdate(role="OWNER"), db, principal(root))
+    assert error.value.status_code == 403
+    db.refresh(analyst)
+    assert analyst.role == "ANALYST"
+
+    with pytest.raises(HTTPException) as error:
+        update_user(
+            analyst.id,
+            UserUpdate(role="OWNER", confirmation_password="wrong password"),
+            db,
+            principal(root),
+        )
+    assert error.value.status_code == 403
+    db.refresh(analyst)
+    assert analyst.role == "ANALYST"
+
+    updated = update_user(
+        analyst.id,
+        UserUpdate(role="OWNER", confirmation_password="root password 123"),
+        db,
+        principal(root),
+    )
+    assert updated.role == "OWNER"
+
+    with pytest.raises(HTTPException) as error:
+        update_user(analyst.id, UserUpdate(role="ADMIN"), db, principal(root))
+    assert error.value.status_code == 403
+
+    updated = update_user(
+        analyst.id,
+        UserUpdate(role="ADMIN", confirmation_password="root password 123"),
+        db,
+        principal(root),
+    )
+    assert updated.role == "ADMIN"
+
+
+def test_existing_super_admin_is_immutable_in_general_user_editor(profile_db):
+    db, ws, root = profile_db
+    other_root = User(
+        workspace_id=ws.id,
+        email="other-root@example.com",
+        password_hash=hash_password("other root password"),
+        role="SUPER_ADMIN",
+        active=True,
+    )
+    db.add(other_root); db.flush(); db.add(UserProfile(user_id=other_root.id)); db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        update_user(other_root.id, UserUpdate(role="ADMIN"), db, principal(root))
+    assert error.value.status_code == 403
+    with pytest.raises(HTTPException) as error:
+        update_user(other_root.id, UserUpdate(active=False), db, principal(root))
+    assert error.value.status_code == 403
+    db.refresh(other_root)
+    assert other_root.role == "SUPER_ADMIN"
+    assert other_root.active is True
+
+
+def test_external_admin_role_is_strict_admin_not_legacy_super_admin(profile_db):
+    db, ws, root = profile_db
+    created = create_user(
+        UserCreate(email="admin2@example.com", password="admin password 456", role="admin"),
+        db,
+        principal(root),
+    )
+    assert created.role == "ADMIN"
 
 
 def request(method, path):
