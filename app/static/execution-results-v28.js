@@ -90,6 +90,7 @@
 
   function failureText(run, latest) {
     const logs = logsObject(run);
+    const clientReport = textValue(logs.client_report);
     const stderr = textValue(logs.stderr);
     const raw = textValue(logs.raw);
     const output = textValue(logs.output) || textValue(logs.result) || textValue(logs.final_output);
@@ -97,14 +98,15 @@
     const apiFailure = textValue(run?.failure?.message);
     const latestFailure = textValue(latest?.failure_reason);
 
-    // Para falhas não classificadas, o self-healing pode devolver uma mensagem genérica.
-    // O erro original fica preservado em logs.stderr/raw e deve ter precedência na UI.
-    if (stderr) return stderr;
-    if (raw) return raw;
+    // O worker grava uma resposta contextual por tarefa. Ela é a resposta principal.
+    // Erro bruto e autocorreção continuam disponíveis nos detalhes técnicos.
+    if (clientReport && !isGenericRecoveryText(clientReport)) return clientReport;
     if (output && !isGenericRecoveryText(output)) return output;
     if (summary && !isGenericRecoveryText(summary)) return summary;
     if (apiFailure && !isGenericRecoveryText(apiFailure)) return apiFailure;
     if (latestFailure && !isGenericRecoveryText(latestFailure)) return latestFailure;
+    if (stderr) return stderr;
+    if (raw) return raw;
     return apiFailure || latestFailure || summary || 'A execução falhou sem mensagem detalhada.';
   }
 
@@ -180,7 +182,7 @@
       main = `
         <article class="dp-v28-result-state danger">
           <span>!</span>
-          <div><strong>Execução falhou</strong><p>${esc(message)}</p></div>
+          <div><strong>Execução não concluída</strong><p>${esc(message)}</p></div>
         </article>`;
     } else if (text) {
       main = `
@@ -208,8 +210,8 @@
       : '';
 
     const technicalHtml = technical
-      ? `<details class="dp-v28-output" open>
-          <summary>Resultado completo da execução</summary>
+      ? `<details class="dp-v28-output">
+          <summary>Detalhes técnicos da execução</summary>
           <pre>${esc(trimResult(technical))}</pre>
         </details>`
       : '';
@@ -222,7 +224,7 @@
     return `
       <section class="dp-v28-result" data-execution-result-for="${esc(taskId)}" data-run-id="${esc(latest?.run_id || '')}">
         <header>
-          <div><small>RESULTADO DA EXECUÇÃO</small><h3>O que a execução retornou</h3></div>
+          <div><small>RESULTADO DA EXECUÇÃO</small><h3>O que esta execução respondeu</h3></div>
           <span class="dp-v28-run">${esc(run?.status || latest?.run_status || 'sem run')}</span>
         </header>
         ${main}
@@ -300,5 +302,5 @@
   });
 
   injectStyle();
-  console.info('[DevPilot] Execution Results V28 ativo · resultado real por run');
+  console.info('[DevPilot] Execution Results V28 ativo · resposta contextual por run');
 })();
