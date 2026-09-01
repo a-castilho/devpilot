@@ -12,6 +12,7 @@ from app.db import get_db
 from app.models import Run, Task, TaskStatus, Workspace
 from app.security import require_access
 from app.services.audit import record
+from app.services.policy import evaluate_task
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
@@ -145,24 +146,24 @@ def classify_failure_text(value: str) -> str:
 def _friendly_failure_message(category: str, fallback: str = "") -> str:
     messages = {
         "github_auth": (
-            "Credencial GitHub sem acesso ao repositório. Revalide a integração da organização "
-            "e permita leitura do repositório antes de executar novamente."
+            "Falha de autenticação GitHub detectada. O DevPilot tentará revalidar e alternar entre "
+            "credenciais já autorizadas antes de solicitar qualquer ação humana."
         ),
         "codex_auth": (
-            "O Codex não está autenticado no ambiente de execução. Autorize o Codex no worker "
-            "antes de executar novamente."
+            "Falha de autenticação do Codex detectada. O DevPilot tentará recuperar a sessão ou usar "
+            "outra credencial OpenAI já cadastrada antes de solicitar nova autorização."
         ),
         "git_network": (
-            "Falha de rede ao acessar o repositório. O DevPilot pode tentar novamente sem alterar o projeto."
+            "Falha de rede ao acessar o repositório. O DevPilot tentará novamente automaticamente sem alterar o projeto."
         ),
         "repository_state": (
-            "O checkout local do repositório está inconsistente e precisa ser reparado antes da execução."
+            "O checkout local do repositório está inconsistente. O DevPilot tentará isolá-lo e reconstruí-lo com segurança."
         ),
         "filesystem_permission": (
-            "O sistema operacional bloqueou o acesso necessário. Revise as permissões do ambiente de execução."
+            "O sistema operacional bloqueou o acesso necessário. O DevPilot só solicitará intervenção se não houver correção segura dentro das permissões atuais."
         ),
         "database": (
-            "O banco de dados do DevPilot está indisponível. A execução foi interrompida para evitar inconsistências."
+            "O banco de dados do DevPilot está temporariamente indisponível. A reconexão automática será tentada antes de qualquer escalonamento."
         ),
     }
     return messages.get(category) or fallback or "Falha registrada sem mensagem detalhada."
@@ -199,11 +200,9 @@ def failure_details(run: Run | None) -> dict:
                 "category": category,
                 "code": _FAILURE_CODES[category],
                 "message": _friendly_failure_message(category, raw_message),
-                "requires_authorization": category in {
-                    "github_auth",
-                    "codex_auth",
-                    "filesystem_permission",
-                },
+                # Raw/legacy logs are diagnostic only. Only an explicit self-healing
+                # decision may declare that automatic recovery is exhausted.
+                "requires_authorization": False,
             }
         if raw_message:
             return {
@@ -220,11 +219,7 @@ def failure_details(run: Run | None) -> dict:
             "category": category,
             "code": _FAILURE_CODES[category],
             "message": _friendly_failure_message(category, summary),
-            "requires_authorization": category in {
-                "github_auth",
-                "codex_auth",
-                "filesystem_permission",
-            },
+            "requires_authorization": False,
         }
     if summary:
         return {
@@ -365,17 +360,24 @@ def resolicit_task(
     if not previous_response:
         raise HTTPException(409, "A resolicitação exige uma resposta anterior válida para ser corrigida")
 
+    correction_prompt = _resolicitation_prompt(
+        original,
+        latest_run,
+        previous_response,
+        payload.instruction,
+    )
+    decision = evaluate_task(correction_prompt, False)
     correction = Task(
         workspace_id=original.workspace_id,
         owner_user_id=original.owner_user_id,
         project_id=original.project_id,
         title=f"Correção · {original.title}"[:240],
-        prompt=_resolicitation_prompt(original, latest_run, previous_response, payload.instruction),
+        prompt=correction_prompt,
         source="dashboard",
-        status=TaskStatus.awaiting_approval,
+        status=TaskStatus.awaiting_approval if decision.requires_approval else TaskStatus.queued,
         priority=min(100, max(70, int(original.priority or 50))),
         branch_name=original.branch_name or "",
-        requires_approval=True,
+        requires_approval=decision.requires_approval,
     )
     db.add(correction)
     db.flush()
@@ -386,12 +388,14 @@ def resolicit_task(
         task_id=correction.id,
         actor="owner",
         action="task.resolicited",
-        outcome="awaiting_approval",
+        outcome="awaiting_approval" if decision.requires_approval else "queued",
         details={
             "original_task_id": original.id,
             "original_run_id": latest_run.id,
             "previous_response_reused": True,
             "system_rule": "resolicitation_uses_previous_response",
+            "automatic": not decision.requires_approval,
+            "approval_reasons": decision.reasons,
         },
     )
     db.commit()
