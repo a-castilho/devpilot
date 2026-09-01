@@ -217,11 +217,21 @@ def _safe_static_candidate(path: str) -> Path | None:
 
 def _authenticated_script_loader() -> str:
     core_urls = json.dumps(_script_urls(_CORE_AUTHENTICATED_SCRIPTS), ensure_ascii=False)
+    asset_revisions = json.dumps(
+        {
+            name: _asset_revision(name)
+            for name in _DEFERRED_AUTHENTICATED_SCRIPTS
+            if (STATIC / name).is_file()
+        },
+        ensure_ascii=False,
+    )
 
     return f"""<script>
 (() => {{
   'use strict';
   const coreSources = {core_urls};
+  const assetRevisions = {asset_revisions};
+  window.__devpilotAssetRevisions = Object.freeze(assetRevisions);
   const boot = window.__devpilotBoot = {{
     phase: 'auth',
     current: null,

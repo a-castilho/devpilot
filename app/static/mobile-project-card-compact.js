@@ -198,13 +198,22 @@
 
       state.projectsLoading = (async () => {
         try {
-          const request = typeof api === 'function'
-            ? api(`/ui/projects?limit=${fetchLimit()}`)
-            : Promise.reject(new Error('API indisponível'));
-          const timeout = new Promise((_, reject) => {
-            window.setTimeout(() => reject(new Error('A lista de projetos demorou demais para responder. Tente Atualizar.')), 12000);
-          });
-          const projects = await Promise.race([request, timeout]);
+          if (typeof api !== 'function') throw new Error('API indisponível');
+          const controller = new AbortController();
+          const timeoutId = window.setTimeout(() => controller.abort(), 12000);
+          let projects;
+          try {
+            projects = await api(`/ui/projects?limit=${fetchLimit()}`, {
+              signal:controller.signal,
+            });
+          } catch (requestError) {
+            if (requestError?.name === 'AbortError') {
+              throw new Error('A lista de projetos demorou demais para responder.');
+            }
+            throw requestError;
+          } finally {
+            window.clearTimeout(timeoutId);
+          }
           state.projects = Array.isArray(projects) ? projects : [];
           renderLimit = batchSize();
           projectsSource = state.projects;
@@ -218,7 +227,12 @@
             message.className = 'empty';
             message.setAttribute('role', 'alert');
             message.textContent = error?.message || 'Não foi possível carregar os projetos.';
-            target.appendChild(message);
+            const retry = document.createElement('button');
+            retry.type = 'button';
+            retry.className = 'ghost';
+            retry.dataset.projectsRetry = '1';
+            retry.textContent = 'Tentar novamente';
+            target.append(message, retry);
           }
           window.toast?.(error?.message || 'Não foi possível carregar os projetos.');
           return [];
@@ -251,7 +265,14 @@
 
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
-    if (!target?.closest('[data-projects-load-more]')) return;
+    if (!target) return;
+    if (target.closest('[data-projects-retry]')) {
+      event.preventDefault();
+      renderLimit = batchSize();
+      if (typeof window.loadProjects === 'function') void window.loadProjects();
+      return;
+    }
+    if (!target.closest('[data-projects-load-more]')) return;
     event.preventDefault();
     loadMore();
   });

@@ -27,10 +27,22 @@ def test_mobile_viewport_is_always_treated_as_low_power_for_projects():
 def test_low_power_project_loader_bounds_network_payload_and_timeout():
     text = source()
     assert "__devpilotProjectsLoadGuard" in text
-    assert "api(`/ui/projects?limit=${fetchLimit()}`)" in text
-    assert "Promise.race([request, timeout])" in text
+    assert "api(`/ui/projects?limit=${fetchLimit()}`" in text
+    assert "const controller = new AbortController()" in text
+    assert "signal:controller.signal" in text
+    assert "controller.abort()" in text
+    assert "window.clearTimeout(timeoutId)" in text
+    assert "Promise.race([request, timeout])" not in text
     assert "12000" in text
     assert "loadProjects = guardedLoadProjects" in text
+
+
+def test_low_power_project_loader_has_explicit_retry_after_failure():
+    text = source()
+    assert "data.projectsRetry = '1'" not in text
+    assert "retry.dataset.projectsRetry = '1'" in text
+    assert "[data-projects-retry]" in text
+    assert "void window.loadProjects()" in text
 
 
 def test_low_power_projects_skip_expensive_ship_dom():
