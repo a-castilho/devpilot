@@ -26,5 +26,6 @@ def test_new_project_entry_loads_builder_before_opening():
 def test_new_project_entry_recovers_after_rerender():
     text = source()
     assert "MutationObserver" in text
-    assert "observer.observe(view, {childList:true, subtree:true})" in text
+    assert "hostObserver.observe(host, {childList:true});" in text
+    assert "subtree:true" not in text
     assert "ensureCreateEntry();" in text

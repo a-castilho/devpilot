@@ -6,9 +6,20 @@
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
   const MODAL_ID = 'project-delivery-history-modal';
   const CREATE_ENTRY_ID = 'projects-new-project-sticky';
+  const LOW_POWER = document.documentElement.classList.contains('devpilot-low-power');
+  const CACHE_LIMIT = LOW_POWER ? 12 : 24;
+  const DELIVERY_CONCURRENCY = LOW_POWER ? 2 : 4;
+  const VISIBLE_CARD_LIMIT = LOW_POWER ? 6 : 12;
+  const REFRESH_INTERVAL_MS = LOW_POWER ? 60000 : 30000;
+  const HISTORY_TASK_LIMIT = 120;
+
   const statusCache = new Map();
-  let rendering = false;
+  const deliveryRequests = new Map();
+  const decorationQueue = [];
+  const queuedProjects = new Set();
+  let activeDecorations = 0;
   let hostObserver = null;
+  let viewportObserver = null;
   let refreshTimer = null;
 
   const projects = () => (typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : []);
@@ -28,15 +39,54 @@
   const statusLabel = status => ({pending:'Aguardando publicação',provisioning:'Preparando produto',deploying:'Publicando produto',ready:'Produto pronto',failed:'Falha na publicação',blocked:'Infraestrutura pendente'})[normalize(status)] || 'Aguardando publicação';
   const checkLabel = name => ({backend:'Backend',frontend:'Frontend',database:'Banco',neon:'Banco Neon',render:'Backend Render',vercel:'Frontend Vercel',public_url:'URL pública'})[name] || name || 'Verificação';
 
-  async function fetchDelivery(projectId, force = false) {
-    if (!force && statusCache.has(projectId)) return statusCache.get(projectId);
-    try {
-      const result = await api(`/projects/${encodeURIComponent(projectId)}/delivery`);
-      statusCache.set(projectId, result || {});
-      return result || {};
-    } catch (_) {
-      return {};
+  function compactDelivery(value) {
+    const delivery = value && typeof value === 'object' ? value : {};
+    return {
+      status: String(delivery.status || 'pending'),
+      url: String(delivery.url || ''),
+      checks: Array.isArray(delivery.checks) ? delivery.checks.slice(0, 12) : [],
+      last_error: String(delivery.last_error || '').slice(0, 4000),
+      updated_at: delivery.updated_at || null,
+    };
+  }
+
+  function rememberDelivery(projectId, delivery) {
+    const key = String(projectId || '');
+    if (!key) return compactDelivery(delivery);
+    const compact = compactDelivery(delivery);
+    statusCache.delete(key);
+    statusCache.set(key, compact);
+    while (statusCache.size > CACHE_LIMIT) {
+      const oldest = statusCache.keys().next().value;
+      statusCache.delete(oldest);
     }
+    return compact;
+  }
+
+  function cachedDelivery(projectId) {
+    const key = String(projectId || '');
+    if (!statusCache.has(key)) return null;
+    const delivery = statusCache.get(key);
+    statusCache.delete(key);
+    statusCache.set(key, delivery);
+    return delivery;
+  }
+
+  async function fetchDelivery(projectId, force = false) {
+    const key = String(projectId || '');
+    if (!key) return compactDelivery({});
+    if (deliveryRequests.has(key)) return deliveryRequests.get(key);
+    if (!force) {
+      const cached = cachedDelivery(key);
+      if (cached) return cached;
+    }
+
+    const request = api(`/projects/${encodeURIComponent(key)}/delivery`)
+      .then(result => rememberDelivery(key, result || {}))
+      .catch(() => compactDelivery({}))
+      .finally(() => deliveryRequests.delete(key));
+    deliveryRequests.set(key, request);
+    return request;
   }
 
   function latestMissionTasks(tasks) {
@@ -87,14 +137,134 @@
     if (!modal.open) modal.showModal();
     try {
       const [tasks, delivery] = await Promise.all([
-        api(`/tasks?project_id=${encodeURIComponent(project.id)}&limit=500${force ? `&_=${Date.now()}` : ''}`),
-        api(`/projects/${encodeURIComponent(project.id)}/delivery${force ? `?_=${Date.now()}` : ''}`),
+        api(`/tasks?project_id=${encodeURIComponent(project.id)}&limit=${HISTORY_TASK_LIMIT}${force ? `&_=${Date.now()}` : ''}`),
+        fetchDelivery(project.id, force),
       ]);
-      statusCache.set(project.id, delivery || {});
-      renderHistory(modal, project, tasks, delivery || {});
+      renderHistory(modal, project, tasks, delivery || compactDelivery({}));
     } catch (error) {
       modal.querySelector('.project-delivery-history-shell').innerHTML = `<button type="button" class="link" data-delivery-close>✕</button><p class="project-delivery-history-error">${esc(error?.message || 'Não foi possível carregar a entrega.')}</p>`;
     }
+  }
+
+  function deliveryMarkup(project, delivery) {
+    const currentStatus = normalize(delivery?.status || 'pending');
+    const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
+    return `
+      <div class="product-delivery-status product-delivery-${esc(currentStatus)}"><strong>${esc(statusLabel(currentStatus))}</strong>${checks.map(check => `<span>${check.ok ? '✅' : '⏳'} ${esc(checkLabel(check.name || check.provider))}</span>`).join('')}${delivery?.last_error ? `<div class="product-delivery-error">${esc(delivery.last_error)}</div>` : ''}</div>
+      <button type="button" class="product-delivery-history-action" data-delivery-history="${esc(project.id)}">📦 Ver entrega</button>
+      ${canOperate() ? `<button type="button" class="link product-delivery-action" data-delivery-action="${esc(project.id)}">${currentStatus === 'ready' ? 'Abrir produto' : ['failed','blocked'].includes(currentStatus) ? 'Tentar novamente' : ['deploying','provisioning'].includes(currentStatus) ? 'Verificar publicação' : 'Publicar produto'}</button>` : ''}`;
+  }
+
+  async function decorateCard(project, card, force = false) {
+    if (!project?.id || !card || !card.isConnected || !String(project.repository_url || '').trim()) return;
+    card.dataset.deliveryProjectId = project.id;
+    let box = card.querySelector('.product-delivery-box');
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'product-delivery-box';
+      card.appendChild(box);
+    }
+    const delivery = await fetchDelivery(project.id, force);
+    if (!card.isConnected) return;
+    const markup = deliveryMarkup(project, delivery);
+    if (box.dataset.deliveryMarkup !== markup) {
+      box.innerHTML = markup;
+      box.dataset.deliveryMarkup = markup;
+    }
+  }
+
+  function drainDecorationQueue() {
+    while (activeDecorations < DELIVERY_CONCURRENCY && decorationQueue.length) {
+      const item = decorationQueue.shift();
+      const key = String(item?.project?.id || '');
+      if (!item?.card?.isConnected || !key) {
+        queuedProjects.delete(key);
+        continue;
+      }
+      activeDecorations += 1;
+      void decorateCard(item.project, item.card, item.force).finally(() => {
+        activeDecorations -= 1;
+        queuedProjects.delete(key);
+        drainDecorationQueue();
+      });
+    }
+  }
+
+  function scheduleDecoration(project, card, force = false) {
+    const key = String(project?.id || '');
+    if (!key || !card?.isConnected || queuedProjects.has(key)) return;
+    queuedProjects.add(key);
+    decorationQueue.push({project, card, force});
+    drainDecorationQueue();
+  }
+
+  function cardNearViewport(card) {
+    if (!card?.isConnected) return false;
+    const rect = card.getBoundingClientRect();
+    const height = window.innerHeight || document.documentElement.clientHeight || 800;
+    return rect.bottom >= -320 && rect.top <= height + 480;
+  }
+
+  function pruneDeliveryState(items) {
+    const ids = new Set(items.map(project => String(project?.id || '')).filter(Boolean));
+    for (const key of statusCache.keys()) {
+      if (!ids.has(key)) statusCache.delete(key);
+    }
+    decorationQueue.length = 0;
+    queuedProjects.clear();
+  }
+
+  function observeProjectCards() {
+    const host = document.querySelector('#projects-list');
+    if (!host) return;
+    const cards = [...host.querySelectorAll('.project-card')];
+    const items = projects();
+    pruneDeliveryState(items);
+
+    cards.forEach((card, index) => {
+      const project = items[index];
+      if (project?.id) card.dataset.deliveryProjectId = project.id;
+    });
+
+    if ('IntersectionObserver' in window) {
+      if (!viewportObserver) {
+        viewportObserver = new IntersectionObserver(entries => {
+          entries.forEach(entry => {
+            if (!entry.isIntersecting) return;
+            const project = projectById(entry.target.dataset.deliveryProjectId);
+            if (project) scheduleDecoration(project, entry.target, false);
+          });
+        }, {rootMargin:'480px 0px'});
+      }
+      viewportObserver.disconnect();
+      cards.forEach(card => viewportObserver.observe(card));
+      return;
+    }
+
+    cards.slice(0, VISIBLE_CARD_LIMIT).forEach((card, index) => {
+      const project = items[index];
+      if (project) scheduleDecoration(project, card, false);
+    });
+  }
+
+  function refreshVisible(force = false) {
+    if (!document.querySelector('#projects-view.active')) return;
+    const host = document.querySelector('#projects-list');
+    if (!host) return;
+    const items = projects();
+    [...host.querySelectorAll('.project-card')]
+      .map((card, index) => ({card, project:items[index]}))
+      .filter(item => item.project && cardNearViewport(item.card))
+      .slice(0, VISIBLE_CARD_LIMIT)
+      .forEach(item => scheduleDecoration(item.project, item.card, force));
+  }
+
+  async function decorateProject(projectId, force = false) {
+    const project = projectById(projectId);
+    if (!project) return;
+    const card = [...document.querySelectorAll('#projects-list .project-card')]
+      .find(item => String(item.dataset.deliveryProjectId || '') === String(projectId));
+    if (card) await decorateCard(project, card, force);
   }
 
   async function runAction(project, button) {
@@ -112,54 +282,14 @@
       if (['failed','blocked'].includes(normalize(current.status))) endpoint = `/projects/${encodeURIComponent(project.id)}/delivery/retry`;
       else if (['deploying','provisioning'].includes(normalize(current.status))) endpoint = `/projects/${encodeURIComponent(project.id)}/delivery/verify`;
       const delivery = await api(endpoint, {method:'POST'});
-      statusCache.set(project.id, delivery || {});
-      await decorateAll(true);
+      rememberDelivery(project.id, delivery || {});
+      await decorateProject(project.id, false);
       window.toast?.(normalize(delivery?.status) === 'ready' ? 'Produto pronto e entrega validada.' : delivery?.last_error || 'Entrega atualizada.');
     } catch (error) {
       window.toast?.(error?.message || 'Falha ao atualizar a entrega.');
     } finally {
       button.disabled = false;
       button.textContent = original;
-    }
-  }
-
-  function deliveryMarkup(project, delivery) {
-    const status = normalize(delivery?.status || 'pending');
-    const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
-    return `
-      <div class="product-delivery-status product-delivery-${esc(status)}"><strong>${esc(statusLabel(status))}</strong>${checks.map(check => `<span>${check.ok ? '✅' : '⏳'} ${esc(checkLabel(check.name || check.provider))}</span>`).join('')}${delivery?.last_error ? `<div class="product-delivery-error">${esc(delivery.last_error)}</div>` : ''}</div>
-      <button type="button" class="product-delivery-history-action" data-delivery-history="${esc(project.id)}">📦 Ver entrega</button>
-      ${canOperate() ? `<button type="button" class="link product-delivery-action" data-delivery-action="${esc(project.id)}">${status === 'ready' ? 'Abrir produto' : ['failed','blocked'].includes(status) ? 'Tentar novamente' : ['deploying','provisioning'].includes(status) ? 'Verificar publicação' : 'Publicar produto'}</button>` : ''}`;
-  }
-
-  async function decorateCard(project, card, force = false) {
-    if (!project?.id || !card || !String(project.repository_url || '').trim()) return;
-    card.dataset.deliveryProjectId = project.id;
-    let box = card.querySelector('.product-delivery-box');
-    if (!box) {
-      box = document.createElement('div');
-      box.className = 'product-delivery-box';
-      card.appendChild(box);
-    }
-    const delivery = await fetchDelivery(project.id, force);
-    const markup = deliveryMarkup(project, delivery);
-    if (box.dataset.deliveryMarkup !== markup) {
-      box.innerHTML = markup;
-      box.dataset.deliveryMarkup = markup;
-    }
-  }
-
-  async function decorateAll(force = false) {
-    if (rendering) return;
-    const host = document.querySelector('#projects-list');
-    if (!host) return;
-    rendering = true;
-    try {
-      const cards = [...host.querySelectorAll('.project-card')];
-      const items = projects();
-      await Promise.all(items.map((project, index) => decorateCard(project, cards[index], force)));
-    } finally {
-      rendering = false;
     }
   }
 
@@ -216,7 +346,7 @@
       const structural = records.some(record => record.target === host);
       if (!structural) return;
       clearTimeout(refreshTimer);
-      refreshTimer = window.setTimeout(() => void decorateAll(false), 80);
+      refreshTimer = window.setTimeout(() => observeProjectCards(), 80);
     });
     hostObserver.observe(host, {childList:true});
   }
@@ -274,12 +404,14 @@
     installDelegatedClicks();
     ensureCreateEntry();
     installHostObserver();
-    void decorateAll(false);
-    window.setTimeout(() => { ensureCreateEntry(); void decorateAll(false); }, 300);
+    observeProjectCards();
+    if (document.documentElement.dataset.productDeliveryInstalled === '1') return;
+    document.documentElement.dataset.productDeliveryInstalled = '1';
+    window.setTimeout(() => { ensureCreateEntry(); observeProjectCards(); }, 300);
   }
 
   document.addEventListener('devpilot:feature-ready', event => { if (event.detail?.feature === 'projects') install(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.querySelector('#projects-view.active')) { ensureCreateEntry(); void decorateAll(true); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.querySelector('#projects-view.active')) { ensureCreateEntry(); refreshVisible(true); } });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, {once:true}); else install();
-  window.setInterval(() => { if (document.querySelector('#projects-view.active')) { ensureCreateEntry(); void decorateAll(false); } }, 15000);
+  window.setInterval(() => refreshVisible(true), REFRESH_INTERVAL_MS);
 })();
