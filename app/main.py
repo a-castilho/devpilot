@@ -19,6 +19,7 @@ from app.config import get_settings
 from app.delivery_url_recovery import install_delivery_url_recovery
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
+from app.failure_recovery_routes import router as failure_recovery_router
 from app.frontend_ui_routes import router as frontend_ui_router
 from app.host_action_routes import router as host_action_router
 from app.investia_admin_routes import router as investia_admin_router
@@ -347,6 +348,7 @@ app.include_router(linux_router)
 app.include_router(local_test_router)
 app.include_router(ollama_provider_router)
 app.include_router(task_run_router)
+app.include_router(failure_recovery_router)
 app.include_router(workflow_observability_router)
 app.include_router(task_documentation_router)
 app.include_router(task_image_router)
