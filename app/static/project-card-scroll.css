@@ -18,40 +18,18 @@
   }
 }
 
-/* Project list: show five description lines and scroll the remainder. */
+/* Base leve: descrição compacta sem criar um segundo scroll dentro do card. */
 #projects-view #projects-list .project-card > p {
-  --project-description-line-height: 1.5em;
-  --project-description-lines: 5;
-  line-height: var(--project-description-line-height);
-  height: calc(var(--project-description-line-height) * var(--project-description-lines));
-  min-height: calc(var(--project-description-line-height) * var(--project-description-lines));
-  max-height: calc(var(--project-description-line-height) * var(--project-description-lines));
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-  padding-right: 8px;
-  margin-bottom: 14px;
-  -webkit-overflow-scrolling: touch;
-}
-
-#projects-view #projects-list .project-card > p::-webkit-scrollbar {
-  width: 6px;
-}
-
-#projects-view #projects-list .project-card > p::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-#projects-view #projects-list .project-card > p::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 999px;
-}
-
-#projects-view #projects-list .project-card > p::-webkit-scrollbar-thumb:hover {
-  background: var(--muted);
+  line-height: 1.5;
+  min-height: 0;
+  height: auto;
+  max-height: 4.5em;
+  margin: 8px 0 14px;
+  padding-right: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 
 /*
@@ -64,7 +42,8 @@
   html:not(.devpilot-project-ships-ready)
   #projects-view #projects-list.cards {
     grid-template-columns:
-      repeat(auto-fit,minmax(250px,1fr)) !important;
+      repeat(auto-fit,minmax(300px,1fr)) !important;
+    gap:14px!important;
   }
 
   html.devpilot-project-ships-ready
@@ -74,10 +53,25 @@
   }
 }
 
-/* DevPilot complete project layout guard · 2026-08-30 */
-
+/* DevPilot complete project layout guard · current layout v50 */
 #projects-view #projects-list .project-card {
   min-width:0!important;
+  min-height:0;
+}
+
+#projects-view #projects-list .project-card:not(.project-ship-card) {
+  display:flex;
+  flex-direction:column;
+  gap:0;
+  padding:18px!important;
+}
+
+#projects-view #projects-list .project-card > h3 {
+  margin:10px 0 0;
+  min-width:0;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
 }
 
 #projects-view #projects-list .project-card > code,
@@ -93,37 +87,88 @@
   overflow-wrap:normal!important;
 }
 
+#projects-view #projects-list .project-card > code {
+  margin-top:auto;
+  padding-top:14px;
+}
+
+#projects-view #projects-list .project-card .list-row {
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin-top:14px;
+  padding-top:12px;
+}
+
+#projects-view #projects-list .project-card .list-row > small {
+  flex:0 0 auto;
+}
+
+#projects-view #projects-list .project-card .list-row > div:last-child {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  min-width:0;
+}
+
 #projects-view #projects-list .project-card button {
   min-width:0;
   max-width:100%;
+  margin:0!important;
+  white-space:nowrap;
 }
 
-@media (min-width:901px) {
-  html:not(.devpilot-project-ships-ready)
-  #projects-view #projects-list.cards {
-    grid-template-columns:
-      repeat(auto-fit,minmax(260px,1fr))!important;
-  }
-
-  html.devpilot-project-ships-ready
-  #projects-view #projects-list.cards {
-    grid-template-columns:
-      repeat(5,minmax(0,1fr))!important;
-  }
+#projects-view #projects-list .project-card .delete-project {
+  margin-left:0!important;
 }
 
 @media (min-width:901px) and (max-width:1180px) {
+  html:not(.devpilot-project-ships-ready)
+  #projects-view #projects-list.cards {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+
   html.devpilot-project-ships-ready
   #projects-view #projects-list.cards {
-    grid-template-columns:
-      repeat(3,minmax(0,1fr))!important;
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
   }
 }
 
 @media (min-width:1181px) and (max-width:1450px) {
+  html:not(.devpilot-project-ships-ready)
+  #projects-view #projects-list.cards {
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+
   html.devpilot-project-ships-ready
   #projects-view #projects-list.cards {
-    grid-template-columns:
-      repeat(4,minmax(0,1fr))!important;
+    grid-template-columns:repeat(4,minmax(0,1fr))!important;
+  }
+}
+
+@media (max-width:900px) {
+  #projects-view #projects-list.cards {
+    grid-template-columns:1fr!important;
+  }
+
+  #projects-view #projects-list .project-card:not(.project-ship-card) {
+    padding:16px!important;
+  }
+
+  #projects-view #projects-list .project-card > p {
+    max-height:3em;
+    -webkit-line-clamp:2;
+  }
+
+  #projects-view #projects-list .project-card .list-row {
+    align-items:stretch;
+    flex-direction:column;
+  }
+
+  #projects-view #projects-list .project-card .list-row > div:last-child {
+    justify-content:flex-start;
   }
 }
