@@ -209,3 +209,151 @@
     window.setTimeout(render, 0);
   });
 })();
+
+/*
+ * Execuções V40 · estabilizador de renderer.
+ * task-failures.js é carregado antes deste arquivo e ainda substitui renderTasks
+ * por um renderer legado de 5 colunas. Este adaptador preserva o diagnóstico
+ * daquele módulo, normaliza o DOM para o contrato visual atual e impede que
+ * Atualizar/Detalhes voltem a comprimir a tela.
+ */
+(() => {
+  'use strict';
+
+  if (window.__devpilotTasksRenderStabilityV40) return;
+  window.__devpilotTasksRenderStabilityV40 = true;
+
+  const STYLE_ID = 'devpilot-tasks-render-stability-v40';
+
+  function injectStabilityStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = STYLE_ID;
+    style.textContent = `
+      #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td{min-width:0!important;word-break:normal!important;overflow-wrap:break-word!important}
+      #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-title{display:block;max-width:100%;white-space:normal!important;word-break:normal!important;overflow-wrap:break-word!important;line-height:1.35}
+      #tasks-view #tasks-table > tr.tasks-v9-recovery-row{border-color:rgba(157,114,255,.34)!important;background:linear-gradient(145deg,rgba(25,18,54,.78),rgba(7,22,36,.97))!important}
+      #tasks-view #tasks-table > tr.tasks-v9-recovery-row .tasks-v9-source{color:#c7b5ff!important}
+      #tasks-view #tasks-table > tr.tasks-v9-recovery-row .task-kind-badge.recovery{border-color:rgba(157,114,255,.34)!important;color:#d5c9ff!important;background:rgba(157,114,255,.10)!important}
+
+      @media (min-width:901px) and (max-width:1280px){
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40{
+          display:grid!important;
+          grid-template-columns:minmax(0,1fr) minmax(180px,280px)!important;
+          gap:10px 18px!important;
+          width:100%!important;
+          margin-bottom:12px!important;
+          padding:16px!important;
+          border:1px solid rgba(80,150,204,.24)!important;
+          border-radius:16px!important;
+          background:linear-gradient(145deg,rgba(12,29,46,.96),rgba(8,22,36,.96))!important;
+          overflow:hidden!important;
+        }
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td{display:block!important;width:auto!important;padding:0!important;border:0!important;background:transparent!important;box-shadow:none!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td:nth-child(1){grid-column:1/-1!important;grid-row:1!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td:nth-child(2){grid-column:1!important;grid-row:2!important;align-self:center!important;white-space:nowrap!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td:nth-child(3){grid-column:2!important;grid-row:2/span 2!important;align-self:start!important;justify-self:end!important;max-width:280px!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td:nth-child(4){grid-column:1!important;grid-row:3!important;align-self:center!important;white-space:nowrap!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td:nth-child(5){grid-column:2!important;grid-row:4!important;justify-self:end!important;width:100%!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-source::before{content:'ORIGEM · ';color:#607f98;font-size:8px;font-weight:900;letter-spacing:.08em}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-priority::before{content:'PRIORIDADE · ';color:#607f98;font-size:8px;font-weight:900;letter-spacing:.08em}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-actions .task-actions,
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-actions .task-operational-actions{display:flex!important;justify-content:flex-end!important;gap:8px!important;flex-wrap:wrap!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .task-status-stack{min-width:0!important;max-width:280px!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .task-failure-reason{max-width:280px!important;overflow-wrap:break-word!important;word-break:normal!important}
+      }
+
+      @media (max-width:900px){
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:10px!important;width:100%!important;padding:14px!important;border:1px solid rgba(80,150,204,.24)!important;border-radius:14px!important;background:linear-gradient(145deg,rgba(12,29,46,.96),rgba(8,22,36,.96))!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 > td{grid-column:1!important;grid-row:auto!important;display:block!important;width:100%!important;max-width:100%!important;padding:0!important;border:0!important;background:transparent!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .task-status-stack,#tasks-view #tasks-table > tr.tasks-render-stable-v40 .task-failure-reason{max-width:100%!important}
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-actions .task-actions,
+        #tasks-view #tasks-table > tr.tasks-render-stable-v40 .tasks-v9-actions .task-operational-actions{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important;width:100%!important}
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function currentTasks() {
+    return typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : [];
+  }
+
+  function taskForRow(row) {
+    const id = String(row?.dataset?.taskId || '');
+    return currentTasks().find(task => String(task.id) === id) || null;
+  }
+
+  function normalizeRow(row) {
+    if (!(row instanceof HTMLTableRowElement) || !row.dataset.taskId) return;
+    const cells = Array.from(row.children).filter(cell => cell instanceof HTMLTableCellElement);
+    if (cells.length < 3) return;
+
+    row.classList.add('task-main-row', 'tasks-v9-row', 'tasks-render-stable-v40');
+
+    if (cells.length >= 5) {
+      cells[0].classList.add('tasks-v9-main');
+      cells[1].classList.add('tasks-v9-source');
+      cells[2].classList.add('tasks-v9-state');
+      cells[3].classList.add('tasks-v9-priority');
+      cells[4].classList.add('tasks-v9-actions');
+      cells[0].querySelector('strong')?.classList.add('tasks-v9-title');
+    }
+
+    const task = taskForRow(row);
+    const recoveryTask = String(task?.source || '').toLowerCase() === 'failure-recovery';
+    row.classList.toggle('tasks-v9-recovery-row', recoveryTask);
+
+    if (recoveryTask) {
+      const source = row.querySelector('.tasks-v9-source');
+      if (source) source.textContent = 'Recuperação';
+      const kind = row.querySelector('.task-kind-badge');
+      if (kind) {
+        kind.classList.remove('analysis', 'execution');
+        kind.classList.add('recovery');
+        kind.textContent = 'Recuperação';
+      }
+    }
+  }
+
+  function normalizeRows({emit = true} = {}) {
+    const rows = Array.from(document.querySelectorAll('#tasks-table > tr[data-task-id]'));
+    rows.forEach(normalizeRow);
+
+    if (emit) {
+      document.dispatchEvent(new CustomEvent('devpilot:tasks-rendered', {
+        detail:{count:rows.length, stabilityV40:true},
+      }));
+    }
+
+    document.querySelectorAll('#tasks-table .tasks-v9-recovery-row .task-recovery-action')
+      .forEach(button => button.remove());
+  }
+
+  function installRendererGuard() {
+    let upstream = null;
+    try { upstream = typeof renderTasks === 'function' ? renderTasks : null; } catch (_) {}
+    if (!upstream && typeof window.renderTasks === 'function') upstream = window.renderTasks;
+    if (!upstream || upstream.__devpilotStabilityV40) return;
+
+    const stableRender = function stableRenderTasksV40(...args) {
+      const result = upstream.apply(this, args);
+      normalizeRows();
+      window.requestAnimationFrame(() => normalizeRows({emit:false}));
+      return result;
+    };
+    stableRender.__devpilotStabilityV40 = true;
+    stableRender.__devpilotUpstream = upstream;
+
+    window.renderTasks = stableRender;
+    try { renderTasks = stableRender; } catch (_) {}
+  }
+
+  injectStabilityStyle();
+  installRendererGuard();
+  normalizeRows();
+
+  document.addEventListener('devpilot:tasks-rendered', event => {
+    if (event.detail?.stabilityV40) return;
+    normalizeRows();
+  });
+})();
