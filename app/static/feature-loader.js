@@ -15,6 +15,10 @@
 
   const loadedFiles = new Set();
   const featureState = new Map();
+  const PROJECTS_LIGHT_FILES = new Set([
+    'mobile-project-card-compact.js',
+    'project-delete-ui.js',
+  ]);
   const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
   let navigationEpoch = 0;
 
@@ -147,6 +151,10 @@
     catch (_) { return ''; }
   };
 
+  const assetRevision = name => String(
+    window.__devpilotAssetRevisions?.[name] || FEATURE_ASSET_REVISION
+  );
+
   Array.from(document.scripts).forEach(script => {
     const name = scriptName(script.src);
     if (name && script.dataset.devpilotFeatureLoadState !== 'failed') loadedFiles.add(name);
@@ -172,6 +180,20 @@
 
   document.documentElement.classList.toggle('devpilot-low-power', lowPowerDevice);
   window.__devpilotFeaturePerf = window.__devpilotFeaturePerf || [];
+
+  const constrainedProjectsRuntime = () => (
+    lowPowerDevice ||
+    window.matchMedia?.('(max-width: 900px)')?.matches === true
+  );
+
+  function filesForFeature(feature) {
+    const files = FEATURE_BUNDLES[feature];
+    if (!Array.isArray(files)) return files;
+    if (feature === 'projects' && constrainedProjectsRuntime()) {
+      return files.filter(name => PROJECTS_LIGHT_FILES.has(name));
+    }
+    return files;
+  }
 
   function waitForExistingFeatureScript(script, name) {
     const state = script.dataset.devpilotFeatureLoadState;
@@ -229,7 +251,7 @@
         console.error(`[DevPilot] Timeout ao carregar ${name}`);
         finish(false);
       }, FEATURE_SCRIPT_TIMEOUT_MS);
-      script.src = `/assets/${encodeURIComponent(name)}?v=${encodeURIComponent(FEATURE_ASSET_REVISION)}`;
+      script.src = `/assets/${encodeURIComponent(name)}?v=${encodeURIComponent(assetRevision(name))}`;
       script.async = false;
       script.dataset.devpilotFeatureScript = '1';
       script.dataset.devpilotFeatureLoadState = 'loading';
@@ -240,7 +262,7 @@
   }
 
   async function loadFeature(feature, options = {}) {
-    const files = FEATURE_BUNDLES[feature];
+    const files = filesForFeature(feature);
     if (!Array.isArray(files)) return false;
 
     const current = featureState.get(feature);
