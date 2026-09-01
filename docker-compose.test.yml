@@ -1,0 +1,15 @@
+# Override exclusivo para desenvolvimento/teste local.
+# Reutiliza as imagens existentes e monta o código-fonte no runtime para evitar
+# rebuild da imagem a cada alteração de frontend/Python.
+services:
+  app:
+    volumes:
+      - ./app:/app/app
+
+  worker:
+    volumes:
+      - ./app:/app/app
+
+  rag-worker:
+    volumes:
+      - ./app:/app/app
