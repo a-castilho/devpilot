@@ -55,6 +55,9 @@ def test_acs_loader_is_visual_only():
     assert "HTMLCollection.prototype.forEach" not in source
     assert "ensureLegacyAuthAnchors" not in source
     assert "loader.style.pointerEvents = 'none'" in source
+    assert "__devpilotLoadFeature" not in source
+    assert "recoverProjectsExperience" not in source
+    assert "project-ships.js" not in source
 
 
 def test_optional_features_require_explicit_loader_actions():
