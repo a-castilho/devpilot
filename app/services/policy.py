@@ -20,12 +20,20 @@ HIGH_RISK_PATTERNS = (
     ),
     (
         "production",
-        re.compile(r"\bproduç(?:ão|ao)\b|\bproduction\b|\bprod\b", re.IGNORECASE),
+        re.compile(
+            r"\b(?:ambiente|servidor|cluster|banco|database|sistema)\s+(?:de|em)\s+produç(?:ão|ao)\b|"
+            r"\b(?:em|para|no|na)\s+(?:produç(?:ão|ao)|production|prod)\b|"
+            r"\b(?:production|prod)\s+(?:environment|env|server|cluster|database)\b",
+            re.IGNORECASE,
+        ),
     ),
     (
         "dependency",
         re.compile(
-            r"\bdepend(?:ency|encies|ência|encias)\b|"
+            r"\b(?:depend(?:ency|encies|ência|ências|encias))\b[^\n]{0,70}"
+            r"\b(?:install|add|remove|update|upgrade|instalar|adicionar|remover|atualizar|alterar)\w*\b|"
+            r"\b(?:install|add|remove|update|upgrade|instalar|adicionar|remover|atualizar|alterar)\w*\b"
+            r"[^\n]{0,70}\b(?:depend(?:ency|encies|ência|ências|encias))\b|"
             r"\b(?:pip|npm|pnpm|yarn|composer)\s+(?:install|add|remove|update|upgrade)\b",
             re.IGNORECASE,
         ),
@@ -62,6 +70,28 @@ HIGH_RISK_PATTERNS = (
     ),
 )
 
+_NEGATION = re.compile(
+    r"\b(?:não|nao|nunca|jamais|never|do\s+not|don't|must\s+not|proibid[oa])\b",
+    re.IGNORECASE,
+)
+_NEGATION_EXCEPTIONS = re.compile(
+    r"\b(?:não|nao)\s+(?:deixe\s+de|esqueça\s+de|esqueca\s+de)|"
+    r"\bdo\s+not\s+forget\s+to\b",
+    re.IGNORECASE,
+)
+_READ_ONLY_CUES = re.compile(
+    r"\b(?:verifique|verificar|valide|validar|confirme|confirmar|revise|revisar|inspecione|inspecionar|"
+    r"audite|auditar|detecte|detectar|documente|documentar|check|verify|validate|confirm|review|inspect|audit)\b",
+    re.IGNORECASE,
+)
+_MUTATING_CUES = re.compile(
+    r"\b(?:faça|faca|fazer|execute|executar|rode|rodar|publique|publicar|envie|enviar|aplique|aplicar|"
+    r"crie|criar|implemente|implementar|configure|configurar|provisione|provisionar|instale|instalar|"
+    r"adicione|adicionar|remova|remover|atualize|atualizar|altere|alterar|apague|apagar|delete|deletar|"
+    r"drop|truncate|mescle|mesclar|force|forçar|forcar)\b",
+    re.IGNORECASE,
+)
+
 REPOSITORY_SHORTHAND = re.compile(
     r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
 )
@@ -88,7 +118,6 @@ def _clean_repository_input(value: str) -> str:
             raw = raw[1:-1].strip()
             changed = True
 
-    # Mobile copy/paste frequently inserts spaces around `/`.
     raw = re.sub(r"\s*/\s*", "/", raw)
     return raw.strip()
 
@@ -147,14 +176,48 @@ def validate_repository_url(url: str) -> None:
     normalize_repository_url(url)
 
 
+def _is_negated_match(line: str, start: int) -> bool:
+    prefix = str(line or "")[max(0, start - 72):start]
+    if _NEGATION_EXCEPTIONS.search(prefix):
+        return False
+    matches = list(_NEGATION.finditer(prefix))
+    if not matches:
+        return False
+    last = matches[-1]
+    tail = prefix[last.end():]
+    return not re.search(r"[.;:]", tail)
+
+
+def _is_read_only_line(line: str) -> bool:
+    return bool(_READ_ONLY_CUES.search(line) and not _MUTATING_CUES.search(line))
+
+
+def _has_actionable_match(text: str, pattern: re.Pattern[str]) -> bool:
+    for raw_line in str(text or "").splitlines() or [str(text or "")]:
+        line = raw_line.strip()
+        if not line:
+            continue
+        read_only = _is_read_only_line(line)
+        for match in pattern.finditer(line):
+            if _is_negated_match(line, match.start()):
+                continue
+            if read_only:
+                continue
+            return True
+    return False
+
+
 def evaluate_task(prompt: str, requested_approval: bool = False) -> PolicyDecision:
-    """Apply approval-by-exception to a task.
+    """Apply approval-by-exception using requested actions, not safety prose.
 
     Local, auditable and reversible work is pre-authorized. Explicit user opt-in or
-    any high-risk boundary still requires approval before execution.
+    any high-risk action still requires approval. Guardrails such as "never force
+    push" and read-only checks such as "verify the configured deployment" must not
+    create a false authorization gate simply because they mention a risky concept.
     """
+    text = str(prompt or "")
     reasons = tuple(
-        name for name, pattern in HIGH_RISK_PATTERNS if pattern.search(str(prompt or ""))
+        name for name, pattern in HIGH_RISK_PATTERNS if _has_actionable_match(text, pattern)
     )
     return PolicyDecision(
         requires_approval=bool(requested_approval or reasons),
