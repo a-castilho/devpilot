@@ -17,7 +17,6 @@
   });
 
   let observer = null;
-  let tableObserver = null;
   let reconcileFrame = 0;
 
   const tasks = () => (
@@ -219,32 +218,46 @@
     });
   }
 
-  function observeTable() {
-    const table = document.querySelector('#tasks-table');
-    if (!table || tableObserver) return;
-    if ('MutationObserver' in window) {
-      tableObserver = new MutationObserver(mutations => {
-        if (mutations.some(mutation => mutation.type === 'childList')) scheduleReconcile();
-      });
-      tableObserver.observe(table, {childList:true});
-    }
+  function installRendererHook() {
+    let upstream = null;
+    try { upstream = typeof renderTasks === 'function' ? renderTasks : null; } catch (_) {}
+    if (!upstream && typeof window.renderTasks === 'function') upstream = window.renderTasks;
+    if (!upstream || upstream.__devpilotV41ReconcileHook) return;
+
+    const wrapped = function renderTasksWithV41Reconcile(...args) {
+      const result = upstream.apply(this, args);
+      scheduleReconcile();
+      return result;
+    };
+    wrapped.__devpilotV41ReconcileHook = true;
+    wrapped.__devpilotV41Upstream = upstream;
+
+    window.renderTasks = wrapped;
+    try { renderTasks = wrapped; } catch (_) {}
+  }
+
+  function settleReconcile() {
+    scheduleReconcile();
+    window.setTimeout(scheduleReconcile, 60);
+    window.setTimeout(scheduleReconcile, 240);
   }
 
   function reconcile() {
     observeView();
-    observeTable();
     updateContainerMode();
     hideInternalRows();
+    installRendererHook();
   }
 
   injectStyle();
-  document.addEventListener('devpilot:tasks-rendered', scheduleReconcile);
+  installRendererHook();
+  document.addEventListener('devpilot:tasks-rendered', settleReconcile);
   document.addEventListener('devpilot:view-changed', event => {
-    if (event.detail?.view === 'tasks') scheduleReconcile();
+    if (event.detail?.view === 'tasks') settleReconcile();
   });
   document.addEventListener('devpilot:feature-ready', event => {
-    if (event.detail?.feature === 'tasks') scheduleReconcile();
+    if (['tasks', 'tasksDetails'].includes(event.detail?.feature)) settleReconcile();
   });
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleReconcile, {once:true});
-  else scheduleReconcile();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', settleReconcile, {once:true});
+  else settleReconcile();
 })();
