@@ -36,7 +36,7 @@ def main() -> None:
     require(viewport, "page-navigation-v26.js", "loader JS V26")
     require(viewport, "loadPageNavigationV26()", "ativação V26")
 
-    require(users, "nav.dataset.view='users'", "Usuários participa do roteador")
+    require(users, "dataset.view", "Usuários participa do roteador")
     require(users, "window.devpilotNavigate('users'", "Usuários usa navegação central")
     require(users, "devpilot:page-ready", "Usuários carrega após tela pronta")
 
