@@ -30,9 +30,20 @@
     document.head.appendChild(link);
   }
 
+  function appendScript(id, src) {
+    if (document.getElementById(id)) return;
+    const script = document.createElement('script');
+    script.id = id;
+    script.src = src;
+    script.defer = true;
+    document.head.appendChild(script);
+  }
+
   function ensureGameUiStyles() {
     appendStylesheet('devpilot-game-operations-v39', '/assets/game-operations-v39.css?v=20260901-1');
     appendStylesheet('devpilot-execution-ship-v45', '/assets/execution-ship-v45.css?v=20260901-1');
+    appendStylesheet('devpilot-task-details-single-open-v46', '/assets/task-details-single-open-v46.css?v=20260901-1');
+    appendScript('devpilot-task-details-single-open-v46-js', '/assets/task-details-single-open-v46.js?v=20260901-1');
   }
 
   function resolveView(item) {
