@@ -1,21 +1,24 @@
 from __future__ import annotations
 
+import json
 import re
 from urllib.parse import quote, urlparse
 
 import httpx
 from fastapi import Depends
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
 from app.delivery_cloud_bridge import install_delivery_cloud_bridge
-from app.models import Project
+from app.models import AuditEvent, Project
 from app.services.audit import record
 
 
 _RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning"}
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+_GENERIC_DELIVERY_ERROR = "Não foi possível concluir esta etapa. Tente novamente."
 _ORIGINAL_RUN_DELIVERY = delivery.run_delivery
 
 
@@ -31,6 +34,46 @@ def _safe_public_url(value: object) -> str:
     if parsed.scheme != "https" or not host.endswith(_ALLOWED_PUBLIC_SUFFIXES):
         return ""
     return candidate
+
+
+def _safe_failure_detail(value: object) -> str:
+    """Expose only the bounded provider/status message already written by delivery.run_delivery."""
+    return " ".join(str(value or "").split())[:180]
+
+
+def _latest_delivery_failure_error(db: Session, project: Project) -> str:
+    event = db.scalar(
+        select(AuditEvent)
+        .where(
+            AuditEvent.project_id == project.id,
+            AuditEvent.action == "project.delivery_failed",
+        )
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+    )
+    if not event:
+        return ""
+    try:
+        details = json.loads(event.details or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return ""
+    if not isinstance(details, dict):
+        return ""
+    return _safe_failure_detail(details.get("error"))
+
+
+def _surface_delivery_failure(db: Session, project: Project, state: dict) -> dict:
+    if str(state.get("status") or "").lower() != "failed":
+        return state
+    current = str(state.get("last_error") or "").strip()
+    if current and current != _GENERIC_DELIVERY_ERROR:
+        return state
+    detail = _latest_delivery_failure_error(db, project)
+    if not detail:
+        return state
+    state["last_error"] = f"Falha técnica: {detail}"
+    delivery.save_delivery(db, project, state)
+    return state
 
 
 def _github_status_urls(repo_full_name: str, branch: str) -> list[str]:
@@ -194,6 +237,7 @@ def _run_delivery_with_public_url_recovery(
     actor: str,
 ) -> dict:
     state = _ORIGINAL_RUN_DELIVERY(db, project, actor)
+    state = _surface_delivery_failure(db, project, state)
     status = str(state.get("status") or "").lower()
 
     if status in _RECOVERABLE_STATUSES:

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.db import Base
 from app.delivery_cloud_bridge import (
     _connection_with_cloud_admin,
+    _normalize_render_repository,
     _request_json_with_cloud_scope,
     cloud_admin_connection,
 )
@@ -224,3 +225,40 @@ def test_vercel_team_id_scope_stays_team_id(monkeypatch):
     )
 
     assert captured["params"] == {"teamId": "team_example"}
+
+
+def test_render_repository_removes_dot_git_suffix():
+    assert _normalize_render_repository(
+        "https://github.com/a-castilho/site-pessoal.git"
+    ) == "https://github.com/a-castilho/site-pessoal"
+
+
+def test_render_repository_converts_github_ssh_to_https():
+    assert _normalize_render_repository(
+        "git@github.com:a-castilho/site-pessoal.git"
+    ) == "https://github.com/a-castilho/site-pessoal"
+
+
+def test_render_service_request_receives_canonical_repository(monkeypatch):
+    captured = {}
+
+    def fake_request(client, provider, method, url, token, *, payload=None, params=None):
+        captured["payload"] = payload
+        return {"ok": True}
+
+    monkeypatch.setattr("app.delivery_cloud_bridge._ORIGINAL_REQUEST_JSON", fake_request)
+
+    result = _request_json_with_cloud_scope(
+        object(),
+        "render",
+        "POST",
+        "https://api.render.com/v1/services",
+        "token-123456",
+        payload={
+            "name": "site-pessoal-homolog",
+            "repo": "https://github.com/a-castilho/site-pessoal.git",
+        },
+    )
+
+    assert result == {"ok": True}
+    assert captured["payload"]["repo"] == "https://github.com/a-castilho/site-pessoal"
