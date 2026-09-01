@@ -3,4 +3,4 @@
 This module is the single source of truth for the application/package version.
 """
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
