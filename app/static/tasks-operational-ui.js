@@ -55,21 +55,56 @@
   }
 
   function taskType(task) {
-    const source = String(task?.source || '').toLowerCase();
-    const title = String(task?.title || '').toLowerCase();
+    const source = String(task?.source || '').trim().toLowerCase();
+    const title = String(task?.title || '').trim().toLowerCase();
+    const prompt = String(task?.prompt || '').toLowerCase();
+
     if (
-      source.includes('analysis') ||
-      source.includes('verification') ||
+      source === 'failure-recovery' ||
+      title.startsWith('recuperação ·') ||
+      title.startsWith('recuperacao ·') ||
+      prompt.includes('[devpilot_failure_recovery_v1]')
+    ) return 'recovery';
+
+    if (
+      source === 'execution-verification' ||
+      title.startsWith('validação pós-execução') ||
+      title.startsWith('validacao pos-execucao') ||
+      prompt.includes('[devpilot_stage=verify]') ||
+      prompt.includes('[post-execution-verification]')
+    ) return 'verification';
+
+    if (
+      source === 'analysis-action' ||
+      prompt.includes('[devpilot_stage=execute]') ||
+      prompt.includes('[devpilot_stage=correct]') ||
+      prompt.includes('[analysis-action]') ||
+      title.startsWith('ação recomendada') ||
+      title.startsWith('acao recomendada') ||
+      title.startsWith('correção pós-validação') ||
+      title.startsWith('correcao pos-validacao')
+    ) return 'execution';
+
+    if (
+      source === 'analysis' ||
       title.startsWith('análise') ||
       title.startsWith('analise') ||
       title.includes('auditoria') ||
-      title.includes('revisão')
+      title.includes('revisão') ||
+      title.includes('revisao') ||
+      prompt.includes('[devpilot_mode=analysis-read-only]')
     ) return 'analysis';
+
     return 'execution';
   }
 
   function taskTypeLabel(task) {
-    return taskType(task) === 'analysis' ? 'Análise' : 'Execução';
+    return ({
+      analysis: 'Análise',
+      execution: 'Execução',
+      verification: 'Validação',
+      recovery: 'Recuperação',
+    })[taskType(task)] || 'Execução';
   }
 
   function projectName(task) {
@@ -96,7 +131,10 @@
     let text = String(prompt || '').trim();
     const marker = 'Contexto do usuário:';
     if (text.includes(marker)) text = text.split(marker).slice(1).join(marker);
-    text = text.replace(/\[DEVPILOT_MODE=[^\]]+\]/gi, '').trim();
+    text = text
+      .replace(/\[DEVPILOT_[^\]]+\]/gi, '')
+      .replace(/\[(?:analysis-action|post-execution-verification|analysis-run:[^\]]+|execution-run:[^\]]+|execution-task:[^\]]+|execution-branch:[^\]]+)\]/gi, '')
+      .trim();
     if (text.length > 1400) text = `${text.slice(0, 1400).trim()}…`;
     return text || 'Nenhum contexto adicional registrado.';
   }
@@ -122,7 +160,7 @@
     if (statusFilter === 'completed' && status !== 'completed') return false;
 
     if (search) {
-      const haystack = [task.title, projectName(task), task.source, statusLabel(task.status)]
+      const haystack = [task.title, projectName(task), task.source, taskTypeLabel(task), statusLabel(task.status)]
         .join(' ')
         .toLowerCase();
       if (!haystack.includes(search)) return false;
@@ -160,12 +198,12 @@
     updateProjectFilter(tasks);
     const filtered = tasks.filter(taskMatches);
     const count = document.querySelector('#tasks-v9-count');
-    if (count) count.textContent = `${filtered.length} de ${tasks.length} execução(ões) exibida(s)`;
+    if (count) count.textContent = `${filtered.length} de ${tasks.length} missão(ões) exibida(s)`;
 
     if (!filtered.length) {
       target.innerHTML = `
         <tr><td colspan="3" class="tasks-v9-empty">
-          <strong>Nenhuma execução encontrada.</strong>
+          <strong>Nenhuma missão encontrada.</strong>
           <span>Ajuste os filtros ou registre uma nova execução.</span>
         </td></tr>`;
       document.dispatchEvent(new CustomEvent('devpilot:tasks-rendered', {detail:{count:0}}));
@@ -189,9 +227,9 @@
         : '';
 
       return `
-        <tr class="task-main-row tasks-v9-row" data-task-id="${html(id)}">
+        <tr class="task-main-row tasks-v9-row" data-task-id="${html(id)}" data-task-kind="${html(type)}">
           <td class="tasks-v9-main">
-            <strong class="tasks-v9-title" title="${html(task.title)}">${html(task.title || 'Execução sem título')}</strong>
+            <strong class="tasks-v9-title" title="${html(task.title)}">${html(task.title || 'Missão sem título')}</strong>
             <div class="tasks-v9-meta">
               <span class="tasks-v9-project">${html(projectName(task))}</span>
               <span class="task-kind-cell task-kind-badge ${html(type)}">${html(taskTypeLabel(task))}</span>
@@ -267,13 +305,14 @@
       panel.innerHTML = `
         <div class="tasks-v9-detail-grid">
           <div><small>Projeto</small><strong>${html(projectName(task))}</strong></div>
-          <div><small>Origem</small><strong>${html(task.source || 'DevPilot')}</strong></div>
+          <div><small>Tipo de missão</small><strong>${html(taskTypeLabel(task))}</strong></div>
+          <div><small>Origem técnica</small><strong>${html(task.source || 'DevPilot')}</strong></div>
           <div><small>Criada</small><strong>${html(formatDate(task.created_at))}</strong></div>
           <div><small>Atualizada</small><strong>${html(formatDate(task.updated_at))}</strong></div>
         </div>
-        <div class="tasks-v9-context"><small>Contexto</small><p>${html(userContext(task.prompt))}</p></div>`;
+        <div class="tasks-v9-context"><small>Objetivo / contexto</small><p>${html(userContext(task.prompt))}</p></div>`;
     } catch (error) {
-      panel.innerHTML = `<div class="tasks-v9-detail-error" role="alert">${html(error?.message || 'Não foi possível carregar os detalhes da execução.')}</div>`;
+      panel.innerHTML = `<div class="tasks-v9-detail-error" role="alert">${html(error?.message || 'Não foi possível carregar os detalhes da missão.')}</div>`;
     } finally {
       panel.removeAttribute('aria-busy');
     }
@@ -286,10 +325,10 @@
     button.textContent = 'Aprovando…';
     try {
       await api(`/tasks/${encodeURIComponent(id)}/approve`, {method:'POST'});
-      notify('Execução aprovada');
+      notify('Missão aprovada');
       await reloadTasks(ui.limit);
     } catch (error) {
-      notify(error?.message || 'Não foi possível aprovar a execução');
+      notify(error?.message || 'Não foi possível aprovar a missão');
       button.disabled = false;
       button.textContent = text;
     }
@@ -301,7 +340,7 @@
     if (!task) return;
 
     const confirmed = window.confirm(
-      `Excluir a execução “${task.title}”?\n\nOs runs vinculados serão removidos. Esta ação não pode ser desfeita.`
+      `Excluir a missão “${task.title}”?\n\nOs runs vinculados serão removidos. Esta ação não pode ser desfeita.`
     );
     if (!confirmed) return;
 
@@ -318,17 +357,17 @@
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        const detail = typeof data?.detail === 'string' ? data.detail : 'Não foi possível excluir a execução';
-        throw new Error(detail === 'Active task cannot be deleted' ? 'Execução ativa não pode ser excluída.' : detail);
+        const detail = typeof data?.detail === 'string' ? data.detail : 'Não foi possível excluir a missão';
+        throw new Error(detail === 'Active task cannot be deleted' ? 'Missão ativa não pode ser excluída.' : detail);
       }
 
       state.tasks = (state.tasks || []).filter(item => String(item.id) !== id);
       ui.detailCache.delete(id);
       renderOperationalTasks();
-      notify('Execução excluída');
+      notify('Missão excluída');
       if (typeof loadDashboard === 'function') window.setTimeout(() => void loadDashboard(), 50);
     } catch (error) {
-      notify(error?.message || 'Não foi possível excluir a execução');
+      notify(error?.message || 'Não foi possível excluir a missão');
       button.disabled = false;
       button.textContent = 'Excluir';
     }
@@ -358,7 +397,7 @@
       refresh.textContent = 'Atualizando…';
     }
     if (target && !(state.tasks || []).length) {
-      target.innerHTML = '<tr><td colspan="3" class="tasks-v9-empty">Carregando execuções…</td></tr>';
+      target.innerHTML = '<tr><td colspan="3" class="tasks-v9-empty">Carregando missões…</td></tr>';
     }
 
     try {
@@ -368,9 +407,9 @@
       ui.limit = safeLimit;
       renderOperationalTasks();
     } catch (error) {
-      notify(error?.message || 'Falha ao atualizar execuções');
+      notify(error?.message || 'Falha ao atualizar missões');
       if (target && !(state.tasks || []).length) {
-        target.innerHTML = `<tr><td colspan="3" class="tasks-v9-empty" role="alert">Não foi possível carregar as execuções. Use “Atualizar” para tentar novamente.</td></tr>`;
+        target.innerHTML = `<tr><td colspan="3" class="tasks-v9-empty" role="alert">Não foi possível carregar as missões. Use “Atualizar” para tentar novamente.</td></tr>`;
       }
     } finally {
       ui.loading = false;
@@ -414,6 +453,18 @@
     const status = document.querySelector('#tasks-v9-status');
     const type = document.querySelector('#tasks-v9-type');
 
+    if (type) {
+      const current = type.value;
+      type.innerHTML = [
+        '<option value="">Todos</option>',
+        '<option value="analysis">Análise</option>',
+        '<option value="execution">Execução</option>',
+        '<option value="verification">Validação</option>',
+        '<option value="recovery">Recuperação</option>',
+      ].join('');
+      if ([...type.options].some(option => option.value === current)) type.value = current;
+    }
+
     [search, project, status, type].filter(Boolean).forEach(input => {
       input.addEventListener(input.tagName === 'INPUT' ? 'input' : 'change', renderOperationalTasks);
     });
@@ -423,7 +474,7 @@
     document.querySelector('#tasks-v9-more')?.addEventListener('click', () => {
       const next = Math.min(50, ui.limit + 12);
       if (next === ui.limit) {
-        notify('As 50 execuções mais recentes já estão carregadas');
+        notify('As 50 missões mais recentes já estão carregadas');
         return;
       }
       void reloadTasks(next);
