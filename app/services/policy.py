@@ -91,6 +91,12 @@ _MUTATING_CUES = re.compile(
     r"drop|truncate|mescle|mesclar|force|forçar|forcar)\b",
     re.IGNORECASE,
 )
+_NEGATED_MUTATION = re.compile(
+    r"\b(?:sem|without)\s+(?:alterar|atualizar|remover|instalar|adicionar|publicar|executar|fazer|"
+    r"change|update|remove|install|add|publish|deploy)\w*\b",
+    re.IGNORECASE,
+)
+_CLAUSE_SPLIT = re.compile(r"(?:[.;]\s+|;\s*)")
 
 REPOSITORY_SHORTHAND = re.compile(
     r"^(?P<owner>[A-Za-z0-9_.-]+)/(?P<repo>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
@@ -176,8 +182,8 @@ def validate_repository_url(url: str) -> None:
     normalize_repository_url(url)
 
 
-def _is_negated_match(line: str, start: int) -> bool:
-    prefix = str(line or "")[max(0, start - 72):start]
+def _is_negated_match(clause: str, start: int) -> bool:
+    prefix = str(clause or "")[max(0, start - 72):start]
     if _NEGATION_EXCEPTIONS.search(prefix):
         return False
     matches = list(_NEGATION.finditer(prefix))
@@ -188,18 +194,28 @@ def _is_negated_match(line: str, start: int) -> bool:
     return not re.search(r"[.;:]", tail)
 
 
-def _is_read_only_line(line: str) -> bool:
-    return bool(_READ_ONLY_CUES.search(line) and not _MUTATING_CUES.search(line))
+def _is_read_only_clause(clause: str) -> bool:
+    return bool(_READ_ONLY_CUES.search(clause) and not _MUTATING_CUES.search(clause))
 
 
-def _has_actionable_match(text: str, pattern: re.Pattern[str]) -> bool:
+def _clauses(text: str):
     for raw_line in str(text or "").splitlines() or [str(text or "")]:
         line = raw_line.strip()
         if not line:
             continue
-        read_only = _is_read_only_line(line)
-        for match in pattern.finditer(line):
-            if _is_negated_match(line, match.start()):
+        parts = [part.strip() for part in _CLAUSE_SPLIT.split(line) if part.strip()]
+        for part in parts or [line]:
+            yield part
+
+
+def _has_actionable_match(text: str, pattern: re.Pattern[str]) -> bool:
+    for clause in _clauses(text):
+        read_only = _is_read_only_clause(clause)
+        for match in pattern.finditer(clause):
+            if _is_negated_match(clause, match.start()):
+                continue
+            matched_text = match.group(0)
+            if _NEGATED_MUTATION.search(matched_text):
                 continue
             if read_only:
                 continue
