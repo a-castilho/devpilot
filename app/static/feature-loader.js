@@ -160,14 +160,6 @@
     window.setTimeout(resolve, 32);
   });
 
-  const idleYield = () => new Promise(resolve => {
-    if ('requestIdleCallback' in window) {
-      window.requestIdleCallback(() => resolve(), {timeout:220});
-      return;
-    }
-    window.setTimeout(resolve, 48);
-  });
-
   const detectedMemory = Number(navigator.deviceMemory || 0);
   const detectedCpu = Number(navigator.hardwareConcurrency || 0);
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
@@ -273,7 +265,6 @@
         });
         await nextPaint();
         await shortYield();
-        if (index > 0 && index % 2 === 0) await idleYield();
       }
 
       const status = cancelled ? 'partial' : failures.length ? 'partial' : 'loaded';
@@ -395,10 +386,7 @@
     const feature = VIEW_FEATURES[viewName];
     if (feature) {
       const ready = await loadFeature(feature);
-      if (!ready) {
-        window.toast?.(`Não foi possível carregar ${viewName}. Tente novamente.`);
-        return false;
-      }
+      if (!ready) window.toast?.('Tela aberta com alguns recursos opcionais indisponíveis.');
     }
 
     if (typeof window.devpilotNavigate === 'function') {
@@ -432,18 +420,23 @@
       }
 
       const ready = await loadFeature('projectBuilder');
-      if (!ready) throw new Error('Não foi possível carregar o cadastro de projeto.');
-
+      const feature = featureState.get('projectBuilder') || {};
+      const failures = Array.isArray(feature.failures) ? feature.failures : [];
       const form = document.querySelector('#project-builder-form');
-      if (!form) throw new Error('Cadastro de projeto indisponível nesta tela.');
+      const groups = document.querySelector('#project-builder-groups');
+      if (!form || !groups || !groups.children.length || failures.includes('project-builder.js')) {
+        throw new Error('Não foi possível carregar o cadastro de projeto.');
+      }
+      if (!ready) window.toast?.('Cadastro aberto; algum recurso auxiliar ficou indisponível.');
 
       const admin = typeof isSuperAdmin === 'function' && isSuperAdmin();
       const organizationSelect = document.querySelector('#project-builder-organization');
       if (organizationSelect && typeof state !== 'undefined') {
         const organizations = Array.isArray(state.organizations) ? state.organizations : [];
-        organizationSelect.innerHTML = '<option value="">Sem organização</option>' + (admin
-          ? organizations.map(org => `<option value="${String(org.id)}">${String(org.name || '')}</option>`).join('')
-          : '');
+        organizationSelect.replaceChildren(new Option('Sem organização', ''));
+        if (admin) {
+          organizations.forEach(org => organizationSelect.add(new Option(String(org.name || ''), String(org.id))));
+        }
         const castilho = organizations.find(org => String(org.external_login || '').toLowerCase() === 'a-castilho');
         if (castilho) organizationSelect.value = String(castilho.id);
       }
