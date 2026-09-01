@@ -30,7 +30,7 @@
     if (goal) goal.value = '';
 
     const score = view.querySelectorAll('.build-game-score strong');
-    if (score[0]) score[0].textContent = '0/6 fases';
+    if (score[0]) score[0].textContent = '0/7 etapas';
     if (score[1]) score[1].textContent = `0/${TOTAL_XP} XP`;
 
     const progress = view.querySelector('.build-game-progress > i');
@@ -46,7 +46,7 @@
     });
 
     const history = view.querySelector('.build-game-history');
-    if (history) history.innerHTML = '<div class="empty">A partida começa quando você jogar a primeira fase.</div>';
+    if (history) history.innerHTML = '<div class="empty">A rodada começa quando você iniciar o Planejamento.</div>';
   };
 
   const refreshNewMission = async () => {
