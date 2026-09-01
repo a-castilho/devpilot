@@ -14,7 +14,9 @@ for arg in "$@"; do
   esac
 done
 
-COMPOSE=(docker compose -f docker-compose.yml -f docker-compose.test.yml)
+# O override de teste nunca deve ser executado sozinho. Ele apenas adiciona bind
+# mounts aos serviços definidos no compose principal.
+COMPOSE=(docker compose -f "$ROOT/docker-compose.yml" -f "$ROOT/docker-compose.test.yml")
 BEFORE="$(git rev-parse HEAD)"
 
 if [[ "$PULL" == "1" ]]; then
@@ -70,23 +72,38 @@ else
   echo "ALTERACOES_RECEBIDAS=0"
 fi
 
+echo "=== VALIDANDO COMPOSE RÁPIDO ==="
+"${COMPOSE[@]}" config >/tmp/devpilot-fast-compose.yml
+for service in app worker rag-worker; do
+  if ! "${COMPOSE[@]}" config --services | grep -Fxq "$service"; then
+    echo "FAST_TEST=COMPOSE_SERVICO_AUSENTE:$service" >&2
+    exit 1
+  fi
+done
+echo "COMPOSE_FAST=OK"
+
 if [[ "$needs_rebuild" == "1" ]]; then
   echo "=== MODO: REBUILD COM CACHE ==="
   "${COMPOSE[@]}" build app worker rag-worker
   "${COMPOSE[@]}" up -d app worker rag-worker
 elif [[ "$needs_worker_restart" == "1" ]]; then
-  echo "=== MODO: PYTHON + WORKERS (SEM REBUILD) ==="
-  "${COMPOSE[@]}" up -d --no-build app worker rag-worker
+  echo "=== MODO: PYTHON + WORKERS (SEM REBUILD FORÇADO) ==="
+  # Não usamos --no-build: versões antigas do Compose tratam serviços apenas
+  # com build: como inválidos nesse modo. Sem --build, a imagem existente é
+  # reutilizada normalmente e só é criada se ainda não existir.
+  "${COMPOSE[@]}" up -d app worker rag-worker
   "${COMPOSE[@]}" restart app worker rag-worker
 elif [[ "$needs_python_restart" == "1" ]]; then
-  echo "=== MODO: PYTHON APP (SEM REBUILD) ==="
-  "${COMPOSE[@]}" up -d --no-build app
+  echo "=== MODO: PYTHON APP (SEM REBUILD FORÇADO) ==="
+  "${COMPOSE[@]}" up -d app
   "${COMPOSE[@]}" restart app
 else
-  echo "=== MODO: FRONTEND/HOT MOUNT (SEM REBUILD E SEM RESTART) ==="
+  echo "=== MODO: FRONTEND/HOT MOUNT (SEM REBUILD FORÇADO E SEM RESTART) ==="
   # Na primeira execução o Compose recria o app para aplicar o bind mount.
   # Nas seguintes, mudanças em app/static ficam visíveis imediatamente.
-  "${COMPOSE[@]}" up -d --no-build app
+  # Não passe --no-build aqui: no Compose presente no Ubuntu de teste ele
+  # elimina build: da resolução do serviço e causa "Must specify image or build".
+  "${COMPOSE[@]}" up -d app
 fi
 
 rm -f /tmp/devpilot-fast-health.json

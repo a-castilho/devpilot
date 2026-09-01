@@ -11,14 +11,24 @@ def test_fast_override_mounts_source_into_runtime_services():
         assert service in OVERRIDE
 
 
-def test_frontend_fast_path_has_no_rebuild_or_restart():
-    assert "MODO: FRONTEND/HOT MOUNT (SEM REBUILD E SEM RESTART)" in SCRIPT
-    assert '"${COMPOSE[@]}" up -d --no-build app' in SCRIPT
+def test_fast_script_always_combines_base_and_override_compose():
+    assert 'docker-compose.yml' in SCRIPT
+    assert 'docker-compose.test.yml' in SCRIPT
+    assert 'COMPOSE=(docker compose -f "$ROOT/docker-compose.yml" -f "$ROOT/docker-compose.test.yml")' in SCRIPT
+    assert '"${COMPOSE[@]}" config >/tmp/devpilot-fast-compose.yml' in SCRIPT
+    assert 'COMPOSE_FAST=OK' in SCRIPT
+
+
+def test_frontend_fast_path_reuses_existing_image_without_no_build_flag():
+    assert "MODO: FRONTEND/HOT MOUNT (SEM REBUILD FORÇADO E SEM RESTART)" in SCRIPT
+    assert '"${COMPOSE[@]}" up -d app' in SCRIPT
+    assert "--no-build" not in SCRIPT
     assert "docker compose build --no-cache" not in SCRIPT
 
 
-def test_python_path_restarts_without_rebuilding_image():
-    assert "MODO: PYTHON + WORKERS (SEM REBUILD)" in SCRIPT
+def test_python_path_restarts_without_forced_rebuild():
+    assert "MODO: PYTHON + WORKERS (SEM REBUILD FORÇADO)" in SCRIPT
+    assert '"${COMPOSE[@]}" up -d app worker rag-worker' in SCRIPT
     assert '"${COMPOSE[@]}" restart app worker rag-worker' in SCRIPT
 
 
