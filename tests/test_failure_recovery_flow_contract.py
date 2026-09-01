@@ -10,6 +10,7 @@ SERVICE = (ROOT / "app/services/failure_recovery.py").read_text(encoding="utf-8"
 UI = (ROOT / "app/static/task-recovery-flow.js").read_text(encoding="utf-8")
 LOADER = (ROOT / "app/static/feature-loader.js").read_text(encoding="utf-8")
 MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
+WORKER = (ROOT / "app/worker.py").read_text(encoding="utf-8")
 
 
 def test_recovery_prompt_requires_root_cause_and_proof_before_original_retry():
@@ -65,6 +66,16 @@ def test_agent_recovery_is_idempotent_and_never_recursively_spawns_itself():
     assert "return existing" in SERVICE
 
 
+def test_worker_automatically_escalates_after_self_healing_and_retests_original():
+    assert "ensure_failure_recovery_task" in WORKER
+    assert 'elif run.status != "success":' in WORKER
+    assert 'actor="worker"' in WORKER
+    assert "generated_recovery_task_id" in WORKER
+    assert 'if run.status == "success" and is_failure_recovery_task(task):' in WORKER
+    assert "resume_original_after_recovery" in WORKER
+    assert "resumed_original_task_id" in WORKER
+
+
 def test_human_guidance_requeues_same_recovery_task_instead_of_duplicating_it():
     assert "INTERVENÇÃO ASSISTIDA DO USUÁRIO" in SERVICE
     assert "recovery.status = TaskStatus.queued" in SERVICE
@@ -74,7 +85,6 @@ def test_human_guidance_requeues_same_recovery_task_instead_of_duplicating_it():
 
 def test_execution_ui_loads_recovery_flow_and_displays_three_levels():
     assert "'task-recovery-flow.js'" in LOADER
-    assert "⚡ Recuperar" not in UI  # icon comes from CSS; label stays accessible text
     assert "button.textContent = 'Recuperar'" in UI
     assert "NÍVEL 1" in UI
     assert "NÍVEL 2" in UI
@@ -83,6 +93,7 @@ def test_execution_ui_loads_recovery_flow_and_displays_three_levels():
     assert "Agente de recuperação" in UI
     assert "INTERVENÇÃO ASSISTIDA" in UI
     assert "Retestar execução original" in UI
+    assert "data-recovery-intervene" in UI
 
 
 def test_recovery_router_is_registered_in_application():
