@@ -47,11 +47,18 @@ def test_legacy_five_column_renderer_is_compacted_on_phone():
     assert "Prioridade · " in SCRIPT
 
 
-def test_counter_recovers_even_when_renderer_skips_tasks_rendered_event():
-    assert "MutationObserver" in SCRIPT
+def test_counter_recovers_through_explicit_renderer_hook():
+    assert "installRendererHook" in SCRIPT
+    assert "__devpilotV41ReconcileHook" in SCRIPT
     assert "#tasks-table > tr[data-task-id]" in SCRIPT
     assert "scheduleReconcile" in SCRIPT
     assert "count.textContent = `${visible} de ${operational.length} execução(ões) exibida(s)`" in SCRIPT
+    assert "new MutationObserver" not in SCRIPT
+
+
+def test_tasks_details_reconciles_after_legacy_renderer_loads():
+    assert "['tasks', 'tasksDetails']" in SCRIPT
+    assert "settleReconcile" in SCRIPT
 
 
 def test_legacy_statuses_are_translated_for_client_ui():
