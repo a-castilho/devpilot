@@ -102,3 +102,17 @@ def test_execution_product_ui_uses_product_contract_and_hides_raw_output_by_defa
     assert '<details class="dp-v28-output">' in source
     assert '<details class="dp-v28-output" open>' not in source
     assert "Não use esta seção isoladamente como estado final do produto." in source
+
+
+def test_tasks_operational_ui_does_not_treat_analysis_action_as_analysis():
+    source = (ROOT / "app/static/tasks-operational-ui.js").read_text(encoding="utf-8")
+
+    assert "source === 'analysis-action'" in source
+    assert "return 'execution'" in source
+    assert "source === 'execution-verification'" in source
+    assert "return 'verification'" in source
+    assert "source === 'failure-recovery'" in source
+    assert "return 'recovery'" in source
+    assert "<option value=\"verification\">Validação</option>" in source
+    assert "<option value=\"recovery\">Recuperação</option>" in source
+    assert "Tipo de missão" in source
