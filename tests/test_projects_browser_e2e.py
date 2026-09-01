@@ -71,11 +71,16 @@ def test_mobile_projects_open_without_main_thread_stall(e2e_server):
             )
             assert len(created) == 14
 
+            projects_nav = page.locator(
+                '.mobile-simple-nav [data-simple-target="projects"]'
+            )
+            projects_nav.wait_for(state="visible", timeout=10_000)
+
             with page.expect_response(
                 lambda response: "/api/ui/projects?limit=12" in response.url,
                 timeout=15_000,
             ) as projects_response:
-                page.locator('.nav[data-view="projects"]:visible').first.click()
+                projects_nav.click()
 
             assert projects_response.value.status == 200
             page.wait_for_selector("#projects-view.active", timeout=10_000)
