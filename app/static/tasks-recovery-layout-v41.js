@@ -18,6 +18,7 @@
 
   let observer = null;
   let reconcileFrame = 0;
+  let activeDetailId = '';
 
   const tasks = () => (
     typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : []
@@ -38,6 +39,11 @@
       #tasks-view #tasks-table > tr.tasks-render-stable-v40[data-devpilot-internal-task="1"],
       #tasks-view #tasks-table > tr.tasks-v9-row[data-devpilot-internal-task="1"],
       #tasks-view #tasks-table > tr.task-details-row[data-devpilot-internal-task="1"]{display:none!important}
+
+      /* Hidden sempre vence qualquer regra de layout antiga. */
+      #tasks-view #tasks-table .task-details-row[hidden],
+      #tasks-view #tasks-table .task-instructions-row[hidden],
+      #tasks-view #tasks-table .task-inline-details[hidden]{display:none!important;height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important}
 
       #tasks-view:not(.tasks-v41-compact) .tasks-v9-table,
       #tasks-view:not(.tasks-v41-compact) .tasks-v9-table tbody{display:block!important}
@@ -147,6 +153,63 @@
     return tasks().find(task => String(task?.id || '') === String(id || '')) || null;
   }
 
+  function detailButton(id) {
+    if (!id) return null;
+    const safe = CSS.escape(String(id));
+    return document.querySelector(`#tasks-table .tasks-v9-details[data-id="${safe}"], #tasks-table .task-instructions-load[data-id="${safe}"]`);
+  }
+
+  function detailRow(id) {
+    if (!id) return null;
+    const safe = CSS.escape(String(id));
+    return document.querySelector(`#tasks-table [data-task-details-row="${safe}"], #tasks-table .task-inline-details[data-task-instructions="${safe}"]`);
+  }
+
+  function closeDetailElement(element) {
+    if (!element) return;
+    element.hidden = true;
+    element.style.setProperty('display', 'none', 'important');
+    const id = element.dataset.taskDetailsRow || element.dataset.taskInstructions || '';
+    const button = detailButton(id);
+    if (button) {
+      button.textContent = 'Detalhes';
+      button.setAttribute('aria-expanded', 'false');
+      button.classList.remove('dp-v13-open');
+    }
+  }
+
+  function enforceSingleOpenDetail(preferredId = activeDetailId) {
+    const all = Array.from(document.querySelectorAll(
+      '#tasks-table [data-task-details-row], #tasks-table .task-inline-details[data-task-instructions]'
+    ));
+
+    let keepId = String(preferredId || '');
+    if (!keepId) {
+      const expanded = Array.from(document.querySelectorAll(
+        '#tasks-table .tasks-v9-details[aria-expanded="true"][data-id], #tasks-table .task-instructions-load[aria-expanded="true"][data-id]'
+      )).pop();
+      keepId = String(expanded?.dataset?.id || '');
+    }
+
+    all.forEach(element => {
+      const id = String(element.dataset.taskDetailsRow || element.dataset.taskInstructions || '');
+      if (!keepId || id !== keepId) closeDetailElement(element);
+    });
+
+    if (!keepId) {
+      activeDetailId = '';
+      return;
+    }
+
+    const keepRow = detailRow(keepId);
+    const keepButton = detailButton(keepId);
+    const expanded = Boolean(
+      keepRow && !keepRow.hidden &&
+      (!keepButton || keepButton.getAttribute('aria-expanded') === 'true')
+    );
+    if (!expanded) activeDetailId = '';
+  }
+
   function normalizeLegacyRow(row) {
     const cells = Array.from(row.children).filter(cell => cell instanceof HTMLTableCellElement);
     const legacy = cells.length >= 5;
@@ -226,6 +289,7 @@
 
     const wrapped = function renderTasksWithV41Reconcile(...args) {
       const result = upstream.apply(this, args);
+      activeDetailId = '';
       scheduleReconcile();
       return result;
     };
@@ -246,12 +310,33 @@
     observeView();
     updateContainerMode();
     hideInternalRows();
+    enforceSingleOpenDetail(activeDetailId);
     installRendererHook();
   }
 
   injectStyle();
   installRendererHook();
-  document.addEventListener('devpilot:tasks-rendered', settleReconcile);
+
+  document.addEventListener('click', event => {
+    const button = event.target instanceof Element
+      ? event.target.closest('#tasks-table .tasks-v9-details[data-id], #tasks-table .task-instructions-load[data-id]')
+      : null;
+    if (!button) return;
+    const id = String(button.dataset.id || '');
+    window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        const row = detailRow(id);
+        const expanded = Boolean(row && !row.hidden && button.getAttribute('aria-expanded') === 'true');
+        activeDetailId = expanded ? id : '';
+        enforceSingleOpenDetail(activeDetailId);
+      });
+    }, 0);
+  }, true);
+
+  document.addEventListener('devpilot:tasks-rendered', () => {
+    activeDetailId = '';
+    settleReconcile();
+  });
   document.addEventListener('devpilot:view-changed', event => {
     if (event.detail?.view === 'tasks') settleReconcile();
   });
