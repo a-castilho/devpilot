@@ -37,11 +37,8 @@
       .projects-memory-footer small { opacity: .74; }
       .projects-memory-footer button { flex: 0 0 auto; }
 
-      html.devpilot-low-power #projects-view .project-visual-overview,
-      @media (max-width: 900px) {
-        #projects-view .project-visual-overview {
-          display: none !important;
-        }
+      html.devpilot-low-power #projects-view .project-visual-overview {
+        display: none !important;
       }
       html.devpilot-low-power #projects-view #projects-list .project-card {
         contain: layout paint;
@@ -59,6 +56,10 @@
       }
 
       @media (max-width: 900px) {
+        #projects-view .project-visual-overview {
+          display: none !important;
+        }
+
         #projects-view #projects-list .project-card {
           contain: layout paint;
           content-visibility: auto;
