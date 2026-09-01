@@ -136,7 +136,7 @@
       : '';
 
     const technical = text
-      ? `<details class="dp-v28-output" open>
+      ? `<details class="dp-v28-output">
           <summary>Resultado completo da execução</summary>
           <pre>${esc(trimResult(text))}</pre>
         </details>`
