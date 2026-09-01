@@ -432,3 +432,13 @@ E o Super Admin consegue responder:
 5. Existe gargalo ou falha recorrente de infraestrutura?
 
 A implementação deve preservar os gates existentes de CI, o isolamento multiusuário, o PR Auto Repair e a auditoria do DevPilot.
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+

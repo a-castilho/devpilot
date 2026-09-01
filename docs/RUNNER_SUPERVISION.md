@@ -123,3 +123,14 @@ loginctl show-user "$USER" -p Linger
 - `Restart=always` e `enable --now`;
 - integração do aviso no mapa do Super Admin;
 - proteção do endpoint por `SUPER_ADMIN`.
+
+<!-- COMPROMISSO-GERAL-A-CASTILHO -->
+
+---
+
+## Compromisso Geral
+
+**Sempre na melhor prática. No caminho do bem maior.**
+
+**Ir até o fim sem sair do caminho, seja ele qual for.**
+
