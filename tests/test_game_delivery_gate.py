@@ -71,3 +71,36 @@ def test_delivery_recovery_accepts_exact_provider_url(monkeypatch):
 
     assert recovery._candidate_urls(object(), project, state) == [provider_url]
     assert recovery._trusted_state_url(object(), project, state) == provider_url
+
+
+def test_delivery_failure_surfaces_bounded_provider_detail(monkeypatch):
+    project = SimpleNamespace(id="project-1")
+    state = {
+        "status": "failed",
+        "last_error": "Não foi possível concluir esta etapa. Tente novamente.",
+    }
+    saved = {}
+
+    monkeypatch.setattr(
+        recovery,
+        "_latest_delivery_failure_error",
+        lambda _db, _project: "render: HTTP 400",
+    )
+    monkeypatch.setattr(
+        recovery.delivery,
+        "save_delivery",
+        lambda _db, _project, current: saved.update(current),
+    )
+
+    result = recovery._surface_delivery_failure(object(), project, state)
+
+    assert result["last_error"] == "Falha técnica: render: HTTP 400"
+    assert saved["last_error"] == "Falha técnica: render: HTTP 400"
+
+
+def test_failure_detail_is_single_line_and_bounded():
+    detail = recovery._safe_failure_detail("render:\nHTTP 400   repositório inválido " + "x" * 300)
+
+    assert "\n" not in detail
+    assert len(detail) == 180
+    assert detail.startswith("render: HTTP 400 repositório inválido")
