@@ -57,10 +57,11 @@
     taskModal: ['task-modal.js'],
     gameWeapons: ['game-weapons.js'],
 
-    /* Execuções: renderer operacional e exclusão entram somente após abrir a tela. */
+    /* Execuções: renderer operacional, exclusão e recuperação entram ao abrir a tela. */
     tasks: [
       'tasks-operational-ui.js',
       'project-delete-ui.js',
+      'task-recovery-flow.js',
     ],
 
     tasksAnalytics: ['task-analytics.js'],
