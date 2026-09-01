@@ -95,7 +95,10 @@ def test_codex_environment_uses_only_project_scoped_openai_credential(monkeypatc
     monkeypatch.setattr(executor, "SessionLocal", lambda: FakeSession())
     monkeypatch.setattr(executor, "Vault", lambda: FakeVault())
 
-    assert executor.codex_environment(project) == {"OPENAI_API_KEY": "sk-project-scoped"}
+    assert executor.codex_environment(project) == {
+        "CODEX_API_KEY": "sk-project-scoped",
+        "OPENAI_API_KEY": "",
+    }
 
 
 def test_codex_environment_preserves_existing_codex_auth_without_selected_credential():
