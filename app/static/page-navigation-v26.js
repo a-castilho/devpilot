@@ -7,15 +7,11 @@
   const root = document.documentElement;
   const MAIN_NAV_SELECTOR = '.sidebar nav .nav';
   const VIEW_TITLES = {
-    overview: 'Visão geral',
-    projects: 'Projetos',
-    tasks: 'Execuções',
-    providers: 'Modelos de IA',
-    reports: 'Relatórios',
-    audit: 'Auditoria',
-    organizations: 'Organizações',
-    users: 'Usuários',
-    profile: 'Perfil',
+    overview: 'Visão geral', projects: 'Projetos', tasks: 'Execuções', providers: 'Modelos de IA',
+    reports: 'Relatórios', audit: 'Auditoria', organizations: 'Organizações', users: 'Usuários', profile: 'Perfil',
+  };
+  const FEATURE_BY_VIEW = {
+    projects: 'projects', tasks: 'tasks', providers: 'providers', reports: 'reports', audit: 'audit', organizations: 'organizations',
   };
 
   let switching = false;
@@ -23,34 +19,13 @@
   let navigationEpoch = 0;
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
 
-  const normalize = value => String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase('pt-BR')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
 
   function resolveView(item) {
     if (!(item instanceof Element)) return '';
     if (item.dataset.view) return String(item.dataset.view);
     if (item.dataset.profileView === '1') return 'profile';
-
-    const label = normalize(item.textContent);
-    const aliases = {
-      'visao geral': 'overview',
-      'inicio': 'overview',
-      'projetos': 'projects',
-      'execucoes': 'tasks',
-      'tarefas': 'tasks',
-      'desenvolvimento': 'tasks',
-      'modelos de ia': 'providers',
-      'relatorios': 'reports',
-      'auditoria': 'audit',
-      'organizacoes': 'organizations',
-      'usuarios': 'users',
-      'perfil': 'profile',
-    };
-    return aliases[label] || '';
+    return ({'visao geral':'overview','inicio':'overview','projetos':'projects','execucoes':'tasks','tarefas':'tasks','desenvolvimento':'tasks','modelos de ia':'providers','relatorios':'reports','auditoria':'audit','organizacoes':'organizations','usuarios':'users','perfil':'profile'})[normalize(item.textContent)] || '';
   }
 
   function closeMobileMenu() {
@@ -66,122 +41,85 @@
       view.hidden = !active;
       view.setAttribute('aria-hidden', active ? 'false' : 'true');
     });
-
     document.querySelectorAll(MAIN_NAV_SELECTOR).forEach(nav => {
       const active = resolveView(nav) === viewName;
       nav.classList.toggle('active', active);
-      if (active) nav.setAttribute('aria-current', 'page');
-      else nav.removeAttribute('aria-current');
+      if (active) nav.setAttribute('aria-current', 'page'); else nav.removeAttribute('aria-current');
     });
   }
 
   function restoreViewVisibility(viewName) {
     const view = document.getElementById(`${viewName}-view`);
-    if (view) {
-      view.hidden = false;
-      view.setAttribute('aria-hidden', 'false');
-    }
+    if (!view) return;
+    view.hidden = false;
+    view.setAttribute('aria-hidden', 'false');
   }
 
   function updateTitle(viewName) {
-    const title = document.querySelector('#page-title');
     const label = VIEW_TITLES[viewName];
     if (!label) return;
+    const title = document.querySelector('#page-title');
     if (title) title.textContent = label;
     document.title = `DevPilot — ${label}`;
   }
 
   function updateHistory(viewName, replace = false) {
     if (!viewName || viewName === 'overview') {
-      if (location.hash && location.hash.startsWith('#/')) {
-        history[replace ? 'replaceState' : 'pushState']({devpilotView: 'overview'}, '', location.pathname + location.search);
-      }
+      if (location.hash.startsWith('#/')) history[replace ? 'replaceState' : 'pushState']({devpilotView:'overview'}, '', location.pathname + location.search);
       return;
     }
-
     const nextHash = `#/${encodeURIComponent(viewName)}`;
-    if (location.hash === nextHash) return;
-    history[replace ? 'replaceState' : 'pushState']({devpilotView: viewName}, '', nextHash);
+    if (location.hash !== nextHash) history[replace ? 'replaceState' : 'pushState']({devpilotView:viewName}, '', nextHash);
+  }
+
+  async function ensureFeature(viewName) {
+    const feature = FEATURE_BY_VIEW[viewName];
+    if (!feature || typeof window.__devpilotLoadFeature !== 'function') return true;
+    try { return await window.__devpilotLoadFeature(feature); }
+    catch (error) { console.error(`[DevPilot] Falha ao carregar ${feature}`, error); return false; }
   }
 
   function runNativeView(viewName) {
-    const nativeShowView = window.showView;
-    if (typeof nativeShowView === 'function') {
-      nativeShowView(viewName);
-      return true;
+    if (typeof window.showView === 'function') {
+      window.showView(viewName);
+      return;
     }
     markOnlyView(viewName);
-    return false;
   }
 
-  function finish(viewName, options = {}, epoch = navigationEpoch) {
+  function finish(viewName, options, epoch) {
     if (epoch !== navigationEpoch || pendingView !== viewName) return;
-
     markOnlyView(viewName);
     restoreViewVisibility(viewName);
     updateTitle(viewName);
-
-    const view = document.getElementById(`${viewName}-view`);
-    if (!reducedMotion) view?.classList.add('dp-page-entering');
-
-    window.scrollTo({top: 0, left: 0, behavior: 'auto'});
-    document.querySelector('main')?.scrollTo?.({top: 0, left: 0, behavior: 'auto'});
-
     if (options.history !== false) updateHistory(viewName, Boolean(options.replaceHistory));
-
     root.dataset.devpilotView = viewName;
     root.classList.remove('dp-page-switching');
-    root.classList.add('dp-page-ready');
-
-    window.requestAnimationFrame(() => {
-      if (epoch !== navigationEpoch) return;
-      view?.classList.remove('dp-page-entering');
-      window.setTimeout(() => {
-        if (epoch === navigationEpoch) root.classList.remove('dp-page-ready');
-      }, reducedMotion ? 0 : 170);
-    });
-
-    document.dispatchEvent(new CustomEvent('devpilot:view-changed', {
-      detail: {view: viewName, source: options.source || 'menu'}
-    }));
-    document.dispatchEvent(new CustomEvent('devpilot:page-ready', {
-      detail: {view: viewName, source: options.source || 'menu'}
-    }));
-
+    document.dispatchEvent(new CustomEvent('devpilot:view-changed', {detail:{view:viewName, source:options.source || 'menu'}}));
+    document.dispatchEvent(new CustomEvent('devpilot:page-ready', {detail:{view:viewName, source:options.source || 'menu'}}));
     switching = false;
     pendingView = '';
   }
 
-  function navigate(viewName, options = {}) {
+  async function navigate(viewName, options = {}) {
     if (!viewName) return false;
-    if (switching && pendingView === viewName) return true;
-
     const target = document.getElementById(`${viewName}-view`);
-    if (!target && viewName !== 'users' && viewName !== 'profile') return false;
+    if (!target && !['users','profile'].includes(viewName)) return false;
+    if (switching && pendingView === viewName) return true;
 
     navigationEpoch += 1;
     const epoch = navigationEpoch;
     switching = true;
     pendingView = viewName;
     closeMobileMenu();
-
-    root.classList.remove('dp-page-ready');
     root.classList.add('dp-page-switching');
 
-    document.querySelectorAll('.dp-page-leaving').forEach(node => node.classList.remove('dp-page-leaving'));
-    const current = document.querySelector('.view.active');
-    if (!reducedMotion) current?.classList.add('dp-page-leaving');
+    const ready = await ensureFeature(viewName);
+    if (epoch !== navigationEpoch) return false;
+    if (!ready) window.toast?.(`Alguns recursos de ${VIEW_TITLES[viewName] || viewName} não puderam ser carregados.`);
 
-    window.setTimeout(() => {
-      if (epoch !== navigationEpoch || pendingView !== viewName) return;
-      current?.classList.remove('dp-page-leaving');
-      runNativeView(viewName);
-
-      window.requestAnimationFrame(() => {
-        finish(viewName, options, epoch);
-      });
-    }, options.immediate || reducedMotion ? 0 : 72);
-
+    runNativeView(viewName);
+    window.requestAnimationFrame(() => finish(viewName, options, epoch));
     return true;
   }
 
@@ -190,20 +128,15 @@
   document.addEventListener('click', event => {
     const item = event.target.closest?.(MAIN_NAV_SELECTOR);
     if (!item || item.dataset.devpilotFeaturePlaceholder) return;
-
     const viewName = resolveView(item);
     if (!viewName) return;
-
     event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    navigate(viewName, {source: 'menu'});
-  }, true);
+    void navigate(viewName, {source:'menu'});
+  });
 
   window.addEventListener('popstate', () => {
     const match = location.hash.match(/^#\/([^/?#]+)/);
-    const viewName = match ? decodeURIComponent(match[1]) : 'overview';
-    navigate(viewName, {source: 'history', history: false, immediate: true});
+    void navigate(match ? decodeURIComponent(match[1]) : 'overview', {source:'history', history:false});
   });
 
   function initializeCurrentView() {
@@ -214,11 +147,6 @@
     root.dataset.devpilotView = viewName;
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initializeCurrentView, {once: true});
-  } else {
-    initializeCurrentView();
-  }
-
-  console.info('[DevPilot] Page Navigation V26 estável');
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeCurrentView, {once:true});
+  else initializeCurrentView();
 })();
