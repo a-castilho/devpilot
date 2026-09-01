@@ -54,6 +54,78 @@ def _failure_text(result: dict | None, error: Exception | None) -> str:
     return str(result.get("stderr") or result.get("summary") or "Execution failed")
 
 
+def _safe_detected_error(decision, fallback: str = "") -> str:
+    for step in getattr(decision, "steps", []) or []:
+        if str(step.get("state") or "") == "detected":
+            value = str(step.get("message") or "").strip()
+            if value:
+                return value[:900]
+    return str(fallback or "Falha sem detalhe técnico disponível.").strip()[:900]
+
+
+def _failure_recommendation(category: str, requires_authorization: bool) -> str:
+    if category == "github_auth":
+        return "Revalidar a credencial GitHub vinculada ao projeto e confirmar acesso ao repositório."
+    if category == "codex_auth":
+        return "Autenticar o Codex no ambiente do worker e repetir esta mesma etapa."
+    if category == "git_network":
+        return "Restabelecer a conectividade com o repositório e repetir a etapa sem alterar o objetivo da rodada."
+    if category == "repository_state":
+        return "Reparar ou recriar com segurança o checkout local antes de continuar esta etapa."
+    if category == "filesystem_permission":
+        return "Corrigir somente a permissão necessária no ambiente de execução e repetir a etapa."
+    if category == "database":
+        return "Restabelecer o banco do DevPilot e validar sua integridade antes de reenfileirar a tarefa."
+    if requires_authorization:
+        return "Resolver a autorização indicada pelo diagnóstico e repetir exatamente esta etapa."
+    return "Usar o erro técnico registrado abaixo para corrigir a causa específica e repetir exatamente esta etapa."
+
+
+def _contextual_failure_report(project: Project, task: Task, decision, failure_text: str, existing_report: str = "") -> str:
+    safe_error = _safe_detected_error(decision, failure_text)
+    category = str(getattr(decision, "category", "unknown") or "unknown")
+    message = str(getattr(decision, "message", "") or "Falha de execução.").strip()
+    recommendation = _failure_recommendation(category, bool(getattr(decision, "requires_authorization", False)))
+    existing = str(existing_report or "").strip()
+
+    report = (
+        "Resumo para o cliente\n"
+        f"A etapa ‘{task.title}’ do projeto ‘{project.name}’ não foi concluída. "
+        f"O DevPilot executou esta tarefa específica, detectou a causa da interrupção e não marcou a etapa como entregue. {message}\n\n"
+        "O que encontramos\n"
+        f"- Etapa executada: {task.title}.\n"
+        f"- Projeto: {project.name}.\n"
+        f"- Categoria do problema: {category}.\n"
+        f"- Causa registrada: {safe_error}.\n\n"
+        "Impacto\n"
+        "A entrega solicitada nesta etapa permanece pendente. O fluxo não deve avançar como se houvesse uma resposta funcional ou uma implementação concluída.\n\n"
+        "Recomendações\n"
+        f"- {recommendation}\n"
+        "- Manter o mesmo objetivo da tarefa ao repetir a execução, para que a resposta seguinte corresponda ao trabalho realmente solicitado.\n\n"
+        "Próximo passo\n"
+        f"Corrigir a causa registrada e reenfileirar ‘{task.title}’."
+    )
+    if existing and len(existing) >= 40:
+        report += "\n\nResposta produzida pelo agente antes da interrupção\n" + existing[:30000]
+    return report[:60000]
+
+
+def _apply_contextual_failure(project: Project, task: Task, result: dict, decision, failure_text: str) -> dict:
+    existing_report = str(result.get("client_report") or "").strip()
+    safe_error = _safe_detected_error(decision, failure_text)
+    result["client_report"] = _contextual_failure_report(project, task, decision, failure_text, existing_report)
+    result["failure_context"] = {
+        "task_id": task.id,
+        "task_title": task.title,
+        "project_id": project.id,
+        "project_name": project.name,
+        "category": str(getattr(decision, "category", "unknown") or "unknown"),
+        "cause": safe_error,
+    }
+    result["summary"] = f"{task.title}: {str(getattr(decision, 'message', '') or safe_error)}"
+    return result
+
+
 def _self_healing_payload(events: list[dict], final_status: str) -> dict:
     last = events[-1] if events else {}
     steps: list[dict] = []
@@ -357,16 +429,18 @@ def process_one() -> bool:
                 continue
             if result is None:
                 result = recovery.failure_result(decision, failure_text)
+                result = _apply_contextual_failure(project, task, result, decision, failure_text)
             else:
                 result["self_healing"] = _self_healing_payload(recovery_events, decision.status)
-                if decision.requires_authorization or decision.status in {"needs_attention", "needs_authorization"}:
-                    result["summary"] = decision.message
+                result = _apply_contextual_failure(project, task, result, decision, failure_text)
             break
 
         if result is None:
-            decision = recovery.recover(project, task, str(final_error or "Execution failed"), recovery.MAX_ATTEMPTS)
+            failure_text = str(final_error or "Execution failed")
+            decision = recovery.recover(project, task, failure_text, recovery.MAX_ATTEMPTS)
             recovery_events.append(decision.to_dict())
-            result = recovery.failure_result(decision, str(final_error or "Execution failed"))
+            result = recovery.failure_result(decision, failure_text)
+            result = _apply_contextual_failure(project, task, result, decision, failure_text)
 
         run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
         run.summary = result.get("summary", "Execution completed")
