@@ -19,8 +19,9 @@ def test_delivery_button_is_visible_and_explicit():
 def test_delivery_button_survives_project_card_rerender():
     text = source()
     assert "MutationObserver" in text
-    assert "observer.observe(host, {childList:true, subtree:true})" in text
-    assert "decorateAll(false)" in text
+    assert "hostObserver.observe(host, {childList:true});" in text
+    assert "subtree:true" not in text
+    assert "observeProjectCards()" in text
     assert "devpilot:feature-ready" in text
 
 
