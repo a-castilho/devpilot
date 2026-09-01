@@ -6,6 +6,7 @@ from app.services.policy import evaluate_task
 ROOT = Path(__file__).resolve().parents[1]
 GAME_HTML = ROOT / "app/static/game/index.html"
 SUPERVISOR = ROOT / "app/static/game/pipeline-supervisor.js"
+STALE_APPROVAL = ROOT / "app/static/game/stale-approval-reconciler.js"
 DELIVERY_GATE = ROOT / "app/static/game/delivery-gate.js"
 BUILD_GAME = ROOT / "app/static/build-game.js"
 
@@ -15,9 +16,10 @@ def test_game_pipeline_supervisor_loads_after_delivery_gate_before_bootstrap():
 
     gate = html.index("/assets/game/delivery-gate.js")
     supervisor = html.index("/assets/game/pipeline-supervisor.js")
+    stale = html.index("/assets/game/stale-approval-reconciler.js")
     bootstrap = html.index("/assets/game/game-bootstrap.js")
 
-    assert gate < supervisor < bootstrap
+    assert gate < supervisor < stale < bootstrap
 
 
 def test_game_safety_guardrails_do_not_create_false_approval_gate():
@@ -49,16 +51,24 @@ def test_real_high_risk_actions_still_require_approval():
         assert expected in decision.reasons, prompt
 
 
-def test_supervisor_reconciles_stale_approval_without_auto_approving_real_risk():
-    script = SUPERVISOR.read_text(encoding="utf-8")
+def test_stale_game_approval_is_reconciled_only_when_current_policy_has_no_risk_reason():
+    script = STALE_APPROVAL.read_text(encoding="utf-8")
 
     assert "/orchestrator" in script
-    assert "reasons.length === 0" in script
-    assert "/next" in script
+    assert "if (reasons.length) return false" in script
+    assert "generatedByGame(task)" in script
     assert "/approve" in script
-    assert "Gate antigo reavaliado" in script
+    assert "/next" in script
+    assert "gate legado sem risco real" in script
+
+
+def test_supervisor_keeps_real_approval_gate_visible():
+    script = SUPERVISOR.read_text(encoding="utf-8")
+
     assert "Gate de autorização real" in script
     assert "O jogo não vai contornar esse limite" in script
+    assert "data-pipeline-approve" in script
+    assert "/approve" in script
 
 
 def test_supervisor_uses_recovery_instead_of_duplicate_failed_phase():
