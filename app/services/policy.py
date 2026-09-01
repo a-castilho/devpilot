@@ -5,6 +5,11 @@ from urllib.parse import urlparse
 from app.config import get_settings
 
 
+_DEPENDENCY_ACTION = (
+    r"(?:install|add|remove|update|upgrade|"
+    r"instal(?:ar|e)|adicion(?:ar|e)|remov(?:er|a)|atualiz(?:ar|e)|alter(?:ar|e))"
+)
+
 HIGH_RISK_PATTERNS = (
     (
         "push",
@@ -30,10 +35,8 @@ HIGH_RISK_PATTERNS = (
     (
         "dependency",
         re.compile(
-            r"\b(?:depend(?:ency|encies|ência|ências|encias))\b[^\n]{0,70}"
-            r"\b(?:install|add|remove|update|upgrade|instalar|adicionar|remover|atualizar|alterar)\w*\b|"
-            r"\b(?:install|add|remove|update|upgrade|instalar|adicionar|remover|atualizar|alterar)\w*\b"
-            r"[^\n]{0,70}\b(?:depend(?:ency|encies|ência|ências|encias))\b|"
+            rf"\b(?:depend(?:ency|encies|ência|ências|encias))\b[^\n]{{0,70}}\b{_DEPENDENCY_ACTION}\w*\b|"
+            rf"\b{_DEPENDENCY_ACTION}\w*\b[^\n]{{0,70}}\b(?:depend(?:ency|encies|ência|ências|encias))\b|"
             r"\b(?:pip|npm|pnpm|yarn|composer)\s+(?:install|add|remove|update|upgrade)\b",
             re.IGNORECASE,
         ),
