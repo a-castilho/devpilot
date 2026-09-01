@@ -15,6 +15,7 @@ def test_internal_recovery_tasks_are_hidden_from_operational_list():
     assert "INTERNAL_SOURCES = new Set(['failure-recovery'])" in SCRIPT
     assert 'data-devpilot-internal-task' in SCRIPT
     assert "operational = allTasks.filter(task => !isInternal(task))" in SCRIPT
+    assert '#tasks-view #tasks-table > tr.tasks-render-stable-v40[data-devpilot-internal-task="1"]' in SCRIPT
 
 
 def test_layout_uses_real_container_width_instead_of_only_viewport_breakpoints():
@@ -36,3 +37,25 @@ def test_compact_rows_stack_without_letter_by_letter_breaking():
     assert "word-break:normal!important" in SCRIPT
     assert "overflow-wrap:break-word!important" in SCRIPT
     assert "white-space:normal!important" in SCRIPT
+
+
+def test_legacy_five_column_renderer_is_compacted_on_phone():
+    assert "data-tasks-v41-legacy" in SCRIPT
+    assert "grid-template-columns:repeat(2,minmax(0,1fr))" in SCRIPT
+    assert "grid-template-columns:repeat(auto-fit,minmax(118px,1fr))" in SCRIPT
+    assert "Origem · " in SCRIPT
+    assert "Prioridade · " in SCRIPT
+
+
+def test_counter_recovers_even_when_renderer_skips_tasks_rendered_event():
+    assert "MutationObserver" in SCRIPT
+    assert "#tasks-table > tr[data-task-id]" in SCRIPT
+    assert "scheduleReconcile" in SCRIPT
+    assert "count.textContent = `${visible} de ${operational.length} execução(ões) exibida(s)`" in SCRIPT
+
+
+def test_legacy_statuses_are_translated_for_client_ui():
+    assert "STATUS_LABELS" in SCRIPT
+    assert "failed: 'Falhou'" in SCRIPT
+    assert "completed: 'Concluída'" in SCRIPT
+    assert "chip.textContent = STATUS_LABELS[normalized]" in SCRIPT
