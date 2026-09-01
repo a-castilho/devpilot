@@ -162,7 +162,7 @@ def codex_command(project: Project, prompt: str) -> list[str]:
 
 
 def codex_environment(project: Project) -> dict[str, str]:
-    """Resolve a project-scoped OpenAI credential without changing global Codex auth state."""
+    """Resolve one project-scoped API key and avoid ambiguous Codex auth environment variables."""
     try:
         config = json.loads(project.codex_config or "{}")
     except (TypeError, ValueError) as error:
@@ -190,7 +190,10 @@ def codex_environment(project: Project) -> dict[str, str]:
 
     if not api_key:
         raise RuntimeError("Configured OpenAI credential is empty")
-    return {"OPENAI_API_KEY": api_key}
+    # `codex exec` has a dedicated CODEX_API_KEY path. Keeping OPENAI_API_KEY
+    # non-empty at the same time can create ambiguous auth selection in current
+    # Codex CLI releases, so explicitly neutralize it for this subprocess only.
+    return {"CODEX_API_KEY": api_key, "OPENAI_API_KEY": ""}
 
 
 def task_timeout(project: Project) -> int:
