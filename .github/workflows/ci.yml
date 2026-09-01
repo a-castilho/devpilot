@@ -116,6 +116,11 @@ jobs:
         if: ${{ vars.DEVPILOT_RUNNER }}
         run: python3 -m playwright install chromium
 
+      - name: Run focused RBAC security tests
+        run: |
+          node --check app/static/users.js
+          python3 -m pytest -q tests/test_user_profiles.py tests/test_user_security_frontend_contract.py
+
       - name: Run complete validation including critical matrix and browser E2E
         run: |
           export PYTHON_BIN="$(command -v python3)"
