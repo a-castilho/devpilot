@@ -69,12 +69,14 @@ class UserCreate(BaseModel):
     password: str = Field(min_length=12, max_length=4096)
     role: str = Field(default="VIEWER", min_length=4, max_length=30)
     full_name: str | None = Field(default=None, max_length=160)
+    confirmation_password: str | None = Field(default=None, min_length=8, max_length=4096)
 
 
 class UserUpdate(BaseModel):
     role: str | None = Field(default=None, min_length=4, max_length=30)
     active: bool | None = None
     full_name: str | None = Field(default=None, max_length=160)
+    confirmation_password: str | None = Field(default=None, min_length=8, max_length=4096)
 
 
 class UserResponse(BaseModel):
@@ -88,80 +90,253 @@ class UserResponse(BaseModel):
 
 
 class OrganizationCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=150)
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,99}$")
-    github_login: str = Field(pattern=r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
-    access_token: str | None = Field(default=None, min_length=8, max_length=10_000)
+    name: str = Field(min_length=2, max_length=120)
+    slug: str = Field(min_length=2, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    provider: str = Field(default="github", max_length=40)
+    namespace: str | None = Field(default=None, max_length=120)
+    github_token: str | None = Field(default=None, max_length=4096)
 
-    @field_validator("slug", mode="before")
+    @field_validator("slug")
     @classmethod
     def normalize_slug(cls, value: str) -> str:
-        if not isinstance(value, str):
-            return value
-        return normalize_organization_identifier(value, max_length=100)
-
-    @field_validator("github_login", mode="before")
-    @classmethod
-    def normalize_github_login(cls, value: str) -> str:
-        if not isinstance(value, str):
-            return value
-        return normalize_organization_identifier(value, max_length=39)
-
-    @model_validator(mode="after")
-    def require_managed_organization_token(self):
-        if self.github_login.lower() == "a-castilho" and not self.access_token:
-            raise ValueError(
-                "Para a organização a-castilho, informe um Fine-grained PAT com Resource owner = a-castilho."
-            )
-        return self
+        slug = normalize_organization_identifier(value, max_length=100)
+        if len(slug) < 2:
+            raise ValueError("slug inválido")
+        return slug
 
 
 class OrganizationUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=2, max_length=150)
-    access_token: str | None = Field(default=None, min_length=8, max_length=10_000)
+    name: str | None = Field(default=None, min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=500)
+    provider: str | None = Field(default=None, max_length=40)
+    namespace: str | None = Field(default=None, max_length=120)
+    github_token: str | None = Field(default=None, max_length=4096)
+    active: bool | None = None
 
 
-class OrganizationSync(BaseModel):
-    import_projects: bool = True
+class OrganizationResponse(BaseModel):
+    id: str
+    workspace_id: str
+    name: str
+    slug: str
+    description: str | None
+    provider: str
+    namespace: str | None
+    active: bool
+    created_at: datetime
 
 
 class ProjectCreate(BaseModel):
-    name: str = Field(min_length=2, max_length=150)
-    slug: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{1,99}$")
-    description: str = ""
-    repository_url: str = Field(min_length=3, max_length=500)
     organization_id: str | None = None
-    default_branch: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
-    agents_md: str = Field(default="", max_length=100_000)
-    codex_config: dict[str, Any] = Field(default_factory=dict)
+    name: str = Field(min_length=2, max_length=160)
+    slug: str = Field(min_length=2, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    repository_url: str = Field(min_length=1, max_length=1000)
+    default_branch: str = Field(default="main", min_length=1, max_length=120)
+    agents_md: str = Field(default="", max_length=100000)
+    codex_config: dict[str, Any] | str | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_slug(cls, value: str) -> str:
+        slug = normalize_organization_identifier(value, max_length=120)
+        if len(slug) < 2:
+            raise ValueError("slug inválido")
+        return slug
 
 
 class ProjectUpdate(BaseModel):
-    description: str | None = None
-    repository_url: str | None = Field(default=None, min_length=3, max_length=500)
     organization_id: str | None = None
-    default_branch: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._/-]+$")
-    agents_md: str | None = Field(default=None, max_length=100_000)
-    codex_config: dict[str, Any] | None = None
-    status: str | None = None
+    name: str | None = Field(default=None, min_length=2, max_length=160)
+    description: str | None = Field(default=None, max_length=1000)
+    repository_url: str | None = Field(default=None, min_length=1, max_length=1000)
+    default_branch: str | None = Field(default=None, min_length=1, max_length=120)
+    agents_md: str | None = Field(default=None, max_length=100000)
+    codex_config: dict[str, Any] | str | None = None
+
+
+class ProjectResponse(BaseModel):
+    id: str
+    workspace_id: str
+    organization_id: str | None
+    name: str
+    slug: str
+    description: str | None
+    repository_url: str
+    default_branch: str
+    agents_md: str
+    codex_config: str
+    created_at: datetime
 
 
 class TaskCreate(BaseModel):
     project_id: str
-    title: str = Field(min_length=2, max_length=240)
-    prompt: str = Field(min_length=5, max_length=100_000)
-    source: str = Field(default="dashboard", pattern=r"^(dashboard|voice|api)$")
+    title: str = Field(min_length=2, max_length=300)
+    prompt: str = Field(min_length=1, max_length=100000)
     priority: int = Field(default=50, ge=0, le=100)
-    requires_approval: bool = False
+    source: str = Field(default="dashboard", max_length=40)
+    skill: str | None = Field(default=None, max_length=120)
+    metadata: dict[str, Any] | None = None
 
 
-class VoiceCommand(BaseModel):
-    project_id: str | None = None
-    transcript: str = Field(min_length=2, max_length=20_000)
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=2, max_length=300)
+    prompt: str | None = Field(default=None, min_length=1, max_length=100000)
+    priority: int | None = Field(default=None, ge=0, le=100)
 
 
-class ProviderCreate(BaseModel):
-    provider: str = Field(pattern=r"^[a-z][a-z0-9_-]{1,49}$")
-    label: str = Field(min_length=2, max_length=100)
-    api_key: str = Field(min_length=8, max_length=10_000)
+class TaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    project_id: str
+    title: str
+    prompt: str
+    priority: int
+    source: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ProviderCredentialCreate(BaseModel):
+    provider: str = Field(min_length=2, max_length=40)
+    label: str = Field(default="default", min_length=1, max_length=100)
+    api_key: str = Field(min_length=6, max_length=4096)
     models: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+class ProviderCredentialUpdate(BaseModel):
+    label: str | None = Field(default=None, min_length=1, max_length=100)
+    api_key: str | None = Field(default=None, min_length=6, max_length=4096)
+    models: list[str] | None = None
+    enabled: bool | None = None
+
+
+class ProviderCredentialResponse(BaseModel):
+    id: str
+    provider: str
+    label: str
+    models: list[str]
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class RunResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    task_id: str
+    attempt: int
+    status: str
+    branch: str | None
+    commit_sha: str | None
+    pull_request_url: str | None
+    summary: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class ReportResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    task_id: str | None
+    kind: str
+    content: str
+    created_at: datetime
+
+
+class AuditResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    actor: str
+    action: str
+    outcome: str
+    details: str
+    created_at: datetime
+
+
+class OrganizationProvisionCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    slug: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    provider: str = Field(default="github", max_length=40)
+    namespace: str | None = Field(default=None, max_length=120)
+    github_token: str | None = Field(default=None, max_length=4096)
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_optional_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        slug = normalize_organization_identifier(value, max_length=100)
+        if len(slug) < 2:
+            raise ValueError("slug inválido")
+        return slug
+
+
+class ProjectProvisionCreate(BaseModel):
+    organization_id: str | None = None
+    name: str = Field(min_length=2, max_length=160)
+    slug: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    agents_md: str = Field(default="", max_length=100000)
+    codex_config: dict[str, Any] | str | None = None
+    private: bool = True
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_optional_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        slug = normalize_organization_identifier(value, max_length=120)
+        if len(slug) < 2:
+            raise ValueError("slug inválido")
+        return slug
+
+
+class ProjectDeferredCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    slug: str | None = Field(default=None, max_length=120)
+    description: str | None = Field(default=None, max_length=1000)
+    agents_md: str = Field(default="", max_length=100000)
+    codex_config: dict[str, Any] | str | None = None
+
+    @field_validator("slug")
+    @classmethod
+    def normalize_optional_slug(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        slug = normalize_organization_identifier(value, max_length=120)
+        if len(slug) < 2:
+            raise ValueError("slug inválido")
+        return slug
+
+
+class GoalCreate(BaseModel):
+    project_id: str
+    objective: str = Field(min_length=1, max_length=2000)
+    constraints: list[str] = Field(default_factory=list)
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    risk_level: int = Field(default=2, ge=1, le=5)
+
+
+class GoalResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    workspace_id: str
+    project_id: str
+    objective: str
+    status: str
+    risk_level: int
+    created_at: datetime
+    updated_at: datetime
