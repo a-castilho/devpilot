@@ -4,6 +4,10 @@
   const GAME_TASK_LIMIT = 24;
   const GAME_PROJECT_LIMIT = 50;
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
+  const INSTALL_FLAG = '__devpilotGameTaskPayloadGuardInstalled';
+
+  if (window[INSTALL_FLAG]) return;
+
   const originalApi = window.api;
 
   const now = () => typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -29,7 +33,7 @@
     catch (_) { return {}; }
   };
 
-  async function recoverGameCreation(options) {
+  const gameCreationIdentity = options => {
     const payload = requestPayload(options);
     const projectId = String(payload?.project_id || '').trim();
     const prompt = String(payload?.prompt || '');
@@ -38,10 +42,24 @@
 
     if (!projectId || !mission || !phase) return null;
 
-    await new Promise(resolve => window.setTimeout(resolve, 350));
+    return {
+      projectId,
+      mission,
+      phase,
+      key: `${projectId}::${mission}::${phase}`,
+    };
+  };
+
+  async function findGameCreation(options, delayMs = 0) {
+    const identity = gameCreationIdentity(options);
+    if (!identity) return null;
+
+    if (delayMs > 0) {
+      await new Promise(resolve => window.setTimeout(resolve, delayMs));
+    }
 
     const tasks = await originalApi(
-      `/ui/game-tasks?project_id=${encodeURIComponent(projectId)}&limit=${GAME_TASK_LIMIT}`,
+      `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=${GAME_TASK_LIMIT}`,
       {method: 'GET'}
     );
 
@@ -49,9 +67,13 @@
 
     return tasks.find(task => {
       const taskPrompt = String(task?.prompt || '');
-      return promptValue(taskPrompt, 'PARTIDA') === mission
-        && promptValue(taskPrompt, 'FASE') === phase;
+      return promptValue(taskPrompt, 'PARTIDA') === identity.mission
+        && promptValue(taskPrompt, 'FASE') === identity.phase;
     }) || null;
+  }
+
+  async function recoverGameCreation(options) {
+    return findGameCreation(options, 350);
   }
 
   window.__devpilotGameTrace = trace;
@@ -60,6 +82,74 @@
   if (typeof originalApi !== 'function') {
     trace('guard:error', {message: 'api indisponível'});
     return;
+  }
+
+  window[INSTALL_FLAG] = true;
+  const gameCreationLocks = new Map();
+
+  async function createGameTaskOnce(path, options) {
+    const identity = gameCreationIdentity(options);
+    if (!identity) return originalApi(path, options);
+
+    const inFlight = gameCreationLocks.get(identity.key);
+    if (inFlight) {
+      trace('game-create:dedupe:join', {
+        projectId: identity.projectId,
+        mission: identity.mission,
+        phase: identity.phase,
+      });
+      return inFlight;
+    }
+
+    const creation = (async () => {
+      try {
+        trace('game-create:dedupe:check', {
+          projectId: identity.projectId,
+          mission: identity.mission,
+          phase: identity.phase,
+        });
+        const existing = await findGameCreation(options);
+        if (existing) {
+          trace('game-create:dedupe:existing', {
+            id: existing.id,
+            projectId: identity.projectId,
+            mission: identity.mission,
+            phase: identity.phase,
+          });
+          window.toast?.('Esta etapa já está registrada. A tarefa existente será reutilizada.');
+          return existing;
+        }
+
+        const result = await originalApi(path, options);
+        trace('game-create:end', {id: result?.id || undefined});
+        return result;
+      } catch (error) {
+        try {
+          trace('game-create:recover:start');
+          const recovered = await recoverGameCreation(options);
+          if (recovered) {
+            trace('game-create:recover:end', {id: recovered.id});
+            window.toast?.('Fase registrada. A conexão oscilou, mas a execução foi confirmada.');
+            return recovered;
+          }
+          trace('game-create:recover:miss');
+        } catch (recoveryError) {
+          trace('game-create:recover:error', {
+            message: String(recoveryError?.message || recoveryError || 'erro'),
+          });
+        }
+        throw error;
+      }
+    })();
+
+    gameCreationLocks.set(identity.key, creation);
+    try {
+      return await creation;
+    } finally {
+      if (gameCreationLocks.get(identity.key) === creation) {
+        gameCreationLocks.delete(identity.key);
+      }
+    }
   }
 
   window.api = async (path, options = {}) => {
@@ -91,6 +181,15 @@
 
     trace(`${stage}:start`, {path: String(routedPath || ''), method});
 
+    if (stage === 'game-create') {
+      try {
+        return await createGameTaskOnce(routedPath, options);
+      } catch (error) {
+        trace('game-create:error', {message: String(error?.message || error || 'erro')});
+        throw error;
+      }
+    }
+
     try {
       const result = await originalApi(routedPath, options);
       trace(`${stage}:end`, {
@@ -99,23 +198,6 @@
       });
       return result;
     } catch (error) {
-      if (stage === 'game-create') {
-        try {
-          trace('game-create:recover:start');
-          const recovered = await recoverGameCreation(options);
-          if (recovered) {
-            trace('game-create:recover:end', {id: recovered.id});
-            window.toast?.('Fase registrada. A conexão oscilou, mas a execução foi confirmada.');
-            return recovered;
-          }
-          trace('game-create:recover:miss');
-        } catch (recoveryError) {
-          trace('game-create:recover:error', {
-            message: String(recoveryError?.message || recoveryError || 'erro'),
-          });
-        }
-      }
-
       if (stage === 'projects' || stage === 'game-tasks') {
         window.__devpilotGameLoadError = error instanceof Error
           ? error
@@ -132,4 +214,5 @@
   window.__devpilotGameUsesLightweightHistory = true;
   window.__devpilotGameUsesLightweightProjects = true;
   window.__devpilotGameCreateRecovery = true;
+  window.__devpilotGameCreateDedup = true;
 })();
