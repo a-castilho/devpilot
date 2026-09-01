@@ -11,6 +11,11 @@ from app.services import executor as executor_service
 from app.services.ai_costs import budget_block_reason
 from app.services.alternating_flow import execute_task
 from app.services.audit import record
+from app.services.failure_recovery import (
+    ensure_failure_recovery_task,
+    is_failure_recovery_task,
+    resume_original_after_recovery,
+)
 from app.services.recovery import AutoRecoveryService
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.services.task_flow import (
@@ -374,6 +379,26 @@ def process_one() -> bool:
             record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.self_healing", outcome=str(healing.get("status") or "failed"), details={"run_id": run.id, "category": healing.get("category", "unknown"), "strategy": healing.get("strategy", "none"), "attempts": run.attempt, "requires_authorization": needs_authorization})
 
         run.finished_at = datetime.now(timezone.utc)
+
+        generated_recovery = None
+        resumed_original = None
+        if run.status == "success" and is_failure_recovery_task(task):
+            resumed_original = resume_original_after_recovery(db, recovery_task=task, recovery_run=run)
+        elif run.status != "success":
+            failure_payload = {
+                "category": str((healing or {}).get("category") or "unknown"),
+                "code": "EXECUTION_FAILED",
+                "message": str((healing or {}).get("message") or run.summary or "Execution failed"),
+                "requires_authorization": needs_authorization,
+            }
+            generated_recovery = ensure_failure_recovery_task(
+                db,
+                original_task=task,
+                run=run,
+                failure=failure_payload,
+                actor="worker",
+            )
+
         generated_action = _ensure_analysis_action(db, project=project, task=task, run=run, result=result)
         generated_verification = _ensure_execution_verification(db, project=project, task=task, run=run, result=result)
         mark_worker_finished(db, task, run)
@@ -385,7 +410,14 @@ def process_one() -> bool:
             actor="worker",
             action="task.executed",
             outcome=run.status,
-            details={"run_id": run.id, "attempt": run.attempt, "generated_action_task_id": generated_action.id if generated_action else None, "generated_verification_task_id": generated_verification.id if generated_verification else None},
+            details={
+                "run_id": run.id,
+                "attempt": run.attempt,
+                "generated_action_task_id": generated_action.id if generated_action else None,
+                "generated_verification_task_id": generated_verification.id if generated_verification else None,
+                "generated_recovery_task_id": generated_recovery.id if generated_recovery else None,
+                "resumed_original_task_id": resumed_original.id if resumed_original else None,
+            },
         )
         db.commit()
         return True
