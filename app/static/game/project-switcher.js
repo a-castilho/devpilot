@@ -120,8 +120,12 @@
     const host = switcher.querySelector('.game-neon-project-select-host');
     if (host && select.parentElement !== host) host.replaceChildren(select);
 
-    switcher.querySelector('[data-game-project-prev]')?.addEventListener('click', () => triggerProjectChange(select, -1));
-    switcher.querySelector('[data-game-project-next]')?.addEventListener('click', () => triggerProjectChange(select, 1));
+    if (switcher.dataset.projectSwitchBound !== '1') {
+      switcher.dataset.projectSwitchBound = '1';
+      switcher.querySelector('[data-game-project-prev]')?.addEventListener('click', () => triggerProjectChange(select, -1));
+      switcher.querySelector('[data-game-project-next]')?.addEventListener('click', () => triggerProjectChange(select, 1));
+    }
+
     syncButtons(switcher, select);
     document.documentElement.dataset.devpilotGameProjectSwitcher = 'v50';
     return true;
