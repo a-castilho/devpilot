@@ -15,6 +15,7 @@ from app.services.failure_recovery import (
     ensure_failure_recovery_task,
     find_failure_recovery_task,
     latest_run_for_task,
+    resume_original_after_recovery,
 )
 from app.task_run_routes import failure_details, sanitize_payload
 
@@ -107,12 +108,20 @@ def _payload(db: Session, original: Task) -> dict:
         "intervention_required",
         "recovery_exhausted",
     }
+    can_resume = bool(
+        recovery
+        and recovery.status == TaskStatus.completed
+        and recovery_run
+        and recovery_run.status == "success"
+        and original.status in {TaskStatus.failed, TaskStatus.blocked}
+    )
     return {
         "task_id": original.id,
         "task_title": original.title,
         "task_status": _status_value(original.status),
         "state": state,
         "manual_intervention_required": manual,
+        "can_resume_original": can_resume,
         "failure": original_failure,
         "self_healing": _healing_payload(original_run),
         "original_run": {
@@ -187,5 +196,25 @@ def intervene_recovery(
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
+    db.commit()
+    return _payload(db, original)
+
+
+@router.post("/tasks/{task_id}/recovery/resume")
+def resume_original(task_id: str, db: Session = Depends(get_db)):
+    original = _task(db, task_id)
+    recovery = find_failure_recovery_task(db, original)
+    if not recovery:
+        raise HTTPException(409, "Recovery task not found")
+    recovery_run = latest_run_for_task(db, recovery.id)
+    if recovery.status != TaskStatus.completed or not recovery_run or recovery_run.status != "success":
+        raise HTTPException(409, "Recovery must complete successfully before retesting the original task")
+    resumed = resume_original_after_recovery(
+        db,
+        recovery_task=recovery,
+        recovery_run=recovery_run,
+    )
+    if not resumed:
+        raise HTTPException(409, "Original task cannot be resumed")
     db.commit()
     return _payload(db, original)
