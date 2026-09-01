@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
+from app.investia_models import (
+    InvestiaDistributionSnapshot,
+    InvestiaProjectConfig,
+    InvestiaProjectCost,
+)
 from app.models import Project, Repository, Task, TaskStatus, Workspace
+from app.quest_models import QuestMission
 from app.security import require_access, require_super_admin
 from app.services.audit import record
 
@@ -18,6 +25,40 @@ def _workspace(db: Session) -> Workspace:
     if not item:
         raise HTTPException(404, "Workspace not found")
     return item
+
+
+def _delete_project_dependents(db: Session, project_id: str) -> None:
+    """Remove vínculos com FK que não pertencem ao cascade ORM de Project."""
+    db.execute(delete(QuestMission).where(QuestMission.project_id == project_id))
+
+    investia_ids = list(
+        db.scalars(
+            select(InvestiaProjectConfig.id).where(
+                InvestiaProjectConfig.project_id == project_id
+            )
+        ).all()
+    )
+    if investia_ids:
+        db.execute(
+            delete(InvestiaProjectCost).where(
+                InvestiaProjectCost.investia_project_id.in_(investia_ids)
+            )
+        )
+        db.execute(
+            delete(InvestiaDistributionSnapshot).where(
+                InvestiaDistributionSnapshot.investia_project_id.in_(investia_ids)
+            )
+        )
+        db.execute(
+            delete(InvestiaProjectConfig).where(
+                InvestiaProjectConfig.id.in_(investia_ids)
+            )
+        )
+
+
+def _delete_task_dependents(db: Session, task_id: str) -> None:
+    """QuestMission referencia Task diretamente e precisa sair antes da tarefa."""
+    db.execute(delete(QuestMission).where(QuestMission.task_id == task_id))
 
 
 @router.delete("/projects/{project_id}", status_code=204)
@@ -40,31 +81,44 @@ def delete_project(
     project_slug = project.slug
     repository_url = project.repository_url
 
-    # Repositórios sincronizados pertencem à organização GitHub e devem
-    # continuar cadastrados. Apenas removemos o vínculo com o projeto.
-    db.execute(
-        update(Repository)
-        .where(Repository.project_id == project.id)
-        .values(project_id=None)
-    )
+    try:
+        # Repositórios sincronizados pertencem à organização GitHub e devem
+        # continuar cadastrados. Apenas removemos o vínculo com o projeto.
+        db.execute(
+            update(Repository)
+            .where(Repository.project_id == project.id)
+            .values(project_id=None)
+        )
 
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=project.id,
-        actor=actor,
-        action="project.deleted",
-        details={
-            "name": project_name,
-            "slug": project_slug,
-            "repository": repository_url,
-        },
-    )
+        # Jogo/Quest e Investia possuem FKs próprias para Project/Task e não
+        # fazem parte do cascade ORM de Project. Remova-os primeiro para que
+        # PostgreSQL e SQLite apliquem a mesma regra de exclusão.
+        _delete_project_dependents(db, project.id)
 
-    # Project.tasks usa cascade delete-orphan e Task.runs também, portanto
-    # as tarefas e execuções pertencentes ao projeto são removidas junto.
-    db.delete(project)
-    db.commit()
+        record(
+            db,
+            workspace_id=ws.id,
+            project_id=project.id,
+            actor=actor,
+            action="project.deleted",
+            details={
+                "name": project_name,
+                "slug": project_slug,
+                "repository": repository_url,
+            },
+        )
+
+        # Project.tasks usa cascade delete-orphan e Task.runs também, portanto
+        # as tarefas e execuções restantes pertencentes ao projeto saem junto.
+        db.delete(project)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "O projeto ainda possui vínculos internos que impedem a exclusão.",
+        ) from exc
+
     return Response(status_code=204)
 
 
@@ -97,21 +151,31 @@ def delete_task(
     task_status = task.status.value if isinstance(task.status, TaskStatus) else str(task.status)
     project_id = task.project_id
 
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=project_id,
-        task_id=task.id,
-        actor=actor,
-        action="task.deleted",
-        details={
-            "title": task_title,
-            "status": task_status,
-        },
-    )
+    try:
+        _delete_task_dependents(db, task.id)
 
-    # Task.runs usa cascade delete-orphan; o evento de auditoria permanece
-    # como evidência da ação destrutiva sem manter a tarefa no dashboard.
-    db.delete(task)
-    db.commit()
+        record(
+            db,
+            workspace_id=ws.id,
+            project_id=project_id,
+            task_id=task.id,
+            actor=actor,
+            action="task.deleted",
+            details={
+                "title": task_title,
+                "status": task_status,
+            },
+        )
+
+        # Task.runs usa cascade delete-orphan; o evento de auditoria permanece
+        # como evidência da ação destrutiva sem manter a tarefa no dashboard.
+        db.delete(task)
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            409,
+            "A tarefa ainda possui vínculos internos que impedem a exclusão.",
+        ) from exc
+
     return Response(status_code=204)
