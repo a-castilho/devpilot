@@ -7,7 +7,7 @@
   const root = document.documentElement;
   const MAIN_NAV_SELECTOR = '.sidebar nav .nav';
   const VIEW_TITLES = {
-    overview: 'Visão geral', projects: 'Projetos', tasks: 'Execuções', providers: 'Modelos de IA',
+    overview: 'Visão geral', projects: 'Projetos', 'new-project': 'Novo projeto', tasks: 'Execuções', providers: 'Modelos de IA',
     reports: 'Relatórios', audit: 'Auditoria', organizations: 'Organizações', users: 'Usuários', profile: 'Perfil',
   };
   const FEATURE_BY_VIEW = {
@@ -20,6 +20,15 @@
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
 
   const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
+
+  function ensureGameUiStyles() {
+    if (document.getElementById('devpilot-game-operations-v39')) return;
+    const link = document.createElement('link');
+    link.id = 'devpilot-game-operations-v39';
+    link.rel = 'stylesheet';
+    link.href = '/assets/game-operations-v39.css?v=20260901-1';
+    document.head.appendChild(link);
+  }
 
   function resolveView(item) {
     if (!(item instanceof Element)) return '';
@@ -125,6 +134,23 @@
 
   window.devpilotNavigate = navigate;
 
+  function installVisibilitySafeShowView() {
+    if (window.__devpilotVisibilitySafeShowViewV39) return;
+    const nativeShowView = window.showView;
+    if (typeof nativeShowView !== 'function') return;
+    window.__devpilotVisibilitySafeShowViewV39 = true;
+    window.showView = function devpilotVisibilitySafeShowView(viewName) {
+      const result = nativeShowView.apply(this, arguments);
+      if (viewName === 'organizations' && typeof window.isSuperAdmin === 'function' && !window.isSuperAdmin()) return result;
+      if (!document.getElementById(`${viewName}-view`)) return result;
+      markOnlyView(viewName);
+      restoreViewVisibility(viewName);
+      updateTitle(viewName);
+      root.dataset.devpilotView = viewName;
+      return result;
+    };
+  }
+
   document.addEventListener('click', event => {
     const item = event.target.closest?.(MAIN_NAV_SELECTOR);
     if (!item || item.dataset.devpilotFeaturePlaceholder) return;
@@ -146,6 +172,9 @@
     updateTitle(viewName);
     root.dataset.devpilotView = viewName;
   }
+
+  ensureGameUiStyles();
+  installVisibilitySafeShowView();
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initializeCurrentView, {once:true});
   else initializeCurrentView();
