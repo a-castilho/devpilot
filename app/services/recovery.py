@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import subprocess
@@ -40,7 +41,7 @@ class RecoveryDecision:
 
 
 class AutoRecoveryService:
-    """Safe, bounded recovery for failures that can be repaired without destructive actions."""
+    """Safe, bounded recovery that escalates to a person only after automatic options are exhausted."""
 
     MAX_ATTEMPTS = 3
 
@@ -75,6 +76,9 @@ class AutoRecoveryService:
         "invalid api key",
         "codex login",
         "401 unauthorized",
+        "configured openai credential is unavailable",
+        "configured openai credential cannot be decrypted",
+        "configured openai credential is empty",
     )
     _FILESYSTEM = (
         "operation not permitted",
@@ -87,6 +91,9 @@ class AutoRecoveryService:
         "database is unavailable",
         "sqlalchemy.exc.operationalerror",
     )
+
+    def __init__(self) -> None:
+        self._codex_attempted_credentials: set[str] = set()
 
     def classify(self, error_text: str) -> str:
         text = str(error_text or "").casefold()
@@ -171,59 +178,92 @@ class AutoRecoveryService:
             )
 
         if category == "codex_auth":
-            return RecoveryDecision(
-                category=category,
-                status="needs_authorization",
-                message="O Codex não está autenticado no ambiente de execução. É necessária autorização para continuar.",
-                requires_authorization=True,
-                strategy="request_codex_authorization",
-                steps=[detected],
-            )
+            decision = self._recover_codex_access(project, execution_attempt)
+            decision.steps.insert(0, detected)
+            return decision
 
         if category == "filesystem_permission":
             return RecoveryDecision(
                 category=category,
                 status="needs_authorization",
-                message="Permissão do sistema operacional bloqueou a execução. O DevPilot não alterou permissões automaticamente.",
+                message=(
+                    "O DevPilot não encontrou uma correção automática segura para a permissão do sistema operacional. "
+                    "É necessária intervenção somente para liberar o acesso mínimo indicado."
+                ),
                 requires_authorization=True,
                 strategy="request_filesystem_authorization",
                 steps=[detected],
+            )
+
+        if category == "database" and execution_attempt < self.MAX_ATTEMPTS:
+            delay = min(2, max(1, execution_attempt))
+            time.sleep(delay)
+            return RecoveryDecision(
+                category=category,
+                status="retrying",
+                message="Indisponibilidade transitória de banco detectada. O DevPilot tentará novamente automaticamente.",
+                retry=True,
+                strategy="database_reconnect_retry",
+                steps=[
+                    detected,
+                    {
+                        "state": "repairing",
+                        "attempt": execution_attempt,
+                        "message": f"Nova tentativa de acesso ao banco agendada após {delay}s.",
+                    },
+                ],
             )
 
         if category == "database":
             return RecoveryDecision(
                 category=category,
                 status="needs_attention",
-                message="Falha de banco detectada. A correção automática foi interrompida para evitar operações inseguras sobre dados.",
-                strategy="database_safety_stop",
+                message=(
+                    "As tentativas automáticas de reconexão ao banco foram esgotadas. "
+                    "O DevPilot encaminhará a falha para a recuperação automática de causa raiz."
+                ),
+                strategy="database_recovery_escalation",
                 steps=[detected],
             )
 
         return RecoveryDecision(
             category=category,
             status="needs_attention",
-            message="A falha ainda não possui uma estratégia automática segura cadastrada.",
-            strategy="unclassified_failure",
+            message=(
+                "A falha não possui uma estratégia direta cadastrada. "
+                "O DevPilot encaminhará o caso para a recuperação automática de causa raiz."
+            ),
+            strategy="automatic_failure_recovery",
             steps=[detected],
         )
 
     def failure_result(self, decision: RecoveryDecision, original_error: str) -> dict:
-        intervention = "Intervenção necessária" if decision.requires_authorization else "Atenção necessária"
+        intervention = "Intervenção necessária" if decision.requires_authorization else "Recuperação automática necessária"
+        recommendation = (
+            "Conclua somente a autorização externa indicada; as opções automáticas já foram esgotadas."
+            if decision.requires_authorization
+            else "Aguarde a missão automática de recuperação de causa raiz criada pelo DevPilot."
+        )
+        next_step = (
+            "Após a autorização necessária, o DevPilot retomará o fluxo automaticamente."
+            if decision.requires_authorization
+            else "O DevPilot corrigirá a causa raiz e reenfileirará a execução original automaticamente quando houver evidência de recuperação."
+        )
         return {
             "mode": "self-healing",
             "exit_code": 1,
             "summary": f"{intervention}: {decision.message}",
             "client_report": (
                 "Resumo para o cliente\n"
-                f"O DevPilot detectou automaticamente o problema e tentou aplicar uma correção segura. {decision.message}\n\n"
+                f"O DevPilot detectou automaticamente o problema e executou as estratégias seguras disponíveis. {decision.message}\n\n"
                 "O que encontramos\n"
                 f"Categoria identificada: {decision.category}.\n\n"
                 "Impacto\n"
-                "A tarefa foi interrompida antes de uma ação potencialmente insegura ou não autorizada.\n\n"
+                "A tarefa foi interrompida antes de uma ação insegura ou não autorizada e não foi marcada como entregue.\n\n"
                 "Recomendações\n"
-                "Conclua a autorização ou ajuste indicado pelo diagnóstico de autocorreção.\n\n"
+                f"{recommendation}\n\n"
                 "Próximo passo\n"
-                "Após resolver a autorização necessária, execute novamente; o DevPilot retomará o fluxo automaticamente."
+                f"{next_step}"
             ),
             "stderr": self._safe_error(original_error),
             "self_healing": {
@@ -235,6 +275,103 @@ class AutoRecoveryService:
                 "steps": decision.steps,
             },
         }
+
+    def _recover_codex_access(self, project: Project, execution_attempt: int) -> RecoveryDecision:
+        current_id = self._configured_codex_credential_id(project)
+        if current_id:
+            self._codex_attempted_credentials.add(current_id)
+
+        if execution_attempt >= self.MAX_ATTEMPTS:
+            return RecoveryDecision(
+                category="codex_auth",
+                status="needs_authorization",
+                message=(
+                    "O DevPilot esgotou as tentativas automáticas de autenticação do Codex. "
+                    "É necessária uma nova credencial válida ou uma nova autorização externa."
+                ),
+                requires_authorization=True,
+                strategy="request_codex_authorization_after_exhaustion",
+                steps=[],
+            )
+
+        candidates = self._available_openai_credentials(project)
+        for credential_id, label in candidates:
+            if credential_id in self._codex_attempted_credentials:
+                continue
+            self._codex_attempted_credentials.add(credential_id)
+            config = self._codex_config(project)
+            config["credential_id"] = credential_id
+            project.codex_config = json.dumps(config, ensure_ascii=False)
+            return RecoveryDecision(
+                category="codex_auth",
+                status="resolved",
+                message=(
+                    "Autenticação do Codex reconfigurada automaticamente com uma credencial OpenAI "
+                    "já cadastrada e autorizada no cofre do DevPilot."
+                ),
+                retry=True,
+                requires_authorization=False,
+                strategy="codex_credential_failover",
+                steps=[
+                    {
+                        "state": "resolved",
+                        "attempt": execution_attempt,
+                        "credential": label,
+                        "message": "Credencial OpenAI alternativa selecionada automaticamente; a mesma tarefa será repetida.",
+                    }
+                ],
+            )
+
+        return RecoveryDecision(
+            category="codex_auth",
+            status="needs_authorization",
+            message=(
+                "O DevPilot verificou as credenciais OpenAI ativas e não encontrou outra credencial utilizável "
+                "para recuperar o Codex automaticamente."
+            ),
+            requires_authorization=True,
+            strategy="request_codex_authorization_after_exhaustion",
+            steps=[
+                {
+                    "state": "blocked",
+                    "attempt": execution_attempt,
+                    "message": "Nenhuma credencial OpenAI alternativa e autorizada permaneceu disponível para failover.",
+                }
+            ],
+        )
+
+    def _configured_codex_credential_id(self, project: Project) -> str:
+        return str(self._codex_config(project).get("credential_id") or "").strip()
+
+    def _codex_config(self, project: Project) -> dict:
+        try:
+            value = json.loads(project.codex_config or "{}")
+        except (TypeError, ValueError):
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def _available_openai_credentials(self, project: Project) -> list[tuple[str, str]]:
+        result: list[tuple[str, str]] = []
+        with SessionLocal() as db:
+            credentials = list(
+                db.scalars(
+                    select(ProviderCredential)
+                    .where(
+                        ProviderCredential.workspace_id == project.workspace_id,
+                        ProviderCredential.provider == "openai",
+                        ProviderCredential.enabled.is_(True),
+                    )
+                    .order_by(ProviderCredential.created_at.desc())
+                ).all()
+            )
+            for credential in credentials:
+                try:
+                    secret = Vault().decrypt(credential.encrypted_secret).strip()
+                except ValueError:
+                    continue
+                if secret:
+                    result.append((credential.id, credential.label))
+        return result
 
     def _recover_github_access(self, project: Project, execution_attempt: int) -> RecoveryDecision:
         steps: list[dict] = []
