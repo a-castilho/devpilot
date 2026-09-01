@@ -9,27 +9,26 @@ def read(name: str) -> str:
     return (STATIC / name).read_text(encoding="utf-8")
 
 
-def test_recovery_bootstrap_restores_projects_visual_runtime():
+def test_preauth_loader_never_recovers_projects_runtime():
     loader = read("acs-loader.js")
-    assert "__devpilotFrontendRecoveryV37" in loader
-    assert "layout-projects-v6.css" in loader
-    assert "layout-authority-v37.css" in loader
-    assert "mobile-project-card-compact.js" in loader
-    assert "project-ships.js" in loader
+    assert "__devpilotFrontendRecoveryV37" not in loader
+    assert "recoverProjectsExperience" not in loader
+    assert "__devpilotLoadFeature('projects')" not in loader
+    assert "project-ships.js" not in loader
+    assert "mobile-project-card-compact.js" not in loader
 
 
-def test_recovery_uses_existing_projects_feature_before_fallback():
-    loader = read("acs-loader.js")
+def test_projects_runtime_is_owned_by_feature_loader():
     features = read("feature-loader.js")
-    assert "window.__devpilotLoadFeature('projects')" in loader
     assert "projects: [" in features
-    assert "'project-ships.js'" in features
     assert "'mobile-project-card-compact.js'" in features
+    assert "'project-ships.js'" in features
+    assert "'product-delivery-ui.js'" in features
 
 
-def test_recovery_covers_mobile_and_direct_projects_navigation():
-    loader = read("acs-loader.js")
-    assert '[data-view="projects"]' in loader
-    assert '[data-simple-target="projects"]' in loader
-    assert "devpilot:view-changed" in loader
-    assert "hashchange" in loader
+def test_direct_projects_navigation_loads_feature_before_navigation():
+    features = read("feature-loader.js")
+    assert "projects:'projects'" in features
+    assert "const ready = await loadFeature(feature)" in features
+    assert "navigateDirect(viewName" in features
+    assert "window.devpilotNavigate(viewName" in features
