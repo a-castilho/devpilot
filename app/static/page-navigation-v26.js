@@ -21,13 +21,18 @@
 
   const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
 
-  function ensureGameUiStyles() {
-    if (document.getElementById('devpilot-game-operations-v39')) return;
+  function appendStylesheet(id, href) {
+    if (document.getElementById(id)) return;
     const link = document.createElement('link');
-    link.id = 'devpilot-game-operations-v39';
+    link.id = id;
     link.rel = 'stylesheet';
-    link.href = '/assets/game-operations-v39.css?v=20260901-1';
+    link.href = href;
     document.head.appendChild(link);
+  }
+
+  function ensureGameUiStyles() {
+    appendStylesheet('devpilot-game-operations-v39', '/assets/game-operations-v39.css?v=20260901-1');
+    appendStylesheet('devpilot-execution-ship-v45', '/assets/execution-ship-v45.css?v=20260901-1');
   }
 
   function resolveView(item) {
