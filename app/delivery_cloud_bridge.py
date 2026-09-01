@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +18,8 @@ _CLOUD_ADMIN_LABEL = "cloud-admin"
 _CLOUD_ADMIN_PREFIX = "cloud:"
 _ORIGINAL_CONNECTION = delivery.connection
 _ORIGINAL_REQUEST_JSON = delivery.request_json
+_ORIGINAL_SELECTED_PROVIDERS = delivery.selected_providers
+_ORIGINAL_VERIFY = delivery.verify
 
 
 def _cloud_admin_row(
@@ -63,14 +67,7 @@ def managed_trial_connection(
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    """Use DevPilot's platform credential for an unconfigured trial workspace.
-
-    Trial users never receive the token. The credential remains encrypted in the
-    platform workspace and is consumed only by the backend. A workspace that has
-    its own Cloud Admin row is considered self-managed, even when that row is
-    intentionally disabled, so an explicit customer configuration is never
-    silently replaced by DevPilot's credential.
-    """
+    """Use DevPilot's platform credential for an unconfigured trial workspace."""
     settings = get_settings()
     normalized = provider.strip().lower()
     if not settings.managed_trial_clouds_enabled:
@@ -93,17 +90,14 @@ def _connection_with_cloud_admin(
     workspace_id: str,
     provider: str,
 ) -> tuple[str, str] | None:
-    # 1. A purchased/self-managed installation or workspace always wins.
     current = cloud_admin_connection(db, workspace_id, provider)
     if current is not None:
         return current
 
-    # 2. Preserve the legacy local credential format while older installations migrate.
     legacy = _ORIGINAL_CONNECTION(db, workspace_id, provider)
     if legacy is not None:
         return legacy
 
-    # 3. Trial workspaces get the frictionless DevPilot-managed experience.
     return managed_trial_connection(db, workspace_id, provider)
 
 
@@ -134,11 +128,106 @@ def _request_json_with_cloud_scope(
     )
 
 
+def _values(blueprint: dict[str, Any], key: str) -> set[str]:
+    raw = blueprint.get(key) or []
+    if isinstance(raw, str):
+        raw = [raw]
+    if not isinstance(raw, list):
+        return set()
+    return {str(value).strip().lower() for value in raw if str(value).strip()}
+
+
+def _adaptive_selected_providers(project) -> list[str]:
+    """Deploy only the infrastructure the project blueprint actually requires."""
+    config = delivery.config_for(project)
+    blueprint = config.get("project_blueprint")
+    if not isinstance(blueprint, dict):
+        return _ORIGINAL_SELECTED_PROVIDERS(project)
+
+    databases = _values(blueprint, "databases")
+    backend = _values(blueprint, "backend")
+    frontend = _values(blueprint, "frontend")
+    project_types = _values(blueprint, "project_type")
+
+    selected: list[str] = []
+    if databases.intersection({"postgres", "postgresql", "neon"}):
+        selected.append("neon")
+    if backend and not backend.issubset({"none", "nenhum", "static", "estatico", "estático"}):
+        selected.append("render")
+    if frontend and not frontend.issubset({"none", "nenhum"}):
+        selected.append("vercel")
+
+    if selected:
+        return selected
+
+    if project_types.intersection({"site", "website", "landing-page", "landing", "frontend", "static"}):
+        return ["vercel"]
+    if project_types.intersection({"api", "backend", "service", "microservice", "worker"}):
+        return ["render"]
+
+    return _ORIGINAL_SELECTED_PROVIDERS(project)
+
+
+def _probe(url: str) -> tuple[bool, int]:
+    try:
+        with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+            response = client.get(url, headers={"Accept": "application/json,text/html,*/*"})
+    except httpx.HTTPError:
+        return False, 0
+    return 200 <= response.status_code < 400, response.status_code
+
+
+def _adaptive_verify(state: dict[str, Any]) -> dict[str, Any]:
+    """Verify only requested components; database proof comes from Neon provisioning, not Vercel /health."""
+    providers = state.get("providers") if isinstance(state.get("providers"), dict) else {}
+    requested = [str(item).lower() for item in (state.get("requested") or []) if item]
+    if not requested:
+        requested = [name for name in ("neon", "render", "vercel") if isinstance(providers.get(name), dict)]
+
+    checks: list[dict[str, Any]] = []
+    public_url = ""
+
+    if "neon" in requested:
+        neon = providers.get("neon") if isinstance(providers.get("neon"), dict) else {}
+        ok = bool(neon.get("project_id") and neon.get("homolog_branch_id") and neon.get("status") == "ready")
+        checks.append({"name": "database", "provider": "neon", "ok": ok, "status_code": 200 if ok else 0, "url": ""})
+
+    if "render" in requested:
+        render = providers.get("render") if isinstance(providers.get("render"), dict) else {}
+        render_url = str(render.get("url") or "").rstrip("/")
+        ok, status_code = _probe(f"{render_url}/health") if render_url else (False, 0)
+        checks.append({"name": "backend", "provider": "render", "ok": ok, "status_code": status_code, "url": f"{render_url}/health" if render_url else ""})
+        if render_url:
+            public_url = render_url
+
+    if "vercel" in requested:
+        vercel = providers.get("vercel") if isinstance(providers.get("vercel"), dict) else {}
+        vercel_url = str(vercel.get("url") or "").rstrip("/")
+        ok, status_code = _probe(vercel_url) if vercel_url else (False, 0)
+        checks.append({"name": "frontend", "provider": "vercel", "ok": ok, "status_code": status_code, "url": vercel_url})
+        if vercel_url:
+            public_url = vercel_url
+
+    ready = bool(requested) and all(item["ok"] for item in checks) and len(checks) == len(requested)
+    return {
+        "status": "ready" if ready else "deploying",
+        "url": public_url,
+        "checks": checks,
+        "verified_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def install_delivery_cloud_bridge() -> None:
-    """Make product delivery consume self-managed or DevPilot-managed cloud credentials."""
+    """Use system cloud credentials and adapt final delivery to the real project architecture."""
     if not getattr(delivery.connection, "_devpilot_cloud_admin_bridge", False):
         setattr(_connection_with_cloud_admin, "_devpilot_cloud_admin_bridge", True)
         delivery.connection = _connection_with_cloud_admin
     if not getattr(delivery.request_json, "_devpilot_cloud_scope_bridge", False):
         setattr(_request_json_with_cloud_scope, "_devpilot_cloud_scope_bridge", True)
         delivery.request_json = _request_json_with_cloud_scope
+    if not getattr(delivery.selected_providers, "_devpilot_adaptive_delivery", False):
+        setattr(_adaptive_selected_providers, "_devpilot_adaptive_delivery", True)
+        delivery.selected_providers = _adaptive_selected_providers
+    if not getattr(delivery.verify, "_devpilot_adaptive_verify", False):
+        setattr(_adaptive_verify, "_devpilot_adaptive_verify", True)
+        delivery.verify = _adaptive_verify
