@@ -3,8 +3,11 @@
 
   const STYLE_ID = 'devpilot-mobile-project-card-compact-style';
   const WRAP_FLAG = '__devpilotProjectsMemoryGuard';
-  const lowPower = () => document.documentElement.classList.contains('devpilot-low-power');
+  const LOAD_WRAP_FLAG = '__devpilotProjectsLoadGuard';
+  const mobileViewport = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  const lowPower = () => document.documentElement.classList.contains('devpilot-low-power') || mobileViewport();
   const batchSize = () => lowPower() ? 6 : 15;
+  const fetchLimit = () => lowPower() ? 12 : 50;
 
   let renderLimit = batchSize();
   let projectsSource = null;
@@ -34,8 +37,11 @@
       .projects-memory-footer small { opacity: .74; }
       .projects-memory-footer button { flex: 0 0 auto; }
 
-      html.devpilot-low-power #projects-view .project-visual-overview {
-        display: none !important;
+      html.devpilot-low-power #projects-view .project-visual-overview,
+      @media (max-width: 900px) {
+        #projects-view .project-visual-overview {
+          display: none !important;
+        }
       }
       html.devpilot-low-power #projects-view #projects-list .project-card {
         contain: layout paint;
@@ -53,6 +59,21 @@
       }
 
       @media (max-width: 900px) {
+        #projects-view #projects-list .project-card {
+          contain: layout paint;
+          content-visibility: auto;
+          contain-intrinsic-size: 180px;
+          box-shadow: none !important;
+          transition: none !important;
+        }
+
+        #projects-view .project-ship-svg,
+        #projects-view .project-ship-hangar {
+          display: none !important;
+          animation: none !important;
+          filter: none !important;
+        }
+
         #projects-view .project-card > p,
         #projects-view .project-card > code,
         #projects-view .project-card .list-row > small {
@@ -156,6 +177,62 @@
     guarded[WRAP_FLAG] = true;
     guarded.__devpilotProjectsOriginal = original;
     window.renderProjects = guarded;
+    try { renderProjects = guarded; } catch (_) {}
+  }
+
+  function installLoadGuard() {
+    const original = window.loadProjects;
+    if (typeof original !== 'function' || original[LOAD_WRAP_FLAG]) return;
+
+    const guardedLoadProjects = async function (...args) {
+      if (!lowPower()) return original.apply(this, args);
+      if (typeof state === 'undefined') return original.apply(this, args);
+      if (state.projectsLoading) return state.projectsLoading;
+
+      const target = document.getElementById('projects-list');
+      if (target && !Array.isArray(state.projects)) state.projects = [];
+      if (target && !state.projects.length) {
+        target.innerHTML = '<div class="empty">Carregando projetos em modo leve…</div>';
+      }
+
+      state.projectsLoading = (async () => {
+        try {
+          const request = typeof api === 'function'
+            ? api(`/ui/projects?limit=${fetchLimit()}`)
+            : Promise.reject(new Error('API indisponível'));
+          const timeout = new Promise((_, reject) => {
+            window.setTimeout(() => reject(new Error('A lista de projetos demorou demais para responder. Tente Atualizar.')), 12000);
+          });
+          const projects = await Promise.race([request, timeout]);
+          state.projects = Array.isArray(projects) ? projects : [];
+          renderLimit = batchSize();
+          projectsSource = state.projects;
+          if (typeof window.renderProjects === 'function') window.renderProjects();
+          if (typeof fillProjects === 'function') fillProjects();
+          return state.projects;
+        } catch (error) {
+          if (target) {
+            target.textContent = '';
+            const message = document.createElement('div');
+            message.className = 'empty';
+            message.setAttribute('role', 'alert');
+            message.textContent = error?.message || 'Não foi possível carregar os projetos.';
+            target.appendChild(message);
+          }
+          window.toast?.(error?.message || 'Não foi possível carregar os projetos.');
+          return [];
+        } finally {
+          state.projectsLoading = null;
+        }
+      })();
+
+      return state.projectsLoading;
+    };
+
+    guardedLoadProjects[LOAD_WRAP_FLAG] = true;
+    guardedLoadProjects.__devpilotProjectsOriginal = original;
+    window.loadProjects = guardedLoadProjects;
+    try { loadProjects = guardedLoadProjects; } catch (_) {}
   }
 
   function loadMore() {
@@ -169,6 +246,7 @@
 
   injectStyles();
   installRenderGuard();
+  installLoadGuard();
 
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
