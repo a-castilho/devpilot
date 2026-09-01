@@ -5,6 +5,7 @@
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
   const MODAL_ID = 'project-delivery-history-modal';
+  const CREATE_ENTRY_ID = 'projects-new-project-sticky';
   const statusCache = new Map();
   let observer = null;
   let rendering = false;
@@ -153,39 +154,82 @@
     Promise.all(items.map((project, index) => decorateCard(project, cards[index], force))).finally(() => { rendering = false; });
   }
 
+  async function openNewProject(button) {
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Abrindo…';
+    try {
+      if (typeof window.__devpilotLoadFeature === 'function') {
+        const ready = await window.__devpilotLoadFeature('projectBuilder');
+        if (!ready) throw new Error('Não foi possível carregar o cadastro de projeto.');
+      }
+      const originalEntry = [...document.querySelectorAll('[data-project-builder-open]')]
+        .find(item => item !== button);
+      if (!originalEntry) throw new Error('Cadastro de projeto indisponível nesta tela.');
+      originalEntry.click();
+    } catch (error) {
+      window.toast?.(error?.message || 'Não foi possível abrir o cadastro de projeto.');
+    } finally {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
+  function ensureCreateEntry() {
+    const view = document.querySelector('#projects-view');
+    if (!view) return;
+    let entry = document.getElementById(CREATE_ENTRY_ID);
+    if (entry?.isConnected) return;
+    entry = document.createElement('div');
+    entry.id = CREATE_ENTRY_ID;
+    entry.className = 'projects-new-project-sticky';
+    entry.innerHTML = '<button type="button" class="primary projects-new-project-sticky-button">+ Novo projeto</button>';
+    entry.querySelector('button')?.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      void openNewProject(event.currentTarget);
+    });
+    view.prepend(entry);
+  }
+
   function installStyle() {
     if (document.getElementById('product-delivery-style')) return;
     const style = document.createElement('style');
     style.id = 'product-delivery-style';
     style.textContent = `
+      .projects-new-project-sticky{position:sticky;top:8px;z-index:40;display:flex;justify-content:flex-end;pointer-events:none;margin:0 0 10px;min-height:1px}.projects-new-project-sticky-button{pointer-events:auto;box-shadow:0 8px 24px rgba(0,0,0,.28)}
       .product-delivery-box{margin-top:10px;padding-top:10px;border-top:1px solid rgba(127,127,127,.22);display:flex!important;gap:8px;align-items:center;flex-wrap:wrap;visibility:visible!important;opacity:1!important;overflow:visible!important}
       .product-delivery-status{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;width:100%}.product-delivery-error{width:100%;opacity:.85}.product-delivery-failed strong{color:#ff6b6b}.product-delivery-ready strong{color:#72efc5}
       .product-delivery-history-action{display:inline-flex!important;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(139,233,253,.45);border-radius:8px;background:rgba(139,233,253,.08);color:#8be9fd;font-weight:800;cursor:pointer;visibility:visible!important;opacity:1!important;position:relative!important;z-index:3!important}
       .product-delivery-action{margin-left:auto}
       #${MODAL_ID}{width:min(760px,94vw);max-height:88vh;padding:0;border:1px solid rgba(139,233,253,.24);border-radius:16px;background:#08121f;color:inherit}#${MODAL_ID}::backdrop{background:rgba(0,0,0,.72)}
       .project-delivery-history-shell{display:grid;gap:14px;padding:18px;max-height:88vh;overflow:auto}.project-delivery-history-head{display:flex;justify-content:space-between;gap:12px}.project-delivery-history-head h3{margin:4px 0 0}.project-delivery-history-status,.project-delivery-history-phase{padding:10px 12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.025)}.project-delivery-history-phase strong{display:block;margin-bottom:4px}.project-delivery-history-grid{display:grid;gap:8px}.project-delivery-history-ok{color:#72efc5}.project-delivery-history-pending{color:#ffc56e}.project-delivery-history-error{color:#ff8f8f;white-space:pre-wrap;overflow-wrap:anywhere}.project-delivery-history-url{padding:10px 12px;border:1px solid rgba(114,239,197,.24);border-radius:10px;color:#8be9fd;overflow-wrap:anywhere}.project-delivery-history-actions{display:flex;gap:8px;flex-wrap:wrap}.project-delivery-history-actions a{text-decoration:none}
-      @media(max-width:720px){.product-delivery-box>button{width:100%}.product-delivery-action{margin-left:0}.project-delivery-history-actions>*{width:100%}}
+      @media(max-width:720px){.projects-new-project-sticky{top:6px}.projects-new-project-sticky-button{width:auto}.product-delivery-box>button{width:100%}.product-delivery-action{margin-left:0}.project-delivery-history-actions>*{width:100%}}
     `;
     document.head.appendChild(style);
   }
 
   function installObserver() {
-    const host = document.querySelector('#projects-list');
-    if (!host || observer) return;
-    observer = new MutationObserver(() => window.setTimeout(() => decorateAll(false), 0));
-    observer.observe(host, {childList:true, subtree:true});
+    const view = document.querySelector('#projects-view');
+    if (!view || observer) return;
+    observer = new MutationObserver(() => window.setTimeout(() => {
+      ensureCreateEntry();
+      decorateAll(false);
+    }, 0));
+    observer.observe(view, {childList:true, subtree:true});
   }
 
   function install() {
     installStyle();
+    ensureCreateEntry();
     installObserver();
     decorateAll(false);
-    window.setTimeout(() => decorateAll(false), 250);
-    window.setTimeout(() => decorateAll(false), 900);
+    window.setTimeout(() => { ensureCreateEntry(); decorateAll(false); }, 250);
+    window.setTimeout(() => { ensureCreateEntry(); decorateAll(false); }, 900);
   }
 
   document.addEventListener('devpilot:feature-ready', event => { if (event.detail?.feature === 'projects') install(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.querySelector('#projects-view.active')) decorateAll(true); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.querySelector('#projects-view.active')) { ensureCreateEntry(); decorateAll(true); } });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, {once:true}); else install();
-  window.setInterval(() => { if (document.querySelector('#projects-view.active')) decorateAll(false); }, 5000);
+  window.setInterval(() => { if (document.querySelector('#projects-view.active')) { ensureCreateEntry(); decorateAll(false); } }, 5000);
 })();
