@@ -161,6 +161,38 @@ def codex_command(project: Project, prompt: str) -> list[str]:
     return command
 
 
+def codex_environment(project: Project) -> dict[str, str]:
+    """Resolve a project-scoped OpenAI credential without changing global Codex auth state."""
+    try:
+        config = json.loads(project.codex_config or "{}")
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("Project Codex configuration is invalid") from error
+
+    credential_id = str(config.get("credential_id") or "").strip()
+    if not credential_id:
+        return {}
+
+    with SessionLocal() as db:
+        credential = db.scalar(
+            select(ProviderCredential).where(
+                ProviderCredential.id == credential_id,
+                ProviderCredential.workspace_id == project.workspace_id,
+                ProviderCredential.provider == "openai",
+                ProviderCredential.enabled.is_(True),
+            )
+        )
+        if not credential:
+            raise RuntimeError("Configured OpenAI credential is unavailable")
+        try:
+            api_key = Vault().decrypt(credential.encrypted_secret).strip()
+        except ValueError as error:
+            raise RuntimeError("Configured OpenAI credential cannot be decrypted") from error
+
+    if not api_key:
+        raise RuntimeError("Configured OpenAI credential is empty")
+    return {"OPENAI_API_KEY": api_key}
+
+
 def task_timeout(project: Project) -> int:
     config = json.loads(project.codex_config or "{}")
     return int(config.get("timeout_seconds", 1800))
@@ -356,6 +388,7 @@ def execute_read_only_analysis(project: Project, task: Task, repository: Path) -
                 codex_command(project, prompt),
                 cwd=analysis_path,
                 timeout=task_timeout(project),
+                env_overrides=codex_environment(project),
             )
             status = run(["git", "status", "--porcelain"], cwd=analysis_path)
             attempted_changes = bool(status.stdout.strip()) if status.returncode == 0 else None
@@ -464,6 +497,7 @@ def execute_task(project: Project, task: Task) -> dict:
         codex_command(project, development_prompt(task)),
         cwd=path,
         timeout=task_timeout(project),
+        env_overrides=codex_environment(project),
     )
     client_report = extract_client_report(result.stdout)
     return {
