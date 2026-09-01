@@ -7,15 +7,11 @@
   const MODAL_ID = 'task-recovery-modal';
   const FAILURE_STATUSES = new Set(['failed', 'blocked']);
   const ACTIVE_RECOVERY = new Set(['agent_recovery', 'retesting']);
-  const INTERVENTION_STATES = new Set(['awaiting_intervention', 'intervention_required', 'recovery_exhausted']);
 
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({
     '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;',
   }[char]));
   const norm = value => String(value || '').split('.').pop().trim().toLowerCase().replaceAll(' ', '_');
-  const taskById = id => (typeof state !== 'undefined' && Array.isArray(state.tasks))
-    ? state.tasks.find(task => String(task.id) === String(id))
-    : null;
 
   const STATE_LABELS = {
     ready_to_recover: 'FALHA CONFIRMADA · RECUPERAÇÃO DISPONÍVEL',
@@ -23,7 +19,7 @@
     awaiting_intervention: 'AGUARDANDO INTERVENÇÃO AUTORIZADA',
     intervention_required: 'AGENTE NÃO CONSEGUIU RESOLVER SOZINHO',
     recovery_exhausted: 'CORREÇÃO FEITA, MAS O RETESTE AINDA FALHOU',
-    retesting: 'RET testando EXECUÇÃO ORIGINAL',
+    retesting: 'RETESTANDO EXECUÇÃO ORIGINAL',
     resolved: 'MISSÃO RECUPERADA',
   };
 
@@ -172,7 +168,7 @@
       const taskId = String(row.dataset.taskId || '');
       const task = tasks.find(item => String(item.id) === taskId);
       const actions = row.querySelector('.tasks-v9-actions, .task-actions') || row.lastElementChild;
-      const failed = task && FAILURE_STATUSES.has(norm(task.status));
+      const failed = task && String(task.source || '') !== 'failure-recovery' && FAILURE_STATUSES.has(norm(task.status));
       const existing = actions?.querySelector('.task-recovery-action');
       if (!failed) { existing?.remove(); return; }
       if (!actions || existing) return;
