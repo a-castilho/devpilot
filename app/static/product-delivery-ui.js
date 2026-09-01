@@ -7,13 +7,15 @@
   const MODAL_ID = 'project-delivery-history-modal';
   const CREATE_ENTRY_ID = 'projects-new-project-sticky';
   const statusCache = new Map();
-  let observer = null;
   let rendering = false;
+  let hostObserver = null;
+  let refreshTimer = null;
 
   const projects = () => (typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : []);
   const canOperate = () => OPERATORS.has(String((typeof state !== 'undefined' && state.currentUser?.role) || '').toUpperCase());
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const esc = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[char]));
+  const projectById = id => projects().find(project => String(project?.id) === String(id));
   const promptValue = (task, label) => {
     const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const match = String(task?.prompt || '').match(new RegExp(`^${escaped}:\\s*(.+)$`, 'mi'));
@@ -75,12 +77,11 @@
       ${missionTasks.length ? `<div class="project-delivery-history-grid">${phases.map(item => `<div class="project-delivery-history-phase"><strong>Fase ${item.phase}: ${esc(item.implementation?.title || 'sem execução registrada')}</strong><span class="${item.verified ? 'project-delivery-history-ok' : 'project-delivery-history-pending'}">${item.verified ? '✓ entrega verificada' : '• verificação pendente'}</span></div>`).join('')}</div>` : ''}
       ${checks.length ? `<div class="project-delivery-history-grid">${checks.map(check => `<div class="project-delivery-history-phase"><strong>${esc(checkLabel(check.name || check.provider))}</strong><span class="${check.ok ? 'project-delivery-history-ok' : 'project-delivery-history-pending'}">${check.ok ? '✓ aprovado' : '• pendente'}${check.status_code ? ` · HTTP ${esc(check.status_code)}` : ''}</span></div>`).join('')}</div>` : ''}
       ${url ? `<a class="project-delivery-history-url" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(url)}</a>` : ''}
-      <div class="project-delivery-history-actions">${url && normalize(delivery?.status) === 'ready' ? `<a class="primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Abrir sistema ↗</a>` : ''}<button type="button" class="link" data-delivery-refresh>Atualizar entrega</button></div>`;
-    shell.querySelector('[data-delivery-close]')?.addEventListener('click', () => modal.close());
-    shell.querySelector('[data-delivery-refresh]')?.addEventListener('click', () => void openHistory(project, true));
+      <div class="project-delivery-history-actions">${url && normalize(delivery?.status) === 'ready' ? `<a class="primary" href="${esc(url)}" target="_blank" rel="noopener noreferrer">Abrir sistema ↗</a>` : ''}<button type="button" class="link" data-delivery-refresh="${esc(project?.id)}">Atualizar entrega</button></div>`;
   }
 
   async function openHistory(project, force = false) {
+    if (!project?.id) return;
     const modal = ensureModal();
     modal.querySelector('.project-delivery-history-shell').innerHTML = '<p>Carregando entrega da esteira…</p>';
     if (!modal.open) modal.showModal();
@@ -92,12 +93,12 @@
       statusCache.set(project.id, delivery || {});
       renderHistory(modal, project, tasks, delivery || {});
     } catch (error) {
-      modal.querySelector('.project-delivery-history-shell').innerHTML = `<button type="button" class="link" onclick="this.closest('dialog').close()">✕</button><p class="project-delivery-history-error">${esc(error?.message || 'Não foi possível carregar a entrega.')}</p>`;
+      modal.querySelector('.project-delivery-history-shell').innerHTML = `<button type="button" class="link" data-delivery-close>✕</button><p class="project-delivery-history-error">${esc(error?.message || 'Não foi possível carregar a entrega.')}</p>`;
     }
   }
 
   async function runAction(project, button) {
-    if (!canOperate()) return;
+    if (!canOperate() || !project?.id) return;
     const current = await fetchDelivery(project.id, true);
     if (normalize(current.status) === 'ready' && current.url) {
       window.open(current.url, '_blank', 'noopener,noreferrer');
@@ -112,16 +113,23 @@
       else if (['deploying','provisioning'].includes(normalize(current.status))) endpoint = `/projects/${encodeURIComponent(project.id)}/delivery/verify`;
       const delivery = await api(endpoint, {method:'POST'});
       statusCache.set(project.id, delivery || {});
-      decorateAll(true);
-      if (normalize(delivery?.status) === 'ready') toast('Produto pronto e entrega validada.');
-      else if (normalize(delivery?.status) === 'failed') toast(delivery.last_error || 'Não foi possível publicar o produto.');
-      else toast('Entrega atualizada.');
+      await decorateAll(true);
+      window.toast?.(normalize(delivery?.status) === 'ready' ? 'Produto pronto e entrega validada.' : delivery?.last_error || 'Entrega atualizada.');
     } catch (error) {
-      toast(error?.message || 'Falha ao atualizar a entrega.');
+      window.toast?.(error?.message || 'Falha ao atualizar a entrega.');
     } finally {
       button.disabled = false;
       button.textContent = original;
     }
+  }
+
+  function deliveryMarkup(project, delivery) {
+    const status = normalize(delivery?.status || 'pending');
+    const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
+    return `
+      <div class="product-delivery-status product-delivery-${esc(status)}"><strong>${esc(statusLabel(status))}</strong>${checks.map(check => `<span>${check.ok ? '✅' : '⏳'} ${esc(checkLabel(check.name || check.provider))}</span>`).join('')}${delivery?.last_error ? `<div class="product-delivery-error">${esc(delivery.last_error)}</div>` : ''}</div>
+      <button type="button" class="product-delivery-history-action" data-delivery-history="${esc(project.id)}">📦 Ver entrega</button>
+      ${canOperate() ? `<button type="button" class="link product-delivery-action" data-delivery-action="${esc(project.id)}">${status === 'ready' ? 'Abrir produto' : ['failed','blocked'].includes(status) ? 'Tentar novamente' : ['deploying','provisioning'].includes(status) ? 'Verificar publicação' : 'Publicar produto'}</button>` : ''}`;
   }
 
   async function decorateCard(project, card, force = false) {
@@ -134,24 +142,25 @@
       card.appendChild(box);
     }
     const delivery = await fetchDelivery(project.id, force);
-    const status = normalize(delivery?.status || 'pending');
-    const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
-    box.innerHTML = `
-      <div class="product-delivery-status product-delivery-${esc(status)}"><strong>${esc(statusLabel(status))}</strong>${checks.map(check => `<span>${check.ok ? '✅' : '⏳'} ${esc(checkLabel(check.name || check.provider))}</span>`).join('')}${delivery?.last_error ? `<div class="product-delivery-error">${esc(delivery.last_error)}</div>` : ''}</div>
-      <button type="button" class="product-delivery-history-action" data-delivery-history="${esc(project.id)}">📦 Ver entrega</button>
-      ${canOperate() ? `<button type="button" class="link product-delivery-action">${status === 'ready' ? 'Abrir produto' : ['failed','blocked'].includes(status) ? 'Tentar novamente' : ['deploying','provisioning'].includes(status) ? 'Verificar publicação' : 'Publicar produto'}</button>` : ''}`;
-    box.querySelector('[data-delivery-history]')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); void openHistory(project); });
-    box.querySelector('.product-delivery-action')?.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); void runAction(project, event.currentTarget); });
+    const markup = deliveryMarkup(project, delivery);
+    if (box.dataset.deliveryMarkup !== markup) {
+      box.innerHTML = markup;
+      box.dataset.deliveryMarkup = markup;
+    }
   }
 
-  function decorateAll(force = false) {
+  async function decorateAll(force = false) {
     if (rendering) return;
     const host = document.querySelector('#projects-list');
     if (!host) return;
     rendering = true;
-    const cards = [...host.querySelectorAll('.project-card')];
-    const items = projects();
-    Promise.all(items.map((project, index) => decorateCard(project, cards[index], force))).finally(() => { rendering = false; });
+    try {
+      const cards = [...host.querySelectorAll('.project-card')];
+      const items = projects();
+      await Promise.all(items.map((project, index) => decorateCard(project, cards[index], force)));
+    } finally {
+      rendering = false;
+    }
   }
 
   async function openNewProject(button) {
@@ -163,8 +172,7 @@
         const ready = await window.__devpilotLoadFeature('projectBuilder');
         if (!ready) throw new Error('Não foi possível carregar o cadastro de projeto.');
       }
-      const originalEntry = [...document.querySelectorAll('[data-project-builder-open]')]
-        .find(item => item !== button);
+      const originalEntry = document.querySelector('[data-project-builder-open]');
       if (!originalEntry) throw new Error('Cadastro de projeto indisponível nesta tela.');
       originalEntry.click();
     } catch (error) {
@@ -177,18 +185,11 @@
 
   function ensureCreateEntry() {
     const view = document.querySelector('#projects-view');
-    if (!view) return;
-    let entry = document.getElementById(CREATE_ENTRY_ID);
-    if (entry?.isConnected) return;
-    entry = document.createElement('div');
+    if (!view || document.getElementById(CREATE_ENTRY_ID)) return;
+    const entry = document.createElement('div');
     entry.id = CREATE_ENTRY_ID;
     entry.className = 'projects-new-project-sticky';
-    entry.innerHTML = '<button type="button" class="primary projects-new-project-sticky-button">+ Novo projeto</button>';
-    entry.querySelector('button')?.addEventListener('click', event => {
-      event.preventDefault();
-      event.stopPropagation();
-      void openNewProject(event.currentTarget);
-    });
+    entry.innerHTML = '<button type="button" class="primary projects-new-project-sticky-button" data-project-create-sticky>+ Novo projeto</button>';
     view.prepend(entry);
   }
 
@@ -197,39 +198,88 @@
     const style = document.createElement('style');
     style.id = 'product-delivery-style';
     style.textContent = `
-      .projects-new-project-sticky{position:sticky;top:8px;z-index:40;display:flex;justify-content:flex-end;pointer-events:none;margin:0 0 10px;min-height:1px}.projects-new-project-sticky-button{pointer-events:auto;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+      .projects-new-project-sticky{position:sticky;top:8px;z-index:40;display:flex;justify-content:flex-end;pointer-events:none;margin:0 0 10px}.projects-new-project-sticky-button{pointer-events:auto;box-shadow:0 8px 24px rgba(0,0,0,.28)}
       .product-delivery-box{margin-top:10px;padding-top:10px;border-top:1px solid rgba(127,127,127,.22);display:flex!important;gap:8px;align-items:center;flex-wrap:wrap;visibility:visible!important;opacity:1!important;overflow:visible!important}
       .product-delivery-status{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;width:100%}.product-delivery-error{width:100%;opacity:.85}.product-delivery-failed strong{color:#ff6b6b}.product-delivery-ready strong{color:#72efc5}
-      .product-delivery-history-action{display:inline-flex!important;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(139,233,253,.45);border-radius:8px;background:rgba(139,233,253,.08);color:#8be9fd;font-weight:800;cursor:pointer;visibility:visible!important;opacity:1!important;position:relative!important;z-index:3!important}
-      .product-delivery-action{margin-left:auto}
+      .product-delivery-history-action{display:inline-flex!important;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(139,233,253,.45);border-radius:8px;background:rgba(139,233,253,.08);color:#8be9fd;font-weight:800;cursor:pointer}.product-delivery-action{margin-left:auto}
       #${MODAL_ID}{width:min(760px,94vw);max-height:88vh;padding:0;border:1px solid rgba(139,233,253,.24);border-radius:16px;background:#08121f;color:inherit}#${MODAL_ID}::backdrop{background:rgba(0,0,0,.72)}
       .project-delivery-history-shell{display:grid;gap:14px;padding:18px;max-height:88vh;overflow:auto}.project-delivery-history-head{display:flex;justify-content:space-between;gap:12px}.project-delivery-history-head h3{margin:4px 0 0}.project-delivery-history-status,.project-delivery-history-phase{padding:10px 12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.025)}.project-delivery-history-phase strong{display:block;margin-bottom:4px}.project-delivery-history-grid{display:grid;gap:8px}.project-delivery-history-ok{color:#72efc5}.project-delivery-history-pending{color:#ffc56e}.project-delivery-history-error{color:#ff8f8f;white-space:pre-wrap;overflow-wrap:anywhere}.project-delivery-history-url{padding:10px 12px;border:1px solid rgba(114,239,197,.24);border-radius:10px;color:#8be9fd;overflow-wrap:anywhere}.project-delivery-history-actions{display:flex;gap:8px;flex-wrap:wrap}.project-delivery-history-actions a{text-decoration:none}
-      @media(max-width:720px){.projects-new-project-sticky{top:6px}.projects-new-project-sticky-button{width:auto}.product-delivery-box>button{width:100%}.product-delivery-action{margin-left:0}.project-delivery-history-actions>*{width:100%}}
+      @media(max-width:720px){.projects-new-project-sticky{top:6px}.product-delivery-box>button{width:100%}.product-delivery-action{margin-left:0}.project-delivery-history-actions>*{width:100%}}
     `;
     document.head.appendChild(style);
   }
 
-  function installObserver() {
-    const view = document.querySelector('#projects-view');
-    if (!view || observer) return;
-    observer = new MutationObserver(() => window.setTimeout(() => {
-      ensureCreateEntry();
-      decorateAll(false);
-    }, 0));
-    observer.observe(view, {childList:true, subtree:true});
+  function installHostObserver() {
+    const host = document.querySelector('#projects-list');
+    if (!host || hostObserver) return;
+    hostObserver = new MutationObserver(records => {
+      const structural = records.some(record => record.target === host);
+      if (!structural) return;
+      clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => void decorateAll(false), 80);
+    });
+    hostObserver.observe(host, {childList:true});
+  }
+
+  function installDelegatedClicks() {
+    if (document.documentElement.dataset.projectDeliveryClicks === '1') return;
+    document.documentElement.dataset.projectDeliveryClicks = '1';
+    document.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+
+      const sticky = target.closest('[data-project-create-sticky]');
+      if (sticky) {
+        event.preventDefault();
+        event.stopPropagation();
+        void openNewProject(sticky);
+        return;
+      }
+
+      const history = target.closest('[data-delivery-history]');
+      if (history) {
+        event.preventDefault();
+        event.stopPropagation();
+        const project = projectById(history.dataset.deliveryHistory);
+        if (project) void openHistory(project);
+        return;
+      }
+
+      const action = target.closest('[data-delivery-action]');
+      if (action) {
+        event.preventDefault();
+        event.stopPropagation();
+        const project = projectById(action.dataset.deliveryAction);
+        if (project) void runAction(project, action);
+        return;
+      }
+
+      const refresh = target.closest('[data-delivery-refresh]');
+      if (refresh) {
+        event.preventDefault();
+        const project = projectById(refresh.dataset.deliveryRefresh);
+        if (project) void openHistory(project, true);
+        return;
+      }
+
+      if (target.closest('[data-delivery-close]')) {
+        event.preventDefault();
+        target.closest('dialog')?.close();
+      }
+    }, true);
   }
 
   function install() {
     installStyle();
+    installDelegatedClicks();
     ensureCreateEntry();
-    installObserver();
-    decorateAll(false);
-    window.setTimeout(() => { ensureCreateEntry(); decorateAll(false); }, 250);
-    window.setTimeout(() => { ensureCreateEntry(); decorateAll(false); }, 900);
+    installHostObserver();
+    void decorateAll(false);
+    window.setTimeout(() => { ensureCreateEntry(); void decorateAll(false); }, 300);
   }
 
   document.addEventListener('devpilot:feature-ready', event => { if (event.detail?.feature === 'projects') install(); });
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.querySelector('#projects-view.active')) { ensureCreateEntry(); decorateAll(true); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && document.querySelector('#projects-view.active')) { ensureCreateEntry(); void decorateAll(true); } });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, {once:true}); else install();
-  window.setInterval(() => { if (document.querySelector('#projects-view.active')) { ensureCreateEntry(); decorateAll(false); } }, 5000);
+  window.setInterval(() => { if (document.querySelector('#projects-view.active')) { ensureCreateEntry(); void decorateAll(false); } }, 15000);
 })();
