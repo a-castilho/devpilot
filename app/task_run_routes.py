@@ -4,6 +4,7 @@ import json
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -72,6 +73,12 @@ _REPOSITORY_STATE_PATTERNS = (
     "index.lock",
     "shallow.lock",
 )
+
+_RESOLICITATION_MARKER = "[DEVPILOT_RESOLICITATION_V1]"
+
+
+class ResolicitationRequest(BaseModel):
+    instruction: str = Field(min_length=2, max_length=40_000)
 
 
 def _workspace_id(db: Session) -> str:
@@ -239,6 +246,49 @@ def failure_reason(run: Run | None) -> str:
     return str(failure_details(run).get("message") or "")
 
 
+def _run_response(run: Run | None, limit: int = 60_000) -> str:
+    if not run:
+        return ""
+    payload = _logs_payload(run)
+    candidates: list[object] = []
+    if isinstance(payload, dict):
+        for key in ("client_report", "answer", "response", "result", "summary", "stdout"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                for nested_key in ("client_report", "answer", "response", "summary", "stdout"):
+                    nested = value.get(nested_key)
+                    if nested:
+                        candidates.append(nested)
+            elif value:
+                candidates.append(value)
+    candidates.append(run.summary)
+    for candidate in candidates:
+        text = sanitize_text(str(candidate or "")).strip()
+        if text and text not in {"{}", "[]"}:
+            return text[:limit]
+    return ""
+
+
+def _resolicitation_prompt(task: Task, run: Run, previous_response: str, instruction: str) -> str:
+    return (
+        f"{_RESOLICITATION_MARKER}\n"
+        "[DEVPILOT_MODE=fix]\n"
+        f"[resolicitation-origin-task:{task.id}]\n"
+        f"[resolicitation-origin-run:{run.id}]\n\n"
+        "REGRA DE RESOLICITAÇÃO DO SISTEMA\n"
+        "Esta tarefa nasceu de uma resolicitação. Não comece a resposta do zero. "
+        "Use obrigatoriamente a RESPOSTA ANTERIOR como base, preserve o que estiver correto e aplique a NOVA ORIENTAÇÃO como correção. "
+        "Antes de concluir, valide que a nova resposta resolve especificamente o motivo da resolicitação.\n\n"
+        "SOLICITAÇÃO ORIGINAL\n"
+        f"Título: {task.title}\n"
+        f"{str(task.prompt or '').strip()}\n\n"
+        "RESPOSTA ANTERIOR A SER CORRIGIDA\n"
+        f"{previous_response.strip()}\n\n"
+        "NOVA ORIENTAÇÃO DE CORREÇÃO\n"
+        f"{instruction.strip()}"
+    )[:100_000]
+
+
 def _run_summary(task: Task, run: Run | None) -> dict:
     needs_attention = task.status in {TaskStatus.failed, TaskStatus.blocked}
     details = failure_details(run) if needs_attention else {
@@ -287,6 +337,65 @@ def latest_task_runs(
         latest_by_task.setdefault(run.task_id, run)
 
     return [_run_summary(task, latest_by_task.get(task.id)) for task in tasks]
+
+
+@router.post("/tasks/{task_id}/resolicit", status_code=201)
+def resolicit_task(
+    task_id: str,
+    payload: ResolicitationRequest,
+    db: Session = Depends(get_db),
+):
+    workspace_id = _workspace_id(db)
+    original = db.scalar(
+        select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id)
+    )
+    if not original:
+        raise HTTPException(404, "Task not found")
+
+    latest_run = db.scalar(
+        select(Run)
+        .where(Run.task_id == original.id)
+        .order_by(Run.started_at.desc(), Run.attempt.desc())
+        .limit(1)
+    )
+    if not latest_run:
+        raise HTTPException(409, "A resolicitação exige uma execução anterior com resposta registrada")
+
+    previous_response = _run_response(latest_run)
+    if not previous_response:
+        raise HTTPException(409, "A resolicitação exige uma resposta anterior válida para ser corrigida")
+
+    correction = Task(
+        workspace_id=original.workspace_id,
+        owner_user_id=original.owner_user_id,
+        project_id=original.project_id,
+        title=f"Correção · {original.title}"[:240],
+        prompt=_resolicitation_prompt(original, latest_run, previous_response, payload.instruction),
+        source="dashboard",
+        status=TaskStatus.awaiting_approval,
+        priority=min(100, max(70, int(original.priority or 50))),
+        branch_name=original.branch_name or "",
+        requires_approval=True,
+    )
+    db.add(correction)
+    db.flush()
+    record(
+        db,
+        workspace_id=original.workspace_id,
+        project_id=original.project_id,
+        task_id=correction.id,
+        actor="owner",
+        action="task.resolicited",
+        outcome="awaiting_approval",
+        details={
+            "original_task_id": original.id,
+            "original_run_id": latest_run.id,
+            "previous_response_reused": True,
+            "system_rule": "resolicitation_uses_previous_response",
+        },
+    )
+    db.commit()
+    return correction
 
 
 @router.post("/tasks/{task_id}/retry")
