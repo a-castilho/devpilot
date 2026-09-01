@@ -378,18 +378,125 @@
     }
   }
 
+  const VIEW_FEATURES = Object.freeze({
+    organizations:'organizations',
+    projects:'projects',
+    tasks:'tasks',
+    providers:'providers',
+    reports:'reports',
+    audit:'audit',
+  });
+
+  async function navigateDirect(viewName, source = 'link') {
+    if (!viewName) return false;
+    navigationEpoch += 1;
+    restorePendingPlaceholders();
+
+    const feature = VIEW_FEATURES[viewName];
+    if (feature) {
+      const ready = await loadFeature(feature);
+      if (!ready) {
+        window.toast?.(`Não foi possível carregar ${viewName}. Tente novamente.`);
+        return false;
+      }
+    }
+
+    if (typeof window.devpilotNavigate === 'function') {
+      return window.devpilotNavigate(viewName, {source, immediate:true});
+    }
+    if (typeof showView === 'function') {
+      showView(viewName);
+      return true;
+    }
+    return false;
+  }
+
+  function openTaskDirect(trigger) {
+    const projectId = String(trigger?.dataset?.projectTask || '');
+    const source = projectId ? 'project' : 'dashboard';
+    if (typeof window.devpilotOpenTaskModal === 'function') {
+      return window.devpilotOpenTaskModal({projectId, source});
+    }
+    void loadFeature('taskModal').then(() => document.querySelector('#task-modal')?.showModal?.());
+    return true;
+  }
+
+  async function openProjectBuilderDirect(trigger) {
+    if (!trigger || trigger.dataset.devpilotOpening === '1') return false;
+    trigger.dataset.devpilotOpening = '1';
+    trigger.setAttribute('aria-busy', 'true');
+    try {
+      if (typeof isSuperAdmin === 'function' && isSuperAdmin() && typeof loadOrganizations === 'function') {
+        const organizations = typeof state !== 'undefined' && Array.isArray(state.organizations) ? state.organizations : [];
+        if (!organizations.length) await loadOrganizations();
+      }
+
+      const ready = await loadFeature('projectBuilder');
+      if (!ready) throw new Error('Não foi possível carregar o cadastro de projeto.');
+
+      const form = document.querySelector('#project-builder-form');
+      if (!form) throw new Error('Cadastro de projeto indisponível nesta tela.');
+
+      const admin = typeof isSuperAdmin === 'function' && isSuperAdmin();
+      const organizationSelect = document.querySelector('#project-builder-organization');
+      if (organizationSelect && typeof state !== 'undefined') {
+        const organizations = Array.isArray(state.organizations) ? state.organizations : [];
+        organizationSelect.innerHTML = '<option value="">Sem organização</option>' + (admin
+          ? organizations.map(org => `<option value="${String(org.id)}">${String(org.name || '')}</option>`).join('')
+          : '');
+        const castilho = organizations.find(org => String(org.external_login || '').toLowerCase() === 'a-castilho');
+        if (castilho) organizationSelect.value = String(castilho.id);
+      }
+
+      if (!admin) {
+        const createRadio = form.querySelector('input[name="repository_mode"][value="create"]');
+        const connectRadio = form.querySelector('input[name="repository_mode"][value="connect"]');
+        if (createRadio) createRadio.disabled = true;
+        if (connectRadio) connectRadio.checked = true;
+      }
+
+      if (typeof showView === 'function') showView('new-project');
+      else {
+        document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === 'new-project-view'));
+      }
+      const title = document.querySelector('#page-title');
+      if (title) title.textContent = 'Novo projeto';
+      window.scrollTo({top:0, left:0, behavior:'auto'});
+      return true;
+    } catch (error) {
+      console.error('[DevPilot] Falha ao abrir Novo projeto', error);
+      window.toast?.(error?.message || 'Não foi possível abrir o cadastro de projeto.');
+      return false;
+    } finally {
+      trigger.removeAttribute('aria-busy');
+      delete trigger.dataset.devpilotOpening;
+    }
+  }
+
+  async function analyzeProjectDirect(trigger) {
+    const projectId = String(trigger?.dataset?.id || '');
+    if (!projectId || typeof api !== 'function') return false;
+    if (trigger.dataset.devpilotAnalyzing === '1') return false;
+    trigger.dataset.devpilotAnalyzing = '1';
+    trigger.disabled = true;
+    try {
+      await api(`/projects/${encodeURIComponent(projectId)}/analyze`, {method:'POST'});
+      window.toast?.('Análise técnica enfileirada');
+      if (typeof loadDashboard === 'function') await loadDashboard();
+      return true;
+    } catch (error) {
+      window.toast?.(error?.message || 'Falha ao iniciar análise');
+      return false;
+    } finally {
+      trigger.disabled = false;
+      delete trigger.dataset.devpilotAnalyzing;
+    }
+  }
+
   const TRIGGERS = [
-    ['[data-project-builder-open]', 'projectBuilder'],
     ['[data-example-project]', 'example'],
-    ['[data-open="task-modal"]', 'taskModal'],
     ['#tasks-v9-indicators', 'tasksAnalytics'],
     ['.tasks-v9-details, .task-instructions-load', 'tasksDetails'],
-    ['.nav[data-view="organizations"]', 'organizations'],
-    ['.nav[data-view="projects"]', 'projects'],
-    ['.nav[data-view="tasks"]', 'tasks'],
-    ['.nav[data-view="providers"]', 'providers'],
-    ['.nav[data-view="reports"]', 'reports'],
-    ['.nav[data-view="audit"]', 'audit'],
     ['#voice-hero, #voice-dock, #voice-start, #voice-send', 'voice'],
   ];
 
@@ -403,7 +510,10 @@
   }
 
   document.addEventListener('click', event => {
-    const placeholder = event.target.closest?.('[data-devpilot-feature-placeholder]');
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target) return;
+
+    const placeholder = target.closest('[data-devpilot-feature-placeholder]');
     if (placeholder) {
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -411,13 +521,42 @@
       return;
     }
 
-    const navTarget = event.target.closest?.('.sidebar nav .nav');
-    if (navTarget) {
-      navigationEpoch += 1;
-      restorePendingPlaceholders();
+    const taskTrigger = target.closest('[data-open="task-modal"], [data-project-task]');
+    if (taskTrigger) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      openTaskDirect(taskTrigger);
+      return;
     }
 
-    const match = matchFeatureTrigger(event.target);
+    const projectBuilderTrigger = target.closest('[data-project-builder-open]');
+    if (projectBuilderTrigger) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void openProjectBuilderDirect(projectBuilderTrigger);
+      return;
+    }
+
+    const analyzeTrigger = target.closest('#projects-list .analyze[data-id]');
+    if (analyzeTrigger) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void analyzeProjectDirect(analyzeTrigger);
+      return;
+    }
+
+    const viewTrigger = target.closest('[data-view]');
+    if (viewTrigger && !viewTrigger.dataset.devpilotFeaturePlaceholder) {
+      const viewName = String(viewTrigger.dataset.view || '');
+      if (viewName) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void navigateDirect(viewName, viewTrigger.closest('.sidebar') ? 'menu' : 'link');
+        return;
+      }
+    }
+
+    const match = matchFeatureTrigger(target);
     if (!match) return;
     const {trigger, feature} = match;
 
@@ -474,10 +613,7 @@
   function initializeActiveViewFeature() {
     const active = document.querySelector('.sidebar nav .nav.active[data-view]');
     const view = String(active?.dataset?.view || '');
-    const featureByView = {
-      projects:'projects', tasks:'tasks', providers:'providers', reports:'reports', audit:'audit',
-    };
-    const feature = featureByView[view];
+    const feature = VIEW_FEATURES[view];
     if (feature) void loadFeature(feature);
   }
 
