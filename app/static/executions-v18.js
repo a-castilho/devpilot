@@ -7,6 +7,90 @@
   const qs = (selector, root = document) => root.querySelector(selector);
   const qsa = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+  let operationalRenderer = null;
+  let tasksFeaturePromise = null;
+
+  function removeParallelLegacyStyle() {
+    // Esse CSS pertence aos detalhes/orquestração e será recolocado pelo
+    // tasksDetails quando necessário. Mantê-lo no shell base mistura duas
+    // gerações da tela de Execuções.
+    document.getElementById('devpilot-task-development-v2')?.remove();
+  }
+
+  function renderCurrentLoadingState() {
+    const table = qs('#tasks-table');
+    if (table) {
+      table.innerHTML = '<tr><td colspan="3" class="tasks-v9-empty">Carregando interface atual de execuções…</td></tr>';
+    }
+    const count = qs('#tasks-v9-count');
+    if (count) count.textContent = 'Carregando execuções…';
+  }
+
+  function adoptOperationalRenderer() {
+    const current = typeof window.renderTasks === 'function' ? window.renderTasks : null;
+    if (!window.__devpilotTasksOperationalV9 || !current || current === guardedRenderTasks) return false;
+
+    operationalRenderer = current;
+    window.__devpilotOperationalRenderTasks = current;
+    document.documentElement.dataset.devpilotTasksRuntime = 'operational-v9';
+    return true;
+  }
+
+  function requestOperationalTasksUi() {
+    if (tasksFeaturePromise || typeof window.__devpilotLoadFeature !== 'function') return tasksFeaturePromise;
+
+    tasksFeaturePromise = Promise.resolve(window.__devpilotLoadFeature('tasks'))
+      .then(() => {
+        if (!adoptOperationalRenderer()) return false;
+        operationalRenderer();
+        return true;
+      })
+      .catch(error => {
+        console.error('[DevPilot] Falha ao carregar runtime atual de Execuções', error);
+        return false;
+      })
+      .finally(() => {
+        tasksFeaturePromise = null;
+      });
+
+    return tasksFeaturePromise;
+  }
+
+  function guardedRenderTasks() {
+    if (typeof operationalRenderer === 'function') return operationalRenderer();
+
+    if (adoptOperationalRenderer()) return operationalRenderer();
+
+    // Nunca deixa o renderer legado de cinco colunas reaparecer enquanto o
+    // bundle atual está sendo preparado. Isso também cobre chamadas diretas a
+    // showView('tasks') feitas por cards/atalhos fora da navegação principal.
+    renderCurrentLoadingState();
+    if (qs('#tasks-view.active')) void requestOperationalTasksUi();
+    return undefined;
+  }
+
+  function installSingleRuntimeAuthority() {
+    removeParallelLegacyStyle();
+
+    const current = typeof window.renderTasks === 'function' ? window.renderTasks : null;
+    if (window.__devpilotTasksOperationalV9 && current) {
+      operationalRenderer = current;
+      window.__devpilotOperationalRenderTasks = current;
+      document.documentElement.dataset.devpilotTasksRuntime = 'operational-v9';
+      return;
+    }
+
+    if (current && !window.__devpilotLegacyRenderTasks) {
+      window.__devpilotLegacyRenderTasks = current;
+    }
+
+    window.renderTasks = guardedRenderTasks;
+    try { renderTasks = guardedRenderTasks; } catch (_) {}
+    document.documentElement.dataset.devpilotTasksRuntime = 'guarded';
+
+    if (qs('#tasks-view.active')) guardedRenderTasks();
+  }
+
   const replacements = [
     [/\bTarefas por status\b/g, 'Execuções por status'],
     [/\bOrigem das tarefas\b/g, 'Origem das execuções'],
@@ -96,10 +180,24 @@
     });
   }
 
-  document.addEventListener('devpilot:view-changed', scheduleLabels);
+  installSingleRuntimeAuthority();
+
+  document.addEventListener('devpilot:view-changed', event => {
+    if (event.detail?.view === 'tasks' && !adoptOperationalRenderer()) {
+      renderCurrentLoadingState();
+      void requestOperationalTasksUi();
+    }
+    scheduleLabels();
+  });
   document.addEventListener('devpilot:page-ready', scheduleLabels);
   document.addEventListener('devpilot:tasks-rendered', scheduleLabels);
-  document.addEventListener('devpilot:feature-ready', scheduleLabels);
+  document.addEventListener('devpilot:feature-ready', event => {
+    if (event.detail?.feature === 'tasks') {
+      adoptOperationalRenderer();
+      removeParallelLegacyStyle();
+    }
+    scheduleLabels();
+  });
   document.addEventListener('devpilot:execution-created', scheduleLabels);
 
   if (document.readyState === 'loading') {
@@ -108,6 +206,6 @@
     scheduleLabels();
   }
 
-  document.documentElement.dataset.devpilotExecutions = 'v35';
-  console.info('[DevPilot] Execuções V35 nomenclatura orientada a eventos');
+  document.documentElement.dataset.devpilotExecutions = 'v46';
+  console.info('[DevPilot] Execuções V46 · runtime único operacional');
 })();
