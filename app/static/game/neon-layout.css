@@ -1,0 +1,478 @@
+/* DevPilot Game Neon V48 — visual inspirado em cards de aula, sem animações pesadas. */
+:root {
+  --game-neon-blue:#2f7cff;
+  --game-neon-cyan:#36d9ff;
+  --game-neon-purple:#a855f7;
+  --game-neon-bg:#030914;
+  --game-neon-panel:#071427;
+  --game-neon-panel-2:#0a1730;
+  --game-neon-text:#f4f7ff;
+  --game-neon-muted:#91a0bd;
+  --game-neon-line:rgba(93,130,255,.28);
+}
+
+body[data-devpilot-game-standalone="1"] {
+  background:
+    radial-gradient(circle at 80% 18%,rgba(86,44,255,.14),transparent 30%),
+    radial-gradient(circle at 12% 42%,rgba(27,125,255,.10),transparent 28%),
+    var(--game-neon-bg);
+  color:var(--game-neon-text);
+}
+
+body[data-devpilot-game-standalone="1"] .devpilot-game-hud {
+  position:sticky;
+  top:0;
+  z-index:40;
+  min-height:76px;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  padding:calc(10px + env(safe-area-inset-top)) 18px 10px;
+  border-bottom:1px solid rgba(88,112,178,.18);
+  background:rgba(3,9,20,.94);
+  backdrop-filter:blur(12px);
+  box-shadow:none;
+}
+
+body[data-devpilot-game-standalone="1"] .devpilot-game-exit {
+  width:42px;
+  height:42px;
+  border:1px solid rgba(96,139,255,.34);
+  border-radius:13px;
+  background:#0a1830;
+  color:#dce9ff;
+  font-size:26px;
+}
+
+.devpilot-game-brand {
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-width:0;
+}
+.devpilot-game-brand-mark {
+  display:grid;
+  place-items:center;
+  width:36px;
+  height:36px;
+  border-radius:11px;
+  border:1px solid rgba(77,132,255,.42);
+  background:linear-gradient(145deg,rgba(41,105,255,.24),rgba(113,59,255,.18));
+  color:#dfe9ff;
+  font-weight:950;
+  font-size:.92rem;
+  letter-spacing:-.04em;
+}
+.devpilot-game-brand-copy {
+  min-width:0;
+  display:flex;
+  align-items:baseline;
+  gap:8px;
+}
+.devpilot-game-brand-copy strong {
+  font-size:1.06rem;
+  letter-spacing:.01em;
+}
+.devpilot-game-brand-copy span {
+  color:#48a7ff;
+  font-size:.68rem;
+  font-weight:900;
+  letter-spacing:.12em;
+  white-space:nowrap;
+}
+.devpilot-game-xp-badge {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-height:38px;
+  padding:0 12px;
+  border:1px solid rgba(155,89,247,.48);
+  border-radius:13px;
+  background:rgba(66,34,118,.22);
+  color:#f1ecff;
+  font-size:.78rem;
+  font-weight:900;
+  white-space:nowrap;
+}
+.devpilot-game-xp-badge::before {
+  content:'⚡';
+  color:#a96bff;
+}
+body[data-devpilot-game-standalone="1"] .devpilot-game-hud-copy {display:none!important}
+
+body[data-devpilot-game-standalone="1"] .devpilot-game-stage {
+  padding:16px 14px calc(96px + env(safe-area-inset-bottom));
+  background:transparent;
+}
+body[data-devpilot-game-standalone="1"] .devpilot-game-stage>#build-game-view {
+  width:min(920px,100%);
+  max-width:920px;
+}
+
+#build-game-view.game-neon-v48 .build-game-hero,
+#build-game-view.game-neon-v48 .build-game-score,
+#build-game-view.game-neon-v48 > .build-game-shell > .build-game-progress,
+#build-game-view.game-neon-v48 > .build-game-shell > article.panel {
+  display:none!important;
+}
+
+.game-neon-mission {
+  position:relative;
+  overflow:hidden;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:14px;
+  align-items:end;
+  padding:20px;
+  margin-bottom:18px;
+  border:1px solid rgba(75,129,255,.34);
+  border-radius:22px;
+  background:
+    radial-gradient(circle at 92% 8%,rgba(113,58,255,.18),transparent 38%),
+    linear-gradient(145deg,rgba(7,24,47,.98),rgba(8,16,38,.98));
+  box-shadow:inset 0 1px rgba(255,255,255,.025);
+}
+.game-neon-mission::after {
+  content:'';
+  position:absolute;
+  left:20px;
+  right:20px;
+  bottom:16px;
+  height:4px;
+  border-radius:99px;
+  background:rgba(59,84,134,.25);
+}
+.game-neon-mission-copy {padding-bottom:18px;min-width:0}
+.game-neon-mission-copy small {
+  display:block;
+  color:#42adff;
+  font-size:.68rem;
+  font-weight:900;
+  letter-spacing:.13em;
+  text-transform:uppercase;
+}
+.game-neon-mission-copy strong {
+  display:block;
+  margin-top:8px;
+  max-width:620px;
+  font-size:clamp(1.25rem,4.8vw,2rem);
+  line-height:1.15;
+}
+.game-neon-mission-count {
+  align-self:start;
+  min-width:76px;
+  text-align:right;
+  color:#8695bf;
+}
+.game-neon-mission-count b {
+  display:block;
+  color:#69a0ff;
+  font-size:2rem;
+  line-height:1;
+}
+.game-neon-mission-count span {
+  display:block;
+  margin-top:5px;
+  font-size:.72rem;
+  letter-spacing:.08em;
+}
+.game-neon-mission-progress {
+  position:absolute;
+  z-index:1;
+  left:20px;
+  bottom:16px;
+  height:4px;
+  border-radius:99px;
+  background:linear-gradient(90deg,#2b79ff,#7957ff);
+}
+
+#build-game-view.game-neon-v48 .build-game-map {
+  display:grid;
+  gap:14px;
+}
+
+#build-game-view.game-neon-v48 .build-game-phase {
+  position:relative;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:16px;
+  align-items:center;
+  min-width:0;
+  padding:20px;
+  border:1px solid rgba(70,99,156,.25);
+  border-radius:22px;
+  background:linear-gradient(145deg,rgba(7,18,36,.96),rgba(6,14,30,.98));
+  box-shadow:none;
+}
+#build-game-view.game-neon-v48 .build-game-phase-icon {display:none!important}
+#build-game-view.game-neon-v48 .build-game-phase-copy {min-width:0}
+#build-game-view.game-neon-v48 .build-game-phase-copy small {
+  display:block;
+  color:#3da8ff;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.11em;
+}
+#build-game-view.game-neon-v48 .build-game-phase-copy strong {
+  display:block;
+  margin:7px 0 6px;
+  color:var(--game-neon-text);
+  font-size:1.18rem;
+  line-height:1.16;
+}
+#build-game-view.game-neon-v48 .build-game-phase-copy p {
+  margin:0;
+  color:var(--game-neon-muted);
+  font-size:.88rem;
+  line-height:1.45;
+}
+#build-game-view.game-neon-v48 .build-game-phase.locked {
+  opacity:.5;
+  filter:saturate(.55);
+}
+#build-game-view.game-neon-v48 .build-game-phase.passed {
+  border-color:rgba(40,194,155,.3);
+}
+
+#build-game-view.game-neon-v48 .build-game-phase.game-neon-current {
+  display:grid;
+  grid-template-columns:160px minmax(0,1fr);
+  gap:26px;
+  align-items:start;
+  padding:28px;
+  border:1px solid rgba(61,125,255,.85);
+  background:
+    radial-gradient(circle at 94% 15%,rgba(158,54,255,.22),transparent 38%),
+    radial-gradient(circle at 4% 70%,rgba(27,107,255,.17),transparent 32%),
+    linear-gradient(145deg,rgba(5,21,58,.99),rgba(13,12,49,.99));
+  box-shadow:
+    0 0 0 1px rgba(45,126,255,.24),
+    0 0 34px rgba(34,96,255,.16),
+    inset 0 1px rgba(255,255,255,.045);
+}
+.game-neon-phase-number {
+  grid-row:1 / span 3;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  min-width:0;
+}
+.game-neon-phase-number small {
+  color:#4aa7ff;
+  font-size:.72rem;
+  font-weight:900;
+  letter-spacing:.12em;
+}
+.game-neon-phase-number strong {
+  margin-top:12px;
+  color:#f7f8ff;
+  font-size:clamp(5.5rem,16vw,8.2rem);
+  font-weight:300;
+  line-height:.82;
+  letter-spacing:-.07em;
+  text-shadow:0 0 24px rgba(68,115,255,.16);
+}
+.game-neon-phase-number i {
+  display:block;
+  width:54px;
+  height:4px;
+  margin-top:20px;
+  border-radius:99px;
+  background:#4c7dff;
+  box-shadow:0 0 14px rgba(76,125,255,.55);
+}
+.game-neon-current-main {min-width:0}
+.game-neon-current-top {
+  display:flex;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.game-neon-chip {
+  display:inline-flex;
+  align-items:center;
+  min-height:32px;
+  padding:0 12px;
+  border:1px solid rgba(61,117,255,.55);
+  border-radius:10px;
+  background:rgba(20,54,118,.22);
+  color:#4aa8ff;
+  font-size:.68rem;
+  font-weight:900;
+  letter-spacing:.08em;
+}
+.game-neon-chip.approval {
+  border-color:rgba(169,85,247,.58);
+  background:rgba(103,42,161,.18);
+  color:#c078ff;
+}
+#build-game-view.game-neon-v48 .game-neon-current .build-game-phase-copy small {display:none}
+#build-game-view.game-neon-v48 .game-neon-current .build-game-phase-copy strong {
+  margin:0;
+  max-width:620px;
+  font-size:clamp(1.55rem,5.8vw,2.45rem);
+  line-height:1.08;
+}
+#build-game-view.game-neon-v48 .game-neon-current .build-game-phase-copy p {
+  margin-top:12px;
+  max-width:650px;
+  font-size:.96rem;
+}
+.game-neon-bullets {
+  display:grid;
+  gap:10px;
+  margin:22px 0 0;
+  padding:0;
+  list-style:none;
+}
+.game-neon-bullets li {
+  position:relative;
+  padding-left:25px;
+  color:#d9e1f5;
+  font-size:.88rem;
+  line-height:1.45;
+}
+.game-neon-bullets li::before {
+  content:'';
+  position:absolute;
+  left:3px;
+  top:.62em;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  background:#5487ff;
+  box-shadow:0 0 10px rgba(84,135,255,.85);
+}
+#build-game-view.game-neon-v48 .game-neon-current .build-game-phase-actions {
+  grid-column:2;
+  display:grid!important;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:12px;
+  width:100%;
+  margin-top:22px;
+}
+#build-game-view.game-neon-v48 .game-neon-current .build-game-phase-actions .status {
+  grid-column:1/-1;
+  justify-self:start;
+  margin-bottom:2px;
+}
+#build-game-view.game-neon-v48 .game-neon-current .build-game-phase-actions button {
+  width:100%;
+  min-width:0;
+  min-height:54px;
+  border-radius:14px;
+  font-weight:900;
+}
+#build-game-view.game-neon-v48 .game-neon-current [data-game-inline-approve] {
+  border:1px solid rgba(55,145,255,.78)!important;
+  background:linear-gradient(135deg,#126cff,#2757dc)!important;
+  color:white!important;
+  box-shadow:0 10px 26px rgba(31,90,232,.2);
+}
+.game-neon-continue {
+  border:1px solid rgba(169,85,247,.68)!important;
+  background:rgba(82,39,139,.16)!important;
+  color:#d09aff!important;
+}
+
+.game-neon-bottom-nav {
+  position:fixed;
+  z-index:50;
+  left:12px;
+  right:12px;
+  bottom:max(10px,env(safe-area-inset-bottom));
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:4px;
+  min-height:70px;
+  padding:8px;
+  border:1px solid rgba(76,104,163,.28);
+  border-radius:20px;
+  background:rgba(6,15,32,.94);
+  backdrop-filter:blur(14px);
+  box-shadow:0 -10px 26px rgba(0,0,0,.24);
+}
+.game-neon-bottom-nav button {
+  display:grid;
+  place-items:center;
+  align-content:center;
+  gap:3px;
+  min-width:0;
+  min-height:52px;
+  padding:5px 3px;
+  border:0;
+  border-radius:13px;
+  background:transparent;
+  color:#8794b3;
+  font-size:.66rem;
+  font-weight:800;
+}
+.game-neon-bottom-nav button b {
+  font-size:1.15rem;
+  line-height:1;
+  font-weight:500;
+}
+.game-neon-bottom-nav button.active {
+  background:rgba(31,78,156,.22);
+  color:#55aaff;
+  box-shadow:inset 0 0 0 1px rgba(70,139,255,.32);
+}
+
+@media(max-width:700px) {
+  body[data-devpilot-game-standalone="1"] .devpilot-game-hud {
+    min-height:68px;
+    padding-inline:12px;
+    gap:8px;
+  }
+  .devpilot-game-brand-mark {width:32px;height:32px}
+  .devpilot-game-brand-copy strong {font-size:.98rem}
+  .devpilot-game-brand-copy span {font-size:.58rem}
+  .devpilot-game-xp-badge {padding:0 9px;font-size:.7rem}
+  body[data-devpilot-game-standalone="1"] .devpilot-game-stage {
+    padding:12px 12px calc(96px + env(safe-area-inset-bottom));
+  }
+  .game-neon-mission {padding:17px;border-radius:18px}
+  .game-neon-mission::after,.game-neon-mission-progress {left:17px;bottom:13px}
+  .game-neon-mission-copy {padding-bottom:15px}
+  .game-neon-mission-count b {font-size:1.65rem}
+
+  #build-game-view.game-neon-v48 .build-game-phase.game-neon-current {
+    grid-template-columns:92px minmax(0,1fr);
+    gap:16px;
+    padding:20px 18px;
+    border-radius:20px;
+  }
+  .game-neon-phase-number strong {font-size:5.3rem}
+  .game-neon-phase-number i {width:44px;margin-top:15px}
+  #build-game-view.game-neon-v48 .game-neon-current .build-game-phase-actions {
+    grid-column:1/-1;
+  }
+  .game-neon-bullets {grid-column:1/-1;margin-top:18px}
+
+  #build-game-view.game-neon-v48 .build-game-phase:not(.game-neon-current) {
+    padding:17px;
+    border-radius:18px;
+  }
+  #build-game-view.game-neon-v48 .build-game-phase:not(.game-neon-current) .build-game-phase-actions {
+    align-self:center;
+  }
+}
+
+@media(max-width:420px) {
+  .devpilot-game-brand-copy span {display:none}
+  .devpilot-game-xp-badge {font-size:.64rem}
+  #build-game-view.game-neon-v48 .build-game-phase.game-neon-current {
+    grid-template-columns:78px minmax(0,1fr);
+    gap:13px;
+    padding:18px 15px;
+  }
+  .game-neon-phase-number strong {font-size:4.5rem}
+  .game-neon-current-top {justify-content:flex-start}
+  #build-game-view.game-neon-v48 .game-neon-current .build-game-phase-actions {
+    grid-template-columns:1fr;
+  }
+}
+
+@media(prefers-reduced-motion:reduce) {
+  .game-neon-v48 *, .game-neon-bottom-nav * {transition:none!important;animation:none!important}
+}
