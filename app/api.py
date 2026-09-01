@@ -624,20 +624,39 @@ def voice_command(payload: VoiceCommand, db: Session = Depends(get_db)):
         project = db.scalar(select(Project).where(Project.workspace_id == ws.id, Project.slug == intent["project_hint"]))
     if not project:
         raise HTTPException(422, "Select or mention a valid project")
+    decision = evaluate_task(intent["prompt"], False)
     task = Task(
         workspace_id=ws.id,
         project_id=project.id,
         title=intent["title"],
         prompt=intent["prompt"],
         source="voice",
-        status=TaskStatus.awaiting_approval,
-        requires_approval=True,
+        status=TaskStatus.awaiting_approval if decision.requires_approval else TaskStatus.queued,
+        requires_approval=decision.requires_approval,
     )
     db.add(task)
     db.flush()
-    record(db, workspace_id=ws.id, project_id=project.id, task_id=task.id, actor="voice-owner", action="voice.command_interpreted", details={"transcript": payload.transcript, "intent": intent})
+    record(
+        db,
+        workspace_id=ws.id,
+        project_id=project.id,
+        task_id=task.id,
+        actor="voice-owner",
+        action="voice.command_interpreted",
+        details={
+            "transcript": payload.transcript,
+            "intent": intent,
+            "approval_reasons": decision.reasons,
+            "automatic": not decision.requires_approval,
+        },
+    )
     db.commit()
-    return {"task": task, "intent": intent, "message": "Comando registrado. Revise e aprove antes da execução."}
+    message = (
+        "Comando registrado e enfileirado para execução automática."
+        if not decision.requires_approval
+        else "Comando registrado. A política identificou uma ação de alto risco e exige aprovação."
+    )
+    return {"task": task, "intent": intent, "message": message}
 
 
 @router.get("/providers")
