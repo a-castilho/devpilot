@@ -101,6 +101,24 @@ def _connection_with_cloud_admin(
     return managed_trial_connection(db, workspace_id, provider)
 
 
+def _normalize_render_repository(value: object) -> str:
+    """Return a canonical GitHub HTTPS URL accepted by Render's repo field."""
+    candidate = str(value or "").strip().rstrip("/")
+    if not candidate:
+        return ""
+
+    if candidate.startswith("git@github.com:"):
+        path = candidate.split(":", 1)[1].strip("/").removesuffix(".git")
+        return f"https://github.com/{path}" if path else ""
+
+    marker = "github.com/"
+    if marker in candidate:
+        path = candidate.split(marker, 1)[1].strip("/").removesuffix(".git")
+        return f"https://github.com/{path}" if path else ""
+
+    return candidate.removesuffix(".git")
+
+
 def _request_json_with_cloud_scope(
     client,
     provider: str,
@@ -112,18 +130,24 @@ def _request_json_with_cloud_scope(
     params: dict[str, Any] | None = None,
 ):
     normalized = dict(params) if isinstance(params, dict) else params
+    normalized_payload = dict(payload) if isinstance(payload, dict) else payload
+
     if provider == "vercel" and isinstance(normalized, dict):
         scope = str(normalized.get("teamId") or "").strip()
         if scope and not scope.startswith("team_"):
             normalized.pop("teamId", None)
             normalized["slug"] = scope
+
+    if provider == "render" and isinstance(normalized_payload, dict) and "repo" in normalized_payload:
+        normalized_payload["repo"] = _normalize_render_repository(normalized_payload.get("repo"))
+
     return _ORIGINAL_REQUEST_JSON(
         client,
         provider,
         method,
         url,
         token,
-        payload=payload,
+        payload=normalized_payload,
         params=normalized,
     )
 
