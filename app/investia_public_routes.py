@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
+import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.investia_models import (
     InvestiaProjectStatus,
 )
 from app.models import Project, Workspace
+from app.rag.runtime import get_rag_service
 from app.security import require_super_admin
 from app.services.audit import record
 from app.services.investia_finance import money
@@ -61,10 +63,7 @@ def _publication_status(config: InvestiaProjectConfig) -> str:
 
 
 def _accepting_investments(config: InvestiaProjectConfig) -> bool:
-    return bool(
-        config.public_enabled
-        and config.status is InvestiaProjectStatus.fundraising
-    )
+    return bool(config.public_enabled and config.status is InvestiaProjectStatus.fundraising)
 
 
 def _public_view(db: Session, config: InvestiaProjectConfig, project: Project) -> dict:
@@ -89,6 +88,13 @@ def _public_view(db: Session, config: InvestiaProjectConfig, project: Project) -
     }
 
 
+def _clean_excerpt(value: str, limit: int = 440) -> str:
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 def _config_for_admin(
     db: Session,
     project_id: str,
@@ -96,9 +102,7 @@ def _config_for_admin(
     ws = _workspace(db)
     if not ws:
         raise HTTPException(404, "Workspace not found")
-    project = db.scalar(
-        select(Project).where(Project.id == project_id, Project.workspace_id == ws.id)
-    )
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == ws.id))
     if not project:
         raise HTTPException(404, "Project not found")
     config = db.scalar(
@@ -139,6 +143,92 @@ def catalog(db: Session = Depends(get_db)):
         .order_by(InvestiaProjectConfig.created_at.desc())
     ).all()
     return [_public_view(db, config, project) for config, project in rows]
+
+
+@router.get("/catalog/search")
+def search_catalog(
+    q: str = Query(default="", max_length=180),
+    limit: int = Query(default=6, ge=1, le=12),
+    db: Session = Depends(get_db),
+):
+    """Search only explicitly published projects, enriching matches with RAG excerpts.
+
+    The endpoint is intentionally public because it powers the pre-login landing page.
+    It never traverses projects without ``public_enabled`` and degrades to project
+    metadata when vector retrieval is disabled or unavailable.
+    """
+    ws = _workspace(db)
+    query = str(q or "").strip()
+    if not ws:
+        return {"query": query, "rag_available": False, "results": []}
+
+    rows = db.execute(
+        select(InvestiaProjectConfig, Project)
+        .join(Project, Project.id == InvestiaProjectConfig.project_id)
+        .where(
+            InvestiaProjectConfig.workspace_id == ws.id,
+            InvestiaProjectConfig.public_enabled.is_(True),
+        )
+        .order_by(InvestiaProjectConfig.updated_at.desc())
+        .limit(18)
+    ).all()
+
+    rag_available = False
+    rag = None
+    if query:
+        try:
+            rag = get_rag_service()
+            rag_available = bool(rag.settings.enabled)
+        except Exception:
+            rag = None
+
+    normalized = query.casefold()
+    results: list[dict] = []
+    for config, project in rows:
+        description = str(project.description or "").strip()
+        metadata_match = not query or normalized in f"{project.name} {project.slug} {description}".casefold()
+        excerpts: list[dict] = []
+
+        if query and rag is not None and project.organization_id:
+            try:
+                retrieved = rag.retrieve(
+                    organization_id=project.organization_id,
+                    project_id=project.id,
+                    query=query,
+                    diagnostic=False,
+                )
+                for chunk in retrieved.chunks[:2]:
+                    excerpt = _clean_excerpt(chunk.content)
+                    if not excerpt:
+                        continue
+                    excerpts.append(
+                        {
+                            "text": excerpt,
+                            "source": str(chunk.source_path or chunk.source_type or "Conhecimento do projeto"),
+                        }
+                    )
+            except Exception:
+                pass
+
+        if query and not metadata_match and not excerpts:
+            continue
+
+        results.append(
+            {
+                "project_key": config.external_project_key,
+                "name": project.name,
+                "slug": project.slug,
+                "description": description,
+                "publication_status": _publication_status(config),
+                "updated_at": config.updated_at,
+                "match": "rag" if excerpts else "metadata",
+                "excerpts": excerpts,
+            }
+        )
+        if len(results) >= limit:
+            break
+
+    return {"query": query, "rag_available": rag_available, "results": results}
 
 
 @router.get("/catalog/{project_key}")
