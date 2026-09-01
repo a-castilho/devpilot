@@ -11,6 +11,13 @@ from app.db import get_db
 from app.models import Run, Task, TaskStatus, Workspace
 from app.security import require_access
 from app.services.audit import record
+from app.services.failure_recovery import is_failure_recovery_task
+from app.services.task_flow import (
+    flow_stage,
+    is_analysis_action_task,
+    is_analysis_task,
+    is_verification_analysis,
+)
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
@@ -29,6 +36,7 @@ _FAILURE_CODES = {
     "filesystem_permission": "FILESYSTEM_PERMISSION_DENIED",
     "database": "DATABASE_UNAVAILABLE",
     "repository_state": "REPOSITORY_STATE_INVALID",
+    "retest_required": "RECOVERY_RETEST_REQUIRED",
     "unknown": "EXECUTION_FAILED",
 }
 
@@ -161,6 +169,14 @@ def _friendly_failure_message(category: str, fallback: str = "") -> str:
     return messages.get(category) or fallback or "Falha registrada sem mensagem detalhada."
 
 
+def _self_healing(run: Run | None) -> dict:
+    payload = _logs_payload(run)
+    if not isinstance(payload, dict):
+        return {}
+    healing = payload.get("self_healing")
+    return healing if isinstance(healing, dict) else {}
+
+
 def failure_details(run: Run | None) -> dict:
     if not run or str(run.status).lower() != "failed":
         return {
@@ -175,6 +191,18 @@ def failure_details(run: Run | None) -> dict:
         healing = payload.get("self_healing")
         if isinstance(healing, dict):
             category = str(healing.get("category") or "unknown")
+            healing_status = str(healing.get("status") or "").strip().lower()
+            if healing_status == "resolved":
+                return {
+                    "category": "retest_required",
+                    "code": _FAILURE_CODES["retest_required"],
+                    "message": (
+                        "A causa detectada foi corrigida pela autocorreção, mas esta execução terminou "
+                        "antes de comprovar o objetivo original. É necessário um reteste da execução."
+                    ),
+                    "requires_authorization": False,
+                }
+
             message = _last_nonempty_line(healing.get("message", ""))
             if message:
                 return {
@@ -239,6 +267,131 @@ def failure_reason(run: Run | None) -> str:
     return str(failure_details(run).get("message") or "")
 
 
+def _task_kind(task: Task | None) -> str:
+    if not task:
+        return "execution"
+    if is_failure_recovery_task(task):
+        return "recovery"
+    if is_verification_analysis(task):
+        return "verification"
+    if is_analysis_action_task(task):
+        return "execution"
+    if is_analysis_task(task):
+        return "analysis"
+    return "execution"
+
+
+def _task_kind_label(kind: str) -> str:
+    return {
+        "analysis": "Análise",
+        "execution": "Execução",
+        "verification": "Validação",
+        "recovery": "Recuperação",
+    }.get(kind, "Execução")
+
+
+def _healing_evidence(run: Run | None) -> list[dict]:
+    healing = _self_healing(run)
+    steps = healing.get("steps") if isinstance(healing, dict) else None
+    if not isinstance(steps, list):
+        return []
+    evidence: list[dict] = []
+    for item in steps[-6:]:
+        if not isinstance(item, dict):
+            continue
+        message = sanitize_text(str(item.get("message") or "")).strip()
+        if not message:
+            continue
+        evidence.append(
+            {
+                "state": str(item.get("state") or "evidence"),
+                "message": message[:600],
+            }
+        )
+    return evidence
+
+
+def result_contract(task: Task | None, run: Run | None) -> dict:
+    kind = _task_kind(task)
+    kind_label = _task_kind_label(kind)
+    run_status = str(run.status if run else "").lower()
+    healing = _self_healing(run)
+    healing_status = str(healing.get("status") or "").lower() if healing else ""
+    details = failure_details(run) if run_status == "failed" else {
+        "category": "",
+        "code": "",
+        "message": "",
+        "requires_authorization": False,
+    }
+
+    if run_status == "success":
+        headline = {
+            "analysis": "Análise concluída",
+            "verification": "Validação concluída",
+            "recovery": "Recuperação concluída",
+            "execution": "Execução concluída",
+        }[kind]
+        message = {
+            "analysis": "O diagnóstico foi produzido. Recomendações não significam que alterações já foram implementadas.",
+            "verification": "A implementação foi verificada no snapshot de execução e o resultado foi registrado.",
+            "recovery": "A causa de recuperação foi tratada. A execução original deve ser retestada para comprovar o objetivo.",
+            "execution": "O agente concluiu a execução e registrou a saída operacional.",
+        }[kind]
+        next_action = {
+            "analysis": "Revise o diagnóstico e execute somente as ações recomendadas que ainda forem necessárias.",
+            "verification": "Se houver lacunas residuais, abra uma correção; se não houver, considere a entrega validada.",
+            "recovery": "Aguarde ou acompanhe o reteste automático da execução original.",
+            "execution": "Confirme as evidências de produto, testes, commit/PR e resultado funcional antes de encerrar a missão.",
+        }[kind]
+        state = "completed"
+    elif run_status == "failed" and healing_status == "resolved":
+        state = "retest_required"
+        headline = "Correção aplicada · reteste pendente"
+        message = details["message"]
+        next_action = "Não trate esta execução como concluída. Reteste o objetivo original e só marque sucesso após a prova funcional."
+    elif run_status == "failed" and details.get("requires_authorization"):
+        state = "blocked_authorization"
+        headline = "Execução bloqueada por autorização"
+        message = details["message"]
+        next_action = "Conclua a autorização indicada e retome a mesma missão de recuperação; não crie uma execução paralela."
+    elif run_status == "failed":
+        state = "failed"
+        headline = {
+            "analysis": "Análise interrompida",
+            "verification": "Validação falhou",
+            "recovery": "Recuperação não concluída",
+            "execution": "Execução falhou",
+        }[kind]
+        message = details["message"]
+        next_action = "Use o protocolo de recuperação para remover a causa raiz e depois reteste a execução original."
+    else:
+        state = "pending"
+        headline = f"{kind_label} sem resultado final"
+        message = "Existe um run registrado, mas ainda não há um resultado final comprovado."
+        next_action = "Aguarde a conclusão do worker ou abra os detalhes técnicos para diagnosticar o run."
+
+    evidence = _healing_evidence(run)
+    if run and run.commit_sha:
+        evidence.append({"state": "commit", "message": f"Commit registrado: {run.commit_sha}"})
+    if run and run.pull_request_url:
+        evidence.append({"state": "pull_request", "message": "Pull Request registrada como evidência de entrega."})
+
+    return {
+        "kind": kind,
+        "kind_label": kind_label,
+        "flow_stage": flow_stage(task) if task else "",
+        "state": state,
+        "headline": headline,
+        "message": message,
+        "next_action": next_action,
+        "failure_category": details.get("category", ""),
+        "failure_code": details.get("code", ""),
+        "requires_authorization": bool(details.get("requires_authorization", False)),
+        "healing_status": healing_status,
+        "evidence": evidence,
+    }
+
+
 def _run_summary(task: Task, run: Run | None) -> dict:
     needs_attention = task.status in {TaskStatus.failed, TaskStatus.blocked}
     details = failure_details(run) if needs_attention else {
@@ -247,9 +400,13 @@ def _run_summary(task: Task, run: Run | None) -> dict:
         "message": "",
         "requires_authorization": False,
     }
+    contract = result_contract(task, run)
     return {
         "task_id": task.id,
         "task_status": task.status.value if isinstance(task.status, TaskStatus) else str(task.status),
+        "task_kind": contract["kind"],
+        "task_kind_label": contract["kind_label"],
+        "result_state": contract["state"],
         "run_id": run.id if run else None,
         "run_status": run.status if run else None,
         "failure_reason": details["message"],
@@ -348,6 +505,7 @@ def task_run_log(run_id: str, db: Session = Depends(get_db)):
     if not run:
         raise HTTPException(404, "Run not found")
 
+    task = db.get(Task, run.task_id)
     return {
         "id": run.id,
         "task_id": run.task_id,
@@ -356,6 +514,7 @@ def task_run_log(run_id: str, db: Session = Depends(get_db)):
         "summary": sanitize_text(run.summary),
         "logs": sanitize_payload(_logs_payload(run)),
         "failure": failure_details(run),
+        "result_contract": result_contract(task, run),
         "commit_sha": run.commit_sha,
         "pull_request_url": run.pull_request_url,
         "started_at": run.started_at,
