@@ -1,0 +1,22 @@
+name: Projects ready link v78 validation
+
+on:
+  push:
+    branches: [fix/projects-ready-link-v78]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate JavaScript syntax
+        run: node --check app/static/project-delete-ui.js
+      - name: Validate low-power ready link contract
+        run: python -m pytest -q tests/test_projects_ready_link_low_power.py tests/test_projects_memory_pressure.py tests/test_projects_mobile_runtime_guard.py
