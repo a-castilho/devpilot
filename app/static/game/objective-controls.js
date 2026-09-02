@@ -1,6 +1,7 @@
 /* DevPilot standalone game objective controls.
  * Keeps the objective visible in the isolated game skin and delegates all
- * state transitions to the existing Build Game runtime without global DOM observers.
+ * state transitions to the existing Build Game runtime. No DOM observer is
+ * used: mounting follows explicit game render events from action-runtime.js.
  */
 (() => {
   'use strict';
@@ -10,8 +11,6 @@
 
   const ROOT_ID = 'devpilot-game-objective-controls';
   const STYLE_ID = 'devpilot-game-objective-controls-style';
-  let observedView = null;
-  let viewObserver = null;
   let scheduled = false;
 
   const toastMessage = message => {
@@ -24,6 +23,10 @@
       window.setTimeout(() => node.classList.remove('show'), 2200);
     }
   };
+
+  const runAction = (key, action) => typeof window.__devpilotGameRunAction === 'function'
+    ? window.__devpilotGameRunAction(key, action)
+    : Promise.resolve().then(action);
 
   const ensureStyle = () => {
     if (document.getElementById(STYLE_ID)) return;
@@ -39,6 +42,7 @@
       .devpilot-game-objective textarea:focus{border-color:#00e7d8;box-shadow:0 0 0 3px rgba(0,231,216,.10)}
       .devpilot-game-objective-actions{display:grid;grid-template-columns:minmax(180px,1.15fr) minmax(150px,.9fr) minmax(130px,.75fr) minmax(110px,.6fr);gap:10px;margin-top:12px}
       .devpilot-game-objective-actions button{min-height:44px;border-radius:12px;font-weight:800;cursor:pointer}
+      .devpilot-game-objective-actions button:disabled{opacity:.58;cursor:wait}
       .devpilot-game-objective-actions .objective-primary{border:1px solid #15e7d0;background:linear-gradient(135deg,#00d9c7,#35f0cf);color:#041018}
       .devpilot-game-objective-actions .objective-secondary{border:1px solid rgba(117,91,255,.74);background:rgba(46,20,116,.75);color:#fff}
       .devpilot-game-objective-actions .objective-ghost{border:1px solid rgba(117,91,255,.48);background:rgba(8,14,40,.62);color:#dce4ff}
@@ -84,20 +88,26 @@
   const currentPhaseButton = view => view.querySelector('.build-game-phase.current [data-play-phase]')
     || view.querySelector('[data-play-phase]:not([disabled])');
 
-  const startCurrentPhase = (view, textarea) => {
-    if (!persistGoal(view, textarea)) return;
+  const startCurrentPhase = async (view, textarea, trigger) => {
+    if (!persistGoal(view, textarea)) return false;
     const button = currentPhaseButton(view);
     if (button) {
+      trigger.disabled = true;
+      button.scrollIntoView({block:'center'});
       button.click();
-      return;
+      window.setTimeout(() => {
+        if (trigger.isConnected) trigger.disabled = false;
+      }, 1200);
+      return true;
     }
     const active = view.querySelector('.build-game-phase.current .build-game-phase-actions button');
     if (active) {
-      active.scrollIntoView({behavior:'smooth', block:'center'});
+      active.scrollIntoView({block:'center'});
       toastMessage('A fase atual já está em andamento');
-      return;
+      return false;
     }
     toastMessage('Nenhuma fase disponível para iniciar agora');
+    return false;
   };
 
   const mount = () => {
@@ -143,17 +153,41 @@
     textarea.addEventListener('input', () => {
       host.querySelector('[data-objective-status]').textContent = 'ALTERADO';
     });
-    host.querySelector('[data-objective-save]').addEventListener('click', () => persistGoal(view, textarea));
-    host.querySelector('[data-objective-start]').addEventListener('click', () => startCurrentPhase(view, textarea));
-    host.querySelector('[data-objective-new]').addEventListener('click', () => {
-      const button = view.querySelector('#build-game-new');
-      if (!button) return toastMessage('Ação Nova partida indisponível');
-      button.click();
+
+    const saveButton = host.querySelector('[data-objective-save]');
+    saveButton.addEventListener('click', () => {
+      void runAction('objective-save', async () => persistGoal(view, textarea));
     });
-    host.querySelector('[data-objective-refresh]').addEventListener('click', async () => {
-      if (typeof window.loadBuildGame !== 'function') return window.location.reload();
-      await window.loadBuildGame();
-      scheduleMount();
+
+    const startButton = host.querySelector('[data-objective-start]');
+    startButton.addEventListener('click', () => {
+      void runAction('objective-start', () => startCurrentPhase(view, textarea, startButton));
+    });
+
+    const newButton = host.querySelector('[data-objective-new]');
+    newButton.addEventListener('click', () => {
+      void runAction('objective-new', async () => {
+        const button = view.querySelector('#build-game-new');
+        if (!button) return toastMessage('Ação Nova partida indisponível');
+        newButton.disabled = true;
+        button.click();
+        window.setTimeout(() => {
+          if (newButton.isConnected) newButton.disabled = false;
+        }, 900);
+      });
+    });
+
+    const refreshButton = host.querySelector('[data-objective-refresh]');
+    refreshButton.addEventListener('click', () => {
+      void runAction('game-refresh', async () => {
+        if (typeof window.loadBuildGame !== 'function') return window.location.reload();
+        refreshButton.disabled = true;
+        try {
+          await window.loadBuildGame();
+        } finally {
+          if (refreshButton.isConnected) refreshButton.disabled = false;
+        }
+      });
     });
 
     const runtimeInput = baseGoal(view);
@@ -167,22 +201,10 @@
     window.setTimeout(() => {
       scheduled = false;
       mount();
-      installScopedObserver();
     }, 0);
   };
 
-  function installScopedObserver() {
-    const view = document.querySelector('#build-game-view');
-    if (!view || view === observedView) return;
-
-    viewObserver?.disconnect();
-    observedView = view;
-    viewObserver = new MutationObserver(scheduleMount);
-    // Build Game replaces the direct shell when it rerenders. Observe only that
-    // structural replacement; changes inside the shell must not retrigger sync.
-    viewObserver.observe(view, {childList:true});
-  }
-
+  document.addEventListener('devpilot:game:rendered', scheduleMount);
   document.addEventListener('devpilot:game:core-ready', scheduleMount);
   document.addEventListener('devpilot:game:standalone-ready', scheduleMount);
   document.addEventListener('devpilot:game:enhancements-ready', scheduleMount);
