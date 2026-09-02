@@ -37,7 +37,7 @@ def test_action_runtime_never_replays_loader_in_a_while_loop():
     assert "Promise.resolve().then(async () =>" in ACTION
 
 
-def test_cache_revision_forces_browsers_off_broken_v57_assets():
-    revision = "release-1.2.0-game-core-first-v60-20260902"
+def test_cache_revision_forces_browsers_off_regressed_assets():
+    revision = "release-1.2.0-game-entry-stable-v64-20260902"
     assert revision in INDEX
     assert revision in BOOT
