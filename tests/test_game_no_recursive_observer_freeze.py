@@ -27,7 +27,8 @@ def test_delivery_gate_never_wraps_main_loader():
     assert "window.loadBuildGame = async" not in GATE
     assert "__devpilotDeliveryGateDoesNotWrapLoader = true" in GATE
     assert "MAX_PHASES = 7" in GATE
-    assert "limit=24" in GATE
+    assert "TASK_LIMIT = 24" in GATE
+    assert "limit=${TASK_LIMIT}" in GATE
 
 
 def test_enhancements_start_only_after_core_and_yield_between_modules():
