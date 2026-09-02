@@ -89,7 +89,7 @@
     || view.querySelector('[data-play-phase]:not([disabled])');
 
   const startCurrentPhase = async (view, textarea, trigger) => {
-    if (!persistGoal(view, textarea)) return false;
+    if (!persistGoal(view, textarea)) return;
     const button = currentPhaseButton(view);
     if (button) {
       trigger.disabled = true;
