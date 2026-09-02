@@ -15,12 +15,14 @@ def test_delivery_gate_never_wraps_main_game_loader():
     assert "setTimeout(scheduleGate" in GATE
 
 
-def test_task_creation_precheck_is_bounded_and_nonfatal():
+def test_task_creation_precheck_is_bounded_and_fails_closed():
     assert "PRECHECK_TIMEOUT_MS = 1400" in GUARD
     assert "CREATE_TIMEOUT_MS = 6500" in GUARD
     assert "RECOVERY_TIMEOUT_MS = 2200" in GUARD
-    assert "game-create:dedupe:precheck-timeout" in GUARD
-    assert "const result = await originalApi(path" in GUARD
+    assert "game-create:dedupe:precheck-failed" in GUARD
+    assert "GAME_DEDUPE_PRECHECK_FAILED" in GUARD
+    assert "continuing could enqueue a duplicate" in GUARD
+    assert "return null;" not in GUARD[GUARD.index("async function precheckGameCreation"):GUARD.index("async function recoverGameCreation")]
 
 
 def test_game_trace_memory_is_bounded():
@@ -35,7 +37,10 @@ def test_action_runtime_blocks_fast_duplicate_taps():
     assert "__devpilotGameRunAction" in ACTION
 
 
-def test_boot_loads_coordinator_and_guard_before_ui_enhancements():
+def test_boot_requires_coordinator_before_initial_render_and_enhancements():
+    assert "const REQUIRED_ASSET = 'game/action-runtime.js'" in BOOT
+    assert "await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS)" in BOOT
+    assert "Coordenador de ações do Modo Jogo indisponível" in BOOT
     assert BOOT.index("game/action-runtime.js") < BOOT.index("game/task-payload-guard.js")
     assert BOOT.index("game/task-payload-guard.js") < BOOT.index("game/objective-controls.js")
     assert BOOT.index("game/objective-controls.js") < BOOT.index("game/delivery-gate.js")
