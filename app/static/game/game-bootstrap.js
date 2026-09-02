@@ -6,7 +6,7 @@
 
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
-  const ASSET_REVISION = 'game-flow-v76-20260902';
+  const ASSET_REVISION = 'game-flow-v77-20260902';
 
   const ENTRY_ASSETS = [
     'game/task-payload-guard.js',
