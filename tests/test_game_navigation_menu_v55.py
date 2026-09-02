@@ -30,7 +30,7 @@ def test_menu_navigation_is_explicit_and_restored_after_dashboard_auth():
     assert "sessionStorage.setItem('devpilot-dashboard-view', target)" in BOOT
     assert "sessionStorage.getItem('devpilot-dashboard-view')" in APP
     assert "sessionStorage.removeItem('devpilot-dashboard-view')" in APP
-    assert "document.getElementById(\`\${requestedView}-view\`)" in APP
+    assert "document.getElementById(`${requestedView}-view`)" in APP
 
 
 def test_menu_is_keyboard_accessible_without_observers():
