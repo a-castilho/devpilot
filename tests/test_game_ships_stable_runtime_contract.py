@@ -9,7 +9,7 @@ PROJECTS = (ROOT / "app/static/mobile-project-card-compact.js").read_text(encodi
 
 
 def test_standalone_game_assets_are_cache_busted_and_never_start_blank():
-    revision = "release-1.2.0-game-stable-20260902-1"
+    revision = "release-1.2.0-game-stable-20260902-2"
     assert revision in GAME_INDEX
     assert 'data-game-boot-state="loading"' in GAME_INDEX
     assert "/assets/game/runtime.js" in GAME_INDEX
@@ -31,6 +31,16 @@ def test_game_runtime_is_explicitly_exported_for_mobile_browsers():
     assert "window.toast = toast;" in GAME_RUNTIME
     assert "window.showView = showView;" in GAME_RUNTIME
     assert "window.__devpilotGameApiReady = true;" in GAME_RUNTIME
+    assert "window.__devpilotGameCompactRuntime = true;" in GAME_RUNTIME
+
+
+def test_standalone_game_rewrites_heavy_payloads_to_compact_routes():
+    assert "function standaloneRoute(path, options = {})" in GAME_RUNTIME
+    assert "/ui/projects?limit=50" in GAME_RUNTIME
+    assert "/ui/game-tasks?project_id=" in GAME_RUNTIME
+    assert "limit=24" in GAME_RUNTIME
+    assert "GAME_PIPELINE_MARKER" in GAME_RUNTIME
+    assert "normalizeGameTasks" in GAME_RUNTIME
 
 
 def test_real_build_game_engine_is_present():
