@@ -63,3 +63,31 @@ def test_v80_is_loaded_after_simple_ui_and_knows_current_user():
     assert BOOT.index("'game/objective-controls.js'") < BOOT.index("'game/development-continuity.js'")
     assert "window.api('/auth/me')" in BOOT
     assert "game-development-v80-20260902" in BOOT
+
+
+
+def test_delivery_mode_classifier_is_functional():
+    import json
+    from app.frontend_ui_routes import _project_delivery_mode
+
+    assert _project_delivery_mode(json.dumps({"project_blueprint": {"project_type": ["saas"], "frontend": ["react"]}})) == "web"
+    assert _project_delivery_mode(json.dumps({"project_blueprint": {"project_type": ["api"], "frontend": ["none"]}})) == "service"
+    assert _project_delivery_mode(json.dumps({"project_blueprint": {"project_type": ["cli"], "frontend": ["none"]}})) == "code"
+    assert _project_delivery_mode(json.dumps({"project_blueprint": {"project_type": ["automation"], "frontend": ["none"]}})) == "code"
+
+
+def test_v80_keeps_visible_fallback_and_sequential_dedup_guards():
+    index = (ROOT / "app/static/game/index.html").read_text(encoding="utf-8")
+    guard = (ROOT / "app/static/game/task-payload-guard.js").read_text(encoding="utf-8")
+    assert "data-game-critical-boot-v80" in index
+    assert "Preparando Modo Jogo" in index
+    assert "window.__devpilotGameCreateSequentialDedup = true" in guard
+    assert "recentCreations" in guard
+    assert "action-runtime.js" not in BOOT.split("const ENTRY_ASSETS = [", 1)[1].split("];", 1)[0]
+
+
+def test_explicit_new_round_suppresses_history_resume_until_start():
+    assert "function hasNewRoundIntent()" in CONTINUITY
+    assert "sessionStorage.setItem(NEW_ROUND_INTENT_KEY, '1')" in CONTINUITY
+    assert "if (hasNewRoundIntent()) return" in CONTINUITY
+    assert "if (state?.hasTasks) sessionStorage.removeItem(NEW_ROUND_INTENT_KEY)" in CONTINUITY

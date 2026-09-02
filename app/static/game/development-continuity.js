@@ -113,25 +113,21 @@
     }
   }
 
-  function newRoundIntentProject() {
-    return String(sessionStorage.getItem(NEW_ROUND_INTENT_KEY) || '').trim();
+  function hasNewRoundIntent() {
+    return sessionStorage.getItem(NEW_ROUND_INTENT_KEY) === '1';
   }
 
   function markNewRoundIntent() {
-    const state = engine()?.snapshot?.();
-    if (state?.projectId) sessionStorage.setItem(NEW_ROUND_INTENT_KEY, String(state.projectId));
+    sessionStorage.setItem(NEW_ROUND_INTENT_KEY, '1');
   }
 
   function clearNewRoundIntentWhenStarted(state) {
-    if (!state?.hasTasks) return;
-    if (newRoundIntentProject() === String(state.projectId || '')) {
-      sessionStorage.removeItem(NEW_ROUND_INTENT_KEY);
-    }
+    if (state?.hasTasks) sessionStorage.removeItem(NEW_ROUND_INTENT_KEY);
   }
 
   async function repairStaleMission(state) {
     if (!state?.projectId || state.hasTasks || staleRepairBusy || switchBusy) return;
-    if (newRoundIntentProject() === String(state.projectId)) return;
+    if (hasNewRoundIntent()) return;
     if (typeof window.api !== 'function') return;
 
     staleRepairBusy = true;
