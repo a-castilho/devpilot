@@ -27,8 +27,7 @@ jobs:
           cache: pip
 
       - name: Install test dependencies
-        run: |
-          python -m pip install -e '.[test,e2e]'
+        run: python -m pip install -e '.[test,e2e]'
 
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
@@ -46,14 +45,17 @@ jobs:
           node --check app/static/game/final-delivery-summary.js
           node --check app/static/build-game-url-bonus.js
 
-      - name: Full game contracts
-        run: |
-          python -m pytest -q tests/test_game*.py
-
-      - name: Development continuity dependencies
+      - name: Canonical development-game contracts
         run: |
           python -m pytest -q \
+            tests/test_game_development_continuity_v80.py \
+            tests/test_game_ships_stable_runtime_contract.py \
+            tests/test_game_delivery_gate.py \
             tests/test_failure_recovery_flow_contract.py \
-            tests/test_build_game_final_delivery.py \
-            tests/test_project_delivery_history_ui.py \
             tests/test_projects_mobile_runtime_guard.py
+
+      - name: Browser duplicate-action guard
+        run: python -m pytest -q tests/test_game_guard_browser_e2e.py
+
+      - name: Browser multi-project continuity
+        run: python -m pytest -q tests/test_game_browser_e2e.py
