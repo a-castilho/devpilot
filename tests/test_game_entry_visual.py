@@ -9,11 +9,13 @@ FEATURE_LOADER_JS = ROOT / "app" / "static" / "feature-loader.js"
 GAME_HTML = ROOT / "app" / "static" / "game" / "index.html"
 
 
-def test_mobile_shell_loads_visible_game_entry():
+def test_mobile_shell_exposes_direct_game_action():
     js = MOBILE_JS.read_text(encoding="utf-8")
-    assert "ensureGameEntry" in js
-    assert "/assets/game-entry.js?v=20260825-1" in js
-    assert "data-game-entry" in js
+    assert "window.__devpilotMobileAccordionMenuStable" in js
+    assert "data-simple-game" in js
+    assert "<small>Jogo</small>" in js
+    assert "window.location.assign('/game/index.html')" in js
+    assert "ensureGameShipsRuntime" in js
 
 
 def test_overview_has_clear_game_call_to_action_contract():
