@@ -7,7 +7,7 @@
   const CORE_TIMEOUT_MS = 7000;
   const REQUIRED_TIMEOUT_MS = 3500;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-actions-v54-20260902';
+  const ASSET_REVISION = 'release-1.2.0-game-menu-v55-20260902';
   const REQUIRED_ASSET = 'game/action-runtime.js';
   const OPTIONAL_ASSETS = [
     'game/task-payload-guard.js',
@@ -20,6 +20,12 @@
   ];
 
   const backToDashboard = () => window.location.assign('/');
+  const openDashboardView = view => {
+    const allowed = new Set(['overview', 'organizations', 'projects', 'tasks', 'providers', 'reports', 'audit']);
+    const target = allowed.has(String(view || '')) ? String(view) : 'overview';
+    sessionStorage.setItem('devpilot-dashboard-view', target);
+    window.location.assign('/');
+  };
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
   const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 45));
@@ -29,6 +35,33 @@
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
+
+  const menu = document.getElementById('game-menu');
+  const menuToggle = document.getElementById('game-menu-toggle');
+  const setMenuOpen = open => {
+    if (!menu || !menuToggle) return;
+    menu.hidden = !open;
+    menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menuToggle.setAttribute('aria-label', open ? 'Fechar menu do DevPilot' : 'Abrir menu do DevPilot');
+  };
+  menuToggle?.addEventListener('click', event => {
+    event.stopPropagation();
+    setMenuOpen(Boolean(menu?.hidden));
+  });
+  menu?.addEventListener('click', event => {
+    const target = event.target.closest?.('[data-game-dashboard-view]');
+    if (!target) return;
+    openDashboardView(target.dataset.gameDashboardView);
+  });
+  document.addEventListener('click', event => {
+    if (!menu?.hidden && !menu.contains(event.target) && event.target !== menuToggle) setMenuOpen(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !menu?.hidden) {
+      setMenuOpen(false);
+      menuToggle?.focus();
+    }
+  });
 
   function showBooting(message = 'Carregando projeto e histórico leve da missão…') {
     const target = gameTarget();
