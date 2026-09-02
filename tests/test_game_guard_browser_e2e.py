@@ -17,8 +17,10 @@ def test_guard_keeps_one_post_until_exact_created_task_is_visible():
 
     with playwright_api.sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True, args=["--disable-dev-shm-usage"])
-        page = browser.new_page()
-        page.set_content("<html><body></body></html>")
+        context = browser.new_context()
+        page = context.new_page()
+        page.route("http://game.test/**", lambda route: route.fulfill(status=200, content_type="text/html", body="<html><body></body></html>"))
+        page.goto("http://game.test/", wait_until="domcontentloaded")
         page.evaluate(
             """() => {
               window.__postCount = 0;
@@ -80,4 +82,5 @@ def test_guard_keeps_one_post_until_exact_created_task_is_visible():
         assert page.evaluate("() => window.__postCount") == 2
         assert page.evaluate("() => window.__devpilotGameCreateSequentialDedup === true") is True
 
+        context.close()
         browser.close()
