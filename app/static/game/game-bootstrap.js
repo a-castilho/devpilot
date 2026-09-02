@@ -6,12 +6,13 @@
 
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
-  const ASSET_REVISION = 'game-unified-v73-20260902';
+  const ASSET_REVISION = 'game-flow-v77-20260902';
 
   const ENTRY_ASSETS = [
     'game/task-payload-guard.js',
     'game/objective-controls.js',
     'game/delivery-gate.js',
+    'game/flow-keeper.js',
   ];
 
   const VICTORY_ASSETS = [

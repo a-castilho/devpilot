@@ -1,0 +1,59 @@
+name: Game v77 validation
+
+on:
+  push:
+    branches: [fix/game-flow-one-screen-v74]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-v77-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  game-v77:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEVPILOT_RUN_BROWSER_E2E: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test,e2e]'
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Validate v77 contracts
+        run: |
+          python -m pytest -q \
+            tests/test_game_unified_v73.py \
+            tests/test_game_v77_no_blank_no_duplicate.py
+
+      - name: JavaScript syntax
+        run: |
+          node --check app/static/game/runtime.js
+          node --check app/static/build-game.js
+          node --check app/static/game/game-bootstrap.js
+          node --check app/static/game/task-payload-guard.js
+          node --check app/static/game/objective-controls.js
+          node --check app/static/game/delivery-gate.js
+          node --check app/static/game/flow-keeper.js
+
+      - name: Browser dedupe regression
+        run: python -m pytest -q tests/test_game_guard_browser_e2e.py
+
+      - name: Browser full game flow
+        run: python -m pytest -q tests/test_game_browser_e2e.py
