@@ -7,7 +7,7 @@
   const CORE_TIMEOUT_MS = 7000;
   const REQUIRED_TIMEOUT_MS = 3500;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-menu-v55-20260902';
+  const ASSET_REVISION = 'release-1.2.0-game-simple-v56-20260902';
   const REQUIRED_ASSET = 'game/action-runtime.js';
   const OPTIONAL_ASSETS = [
     'game/task-payload-guard.js',
