@@ -36,7 +36,8 @@ def test_standalone_controls_are_event_driven_not_mutation_observer_driven():
 
 def test_gate_is_lightweight_and_matches_seven_phase_pipeline():
     assert "MAX_PHASES = 7" in GATE
-    assert "limit=24" in GATE
+    assert "TASK_LIMIT = 24" in GATE
+    assert "limit=${TASK_LIMIT}" in GATE
     assert "devpilot:game:rendered" in GATE
     assert "timeoutMs:4000" in GATE
     assert "retry:false" in GATE
