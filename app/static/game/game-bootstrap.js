@@ -6,12 +6,12 @@
 
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
-  const ASSET_REVISION = 'game-flow-v77-20260902';
+  const ASSET_REVISION = 'game-flow-v78-20260902';
 
   const ENTRY_ASSETS = [
     'game/task-payload-guard.js',
     'game/objective-controls.js',
-    'game/delivery-gate.js',
+    'game/project-switch-approval.js',
     'game/flow-keeper.js',
   ];
 
@@ -135,7 +135,7 @@
       if (!hasShell()) throw new Error('A interface principal do jogo não foi renderizada');
 
       window.__devpilotGameCoreReady = true;
-      window.__devpilotGameBootProfile = 'unified-v73';
+      window.__devpilotGameBootProfile = 'server-orchestrated-v78';
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       startEnhancements();
     } catch (error) {

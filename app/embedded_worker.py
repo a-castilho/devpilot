@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import threading
 
+from app.services.game_round_orchestrator import GameRoundOrchestrator
 from app.services.runtime_preflight import worker_runtime_paths
 from app.worker import process_one
 
@@ -18,6 +19,7 @@ class EmbeddedWorker:
         self.poll_seconds = max(0.05, float(poll_seconds))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._game = GameRoundOrchestrator()
 
     @property
     def is_running(self) -> bool:
@@ -44,6 +46,11 @@ class EmbeddedWorker:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            try:
+                self._game.tick()
+            except Exception as error:  # pragma: no cover - defensive runtime guard
+                print(f"[embedded-worker] game orchestrator error: {error}", flush=True)
+
             try:
                 processed = process_one()
             except Exception as error:  # pragma: no cover - defensive runtime guard

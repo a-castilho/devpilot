@@ -1,9 +1,9 @@
-/* DevPilot game v76 — passive state watcher: keeps the real pipeline moving without repainting the UI on every poll. */
+/* DevPilot game v77 — browser only observes server-side round progression. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameFlowKeeperV76Ready) return;
-  window.__devpilotGameFlowKeeperV76Ready = true;
+  if (window.__devpilotGameFlowKeeperV77Ready) return;
+  window.__devpilotGameFlowKeeperV77Ready = true;
 
   const VISIBLE_DELAY_MS = 2500;
   const HIDDEN_DELAY_MS = 8000;
@@ -14,29 +14,30 @@
   const delay = () => document.hidden ? HIDDEN_DELAY_MS : VISIBLE_DELAY_MS;
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
-  const shouldKeepMoving = state => Boolean(
-    state && state.missionId && state.goal && !state.done && !state.failed
-  );
-
-  const missionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task => {
-    const prompt = String(task?.prompt || '');
-    return prompt.includes(`PARTIDA: ${state.missionId}`) && String(task?.id || '') === String(state.taskId || '');
-  });
-
-  const anyMissionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task =>
-    String(task?.prompt || '').includes(`PARTIDA: ${state.missionId}`)
+  const shouldWatch = state => Boolean(
+    state && state.missionId && state.goal && !state.done
   );
 
   const fetchTasks = async state => {
     if (typeof window.api !== 'function' || !state.projectId) return [];
-    return window.api(`/tasks?project_id=${encodeURIComponent(state.projectId)}&limit=500`);
+    return window.api(`/tasks?project_id=${encodeURIComponent(state.projectId)}&limit=500`, {retry:false});
   };
+
+  const missionTasks = (tasks, state) => (Array.isArray(tasks) ? tasks : []).filter(task =>
+    String(task?.prompt || '').includes(`PARTIDA: ${state.missionId}`)
+  );
+
+  const signature = tasks => tasks
+    .map(task => `${task.id}:${normalize(task.status)}`)
+    .sort()
+    .join('|');
+
+  let lastSignature = '';
 
   const arm = () => {
     window.clearTimeout(timer);
-    const engine = controller();
-    const state = engine?.snapshot?.();
-    if (!engine || !shouldKeepMoving(state)) {
+    const state = controller()?.snapshot?.();
+    if (!shouldWatch(state)) {
       timer = 0;
       return;
     }
@@ -47,33 +48,20 @@
     if (busy) return arm();
     const engine = controller();
     const state = engine?.snapshot?.();
-    if (!engine || !shouldKeepMoving(state)) return arm();
+    if (!engine || !shouldWatch(state)) return arm();
 
     busy = true;
     try {
-      const tasks = await fetchTasks(state);
+      const tasks = missionTasks(await fetchTasks(state), state);
+      const remoteSignature = signature(tasks);
+      if (!remoteSignature || remoteSignature === lastSignature) return;
+      lastSignature = remoteSignature;
 
-      // Start POST can return before /tasks exposes the created task.
-      // Poll silently until it is visible; only then synchronize/render once.
-      if (!state.hasTasks) {
-        if (anyMissionTask(tasks, state) && typeof window.loadBuildGame === 'function') {
-          await window.loadBuildGame();
-          engine.schedule?.();
-        }
-        return;
-      }
-
-      // While the current task keeps the same status, do absolutely nothing to the DOM.
-      // This removes the 2.5s full-screen blink while preserving polling.
-      const remote = missionTask(tasks, state);
-      if (remote && normalize(remote.status) === normalize(state.taskStatus)) return;
-
-      // A real transition happened (queued→running→completed, gate, next phase, etc.).
-      // Let the existing controller synchronize once and advance the real pipeline.
-      await engine.refresh();
-      engine.schedule?.();
+      // Important: the browser never creates gates or next phases. The worker-side
+      // GameRoundOrchestrator owns progression. We only repaint after a real change.
+      if (typeof window.loadBuildGame === 'function') await window.loadBuildGame();
     } catch (error) {
-      console.error('[DevPilot Game Flow Keeper]', error);
+      console.error('[DevPilot Game Observer]', error);
     } finally {
       busy = false;
       arm();
@@ -81,7 +69,6 @@
   }
 
   document.addEventListener('devpilot:game:state', arm);
-  document.addEventListener('devpilot:game:rendered', arm);
   document.addEventListener('visibilitychange', arm);
   document.addEventListener('devpilot:game:core-ready', arm);
   arm();
