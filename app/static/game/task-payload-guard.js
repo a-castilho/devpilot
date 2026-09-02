@@ -24,6 +24,7 @@
   };
 
   const normalizeStatus = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  const normalizeTitle = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
   const promptValue = (prompt, label) => {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -37,12 +38,10 @@
     .sort()
     .join('|');
 
-  const creationKind = prompt => [
-    semanticMarkers(prompt),
-    promptValue(prompt, 'SUBFASE'),
-    promptValue(prompt, 'TAREFA_ORIGEM'),
-    promptValue(prompt, 'ORIGEM_EXECUCAO'),
-  ].join('::');
+  // The compact game endpoint keeps title + PARTIDA/FASE but intentionally strips
+  // most prompt internals. Title is therefore the stable semantic discriminator:
+  // base phase, verifier gate and corrective subphase have different titles.
+  const creationKind = (prompt, title) => normalizeTitle(title) || semanticMarkers(prompt);
 
   const requestPayload = options => {
     if (!options?.body || typeof options.body !== 'string') return {};
@@ -56,9 +55,9 @@
     const prompt = String(payload?.prompt || '');
     const mission = promptValue(prompt, 'PARTIDA');
     const phase = promptValue(prompt, 'FASE');
-    const kind = creationKind(prompt);
+    const kind = creationKind(prompt, payload?.title);
 
-    if (!projectId || !mission || !phase) return null;
+    if (!projectId || !mission || !phase || !kind) return null;
 
     return {
       projectId,
@@ -73,7 +72,7 @@
     const taskPrompt = String(task?.prompt || '');
     return promptValue(taskPrompt, 'PARTIDA') === identity.mission
       && promptValue(taskPrompt, 'FASE') === identity.phase
-      && creationKind(taskPrompt) === identity.kind;
+      && creationKind(taskPrompt, task?.title) === identity.kind;
   };
 
   async function findGameCreations(options, delayMs = 0) {
