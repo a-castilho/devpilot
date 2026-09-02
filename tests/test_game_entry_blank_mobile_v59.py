@@ -5,11 +5,11 @@ LOADER = (ROOT / "app/static/acs-loader.js").read_text(encoding="utf-8")
 GAME_INDEX = (ROOT / "app/static/game/index.html").read_text(encoding="utf-8")
 
 
-def test_spa_loader_canonicalizes_short_game_routes_before_auth_boot():
-    assert "new Set(['/game', '/game/'])" in LOADER
+def test_spa_loader_rescues_all_legacy_game_routes_before_auth_boot():
+    assert "new Set(['/game', '/game/', '/game/index.html'])" in LOADER
     assert "window.location.replace(target)" in LOADER
-    assert "/game/index.html" in LOADER
-    assert LOADER.index("GAME_PATHS") < LOADER.index("TOKEN_KEY")
+    assert "/assets/game/index.html" in LOADER
+    assert LOADER.index("GAME_FALLBACK_PATHS") < LOADER.index("TOKEN_KEY")
 
 
 def test_canonical_game_document_has_visible_boot_shell():
