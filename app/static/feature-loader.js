@@ -173,18 +173,22 @@
   const detectedMemory = Number(navigator.deviceMemory || 0);
   const detectedCpu = Number(navigator.hardwareConcurrency || 0);
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
-  const lowPowerDevice =
-    reducedMotion ||
+  const compactViewport = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  const constrainedHardware =
     (detectedMemory > 0 && detectedMemory <= 4) ||
     (detectedCpu > 0 && detectedCpu <= 2);
+  const lowPowerDevice = compactViewport() && constrainedHardware;
 
   document.documentElement.classList.toggle('devpilot-low-power', lowPowerDevice);
+  document.documentElement.classList.toggle('devpilot-reduced-motion', reducedMotion);
   window.__devpilotFeaturePerf = window.__devpilotFeaturePerf || [];
 
-  const constrainedProjectsRuntime = () => (
-    lowPowerDevice ||
-    window.matchMedia?.('(max-width: 900px)')?.matches === true
-  );
+  /*
+   * O modo leve de Projetos é uma decisão de viewport, não uma versão antiga
+   * escolhida pelo hardware. Em desktop/notebook sempre carregamos a interface
+   * canônica atual; dispositivos compactos continuam com o bundle reduzido.
+   */
+  const constrainedProjectsRuntime = () => compactViewport();
 
   function filesForFeature(feature) {
     const files = FEATURE_BUNDLES[feature];
