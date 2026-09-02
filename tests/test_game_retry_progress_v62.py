@@ -39,9 +39,9 @@ def test_build_game_still_reloads_history_immediately_after_new_attempt():
     assert "order_by(Task.created_at.desc())" in ROUTES
 
 
-def test_mobile_cache_keeps_v60_and_v62_contracts_while_forcing_v63_assets():
-    revision = "release-1.2.0-game-core-first-v60-20260902-retry-v62-mobile-fast-v63"
+def test_mobile_cache_preserves_v62_v63_behavior_with_v64_assets():
+    revision = "release-1.2.0-game-entry-stable-v64-20260902"
     assert revision in BOOT
-    assert INDEX.count(revision) >= 5
+    assert INDEX.count(revision) == 5
     assert "'game/task-payload-guard.js'" in BOOT
     assert "mobileRuntime ? 90 : 45" in BOOT
