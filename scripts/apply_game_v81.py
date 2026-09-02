@@ -59,36 +59,82 @@ replace_once(
     "- Leia AGENTS.md, docs/SYSTEM_DESIGN.md, documentação e .devpilot/build-game.md.\\n- Na fase 1, confirme evidência do preflight de duplicidade e do System Design (ou da dispensa justificada para mudança SIMPLE) antes de aprovar.\\n- Compare o OBJETIVO com critérios de aceite concretos.",
 )
 
-Path("docs/GAME_DEVELOPMENT_TOOL.md").write_text(
-    """# Modo Jogo como ferramenta de desenvolvimento\n\n"
-    "O Modo Jogo é uma interface operacional sobre a esteira real do DevPilot. Ele não é uma simulação e não mantém uma esteira paralela.\n\n"
-    "## Fluxo canônico\n\n"
-    "Projeto → objetivo da entrega → Planejamento → Implementação → Execução → Testes → Documentação → Git → Entrega e revisão.\n\n"
-    "Cada fase possui uma tarefa de execução e um gate independente. `status=completed` da tarefa base não libera a próxima fase sozinho. O gate precisa provar a entrega com evidência real, conforme `docs/releases/v1.1.1.md`.\n\n"
-    "## Planejamento obrigatório\n\n"
-    "Antes de editar o projeto, a fase Planejamento deve: \n\n"
-    "1. ler `AGENTS.md`, documentação e o repositório;\n"
-    "2. executar preflight de duplicidade e continuar trabalho válido já existente em vez de criar implementação paralela;\n"
-    "3. classificar a mudança segundo `docs/SYSTEM_DESIGN.md`;\n"
-    "4. registrar dispensa justificada para mudança SIMPLE ou System Design conciso para mudança STRUCTURAL;\n"
-    "5. registrar objetivo, baseline, escopo e critérios de aceite em `.devpilot/build-game.md`.\n\n"
-    "## Continuidade por projeto\n\n"
-    "A seleção do projeto é parte do estado da rodada. Ao trocar de projeto, o jogo recupera a rodada daquele projeto. Ao retornar, continua da fase real já existente. `Nova rodada` é uma intenção explícita e não deve ressuscitar automaticamente a rodada anterior.\n\n"
-    "A listagem do jogo pagina projetos para funcionar em ambientes com muitos projetos sem transformar a tela em um carregamento pesado.\n\n"
-    "## Falhas e autocorreção\n\n"
-    "Falhas `failed` ou `blocked` entram no fluxo de recuperação. A recuperação deve usar a falha anterior como evidência, encontrar a causa raiz, não repetir cegamente a mesma ação e retestar a execução original. Só pede orientação humana quando a informação/autorização não puder ser obtida pelo sistema.\n\n"
-    "## Entrega final\n\n"
-    "A vitória depende do tipo de projeto. Projetos web exigem entrega web verificável quando aplicável; APIs/serviços podem concluir com serviço verificável; CLI, automação e código podem concluir tecnicamente sem inventar uma URL pública. Em todos os casos a entrega deve ser rastreável por evidências, testes e Git.\n\n"
-    "## Carregamento e baixo consumo\n\n"
-    "O jogo é módulo opcional e só deve carregar após intenção explícita do usuário, conforme `docs/ENGINEERING_STANDARD.md`. O runtime não deve introduzir `MutationObserver` global, loaders ocultos ou uma segunda onda automática pós-login.\n\n"
-    "## Critério de pronto\n\n"
-    "A mudança do jogo só está pronta com sintaxe JavaScript, testes focados, contratos de continuidade, E2E de navegador e gates oficiais verdes. Regressões de tela preta, duplicação de execução, troca de projeto e retomada de rodada devem permanecer cobertas por testes.\n",
-    encoding="utf-8",
-)
+DOC = """# Modo Jogo como ferramenta de desenvolvimento
 
-Path("tests/test_game_development_tool_v81.py").write_text(
-    """from pathlib import Path\n\n\ndef read(path: str) -> str:\n    return Path(path).read_text(encoding=\"utf-8\")\n\n\ndef test_planning_requires_duplicate_preflight_and_system_design():\n    source = read(\"app/static/build-game.js\")\n    assert \"preflight de duplicidade\" in source\n    assert \"docs/SYSTEM_DESIGN.md\" in source\n    assert \"System Design dispensado\" in source\n    assert \"continue/reutilize\" in source\n\n\ndef test_phase_one_gate_requires_planning_governance_evidence():\n    source = read(\"app/static/game/delivery-gate.js\")\n    assert \"preflight de duplicidade\" in source\n    assert \"System Design\" in source\n    assert \"fase 1\" in source\n\n\ndef test_game_development_tool_documentation_exists():\n    doc = read(\"docs/GAME_DEVELOPMENT_TOOL.md\")\n    for value in (\n        \"Continuidade por projeto\",\n        \"Falhas e autocorreção\",\n        \"Entrega final\",\n        \"Carregamento e baixo consumo\",\n    ):\n        assert value in doc\n""",
-    encoding="utf-8",
-)
+O Modo Jogo é uma interface operacional sobre a esteira real do DevPilot. Ele não é uma simulação e não mantém uma esteira paralela.
+
+## Fluxo canônico
+
+Projeto → objetivo da entrega → Planejamento → Implementação → Execução → Testes → Documentação → Git → Entrega e revisão.
+
+Cada fase possui uma tarefa de execução e um gate independente. `status=completed` da tarefa base não libera a próxima fase sozinho. O gate precisa provar a entrega com evidência real, conforme `docs/releases/v1.1.1.md`.
+
+## Planejamento obrigatório
+
+Antes de editar o projeto, a fase Planejamento deve:
+
+1. ler `AGENTS.md`, documentação e o repositório;
+2. executar preflight de duplicidade e continuar trabalho válido já existente em vez de criar implementação paralela;
+3. classificar a mudança segundo `docs/SYSTEM_DESIGN.md`;
+4. registrar dispensa justificada para mudança SIMPLE ou System Design conciso para mudança STRUCTURAL;
+5. registrar objetivo, baseline, escopo e critérios de aceite em `.devpilot/build-game.md`.
+
+## Continuidade por projeto
+
+A seleção do projeto é parte do estado da rodada. Ao trocar de projeto, o jogo recupera a rodada daquele projeto. Ao retornar, continua da fase real já existente. `Nova rodada` é uma intenção explícita e não deve ressuscitar automaticamente a rodada anterior.
+
+A listagem do jogo pagina projetos para funcionar em ambientes com muitos projetos sem transformar a tela em um carregamento pesado.
+
+## Falhas e autocorreção
+
+Falhas `failed` ou `blocked` entram no fluxo de recuperação. A recuperação deve usar a falha anterior como evidência, encontrar a causa raiz, não repetir cegamente a mesma ação e retestar a execução original. Só pede orientação humana quando a informação ou autorização não puder ser obtida pelo sistema.
+
+## Entrega final
+
+A vitória depende do tipo de projeto. Projetos web exigem entrega web verificável quando aplicável; APIs e serviços podem concluir com serviço verificável; CLI, automação e código podem concluir tecnicamente sem inventar uma URL pública. Em todos os casos a entrega deve ser rastreável por evidências, testes e Git.
+
+## Carregamento e baixo consumo
+
+O jogo é módulo opcional e só deve carregar após intenção explícita do usuário, conforme `docs/ENGINEERING_STANDARD.md`. O runtime não deve introduzir `MutationObserver` global, loaders ocultos ou uma segunda onda automática pós-login.
+
+## Critério de pronto
+
+A mudança do jogo só está pronta com sintaxe JavaScript, testes focados, contratos de continuidade, E2E de navegador e gates oficiais verdes. Regressões de tela preta, duplicação de execução, troca de projeto e retomada de rodada devem permanecer cobertas por testes.
+"""
+Path("docs/GAME_DEVELOPMENT_TOOL.md").write_text(DOC, encoding="utf-8")
+
+TEST = """from pathlib import Path
+
+
+def read(path: str) -> str:
+    return Path(path).read_text(encoding="utf-8")
+
+
+def test_planning_requires_duplicate_preflight_and_system_design():
+    source = read("app/static/build-game.js")
+    assert "preflight de duplicidade" in source
+    assert "docs/SYSTEM_DESIGN.md" in source
+    assert "System Design dispensado" in source
+    assert "continue/reutilize" in source
+
+
+def test_phase_one_gate_requires_planning_governance_evidence():
+    source = read("app/static/game/delivery-gate.js")
+    assert "preflight de duplicidade" in source
+    assert "System Design" in source
+    assert "fase 1" in source
+
+
+def test_game_development_tool_documentation_exists():
+    doc = read("docs/GAME_DEVELOPMENT_TOOL.md")
+    for value in (
+        "Continuidade por projeto",
+        "Falhas e autocorreção",
+        "Entrega final",
+        "Carregamento e baixo consumo",
+    ):
+        assert value in doc
+"""
+Path("tests/test_game_development_tool_v81.py").write_text(TEST, encoding="utf-8")
 
 print("GAME_V81_APPLIED=OK")
