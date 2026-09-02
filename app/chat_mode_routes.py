@@ -16,6 +16,7 @@ from app.services.ai_costs import budget_block_reason
 from app.services.audit import record
 from app.services.chat_http_client import ChatProviderClient, chat_output_token_limit
 from app.services.intent import interpret_voice
+from app.services.policy import evaluate_task
 from app.services.token_usage import (
     record_usage,
     serialize_usage,
@@ -91,8 +92,9 @@ def _mode_instructions(mode: ChatMode, response_style: ChatResponseStyle = "chat
     return common + (
         "Seu perfil ativo é DevPilot Construtor. Converta a solicitação em um objetivo técnico implementável, priorizando a menor mudança completa e reutilizando o que já existe. "
         "Considere segurança, testes, rollback, compatibilidade e riscos antes da implementação. "
-        "O servidor do DevPilot preparará uma tarefa real de construção com auditoria e aprovação obrigatória. "
-        "Não diga que arquivos já foram alterados ou que a tarefa já foi executada; explique o que a tarefa fará e que ela ficará aguardando aprovação antes da execução."
+        "O servidor do DevPilot preparará uma tarefa real de construção com auditoria e política de aprovação por exceção. "
+        "Tarefas locais, reversíveis e de baixo risco são enfileiradas automaticamente; somente limites de alto risco exigem aprovação humana. "
+        "Não diga que arquivos já foram alterados ou que a tarefa já foi executada; explique o que a tarefa fará e informe se ela foi enfileirada automaticamente ou bloqueada pela política de risco."
     )
 
 
@@ -141,7 +143,15 @@ def _stage_build_task(
             Task.workspace_id == workspace_id,
             Task.project_id == project_id,
             Task.source == "voice",
-            Task.status == TaskStatus.awaiting_approval,
+            Task.status.in_(
+                [
+                    TaskStatus.queued,
+                    TaskStatus.awaiting_approval,
+                    TaskStatus.planning,
+                    TaskStatus.running,
+                    TaskStatus.review,
+                ]
+            ),
             Task.prompt == prompt,
         )
         .order_by(Task.created_at.desc())
@@ -149,6 +159,7 @@ def _stage_build_task(
     if existing:
         return existing, False
 
+    decision = evaluate_task(prompt, False)
     raw_title = str(intent.get("title") or transcript).strip()
     task = Task(
         workspace_id=workspace_id,
@@ -156,8 +167,8 @@ def _stage_build_task(
         title=f"Construção: {raw_title}"[:240],
         prompt=prompt,
         source="voice",
-        status=TaskStatus.awaiting_approval,
-        requires_approval=True,
+        status=TaskStatus.awaiting_approval if decision.requires_approval else TaskStatus.queued,
+        requires_approval=decision.requires_approval,
         priority=80,
     )
     db.add(task)
@@ -169,11 +180,14 @@ def _stage_build_task(
         task_id=task.id,
         actor=actor,
         action="chat.build_task_staged",
+        outcome="awaiting_approval" if decision.requires_approval else "queued",
         details={
             "mode": "build",
             "profile": CHAT_PROFILES["build"],
             "intent_action": intent.get("action", "develop"),
-            "requires_approval": True,
+            "requires_approval": decision.requires_approval,
+            "approval_reasons": decision.reasons,
+            "automatic": not decision.requires_approval,
         },
     )
     return task, True
@@ -314,14 +328,19 @@ async def devpilot_chat(
             transcript=payload.transcript,
             actor=actor,
         )
+        requires_approval = bool(task.requires_approval)
         execution = {
             "allowed": True,
             "task_id": task.id,
             "status": _task_status_value(task),
-            "requires_approval": True,
+            "requires_approval": requires_approval,
             "created": created,
         }
-        suffix = "Tarefa de construção preparada e aguardando aprovação antes da execução."
+        suffix = (
+            "Tarefa de construção preparada e aguardando aprovação porque a política identificou um limite de alto risco."
+            if requires_approval
+            else "Tarefa de construção enfileirada automaticamente para execução."
+        )
         if suffix.casefold() not in answer.casefold():
             separator = "\n\n" if payload.response_style == "chat" else " "
             answer = f"{answer}{separator}{suffix}".strip()

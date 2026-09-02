@@ -9,11 +9,13 @@ def test_chat_route_uses_decoupled_knowledge_context():
     assert '"rag_used": bool(knowledge.sources)' in source
 
 
-def test_build_mode_still_requires_approval():
+def test_build_mode_uses_approval_by_exception():
     source = Path("app/chat_mode_routes.py").read_text(encoding="utf-8")
-    assert "TaskStatus.awaiting_approval" in source
-    assert '"requires_approval": True' in source
-    assert "Tarefa de construção preparada e aguardando aprovação" in source
+    assert "decision = evaluate_task(prompt, False)" in source
+    assert "TaskStatus.awaiting_approval if decision.requires_approval else TaskStatus.queued" in source
+    assert '"requires_approval": decision.requires_approval' in source
+    assert "Tarefa de construção enfileirada automaticamente para execução." in source
+    assert "política identificou um limite de alto risco" in source
 
 
 def test_chat_context_keeps_live_and_rag_separate():
