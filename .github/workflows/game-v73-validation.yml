@@ -31,22 +31,12 @@ jobs:
       - name: Install Chromium
         run: python -m playwright install --with-deps chromium
 
-      - name: Validate game contracts
+      - name: Validate all game contracts
         run: |
           python -m pytest -q \
-            tests/test_game_unified_v73.py \
-            tests/test_game_unified_v73_validation_marker.py
-
-      - name: Validate legacy game regression suite
-        run: |
-          python -m pytest -q \
-            tests/test_game_action_runtime_recovery_v57.py \
-            tests/test_game_core_first_no_freeze_v60.py \
-            tests/test_game_entry_blank_mobile_v59.py \
-            tests/test_game_entry_stability_v64.py \
-            tests/test_game_mobile_fast_v63.py \
-            tests/test_game_nonblocking_entry_v67.py \
-            tests/test_game_retry_progress_v62.py
+            tests/test_game*.py \
+            tests/test_build_game_delivery_gate.py \
+            tests/test_isolated_game_runtime.py
 
       - name: JavaScript syntax
         run: |
