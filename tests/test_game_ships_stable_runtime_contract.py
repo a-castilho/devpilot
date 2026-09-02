@@ -22,10 +22,10 @@ def test_standalone_boot_requires_real_render_or_shows_recovery():
     assert "CORE_TIMEOUT_MS = 12000" in GAME_BOOTSTRAP
     assert "showBooting" in GAME_BOOTSTRAP
     assert "showBootError" in GAME_BOOTSTRAP
-    assert "hasRenderedShell" in GAME_BOOTSTRAP
+    assert "hasShell" in GAME_BOOTSTRAP
     assert "Tentar novamente" in GAME_BOOTSTRAP
     assert "Voltar ao painel" in GAME_BOOTSTRAP
-    assert "startEnhancementsAfterPaint" in GAME_BOOTSTRAP
+    assert "startEnhancements" in GAME_BOOTSTRAP
     assert "game/development-continuity.js" in GAME_BOOTSTRAP
 
 
