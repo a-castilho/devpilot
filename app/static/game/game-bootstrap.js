@@ -6,13 +6,13 @@
 
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
-  const ASSET_REVISION = 'game-flow-v80-20260902';
+  const ASSET_REVISION = 'game-development-v80-20260902';
 
   const ENTRY_ASSETS = [
     'game/task-payload-guard.js',
     'game/objective-controls.js',
+    'game/development-continuity.js',
     'game/delivery-gate.js',
-    'game/recovery-runtime.js',
     'game/flow-keeper.js',
   ];
 
@@ -130,13 +130,16 @@
       if (typeof window.api !== 'function' || !window.__devpilotGameApiReady) throw new Error('Runtime de comunicação indisponível');
       if (typeof window.loadBuildGame !== 'function' || !window.__devpilotGameControllerV73) throw new Error('Motor do jogo indisponível');
 
+      if (window.__devpilotGameState && !window.__devpilotGameState.currentUser) {
+        window.__devpilotGameState.currentUser = await withTimeout(window.api('/auth/me'), 'Identificação do jogador', 6000);
+      }
       window.__devpilotGameLoadError = null;
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do jogo');
       if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
       if (!hasShell()) throw new Error('A interface principal do jogo não foi renderizada');
 
       window.__devpilotGameCoreReady = true;
-      window.__devpilotGameBootProfile = 'unified-v80';
+      window.__devpilotGameBootProfile = 'unified-v73';
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       startEnhancements();
     } catch (error) {

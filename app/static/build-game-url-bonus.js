@@ -26,8 +26,14 @@
   const role = () => String((typeof state !== 'undefined' && state.currentUser?.role) || '').toUpperCase();
   const canOperate = () => OPERATORS.has(role());
   const projectId = () => String(localStorage.getItem(PROJECT_KEY) || '').trim();
+  const currentProject = () => {
+    const rows = typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : [];
+    return rows.find(project => String(project?.id) === projectId()) || null;
+  };
+  const deliveryMode = () => String(currentProject()?.delivery_mode || 'code').trim().toLowerCase();
+  const requiresPublicUrl = () => deliveryMode() === 'web';
   const normalizedStatus = delivery => String(delivery?.status || 'pending').toLowerCase();
-  const missionDelivered = delivery => normalizedStatus(delivery) === 'ready' && Boolean(safeUrl(delivery?.url));
+  const missionDelivered = delivery => !requiresPublicUrl() || (normalizedStatus(delivery) === 'ready' && Boolean(safeUrl(delivery?.url)));
   const autoKey = id => `${AUTO_KEY}:${id}`;
 
   const statusText = status => ({
@@ -65,8 +71,13 @@
     if (delivered) {
       panel.dataset.gameMissionDelivered = '1';
       if (eyebrow) eyebrow.textContent = 'MISSÃO CONCLUÍDA';
-      if (heading) heading.textContent = '🏆 Sistema entregue e URL validada';
-      if (summary) summary.textContent = `${originalSummary}${originalSummary ? ' ' : ''}URL pública validada e pronta para teste.`;
+      if (requiresPublicUrl()) {
+        if (heading) heading.textContent = '🏆 Sistema entregue e URL validada';
+        if (summary) summary.textContent = `${originalSummary}${originalSummary ? ' ' : ''}URL pública validada e pronta para teste.`;
+      } else {
+        if (heading) heading.textContent = '🏆 Entrega técnica concluída';
+        if (summary) summary.textContent = `${originalSummary}${originalSummary ? ' ' : ''}Código, testes e evidências da rodada foram concluídos. Publicação externa é opcional para este tipo de projeto.`;
+      }
       return;
     }
 
@@ -116,16 +127,28 @@
 
     if (missionDelivered(delivery)) {
       localStorage.removeItem(autoKey(projectId()));
-      host.innerHTML = `
-        <span class="eyebrow">🎁 ENTREGA FINAL CONCLUÍDA</span>
-        <div class="build-game-url-bonus-head">
-          <strong>URL de teste liberada</strong>
-          <span class="build-game-url-bonus-state">PRONTO PARA TESTAR</span>
-        </div>
-        <p>A missão foi concluída porque o ambiente publicado respondeu ao teste real de disponibilidade.</p>
-        <a class="build-game-url-value" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
-        <div class="build-game-url-actions"><a class="primary" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Abrir sistema ↗</a></div>
-      `;
+      if (requiresPublicUrl()) {
+        host.innerHTML = `
+          <span class="eyebrow">🎁 ENTREGA FINAL CONCLUÍDA</span>
+          <div class="build-game-url-bonus-head">
+            <strong>URL de teste liberada</strong>
+            <span class="build-game-url-bonus-state">PRONTO PARA TESTAR</span>
+          </div>
+          <p>A missão foi concluída porque o ambiente publicado respondeu ao teste real de disponibilidade.</p>
+          <a class="build-game-url-value" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>
+          <div class="build-game-url-actions"><a class="primary" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Abrir sistema ↗</a></div>
+        `;
+      } else {
+        host.innerHTML = `
+          <span class="eyebrow">🎁 ENTREGA DE DESENVOLVIMENTO CONCLUÍDA</span>
+          <div class="build-game-url-bonus-head">
+            <strong>Rodada pronta para continuar o projeto</strong>
+            <span class="build-game-url-bonus-state">CÓDIGO VALIDADO</span>
+          </div>
+          <p>As sete etapas foram aprovadas. Este projeto não exige URL pública para concluir a rodada.</p>
+          ${url ? `<a class="build-game-url-value" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(url)}</a>` : ''}
+        `;
+      }
       return;
     }
 
@@ -246,6 +269,7 @@
 
   const automaticDelivery = async (panel, id, delivery) => {
     let current = delivery || {};
+    if (!requiresPublicUrl()) return current;
     let status = normalizedStatus(current);
 
     if (missionDelivered(current)) {
@@ -276,7 +300,9 @@
     installStyle();
     setMissionGate(panel, {status: 'provisioning'});
     const host = rewardHost(panel);
-    host.innerHTML = '<span class="eyebrow">🚀 ENTREGA FINAL</span><strong>Publicando e validando URL real…</strong>';
+    host.innerHTML = requiresPublicUrl()
+      ? '<span class="eyebrow">🚀 ENTREGA FINAL</span><strong>Publicando e validando URL real…</strong>'
+      : '<span class="eyebrow">📦 ENTREGA FINAL</span><strong>Consolidando entrega técnica…</strong>';
     try {
       let delivery = await fetchDelivery(id);
       delivery = await automaticDelivery(panel, id, delivery);

@@ -89,7 +89,7 @@
   const recover = async identity => {
     await new Promise(resolve => window.setTimeout(resolve, 250));
     const tasks = await originalApi(
-      `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=24`,
+      `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=80`,
       {method:'GET', timeoutMs:3500, retry:false},
     );
     if (!Array.isArray(tasks)) return null;
