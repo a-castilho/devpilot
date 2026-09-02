@@ -7,6 +7,16 @@
   let mounted = false;
   let syncFrame = 0;
 
+  function ensureGameShipsRuntime() {
+    if (window.__devpilotMobileGameShipsStable || document.querySelector('script[data-mobile-game-ships-stable="1"]')) return;
+    const script = document.createElement('script');
+    script.src = '/assets/mobile-game-ships-stable.js?v=game-ships-stable-20260902-2';
+    script.async = false;
+    script.dataset.mobileGameShipsStable = '1';
+    script.onerror = () => console.error('[DevPilot] Falha ao carregar runtime de jogo e naves mobile');
+    document.body.appendChild(script);
+  }
+
   function ensureMobileRouteOverrides() {
     if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
     const style = document.createElement('style');
@@ -25,7 +35,7 @@
         body.mobile-route .sidebar > :not(.mobile-simple-nav) {display:none!important}
         body.mobile-route .sidebar > .mobile-simple-nav {
           display:grid!important;
-          grid-template-columns:repeat(4,minmax(0,1fr))!important;
+          grid-template-columns:repeat(5,minmax(0,1fr))!important;
           gap:4px!important;
           width:100%!important;
           height:52px!important;
@@ -62,6 +72,7 @@
 
   function mountMobileMenu() {
     ensureMobileRouteOverrides();
+    ensureGameShipsRuntime();
     if (window.innerWidth > 900) return false;
 
     const {sidebar, sourceNav, root: existingRoot} = sourceElements();
@@ -84,6 +95,7 @@
       <button type="button" class="mobile-simple-item" data-simple-target="overview"><span aria-hidden="true">⌂</span><small>Início</small></button>
       <button type="button" class="mobile-simple-item" data-simple-target="projects"><span aria-hidden="true">▦</span><small>Projetos</small></button>
       <button type="button" class="mobile-simple-item" data-simple-target="tasks"><span aria-hidden="true">✓</span><small>Execuções</small></button>
+      <button type="button" class="mobile-simple-item" data-simple-game><span aria-hidden="true">🎮</span><small>Jogo</small></button>
       <button type="button" class="mobile-simple-item" data-simple-menu-open aria-label="Abrir menu" aria-expanded="false"><span aria-hidden="true">☰</span><small>Menu</small></button>
     `;
 
@@ -125,6 +137,7 @@
     const icon = item => {
       if (item.dataset.exampleProject) return '◫';
       if (item.dataset.linuxView === '1') return icons.linux;
+      if (item.dataset.devpilotFeaturePlaceholder === 'game' || item.dataset.devpilotGameStable === '1') return '🎮';
       return icons[item.dataset.view] || '•';
     };
 
@@ -171,6 +184,10 @@
       button.addEventListener('click', () => {
         navigate(sourceNav.querySelector(`.nav[data-view="${CSS.escape(button.dataset.simpleTarget)}"]`));
       });
+    });
+
+    root.querySelector('[data-simple-game]')?.addEventListener('click', () => {
+      window.location.assign('/game/index.html');
     });
 
     openButton.addEventListener('click', open);
@@ -221,6 +238,7 @@
   }
 
   function boot() {
+    ensureGameShipsRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
   }
 
@@ -231,6 +249,7 @@
   }
 
   window.addEventListener('resize', () => {
+    ensureGameShipsRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
     scheduleSync();
   }, {passive:true});
@@ -240,5 +259,5 @@
   document.addEventListener('devpilot:feature-ready', scheduleSync);
   document.addEventListener('devpilot:login-complete', scheduleSync);
 
-  console.info('[DevPilot] Menu mobile estável e orientado a eventos');
+  console.info('[DevPilot] Menu mobile estável com acesso direto ao Jogo e naves');
 })();
