@@ -29,9 +29,11 @@ def test_objective_controls_do_not_observe_the_whole_document_tree():
 def test_optional_enhancements_yield_to_browser_between_modules():
     assert "const yieldToBrowser" in BOOT
     assert "await yieldToBrowser();" in BOOT
+    assert "startEnhancementsAfterPaint" in BOOT
+    assert "requestAnimationFrame" in BOOT
 
 
-def test_android_cache_revision_changes_with_observer_fix():
-    revision = "release-1.2.0-game-core-20260902-4"
+def test_android_cache_revision_changes_with_core_first_fix():
+    revision = "release-1.2.0-game-core-first-v60-20260902"
     assert revision in BOOT
     assert revision in INDEX
