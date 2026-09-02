@@ -90,13 +90,17 @@
 
   async function precheckGameCreation(options) {
     try {
-      const existing = await findGameCreation(options);
-      return existing;
+      return await findGameCreation(options);
     } catch (precheckError) {
-      trace('game-create:dedupe:precheck-timeout', {
+      trace('game-create:dedupe:precheck-failed', {
         message: String(precheckError?.message || precheckError || 'erro'),
       });
-      return null;
+      const error = new Error(
+        'Não foi possível confirmar se esta etapa já existe. Verifique a conexão e tente novamente.'
+      );
+      error.cause = precheckError;
+      error.code = 'GAME_DEDUPE_PRECHECK_FAILED';
+      throw error;
     }
   }
 
@@ -137,8 +141,8 @@
           phase: identity.phase,
         });
 
-        // This stale-tab check is bounded. A slow Wi-Fi response never blocks the
-        // real POST indefinitely: timeout/error here simply lets creation continue.
+        // Fail closed when the stale-tab check is inconclusive. The backend create
+        // endpoint has no idempotency key, so continuing could enqueue a duplicate.
         const existing = await precheckGameCreation(options);
         if (existing) {
           trace('game-create:dedupe:existing', {
