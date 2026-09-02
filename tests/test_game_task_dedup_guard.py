@@ -16,7 +16,7 @@ def test_game_guard_installs_once_and_exposes_dedup_capability():
 def test_game_guard_dedupes_only_same_project_mission_phase_and_title():
     text = GUARD.read_text(encoding="utf-8")
 
-    assert "const identity = options =>" in text
+    assert "const identityFrom = options =>" in text
     assert "const projectId" in text
     assert "promptValue(prompt, 'PARTIDA')" in text
     assert "promptValue(prompt, 'FASE')" in text
