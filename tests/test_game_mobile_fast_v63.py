@@ -30,8 +30,8 @@ def test_failed_history_is_not_accepted_as_successful_recovery():
     assert "canRecoverCreation(task)" in GUARD
 
 
-def test_android_gets_one_consistent_v63_revision_for_every_critical_asset():
-    revision = "release-1.2.0-game-core-first-v60-20260902-retry-v62-mobile-fast-v63"
+def test_android_gets_one_consistent_current_revision_for_every_critical_asset():
+    revision = "release-1.2.0-game-entry-stable-v64-20260902"
     assert revision in BOOT
     assert INDEX.count(revision) == 5
     assert "/assets/game/runtime.js" in INDEX
@@ -45,8 +45,8 @@ def test_mobile_yields_longer_between_optional_modules():
     assert "await yieldToBrowser();" in BOOT
 
 
-def test_recursive_observer_fix_remains_intact():
-    assert "observer.observe(document.documentElement" not in START
-    assert "observer.observe(document.documentElement" not in OBJECTIVE
-    assert "viewObserver.observe(view, {childList:true});" in START
-    assert "viewObserver.observe(view, {childList:true});" in OBJECTIVE
+def test_observer_regression_is_removed_from_standalone_controls():
+    assert "MutationObserver" not in START
+    assert "MutationObserver" not in OBJECTIVE
+    assert "devpilot:game:rendered" in START
+    assert "devpilot:game:rendered" in OBJECTIVE

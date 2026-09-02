@@ -29,8 +29,8 @@ def test_boot_renders_core_before_action_runtime_enhancement():
     assert BOOT.index("'game/action-runtime.js'") < BOOT.index("'game/task-payload-guard.js'")
 
 
-def test_standalone_assets_have_core_first_cache_revision():
-    revision = "release-1.2.0-game-core-first-v60-20260902"
+def test_standalone_assets_have_current_entry_stability_revision():
+    revision = "release-1.2.0-game-entry-stable-v64-20260902"
     assert revision in INDEX
     assert revision in BOOT
-    assert INDEX.count(revision) >= 5
+    assert INDEX.count(revision) == 5
