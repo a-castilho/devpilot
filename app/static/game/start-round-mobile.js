@@ -72,7 +72,7 @@
     const desiredLabel = initial ? 'Iniciar jogo com a entrega informada' : 'Começar uma nova rodada';
 
     if (button.dataset.gameInitialRound !== stateValue) button.dataset.gameInitialRound = stateValue;
-    if (button.textContent !== desiredText) button.textContent = desiredText;
+    if (button.textContent !== desiredText) button.textContent = initial ? 'Iniciar jogo' : 'Nova rodada';
     button.classList.toggle('primary', initial);
     button.classList.toggle('ghost', !initial);
     if (button.getAttribute('aria-label') !== desiredLabel) button.setAttribute('aria-label', desiredLabel);
