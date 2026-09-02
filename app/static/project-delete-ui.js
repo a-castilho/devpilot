@@ -4,9 +4,11 @@
   const STYLE_ID = 'devpilot-delete-action-style';
   const PROJECT_BUTTON_CLASS = 'delete-project';
   const TASK_BUTTON_CLASS = 'delete-task';
+  const READY_LINK_CLASS = 'project-ready-link';
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const GAME_MISSION_KEY = 'devpilot-build-game-mission';
   const GAME_URL = '/game/index.html';
+  const READY_CACHE_TTL_MS = 30000;
   const DELETABLE_TASK_STATUSES = new Set([
     'awaiting_approval',
     'completed',
@@ -16,9 +18,29 @@
 
   let projectsObserver = null;
   let isSuperAdminUser = false;
+  const readyDeliveryCache = new Map();
+  const readyDeliveryRequests = new Map();
 
   function token() {
     return String(localStorage.getItem('devpilot-token') || '').trim();
+  }
+
+  function lowPowerProjects() {
+    return document.documentElement.classList.contains('devpilot-low-power') ||
+      window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  }
+
+  function normalizeStatus(value) {
+    return String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  }
+
+  function safePublicUrl(value) {
+    try {
+      const parsed = new URL(String(value || '').trim());
+      return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : '';
+    } catch (_) {
+      return '';
+    }
   }
 
   function ensureStyle() {
@@ -45,6 +67,24 @@
       .delete-task[disabled] {
         opacity: .55;
         cursor: wait;
+      }
+      #projects-view .project-ready-link {
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        min-height:38px;
+        padding:7px 12px;
+        border:1px solid rgba(114,239,197,.58);
+        border-radius:9px;
+        background:rgba(22,101,82,.16);
+        color:#72efc5 !important;
+        font-weight:900;
+        text-decoration:none;
+      }
+      #projects-view .project-ready-link:hover,
+      #projects-view .project-ready-link:focus-visible {
+        border-color:#72efc5;
+        background:rgba(22,101,82,.3);
       }
 
       #projects-view .project-lite-ship-hangar {
@@ -103,6 +143,7 @@
           grid-template-columns:repeat(5,minmax(0,1fr))!important;
         }
         .mobile-simple-item[data-simple-game] > span { color:#bfa7ff; }
+        #projects-view .project-ready-link { width:100%; }
       }
     `;
     document.head.appendChild(style);
@@ -217,6 +258,66 @@
     }
   }
 
+  function applyReadyLink(card, project, delivery) {
+    const existing = card.querySelector(`.${READY_LINK_CLASS}`);
+    const url = normalizeStatus(delivery?.status) === 'ready' ? safePublicUrl(delivery?.url) : '';
+    if (!url) {
+      existing?.remove();
+      return;
+    }
+    if (existing) {
+      existing.href = url;
+      return;
+    }
+    const actions = card.querySelector('.list-row > div:last-child') || card.querySelector('.list-row');
+    if (!actions) return;
+    const link = document.createElement('a');
+    link.className = `link ${READY_LINK_CLASS}`;
+    link.dataset.projectReadyLink = project.id;
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.textContent = 'Abrir projeto ↗';
+    link.setAttribute('aria-label', `Abrir projeto pronto ${project.name}`);
+    actions.prepend(link);
+  }
+
+  async function ensureReadyLink(card, project) {
+    if (!lowPowerProjects() || !card?.isConnected || !project?.id || !token()) return;
+    const key = String(project.id);
+    const cached = readyDeliveryCache.get(key);
+    if (cached && Date.now() - cached.checkedAt < READY_CACHE_TTL_MS) {
+      applyReadyLink(card, project, cached.delivery);
+      return;
+    }
+    if (readyDeliveryRequests.has(key)) {
+      const delivery = await readyDeliveryRequests.get(key);
+      if (card.isConnected) applyReadyLink(card, project, delivery);
+      return;
+    }
+
+    const request = (async () => {
+      try {
+        const response = await fetch(`/api/projects/${encodeURIComponent(project.id)}/delivery`, {
+          headers: {Authorization: `Bearer ${token()}`},
+          cache: 'no-store',
+        });
+        if (!response.ok) return null;
+        return await response.json();
+      } catch (_) {
+        return null;
+      }
+    })();
+    readyDeliveryRequests.set(key, request);
+    try {
+      const delivery = await request;
+      readyDeliveryCache.set(key, {checkedAt: Date.now(), delivery});
+      if (card.isConnected) applyReadyLink(card, project, delivery);
+    } finally {
+      if (readyDeliveryRequests.get(key) === request) readyDeliveryRequests.delete(key);
+    }
+  }
+
   function ensureGameNavigation() {
     const sourceNav = document.querySelector('.sidebar > nav, .sidebar nav');
     if (sourceNav && !sourceNav.querySelector('[data-devpilot-feature-placeholder="game"], [data-view="build-game"], [data-project-game-nav]')) {
@@ -273,6 +374,7 @@
         `/api/projects/${encodeURIComponent(project.id)}`,
         'Falha ao excluir o projeto'
       );
+      readyDeliveryCache.delete(String(project.id));
       if (typeof window.toast === 'function') window.toast(`Projeto “${project.name}” excluído`);
       if (typeof window.loadProjects === 'function') await window.loadProjects();
       if (typeof window.loadDashboard === 'function') await window.loadDashboard();
@@ -327,6 +429,7 @@
       if (!project.id) return;
 
       ensureShipAndGame(card);
+      void ensureReadyLink(card, project);
 
       if (!isSuperAdminUser || card.querySelector(`.${PROJECT_BUTTON_CLASS}`)) return;
       const actions = card.querySelector('.list-row > div:last-child');
@@ -413,6 +516,12 @@
     document.addEventListener('devpilot:feature-ready', () => stabilizeUi());
     document.addEventListener('devpilot:page-ready', () => stabilizeUi());
     document.addEventListener('devpilot:login-complete', () => stabilizeUi());
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && lowPowerProjects()) {
+        readyDeliveryCache.clear();
+        decorateProjects();
+      }
+    });
   }
 
   if (document.readyState === 'loading') {
