@@ -6,7 +6,7 @@
 
   const CORE_TIMEOUT_MS = 7000;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-core-first-v60-20260902';
+  const ASSET_REVISION = 'release-1.2.0-game-core-first-v60-20260902-retry-v62';
   const OPTIONAL_ASSETS = [
     'game/action-runtime.js',
     'game/task-payload-guard.js',
