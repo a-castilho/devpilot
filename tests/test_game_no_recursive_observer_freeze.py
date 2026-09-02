@@ -41,7 +41,7 @@ def test_optional_enhancements_yield_to_browser_between_modules():
     assert BOOT.index("game/action-runtime.js") < BOOT.index("game/objective-controls.js")
 
 
-def test_android_cache_revision_changes_with_action_runtime_fix():
-    revision = "release-1.2.0-game-actions-v54-20260902"
+def test_android_cache_revision_changes_with_navigation_fix():
+    revision = "release-1.2.0-game-menu-v55-20260902"
     assert revision in BOOT
     assert revision in INDEX
