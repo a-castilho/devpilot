@@ -21,8 +21,7 @@ def test_exit_navigation_is_explicit_and_does_not_depend_on_dashboard_state():
 
 
 def test_minimal_navigation_has_no_observer_or_hidden_menu_keyboard_state():
-    navigation_setup = BOOT[:BOOT.index("function showBooting")]
-    assert "MutationObserver" not in navigation_setup
-    assert "game-menu" not in navigation_setup
+    assert "MutationObserver" not in BOOT
+    assert "game-menu" not in BOOT
     assert ".devpilot-game-hud" in CSS
     assert ".devpilot-game-exit" in CSS
