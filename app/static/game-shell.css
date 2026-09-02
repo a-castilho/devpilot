@@ -38,3 +38,17 @@ body.devpilot-game-mode .build-game-phase.current{box-shadow:0 0 0 1px rgba(91,2
   body.devpilot-game-mode .build-game-config{gap:8px}
 }
 @media(prefers-reduced-motion:reduce){.devpilot-game-shell *{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
+
+
+/* Standalone navigation stays outside the scrolling game stage and adds no runtime observers. */
+.devpilot-game-menu-toggle{display:grid;place-items:center;width:46px;height:46px;padding:0;border:1px solid rgba(111,151,185,.38);border-radius:14px;background:#102235;color:#eaffff;font-size:22px;line-height:1;cursor:pointer;touch-action:manipulation}
+.devpilot-game-menu{position:fixed;z-index:160;top:76px;right:max(14px,env(safe-area-inset-right));display:grid;width:min(290px,calc(100vw - 28px));max-height:calc(100dvh - 92px);padding:10px;gap:5px;overflow-y:auto;border:1px solid rgba(94,234,212,.28);border-radius:16px;background:#081625;box-shadow:0 20px 56px rgba(0,0,0,.5)}
+.devpilot-game-menu[hidden]{display:none!important}
+.devpilot-game-menu>strong{padding:9px 11px;color:#40e7d8;font-size:.7rem;letter-spacing:.12em;text-transform:uppercase}
+.devpilot-game-menu>button{min-height:44px;padding:10px 12px;border:1px solid transparent;border-radius:11px;background:transparent;color:#dceaff;text-align:left;font:inherit;font-weight:750;cursor:pointer;touch-action:manipulation}
+.devpilot-game-menu>button:hover,.devpilot-game-menu>button:focus-visible{border-color:rgba(94,234,212,.32);background:rgba(34,70,96,.65);outline:none}
+.devpilot-game-menu>button.active{border-color:rgba(64,231,216,.34);background:rgba(26,102,101,.35);color:#68fff0}
+@media(max-width:520px){
+  .devpilot-game-menu-toggle{width:42px;height:42px;border-radius:12px}
+  .devpilot-game-menu{top:calc(68px + env(safe-area-inset-top));right:8px;width:calc(100vw - 16px)}
+}
