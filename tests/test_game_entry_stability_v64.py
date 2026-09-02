@@ -9,7 +9,11 @@ OBJECTIVE = (ROOT / "app/static/game/objective-controls.js").read_text(encoding=
 START = (ROOT / "app/static/game/start-round-mobile.js").read_text(encoding="utf-8")
 GUARD = (ROOT / "app/static/game/task-payload-guard.js").read_text(encoding="utf-8")
 
-REVISION = "release-1.2.0-game-entry-stable-v64-20260902"
+REVISION = "release-1.2.0-game-entry-minimal-v65-20260902"
+
+
+def block(name: str, next_name: str) -> str:
+    return BOOT.split(f"const {name} = [", 1)[1].split(f"const {next_name}", 1)[0]
 
 
 def test_entry_has_exactly_three_critical_scripts_and_core_first_boot():
@@ -19,6 +23,18 @@ def test_entry_has_exactly_three_critical_scripts_and_core_first_boot():
     ready = BOOT.index("window.__devpilotGameCoreReady = true")
     enhancements = BOOT.index("startEnhancementsAfterPaint();")
     assert core < ready < enhancements
+
+
+def test_only_three_immediate_post_paint_modules_are_allowed():
+    entry = block("ENTRY_ASSETS", "BACKGROUND_ASSETS")
+    assert "game/action-runtime.js" in entry
+    assert "game/task-payload-guard.js" in entry
+    assert "game/objective-controls.js" in entry
+    assert "game/start-round-mobile.js" not in entry
+    assert "game/delivery-gate.js" not in entry
+    assert "build-game-url-bonus.js" not in entry
+    assert "game/final-delivery-summary.js" not in entry
+    assert "game/pipeline-v2-compat.js" not in BOOT
 
 
 def test_action_runtime_is_the_only_optional_loader_wrapper():
@@ -38,6 +54,9 @@ def test_standalone_controls_cannot_return_to_mutation_observers():
 
 
 def test_gate_is_background_lightweight_and_matches_seven_phase_pipeline():
+    background = block("BACKGROUND_ASSETS", "VICTORY_ASSETS")
+    assert "game/delivery-gate.js" in background
+    assert "requestIdleCallback" in BOOT
     assert "MAX_PHASES = 7" in GATE
     assert "TASK_LIMIT = 24" in GATE
     assert "devpilot:game:rendered" in GATE
@@ -45,7 +64,14 @@ def test_gate_is_background_lightweight_and_matches_seven_phase_pipeline():
     assert "retry: false" in GATE
 
 
-def test_v63_fast_creation_remains_preserved_under_v64_entry_fix():
+def test_victory_features_are_not_loaded_until_victory_exists():
+    victory = BOOT.split("const VICTORY_ASSETS = [", 1)[1].split("];", 1)[0]
+    assert "build-game-url-bonus.js" in victory
+    assert "game/final-delivery-summary.js" in victory
+    assert "if (victoryAssetsStarted || !hasVictory()) return;" in BOOT
+
+
+def test_v63_fast_creation_remains_preserved_under_v65_entry_fix():
     assert "window.__devpilotGameNoPreflightV63 = true" in GUARD
     assert "const result = await originalApi(path, options);" in GUARD
     assert "const previous = await findGameCreations(options);" not in GUARD
