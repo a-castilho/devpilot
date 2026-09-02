@@ -7,6 +7,7 @@ const GAME_PIPELINE_MARKER = '[DEVPILOT_BUILD_GAME_PIPELINE_V2]';
 const state = {
   token: localStorage.getItem('devpilot-token') || '',
   projects: [],
+  currentUser: null,
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -50,7 +51,7 @@ function standaloneRoute(path, options = {}) {
     const selected = String(localStorage.getItem(GAME_PROJECT_KEY) || '').trim();
     const include = selected ? `&include_project_id=${encodeURIComponent(selected)}` : '';
     return {
-      path: `/ui/projects?limit=50${include}`,
+      path: `/ui/projects?limit=100${include}`,
       kind: 'projects',
     };
   }
@@ -60,7 +61,7 @@ function standaloneRoute(path, options = {}) {
     const projectId = String(params.get('project_id') || localStorage.getItem(GAME_PROJECT_KEY) || '').trim();
     if (projectId) {
       return {
-        path: `/ui/game-tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
+        path: `/ui/game-tasks?project_id=${encodeURIComponent(projectId)}&limit=80`,
         kind: 'game-tasks',
       };
     }

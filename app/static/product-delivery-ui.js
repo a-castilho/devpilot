@@ -113,7 +113,7 @@
     const goal = promptValue(goalTask, 'OBJETIVO') || 'Nenhuma partida da esteira encontrada para este projeto.';
     const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
     const url = String(delivery?.url || '').trim();
-    const phases = Array.from({length:6}, (_, index) => {
+    const phases = Array.from({length:7}, (_, index) => {
       const phase = index + 1;
       const phaseTasks = missionTasks.filter(task => phaseFromTask(task) === phase);
       const implementation = phaseTasks.find(task => !isVerifier(task));

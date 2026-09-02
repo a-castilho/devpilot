@@ -57,7 +57,7 @@
     inFlight.add(key);
     try {
       const tasks = await window.api(
-        `/tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
+        `/tasks?project_id=${encodeURIComponent(projectId)}&limit=80`,
         {timeoutMs:4000, retry:false},
       );
       const missionTasks = (Array.isArray(tasks) ? tasks : [])

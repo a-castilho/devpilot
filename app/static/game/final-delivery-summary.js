@@ -23,7 +23,7 @@
   const phaseFromTask = task => Number(promptValue(task, 'FASE').split('/')[0]) || 0;
   const missionFromTask = task => promptValue(task, 'PARTIDA');
   const isGameTask = task => String(task?.prompt || '').includes(GAME_MARKER);
-  const isVerifier = task => String(task?.prompt || '').includes(VERIFIER_MARKER);
+  const isVerifier = task => String(task?.prompt || '').includes(VERIFIER_MARKER) || String(task?.title || '').startsWith('[Jogo] Gate');
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
   const styles = () => {
@@ -52,7 +52,7 @@
 
   const phaseRows = tasks => {
     const rows = [];
-    for (let phase = 1; phase <= 6; phase += 1) {
+    for (let phase = 1; phase <= 7; phase += 1) {
       const phaseTasks = tasks.filter(task => phaseFromTask(task) === phase);
       const implementation = phaseTasks.find(task => !isVerifier(task));
       const verifier = phaseTasks.find(task => isVerifier(task));
