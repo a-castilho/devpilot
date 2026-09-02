@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-09-02T09:48:10.540382+00:00",
+  "generated_at": "2026-09-02T09:58:57.731699+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -271,7 +271,7 @@
       "category": "Revisões",
       "title": "Revisão PR #285 — fix(projects): consolidar interface canônica no desktop",
       "source": "docs/reviews/pr-285.md",
-      "content": "# Revisão PR #285 — fix(projects): consolidar interface canônica no desktop\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Aberta\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `integrate/canonical-20260902`\n- **Atualizada em:** 2026-09-02T09:47:13Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/285\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 2\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/feature-loader.js` (+11/-7)\n- `tests/test_projects_desktop_canonical_runtime.py` (+28/-0)\n\n## Descrição e evidências da PR\n\nCorrige o carregamento da tela Projetos em desktop: o modo reduzido passa a depender da largura da viewport, não apenas de memória/CPU. Assim, em 1024px o bundle atual com project-ships e product-delivery volta a ser carregado. Inclui teste de regressão. Fazer squash merge para gerar um único commit.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
+      "content": "# Revisão PR #285 — fix(projects): consolidar interface canônica no desktop\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Merged\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `integrate/canonical-20260902`\n- **Atualizada em:** 2026-09-02T09:49:34Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/285\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 2\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/feature-loader.js` (+11/-7)\n- `tests/test_projects_desktop_canonical_runtime.py` (+28/-0)\n\n## Descrição e evidências da PR\n\nCorrige o carregamento da tela Projetos em desktop: o modo reduzido passa a depender da largura da viewport, não apenas de memória/CPU. Assim, em 1024px o bundle atual com project-ships e product-delivery volta a ser carregado. Inclui teste de regressão. Fazer squash merge para gerar um único commit.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
     },
     {
       "id": "docs-reviews-pr-284",
