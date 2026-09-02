@@ -6,7 +6,7 @@
 
   const CORE_TIMEOUT_MS = 7000;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-core-first-v60-20260902-retry-v62-mobile-fast-v63';
+  const ASSET_REVISION = 'release-1.2.0-game-entry-stable-v64-20260902';
   const OPTIONAL_ASSETS = [
     'game/action-runtime.js',
     'game/task-payload-guard.js',
@@ -132,7 +132,6 @@
     trace('enhancements:start');
     const results = [];
     for (const name of OPTIONAL_ASSETS) {
-      // Mobile gets a longer main-thread break before parsing each enhancement.
       await yieldToBrowser();
       const result = await loadAsset(name);
       results.push(result);
@@ -174,9 +173,6 @@
 
       window.__devpilotGameLoadError = null;
       trace('game-load:start');
-
-      // Historical stable behavior: render the core with the original loader.
-      // No action coordinator or optional module may delay the first usable paint.
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do Modo Jogo');
 
       if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
@@ -191,7 +187,6 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // The UI is already usable. Enhancements start after paint and always yield.
       startEnhancementsAfterPaint();
     } catch (error) {
       window.__devpilotGameLoadError = error;
@@ -201,6 +196,5 @@
     }
   }
 
-  // The document elements already exist because this script is loaded at the end of <body>.
   window.queueMicrotask ? window.queueMicrotask(() => void boot()) : window.setTimeout(() => void boot(), 0);
 })();
