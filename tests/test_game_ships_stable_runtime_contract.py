@@ -9,22 +9,23 @@ PROJECTS = (ROOT / "app/static/mobile-project-card-compact.js").read_text(encodi
 
 
 def test_standalone_game_assets_are_cache_busted_and_never_start_blank():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+    revision = "game-unified-v73-20260902"
     assert revision in GAME_INDEX
     assert 'data-game-boot-state="loading"' in GAME_INDEX
+    assert 'data-devpilot-game-version="v73"' in GAME_INDEX
     assert "/assets/game/runtime.js" in GAME_INDEX
     assert "/assets/build-game.js" in GAME_INDEX
     assert "/assets/game/game-bootstrap.js" in GAME_INDEX
 
 
 def test_standalone_boot_requires_real_render_or_shows_recovery():
-    assert "CORE_TIMEOUT_MS = 7000" in GAME_BOOTSTRAP
+    assert "CORE_TIMEOUT_MS = 12000" in GAME_BOOTSTRAP
     assert "showBooting" in GAME_BOOTSTRAP
     assert "showBootError" in GAME_BOOTSTRAP
-    assert "hasRenderedShell" in GAME_BOOTSTRAP
+    assert "hasShell" in GAME_BOOTSTRAP
     assert "Tentar novamente" in GAME_BOOTSTRAP
     assert "Voltar ao painel" in GAME_BOOTSTRAP
-    assert "startEnhancementsAfterPaint" in GAME_BOOTSTRAP
+    assert "startEnhancements" in GAME_BOOTSTRAP
 
 
 def test_game_runtime_is_explicitly_exported_for_mobile_browsers():
@@ -44,9 +45,10 @@ def test_standalone_game_rewrites_heavy_payloads_to_compact_routes():
     assert "normalizeGameTasks" in GAME_RUNTIME
 
 
-def test_real_build_game_engine_is_present():
+def test_real_build_game_engine_and_unified_controller_are_present():
     assert "[DEVPILOT_BUILD_GAME_PIPELINE_V2]" in BUILD_GAME
     assert "window.loadBuildGame = async () =>" in BUILD_GAME
+    assert "window.__devpilotGameControllerV73" in BUILD_GAME
     assert "const phases = [" in BUILD_GAME
     assert "Planejamento" in BUILD_GAME
     assert "Implementação" in BUILD_GAME
