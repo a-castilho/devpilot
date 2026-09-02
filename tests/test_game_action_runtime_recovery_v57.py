@@ -6,25 +6,31 @@ BOOT = (ROOT / "app/static/game/game-bootstrap.js").read_text(encoding="utf-8")
 INDEX = (ROOT / "app/static/game/index.html").read_text(encoding="utf-8")
 
 
-def test_action_runtime_serializes_renders_and_blocks_fast_duplicate_taps():
+def test_action_runtime_serializes_without_recursive_reload_loop():
     assert "if (loadInFlight)" in ACTION
-    assert "loadRequested = true" in ACTION
+    assert "coalescedLoadCount += 1" in ACTION
+    assert "return loadInFlight" in ACTION
+    assert "while (loadRequested)" not in ACTION
+    assert "loadRequested = true" not in ACTION
+    assert "do {" not in ACTION
     assert "now - previous < 650" in ACTION
     assert "event.stopImmediatePropagation()" in ACTION
     assert "__devpilotGameRunAction" in ACTION
     assert "devpilot:game:rendered" in ACTION
 
 
-def test_boot_requires_action_runtime_before_first_build_game_render():
-    assert "const REQUIRED_ASSET = 'game/action-runtime.js'" in BOOT
-    assert "await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS)" in BOOT
-    assert "__devpilotGameActionRuntimeReady" in BOOT
-    assert "Coordenador de ações do Modo Jogo indisponível" in BOOT
-    assert BOOT.index("await loadAsset(REQUIRED_ASSET") < BOOT.index("await withTimeout(window.loadBuildGame()")
+def test_boot_renders_core_before_action_runtime_enhancement():
+    assert "'game/action-runtime.js'" in BOOT
+    assert "const REQUIRED_ASSET" not in BOOT
+    assert "REQUIRED_TIMEOUT_MS" not in BOOT
+    assert "startEnhancementsAfterPaint" in BOOT
+    assert "requestAnimationFrame" in BOOT
+    assert BOOT.index("await withTimeout(window.loadBuildGame()") < BOOT.index("startEnhancementsAfterPaint();")
+    assert BOOT.index("'game/action-runtime.js'") < BOOT.index("'game/task-payload-guard.js'")
 
 
-def test_standalone_assets_have_recovery_cache_revision():
-    revision = "release-1.2.0-game-recovery-v57-20260902"
+def test_standalone_assets_have_core_first_cache_revision():
+    revision = "release-1.2.0-game-core-first-v60-20260902"
     assert revision in INDEX
     assert revision in BOOT
     assert INDEX.count(revision) >= 5
