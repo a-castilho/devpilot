@@ -39,8 +39,8 @@ def test_build_game_still_reloads_history_immediately_after_new_attempt():
     assert "order_by(Task.created_at.desc())" in ROUTES
 
 
-def test_mobile_cache_preserves_v62_v63_behavior_with_v64_assets():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+def test_mobile_cache_preserves_v62_v63_behavior_with_v65_assets():
+    revision = "release-1.2.0-game-entry-minimal-v65-20260902"
     assert revision in BOOT
     assert INDEX.count(revision) == 5
     assert "'game/task-payload-guard.js'" in BOOT
