@@ -4,19 +4,32 @@
   if (window.__devpilotStandaloneGameReady) return;
   window.__devpilotStandaloneGameReady = true;
 
+  const BOOT_TIMEOUT_MS = 20000;
   const backToDashboard = () => window.location.assign('/');
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
+  const gameTarget = () => document.getElementById('build-game-view');
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
 
+  function showBooting(message = 'Carregando missão, projeto e esteira do jogo…') {
+    const target = gameTarget();
+    if (!target || target.querySelector('.build-game-shell')) return;
+    target.innerHTML = `
+      <div class="empty" data-game-boot-state="loading" role="status">
+        <strong>Preparando Modo Jogo…</strong>
+        <p>${message}</p>
+      </div>
+    `;
+  }
+
   function showBootError(error) {
     const message = String(error?.message || 'Falha inesperada');
-    const target = document.getElementById('build-game-view');
+    const target = gameTarget();
     if (!target) return;
 
     target.innerHTML = `
-      <div class="empty">
+      <div class="empty" data-game-boot-state="error" role="alert">
         <strong>Não foi possível iniciar o jogo.</strong>
         <p>${message}</p>
         <div class="hero-actions">
@@ -30,8 +43,18 @@
     document.getElementById('game-error-back')?.addEventListener('click', backToDashboard);
   }
 
+  function withTimeout(promise, label) {
+    return Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => {
+        window.setTimeout(() => reject(new Error(`${label} excedeu ${Math.round(BOOT_TIMEOUT_MS / 1000)}s`)), BOOT_TIMEOUT_MS);
+      }),
+    ]);
+  }
+
   async function boot() {
     trace('boot:start');
+    showBooting();
 
     const token = String(localStorage.getItem('devpilot-token') || '').trim();
     if (!token) {
@@ -46,7 +69,7 @@
       }
 
       trace('auth:start');
-      await window.api('/auth/me');
+      await withTimeout(window.api('/auth/me'), 'Autenticação do jogo');
       trace('auth:end', {status: 200});
 
       if (typeof window.loadBuildGame !== 'function') {
@@ -55,10 +78,15 @@
 
       window.__devpilotGameLoadError = null;
       trace('game-load:start');
-      await window.loadBuildGame();
+      await withTimeout(window.loadBuildGame(), 'Carregamento do Modo Jogo');
 
       if (window.__devpilotGameLoadError) {
         throw window.__devpilotGameLoadError;
+      }
+
+      const target = gameTarget();
+      if (!target?.querySelector('.build-game-shell')) {
+        throw new Error('O motor do jogo carregou, mas não renderizou a interface. Atualize a versão local e tente novamente.');
       }
 
       trace('game-load:end');
