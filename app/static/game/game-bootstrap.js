@@ -4,7 +4,19 @@
   if (window.__devpilotStandaloneGameReady) return;
   window.__devpilotStandaloneGameReady = true;
 
-  const BOOT_TIMEOUT_MS = 20000;
+  const CORE_TIMEOUT_MS = 7000;
+  const OPTIONAL_TIMEOUT_MS = 3000;
+  const ASSET_REVISION = 'release-1.2.0-game-core-20260902-3';
+  const OPTIONAL_ASSETS = [
+    'game/objective-controls.js',
+    'game/start-round-mobile.js',
+    'game/delivery-gate.js',
+    'build-game-url-bonus.js',
+    'game/final-delivery-summary.js',
+    'game/task-payload-guard.js',
+    'game/pipeline-v2-compat.js',
+  ];
+
   const backToDashboard = () => window.location.assign('/');
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
@@ -12,7 +24,7 @@
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
 
-  function showBooting(message = 'Carregando missão, projeto e esteira do jogo…') {
+  function showBooting(message = 'Carregando projeto e histórico leve da missão…') {
     const target = gameTarget();
     if (!target || target.querySelector('.build-game-shell')) return;
     target.innerHTML = `
@@ -43,13 +55,51 @@
     document.getElementById('game-error-back')?.addEventListener('click', backToDashboard);
   }
 
-  function withTimeout(promise, label) {
-    return Promise.race([
-      Promise.resolve(promise),
-      new Promise((_, reject) => {
-        window.setTimeout(() => reject(new Error(`${label} excedeu ${Math.round(BOOT_TIMEOUT_MS / 1000)}s`)), BOOT_TIMEOUT_MS);
-      }),
-    ]);
+  function withTimeout(promise, label, timeoutMs = CORE_TIMEOUT_MS) {
+    let timer = 0;
+    const timeout = new Promise((_, reject) => {
+      timer = window.setTimeout(
+        () => reject(new Error(`${label} excedeu ${Math.round(timeoutMs / 1000)}s`)),
+        timeoutMs,
+      );
+    });
+    return Promise.race([Promise.resolve(promise), timeout])
+      .finally(() => window.clearTimeout(timer));
+  }
+
+  function loadOptionalAsset(name) {
+    return new Promise(resolve => {
+      const script = document.createElement('script');
+      let settled = false;
+      const finish = ok => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        if (!ok) script.remove();
+        resolve({name, ok});
+      };
+      const timer = window.setTimeout(() => finish(false), OPTIONAL_TIMEOUT_MS);
+      script.src = `/assets/${name}?v=${encodeURIComponent(ASSET_REVISION)}`;
+      script.async = false;
+      script.dataset.devpilotGameOptional = '1';
+      script.onload = () => finish(true);
+      script.onerror = () => finish(false);
+      document.body.appendChild(script);
+    });
+  }
+
+  async function loadEnhancements() {
+    trace('enhancements:start');
+    const results = [];
+    for (const name of OPTIONAL_ASSETS) {
+      const result = await loadOptionalAsset(name);
+      results.push(result);
+      if (!result.ok) console.warn(`[DevPilot Game] Recurso opcional indisponível: ${name}`);
+    }
+    window.__devpilotGameEnhancementResults = results;
+    document.dispatchEvent(new CustomEvent('devpilot:game:standalone-ready', {detail:{results}}));
+    document.dispatchEvent(new CustomEvent('devpilot:game:enhancements-ready', {detail:{results}}));
+    trace('enhancements:end', {failed: results.filter(item => !item.ok).map(item => item.name)});
   }
 
   async function boot() {
@@ -67,31 +117,28 @@
       if (typeof window.api !== 'function' || !window.__devpilotGameApiReady) {
         throw new Error('Runtime de comunicação do Modo Jogo indisponível');
       }
-
-      trace('auth:start');
-      await withTimeout(window.api('/auth/me'), 'Autenticação do jogo');
-      trace('auth:end', {status: 200});
-
       if (typeof window.loadBuildGame !== 'function') {
         throw new Error('Motor do Modo Jogo indisponível');
       }
 
       window.__devpilotGameLoadError = null;
       trace('game-load:start');
-      await withTimeout(window.loadBuildGame(), 'Carregamento do Modo Jogo');
+      await withTimeout(window.loadBuildGame(), 'Carregamento principal do Modo Jogo');
 
-      if (window.__devpilotGameLoadError) {
-        throw window.__devpilotGameLoadError;
-      }
+      if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
 
       const target = gameTarget();
       if (!target?.querySelector('.build-game-shell')) {
-        throw new Error('O motor do jogo carregou, mas não renderizou a interface. Atualize a versão local e tente novamente.');
+        throw new Error('A interface principal do jogo não foi renderizada.');
       }
 
       trace('game-load:end');
-      document.dispatchEvent(new CustomEvent('devpilot:game:standalone-ready'));
+      window.__devpilotGameCoreReady = true;
+      document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
+
+      // Enhancements never block the usable game UI.
+      void loadEnhancements();
     } catch (error) {
       window.__devpilotGameLoadError = error;
       trace('boot:error', {message: String(error?.message || error || 'erro')});
@@ -100,9 +147,7 @@
     }
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => void boot(), {once: true});
-  } else {
-    void boot();
-  }
+  // The document elements already exist because this script is loaded at the end of <body>.
+  // Start immediately so a slow optional asset can never postpone DOMContentLoaded and freeze the game.
+  window.queueMicrotask ? window.queueMicrotask(() => void boot()) : window.setTimeout(() => void boot(), 0);
 })();
