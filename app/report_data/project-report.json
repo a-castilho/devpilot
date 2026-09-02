@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-09-02T09:47:20.437784+00:00",
+  "generated_at": "2026-09-02T09:48:10.540382+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -265,6 +265,13 @@
       "title": "Revisão PR #29 — Compactar tarefas e expandir detalhes ao toque",
       "source": "docs/reviews/pr-29.md",
       "content": "# Revisão PR #29 — Compactar tarefas e expandir detalhes ao toque\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Fechada sem merge\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `codex/compact-task-cards`\n- **Atualizada em:** 2026-08-21T11:30:58Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/29\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** SIM\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 1\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/app.js` (+18/-3)\n\n## Descrição e evidências da PR\n\nSubstituída pela PR #44, já integrada ao `main`. O fluxo final preserva a tabela atual e adiciona carregamento sob demanda por **Ver todas as tarefas**, sem busca automática de 500 registros.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge.\n\n<!-- COMPROMISSO-GERAL-A-CASTILHO -->\n\n---\n\n## Compromisso Geral\n\n**Sempre na melhor prática. No caminho do bem maior.**\n\n**Ir até o fim sem sair do caminho, seja ele qual for.**"
+    },
+    {
+      "id": "docs-reviews-pr-285",
+      "category": "Revisões",
+      "title": "Revisão PR #285 — fix(projects): consolidar interface canônica no desktop",
+      "source": "docs/reviews/pr-285.md",
+      "content": "# Revisão PR #285 — fix(projects): consolidar interface canônica no desktop\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Aberta\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `integrate/canonical-20260902`\n- **Atualizada em:** 2026-09-02T09:47:13Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/285\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 2\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/feature-loader.js` (+11/-7)\n- `tests/test_projects_desktop_canonical_runtime.py` (+28/-0)\n\n## Descrição e evidências da PR\n\nCorrige o carregamento da tela Projetos em desktop: o modo reduzido passa a depender da largura da viewport, não apenas de memória/CPU. Assim, em 1024px o bundle atual com project-ships e product-delivery volta a ser carregado. Inclui teste de regressão. Fazer squash merge para gerar um único commit.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
     },
     {
       "id": "docs-reviews-pr-284",
@@ -559,13 +566,6 @@
       "title": "Revisão PR #247 — fix(navigation): corrige camada de links e acesso a Execuções",
       "source": "docs/reviews/pr-247.md",
       "content": "# Revisão PR #247 — fix(navigation): corrige camada de links e acesso a Execuções\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Merged\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `fix/link-layer-integrity`\n- **Atualizada em:** 2026-09-01T11:11:18Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/247\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 2\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/page-navigation-v26.js` (+40/-112)\n- `tests/test_link_layer_integrity.py` (+39/-0)\n\n## Descrição e evidências da PR\n\nCorrige a camada central de navegação que bloqueava o feature-loader e fazia links aparentarem estar mortos.\n\n- remove `stopImmediatePropagation`/capture destrutivo do menu;\n- carrega o bundle da view antes da navegação;\n- preserva `showView`, histórico e eventos de página;\n- cobre Execuções, Projetos, Modelos, Relatórios, Auditoria e Organizações;\n- adiciona teste de regressão da camada de links e dos controles dinâmicos dos cards.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge.\n\n<!-- COMPROMISSO-GERAL-A-CASTILHO -->\n\n---\n\n## Compromisso Geral\n\n**Sempre na melhor prática. No caminho do bem maior.**\n\n**Ir até o fim sem sair do caminho, seja ele qual for.**"
-    },
-    {
-      "id": "docs-reviews-pr-246",
-      "category": "Revisões",
-      "title": "Revisão PR #246 — fix(projects): restaura cliques da tela de projetos",
-      "source": "docs/reviews/pr-246.md",
-      "content": "# Revisão PR #246 — fix(projects): restaura cliques da tela de projetos\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Merged\n- **Autor:** @acastilho\n- **Base:** `main`\n- **Head:** `fix/projects-click-deadlock`\n- **Atualizada em:** 2026-09-01T11:06:41Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/246\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 2\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/product-delivery-ui.js` (+104/-54)\n- `tests/test_project_delivery_click_resilience.py` (+29/-0)\n\n## Descrição e evidências da PR\n\nCorrige o travamento de interação da tela de Projetos causado por rerender recursivo do MutationObserver.\n\n- remove observação em subtree que reagia ao próprio innerHTML;\n- observa apenas mudanças estruturais diretas no grid;\n- usa delegação de eventos para Novo projeto, Ver entrega, retry/publicação e modal;\n- evita reescrever markup idêntico;\n- mantém o botão sticky de Novo projeto e o histórico da esteira;\n- adiciona regressão para impedir retorno do loop.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge.\n\n<!-- COMPROMISSO-GERAL-A-CASTILHO -->\n\n---\n\n## Compromisso Geral\n\n**Sempre na melhor prática. No caminho do bem maior.**\n\n**Ir até o fim sem sair do caminho, seja ele qual for.**"
     }
   ]
 }
