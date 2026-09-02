@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 GAME_HTML = ROOT / "app/static/game/index.html"
+BOOTSTRAP_JS = ROOT / "app/static/game/game-bootstrap.js"
 OBJECTIVE_JS = ROOT / "app/static/game/objective-controls.js"
 
 
@@ -9,38 +10,57 @@ def source(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_standalone_loads_objective_controls_after_build_game_runtime():
+def test_standalone_loads_quick_start_after_required_action_runtime():
     html = source(GAME_HTML)
-    build_pos = html.index('/assets/build-game.js?v=frontend-v31')
-    controls_pos = html.index('/assets/game/objective-controls.js?v=frontend-v49')
-    bootstrap_pos = html.index('/assets/game/game-bootstrap.js?v=frontend-v31')
+    bootstrap = source(BOOTSTRAP_JS)
 
-    assert build_pos < controls_pos < bootstrap_pos
+    assert "/assets/build-game.js" in html
+    assert "game/objective-controls.js" in bootstrap
+    assert bootstrap.index("game/action-runtime.js") < bootstrap.index("game/objective-controls.js")
 
 
-def test_objective_controls_expose_required_game_actions():
+def test_quick_start_exposes_only_project_delivery_and_one_primary_action():
     js = source(OBJECTIVE_JS)
 
-    assert 'OBJETIVO DA PARTIDA' in js
-    assert 'Salvar e iniciar fase' in js
-    assert 'Salvar objetivo' in js
-    assert 'Nova partida' in js
-    assert 'Atualizar' in js
+    assert "Escolha o projeto" in js
+    assert "Entrega da rodada" in js
+    assert "🚀 Criar e jogar" in js
+    assert "Escolha o projeto, descreva a entrega e comece. É só isso." in js
+    assert "Salvar objetivo" not in js
+    assert "Salvar e iniciar fase" not in js
 
 
-def test_objective_controls_delegate_to_existing_runtime_contract():
+def test_quick_start_delegates_to_existing_real_runtime():
     js = source(OBJECTIVE_JS)
 
+    assert "#build-game-project" in js
     assert "#build-game-goal" in js
-    assert "#build-game-new" in js
     assert "[data-play-phase]" in js
+    assert "phaseButton.click()" in js
     assert "window.loadBuildGame" in js
     assert "dispatchEvent(new Event('input'" in js
     assert "dispatchEvent(new Event('change'" in js
 
 
-def test_objective_requires_non_empty_value_before_starting_phase():
+def test_technical_panels_stay_hidden_until_round_starts():
     js = source(OBJECTIVE_JS)
 
-    assert "Defina o objetivo da partida antes de continuar" in js
-    assert "if (!persistGoal(view, textarea)) return;" in js
+    assert "devpilot-simple-game:not(.devpilot-game-started)" in js
+    assert "devpilot-game-started:not(.devpilot-game-details)" in js
+    assert "build-game-phase:not(.current)" in js
+    assert "Ver detalhes" in js
+    assert "MutationObserver" not in js
+
+
+def test_quick_start_validates_project_and_delivery():
+    js = source(OBJECTIVE_JS)
+
+    assert "Escolha um projeto para jogar" in js
+    assert "Conte em uma frase o que você quer receber nesta rodada" in js
+    assert "if (!persistGoal(view, textarea)) return false;" in js
+
+
+def test_simple_game_cache_revision_is_fresh():
+    revision = "release-1.2.0-game-simple-v56-20260902"
+    assert revision in source(GAME_HTML)
+    assert revision in source(BOOTSTRAP_JS)
