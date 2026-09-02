@@ -1,6 +1,6 @@
 /* DevPilot standalone game objective controls.
  * Keeps the objective visible in the isolated game skin and delegates all
- * state transitions to the existing Build Game runtime.
+ * state transitions to the existing Build Game runtime without global DOM observers.
  */
 (() => {
   'use strict';
@@ -10,6 +10,9 @@
 
   const ROOT_ID = 'devpilot-game-objective-controls';
   const STYLE_ID = 'devpilot-game-objective-controls-style';
+  let observedView = null;
+  let viewObserver = null;
+  let scheduled = false;
 
   const toastMessage = message => {
     if (typeof window.toast === 'function') window.toast(message);
@@ -50,9 +53,11 @@
 
   const syncFromRuntime = (view, textarea) => {
     const input = baseGoal(view);
-    if (!input || document.activeElement === textarea) return;
+    if (!input || !textarea || document.activeElement === textarea) return;
     const value = String(input.value || '');
     if (textarea.value !== value) textarea.value = value;
+    const status = document.querySelector('[data-objective-status]');
+    if (status && value.trim()) status.textContent = 'SALVO';
   };
 
   const persistGoal = (view, textarea) => {
@@ -67,9 +72,9 @@
       toastMessage('Campo base do objetivo ainda está carregando');
       return false;
     }
-    input.value = value;
-    input.dispatchEvent(new Event('input', {bubbles: true}));
-    input.dispatchEvent(new Event('change', {bubbles: true}));
+    if (input.value !== value) input.value = value;
+    input.dispatchEvent(new Event('input', {bubbles:true}));
+    input.dispatchEvent(new Event('change', {bubbles:true}));
     const status = document.querySelector('[data-objective-status]');
     if (status) status.textContent = 'SALVO';
     toastMessage('Objetivo salvo');
@@ -88,7 +93,7 @@
     }
     const active = view.querySelector('.build-game-phase.current .build-game-phase-actions button');
     if (active) {
-      active.scrollIntoView({behavior: 'smooth', block: 'center'});
+      active.scrollIntoView({behavior:'smooth', block:'center'});
       toastMessage('A fase atual já está em andamento');
       return;
     }
@@ -98,7 +103,13 @@
   const mount = () => {
     const view = document.querySelector('#build-game-view');
     const shell = view?.querySelector('.build-game-shell');
-    if (!view || !shell || document.getElementById(ROOT_ID)) return false;
+    if (!view || !shell) return false;
+
+    const existing = document.getElementById(ROOT_ID);
+    if (existing) {
+      syncFromRuntime(view, existing.querySelector('#devpilot-game-objective'));
+      return true;
+    }
 
     ensureStyle();
     const host = document.createElement('section');
@@ -128,7 +139,6 @@
 
     const textarea = host.querySelector('#devpilot-game-objective');
     syncFromRuntime(view, textarea);
-    if (textarea.value.trim()) host.querySelector('[data-objective-status]').textContent = 'SALVO';
 
     textarea.addEventListener('input', () => {
       host.querySelector('[data-objective-status]').textContent = 'ALTERADO';
@@ -143,6 +153,7 @@
     host.querySelector('[data-objective-refresh]').addEventListener('click', async () => {
       if (typeof window.loadBuildGame !== 'function') return window.location.reload();
       await window.loadBuildGame();
+      scheduleMount();
     });
 
     const runtimeInput = baseGoal(view);
@@ -150,15 +161,30 @@
     return true;
   };
 
-  const observer = new MutationObserver(() => {
-    if (mount()) return;
-    const view = document.querySelector('#build-game-view');
-    const host = document.getElementById(ROOT_ID);
-    const textarea = host?.querySelector('#devpilot-game-objective');
-    if (view && textarea) syncFromRuntime(view, textarea);
-  });
+  const scheduleMount = () => {
+    if (scheduled) return;
+    scheduled = true;
+    window.setTimeout(() => {
+      scheduled = false;
+      mount();
+      installScopedObserver();
+    }, 0);
+  };
 
-  observer.observe(document.documentElement, {childList: true, subtree: true});
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount, {once: true});
-  else mount();
+  function installScopedObserver() {
+    const view = document.querySelector('#build-game-view');
+    if (!view || view === observedView) return;
+
+    viewObserver?.disconnect();
+    observedView = view;
+    viewObserver = new MutationObserver(scheduleMount);
+    // Build Game replaces the direct shell when it rerenders. Observe only that
+    // structural replacement; changes inside the shell must not retrigger sync.
+    viewObserver.observe(view, {childList:true});
+  }
+
+  document.addEventListener('devpilot:game:core-ready', scheduleMount);
+  document.addEventListener('devpilot:game:standalone-ready', scheduleMount);
+  document.addEventListener('devpilot:game:enhancements-ready', scheduleMount);
+  scheduleMount();
 })();
