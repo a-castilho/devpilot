@@ -1,0 +1,83 @@
+name: Game v81 hosted validation
+
+on:
+  push:
+    branches:
+      - fix/game-development-tool-v81
+
+permissions:
+  contents: write
+
+concurrency:
+  group: game-v81-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate-and-finalize:
+    if: "${{ github.event.head_commit.message != 'fix(game): finalize v81 continuity contract' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DEVPILOT_RUN_BROWSER_E2E: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e '.[test,e2e]'
+
+      - name: Install Chromium
+        run: python3 -m playwright install --with-deps chromium
+
+      - name: Apply final v81 corrections
+        run: python3 scripts/game_v81_followup.py
+
+      - name: Validate JavaScript syntax
+        run: |
+          node --check app/static/game/runtime.js
+          node --check app/static/build-game.js
+          node --check app/static/game/game-bootstrap.js
+          node --check app/static/game/development-continuity.js
+          node --check app/static/game/delivery-gate.js
+          node --check app/static/game/task-payload-guard.js
+          node --check app/static/build-game-url-bonus.js
+          node --check app/static/game/final-delivery-summary.js
+
+      - name: Run focused game contracts and browser E2E
+        run: |
+          python3 -m pytest -q \
+            tests/test_game_development_tool_v81.py \
+            tests/test_game_development_continuity_v81.py \
+            tests/test_game_ships_stable_runtime_contract.py \
+            tests/test_game_browser_e2e.py
+
+      - name: Commit validated finalization
+        run: |
+          git config user.name 'devpilot-ci'
+          git config user.email 'devpilot-ci@users.noreply.github.com'
+          git add app/static/game/development-continuity.js \
+                  app/static/game/game-bootstrap.js \
+                  app/static/game/index.html \
+                  tests/test_game_browser_e2e.py \
+                  tests/test_game_development_continuity_v81.py \
+                  docs/GAME_DEVELOPMENT_TOOL.md
+          git rm -f tests/test_game_development_continuity_v80.py
+          git commit -m 'fix(game): finalize v81 continuity contract'
+          git push origin HEAD:fix/game-development-tool-v81
+
+      - name: Publish test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-v81-final-${{ github.run_id }}
+          path: .artifacts/test-results
+          if-no-files-found: warn
+          retention-days: 7

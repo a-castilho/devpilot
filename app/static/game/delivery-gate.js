@@ -26,7 +26,7 @@
   const isGameTask = task => String(task?.prompt || '').includes(GAME_MARKER) || String(task?.title || '').startsWith('[Jogo]');
   const isVerifier = task => String(task?.prompt || '').includes(VERIFIER_MARKER) || String(task?.title || '').startsWith('[Jogo] Gate');
 
-  const verifierPrompt = ({missionId, phaseId, goal, sourceTask}) => `${GAME_MARKER}\n${VERIFIER_MARKER}\n[DEVPILOT_BUILD_GAME_PIPELINE_V2]\n[DEVPILOT_MODE=develop]\nPARTIDA: ${missionId}\nFASE: ${phaseId}/${MAX_PHASES}\nOBJETIVO: ${goal}\nORIGEM_EXECUCAO: ${sourceTask.id}\n\nMISSÃO: VERIFICAR ENTREGA REAL\nVocê é o gate independente da esteira. Não aceite o status completed da execução anterior como prova suficiente. Inspecione o projeto no estado atual e prove que a entrega desta fase existe de verdade.\n\nCONTRATO DE ENTREGA:\n- Leia AGENTS.md, documentação e .devpilot/build-game.md.\n- Compare o OBJETIVO com critérios de aceite concretos.\n- Verifique código, configuração, migrações, testes e integração necessários.\n- Execute as verificações reais aplicáveis: teste, lint/typecheck, build e smoke.\n- Registre critério, evidência, comando e resultado em .devpilot/build-game.md.\n- Se qualquer critério obrigatório não puder ser provado, NÃO conclua.\n\nCRITÉRIO DE APROVAÇÃO:\nA tarefa só pode terminar como completed quando a fase estiver materializada, verificável e sem falhas obrigatórias não resolvidas.`;
+  const verifierPrompt = ({missionId, phaseId, goal, sourceTask}) => `${GAME_MARKER}\n${VERIFIER_MARKER}\n[DEVPILOT_BUILD_GAME_PIPELINE_V2]\n[DEVPILOT_MODE=develop]\nPARTIDA: ${missionId}\nFASE: ${phaseId}/${MAX_PHASES}\nOBJETIVO: ${goal}\nORIGEM_EXECUCAO: ${sourceTask.id}\n\nMISSÃO: VERIFICAR ENTREGA REAL\nVocê é o gate independente da esteira. Não aceite o status completed da execução anterior como prova suficiente. Inspecione o projeto no estado atual e prove que a entrega desta fase existe de verdade.\n\nCONTRATO DE ENTREGA:\n- Leia AGENTS.md, docs/SYSTEM_DESIGN.md, documentação e .devpilot/build-game.md.\n- Na fase 1, confirme evidência do preflight de duplicidade e do System Design (ou da dispensa justificada para mudança SIMPLE) antes de aprovar.\n- Compare o OBJETIVO com critérios de aceite concretos.\n- Verifique código, configuração, migrações, testes e integração necessários.\n- Execute as verificações reais aplicáveis: teste, lint/typecheck, build e smoke.\n- Registre critério, evidência, comando e resultado em .devpilot/build-game.md.\n- Se qualquer critério obrigatório não puder ser provado, NÃO conclua.\n\nCRITÉRIO DE APROVAÇÃO:\nA tarefa só pode terminar como completed quando a fase estiver materializada, verificável e sem falhas obrigatórias não resolvidas.`;
 
   const createVerifier = async ({projectId, missionId, phaseId, sourceTask}) => {
     const goal = goalFromTask(sourceTask);
@@ -57,7 +57,7 @@
     inFlight.add(key);
     try {
       const tasks = await window.api(
-        `/tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
+        `/tasks?project_id=${encodeURIComponent(projectId)}&limit=80`,
         {timeoutMs:4000, retry:false},
       );
       const missionTasks = (Array.isArray(tasks) ? tasks : [])

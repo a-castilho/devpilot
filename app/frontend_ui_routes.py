@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -43,6 +45,58 @@ def _task_summary(row, *, project_name: str = "", pull_request_url: str = "") ->
     }
 
 
+_WEB_PROJECT_TYPES = {
+    "saas",
+    "hotsite",
+    "landing-page",
+    "personal-site",
+    "portfolio",
+    "institutional-site",
+    "blog-portal",
+    "ecommerce",
+    "docs-site",
+    "admin",
+    "pwa",
+}
+
+
+def _project_delivery_mode(codex_config: str | None) -> str:
+    """Classify the final artifact without returning the full project config."""
+    try:
+        config = json.loads(codex_config or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return "code"
+    if not isinstance(config, dict):
+        return "code"
+
+    blueprint = config.get("project_blueprint")
+    delivery = config.get("delivery")
+    if not isinstance(blueprint, dict):
+        if isinstance(delivery, dict):
+            providers = delivery.get("providers")
+            if isinstance(providers, dict) and isinstance(providers.get("vercel"), dict):
+                return "web"
+        return "code"
+
+    def values(key: str) -> set[str]:
+        raw = blueprint.get(key) or []
+        if isinstance(raw, str):
+            raw = [raw]
+        if not isinstance(raw, list):
+            return set()
+        return {str(item).strip().lower() for item in raw if str(item).strip()}
+
+    project_types = values("project_type")
+    frontend = values("frontend")
+    if project_types.intersection(_WEB_PROJECT_TYPES):
+        return "web"
+    if frontend and not frontend.issubset({"none", "nenhum"}):
+        return "web"
+    if project_types.intersection({"api", "microservices"}):
+        return "service"
+    return "code"
+
+
 def _project_summary(row) -> dict:
     return {
         "id": row.id,
@@ -53,6 +107,7 @@ def _project_summary(row) -> dict:
         "repository_url": row.repository_url,
         "default_branch": row.default_branch,
         "status": row.status,
+        "delivery_mode": _project_delivery_mode(row.codex_config),
         "created_at": row.created_at,
     }
 
@@ -133,6 +188,7 @@ def _task_source_label(task: Task) -> str:
 @router.get("/projects")
 def project_summaries(
     limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0, le=10_000),
     include_project_id: str | None = None,
     db: Session = Depends(get_db),
 ):
@@ -153,6 +209,7 @@ def project_summaries(
         Project.repository_url,
         Project.default_branch,
         Project.status,
+        Project.codex_config,
         Project.created_at,
     )
     rows = list(
@@ -160,6 +217,7 @@ def project_summaries(
             select(*project_columns)
             .where(Project.workspace_id == ws.id)
             .order_by(Project.created_at.desc())
+            .offset(offset)
             .limit(limit)
         ).all()
     )
@@ -358,7 +416,7 @@ def task_detail(task_id: str, db: Session = Depends(get_db)):
 @router.get("/game-tasks")
 def game_task_summaries(
     project_id: str,
-    limit: int = Query(24, ge=1, le=50),
+    limit: int = Query(80, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     """Compact game history for constrained browsers."""
