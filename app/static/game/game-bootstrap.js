@@ -5,10 +5,11 @@
   window.__devpilotStandaloneGameReady = true;
 
   const CORE_TIMEOUT_MS = 7000;
+  const REQUIRED_TIMEOUT_MS = 3500;
   const OPTIONAL_TIMEOUT_MS = 3000;
   const ASSET_REVISION = 'release-1.2.0-game-actions-v54-20260902';
+  const REQUIRED_ASSET = 'game/action-runtime.js';
   const OPTIONAL_ASSETS = [
-    'game/action-runtime.js',
     'game/task-payload-guard.js',
     'game/objective-controls.js',
     'game/start-round-mobile.js',
@@ -72,7 +73,7 @@
       .finally(() => window.clearTimeout(timer));
   }
 
-  function loadOptionalAsset(name) {
+  function loadAsset(name, timeoutMs = OPTIONAL_TIMEOUT_MS) {
     return new Promise(resolve => {
       const script = document.createElement('script');
       let settled = false;
@@ -83,7 +84,7 @@
         if (!ok) script.remove();
         resolve({name, ok});
       };
-      const timer = window.setTimeout(() => finish(false), OPTIONAL_TIMEOUT_MS);
+      const timer = window.setTimeout(() => finish(false), timeoutMs);
       script.src = `/assets/${name}?v=${encodeURIComponent(ASSET_REVISION)}`;
       script.async = false;
       script.dataset.devpilotGameOptional = '1';
@@ -98,7 +99,7 @@
     const results = [];
     for (const name of OPTIONAL_ASSETS) {
       await yieldToBrowser();
-      const result = await loadOptionalAsset(name);
+      const result = await loadAsset(name);
       results.push(result);
       if (!result.ok) console.warn(`[DevPilot Game] Recurso opcional indisponível: ${name}`);
     }
@@ -128,6 +129,17 @@
       }
 
       window.__devpilotGameLoadError = null;
+
+      // The action coordinator is a required part of the standalone lifecycle.
+      // Install it before the first render so every render emits the event used by
+      // the objective and first-round controls.
+      trace('action-runtime:start');
+      const coordinator = await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS);
+      if (!coordinator.ok || !window.__devpilotGameActionRuntimeReady) {
+        throw new Error('Coordenador de ações do Modo Jogo indisponível');
+      }
+      trace('action-runtime:end');
+
       trace('game-load:start');
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do Modo Jogo');
 
@@ -143,8 +155,8 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // Enhancements never block the usable game UI. The action coordinator is
-      // loaded first and every later module yields to the browser between loads.
+      // Optional enhancements never block the usable game UI. Each module yields
+      // to the browser between loads.
       void loadEnhancements();
     } catch (error) {
       window.__devpilotGameLoadError = error;
