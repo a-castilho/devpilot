@@ -5,29 +5,67 @@
   window.__devpilotStandaloneGameReady = true;
 
   const CORE_TIMEOUT_MS = 7000;
+  const REQUIRED_TIMEOUT_MS = 3500;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-core-20260902-4';
+  const ASSET_REVISION = 'release-1.2.0-game-recovery-v57-20260902';
+  const REQUIRED_ASSET = 'game/action-runtime.js';
   const OPTIONAL_ASSETS = [
+    'game/task-payload-guard.js',
     'game/objective-controls.js',
     'game/start-round-mobile.js',
     'game/delivery-gate.js',
     'build-game-url-bonus.js',
     'game/final-delivery-summary.js',
-    'game/task-payload-guard.js',
     'game/pipeline-v2-compat.js',
   ];
 
   const backToDashboard = () => window.location.assign('/');
+  const openDashboardView = view => {
+    const allowed = new Set(['overview', 'organizations', 'projects', 'tasks', 'providers', 'reports', 'audit']);
+    const target = allowed.has(String(view || '')) ? String(view) : 'overview';
+    sessionStorage.setItem('devpilot-dashboard-view', target);
+    window.location.assign('/');
+  };
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
-  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 40));
+  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 45));
+  const hasRenderedShell = target => Boolean(
+    target && typeof target.querySelector === 'function' && target.querySelector('.build-game-shell')
+  );
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
 
+  const menu = document.getElementById('game-menu');
+  const menuToggle = document.getElementById('game-menu-toggle');
+  const setMenuOpen = open => {
+    if (!menu || !menuToggle) return;
+    menu.hidden = !open;
+    menuToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    menuToggle.setAttribute('aria-label', open ? 'Fechar menu do DevPilot' : 'Abrir menu do DevPilot');
+  };
+  menuToggle?.addEventListener('click', event => {
+    event.stopPropagation();
+    setMenuOpen(Boolean(menu?.hidden));
+  });
+  menu?.addEventListener('click', event => {
+    const target = event.target.closest?.('[data-game-dashboard-view]');
+    if (!target) return;
+    openDashboardView(target.dataset.gameDashboardView);
+  });
+  document.addEventListener('click', event => {
+    if (!menu?.hidden && !menu.contains(event.target) && event.target !== menuToggle) setMenuOpen(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !menu?.hidden) {
+      setMenuOpen(false);
+      menuToggle?.focus();
+    }
+  });
+
   function showBooting(message = 'Carregando projeto e histórico leve da missão…') {
     const target = gameTarget();
-    if (!target || target.querySelector('.build-game-shell')) return;
+    if (!target || hasRenderedShell(target)) return;
     target.innerHTML = `
       <div class="empty" data-game-boot-state="loading" role="status">
         <strong>Preparando Modo Jogo…</strong>
@@ -68,7 +106,7 @@
       .finally(() => window.clearTimeout(timer));
   }
 
-  function loadOptionalAsset(name) {
+  function loadAsset(name, timeoutMs = OPTIONAL_TIMEOUT_MS) {
     return new Promise(resolve => {
       const script = document.createElement('script');
       let settled = false;
@@ -79,7 +117,7 @@
         if (!ok) script.remove();
         resolve({name, ok});
       };
-      const timer = window.setTimeout(() => finish(false), OPTIONAL_TIMEOUT_MS);
+      const timer = window.setTimeout(() => finish(false), timeoutMs);
       script.src = `/assets/${name}?v=${encodeURIComponent(ASSET_REVISION)}`;
       script.async = false;
       script.dataset.devpilotGameOptional = '1';
@@ -94,7 +132,7 @@
     const results = [];
     for (const name of OPTIONAL_ASSETS) {
       await yieldToBrowser();
-      const result = await loadOptionalAsset(name);
+      const result = await loadAsset(name);
       results.push(result);
       if (!result.ok) console.warn(`[DevPilot Game] Recurso opcional indisponível: ${name}`);
     }
@@ -124,13 +162,21 @@
       }
 
       window.__devpilotGameLoadError = null;
+
+      trace('action-runtime:start');
+      const coordinator = await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS);
+      if (!coordinator.ok || !window.__devpilotGameActionRuntimeReady) {
+        throw new Error('Coordenador de ações do Modo Jogo indisponível');
+      }
+      trace('action-runtime:end');
+
       trace('game-load:start');
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do Modo Jogo');
 
       if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
 
       const target = gameTarget();
-      if (!target?.querySelector('.build-game-shell')) {
+      if (!hasRenderedShell(target)) {
         throw new Error('A interface principal do jogo não foi renderizada.');
       }
 
@@ -139,8 +185,6 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // Enhancements never block the usable game UI and yield between modules so
-      // low-memory Android browsers keep processing taps, paint and scrolling.
       void loadEnhancements();
     } catch (error) {
       window.__devpilotGameLoadError = error;
@@ -150,7 +194,5 @@
     }
   }
 
-  // The document elements already exist because this script is loaded at the end of <body>.
-  // Start immediately so a slow optional asset can never postpone DOMContentLoaded and freeze the game.
   window.queueMicrotask ? window.queueMicrotask(() => void boot()) : window.setTimeout(() => void boot(), 0);
 })();
