@@ -14,10 +14,12 @@ def text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def test_entry_has_one_controller_and_no_v67_bridge():
+def test_entry_has_one_controller_and_visible_v77_fallback():
     source = text(INDEX)
-    assert "game-flow-v75-20260902" in source
-    assert 'data-devpilot-game-version="v75"' in source
+    assert "game-flow-v77-20260902" in source
+    assert 'data-devpilot-game-version="v77"' in source
+    assert "data-game-critical-boot-v77" in source
+    assert 'data-game-boot-state="loading"' in source
     assert "data-game-nonblocking-entry-v67" not in source
     assert "/assets/game/standalone.css" in source
     assert "/assets/styles.css" not in source
@@ -31,7 +33,7 @@ def test_boot_does_not_load_action_runtime_wrapper():
     assert "delivery-gate.js" in entry
     assert "flow-keeper.js" in entry
     assert "action-runtime.js" not in entry
-    assert "game-flow-v75-20260902" in source
+    assert "game-flow-v77-20260902" in source
     assert "unified-v73" in source
 
 
@@ -73,7 +75,7 @@ def test_running_round_does_not_offer_accidental_reset():
 
 def test_flow_keeper_keeps_round_polling_even_before_first_task_is_visible():
     source = text(KEEPER)
-    assert "__devpilotGameFlowKeeperV75Ready" in source
+    assert "__devpilotGameFlowKeeperV76Ready" in source
     assert "state.missionId" in source
     assert "state.goal" in source
     assert "!state.hasTasks" in source
@@ -83,11 +85,13 @@ def test_flow_keeper_keeps_round_polling_even_before_first_task_is_visible():
     assert "visibilitychange" in source
 
 
-def test_guard_is_bounded_and_only_wraps_task_creation():
+def test_guard_is_bounded_and_blocks_inflight_and_sequential_duplicate_creation():
     source = text(GUARD)
     assert "rows.length > 48" in source
     assert "requestPath !== '/tasks' || method !== 'POST'" in source
     assert "game-create:dedupe" in source
+    assert "const recentCreations = new Map();" in source
+    assert "window.__devpilotGameCreateSequentialDedup = true" in source
 
 
 def test_gate_allows_explicit_retry_of_failed_verifier():
