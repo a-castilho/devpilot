@@ -9,7 +9,7 @@ PROJECTS = (ROOT / "app/static/mobile-project-card-compact.js").read_text(encodi
 
 
 def test_standalone_game_assets_are_cache_busted_and_never_start_blank():
-    revision = "release-1.2.0-game-stable-20260902-2"
+    revision = "release-1.2.0-game-core-first-v60-20260902"
     assert revision in GAME_INDEX
     assert 'data-game-boot-state="loading"' in GAME_INDEX
     assert "/assets/game/runtime.js" in GAME_INDEX
@@ -18,12 +18,13 @@ def test_standalone_game_assets_are_cache_busted_and_never_start_blank():
 
 
 def test_standalone_boot_requires_real_render_or_shows_recovery():
-    assert "BOOT_TIMEOUT_MS = 20000" in GAME_BOOTSTRAP
+    assert "CORE_TIMEOUT_MS = 7000" in GAME_BOOTSTRAP
     assert "showBooting" in GAME_BOOTSTRAP
     assert "showBootError" in GAME_BOOTSTRAP
-    assert "target?.querySelector('.build-game-shell')" in GAME_BOOTSTRAP
+    assert "hasRenderedShell" in GAME_BOOTSTRAP
     assert "Tentar novamente" in GAME_BOOTSTRAP
     assert "Voltar ao painel" in GAME_BOOTSTRAP
+    assert "startEnhancementsAfterPaint" in GAME_BOOTSTRAP
 
 
 def test_game_runtime_is_explicitly_exported_for_mobile_browsers():
