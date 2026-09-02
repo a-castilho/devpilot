@@ -1,0 +1,212 @@
+name: DevPilot Preview Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      ttl_minutes:
+        description: "Tempo de vida do preview (10-90 minutos)"
+        required: false
+        default: "45"
+  pull_request:
+    types: [labeled, synchronize, reopened]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devpilot-preview-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Publicar preview temporário
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        contains(github.event.pull_request.labels.*.name, 'preview')
+      )
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'self-hosted' }}
+    timeout-minutes: 20
+    steps:
+      - name: Checkout da revisão
+        uses: actions/checkout@v4
+
+      - name: Validar runner persistente e runtime disponível
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RUNNER_ENVIRONMENT:-}" != "self-hosted" ]]; then
+            echo "O preview requer runner persistente; GitHub-hosted encerraria a URL junto com o job."
+            exit 1
+          fi
+          command -v docker >/dev/null
+          command -v curl >/dev/null
+          command -v openssl >/dev/null
+          docker version --format '{{.Server.Version}}'
+
+      - name: Construir runtime do preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t "devpilot-preview:${GITHUB_RUN_ID}" .
+
+      - name: Preparar cloudflared
+        id: cloudflared
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOL_DIR="${RUNNER_TEMP}/devpilot-preview-tools"
+          mkdir -p "$TOOL_DIR"
+          BIN="$TOOL_DIR/cloudflared"
+          if [[ ! -x "$BIN" ]]; then
+            curl -fL --retry 3 --connect-timeout 15 \
+              -o "$BIN" \
+              https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64
+            chmod +x "$BIN"
+          fi
+          "$BIN" --version
+          echo "bin=$BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Subir DevPilot isolado e publicar URL
+        id: preview
+        shell: bash
+        env:
+          CLOUDFLARED_BIN: ${{ steps.cloudflared.outputs.bin }}
+          REQUESTED_TTL: ${{ github.event.inputs.ttl_minutes || '45' }}
+        run: |
+          set -euo pipefail
+
+          TTL="$REQUESTED_TTL"
+          if ! [[ "$TTL" =~ ^[0-9]+$ ]]; then TTL=45; fi
+          if (( TTL < 10 )); then TTL=10; fi
+          if (( TTL > 90 )); then TTL=90; fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            PREVIEW_KEY="pr-${{ github.event.pull_request.number }}"
+          else
+            SAFE_REF="$(printf '%s' '${{ github.ref_name }}' | tr -cs 'A-Za-z0-9._-' '-')"
+            PREVIEW_KEY="manual-${SAFE_REF}"
+          fi
+
+          BASE_DIR="/tmp/devpilot-preview-${PREVIEW_KEY}"
+          STATE_FILE="$BASE_DIR/state"
+          CONTAINER_NAME="devpilot-preview-${PREVIEW_KEY}"
+
+          if [[ -f "$STATE_FILE" ]]; then
+            OLD_TUNNEL_PID="$(sed -n 's/^tunnel_pid=//p' "$STATE_FILE" | head -n1)"
+            [[ "$OLD_TUNNEL_PID" =~ ^[0-9]+$ ]] && kill "$OLD_TUNNEL_PID" 2>/dev/null || true
+          fi
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          rm -rf "$BASE_DIR"
+          mkdir -p "$BASE_DIR/data/repositories" "$BASE_DIR/runtime/host-actions"
+
+          PORT=$((18080 + (GITHUB_RUN_ID % 1000)))
+          EMAIL="preview-admin@devpilot.local"
+          PASSWORD="$(openssl rand -hex 18)"
+          AUTH_SECRET="$(openssl rand -hex 48)"
+          BOOTSTRAP_TOKEN="$(openssl rand -hex 32)"
+          APP_LOG="$BASE_DIR/app.log"
+          TUNNEL_LOG="$BASE_DIR/tunnel.log"
+
+          docker run -d \
+            --name "$CONTAINER_NAME" \
+            -p "127.0.0.1:${PORT}:8080" \
+            -e DEVPILOT_ENV=preview \
+            -e DEVPILOT_DATABASE_URL="sqlite:////data/devpilot.db" \
+            -e DEVPILOT_DATA_DIR=/data \
+            -e DEVPILOT_REPOSITORIES_DIR=/data/repositories \
+            -e DEVPILOT_HOST_ACTIONS_DIR=/data/host-actions \
+            -e DEVPILOT_AUTH_SECRET="$AUTH_SECRET" \
+            -e DEVPILOT_BOOTSTRAP_TOKEN="$BOOTSTRAP_TOKEN" \
+            -e DEVPILOT_EXECUTION_ENABLED=false \
+            -e DEVPILOT_EMBEDDED_WORKER=false \
+            -v "$BASE_DIR/data:/data" \
+            "devpilot-preview:${GITHUB_RUN_ID}" >/dev/null
+
+          healthy=0
+          for _ in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:$PORT/health" >/dev/null 2>&1; then
+              healthy=1
+              break
+            fi
+            if ! docker inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/null | grep -q true; then break; fi
+            sleep 1
+          done
+          if [[ "$healthy" != "1" ]]; then
+            docker logs "$CONTAINER_NAME" >"$APP_LOG" 2>&1 || true
+            cat "$APP_LOG" || true
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+            exit 1
+          fi
+
+          curl -fsS -X POST "http://127.0.0.1:$PORT/api/auth/bootstrap" \
+            -H 'Content-Type: application/json' \
+            -H "Authorization: Bearer $BOOTSTRAP_TOKEN" \
+            --data "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
+            >/dev/null
+
+          nohup env -u RUNNER_TRACKING_ID \
+            "$CLOUDFLARED_BIN" tunnel --no-autoupdate --url "http://127.0.0.1:$PORT" \
+            >"$TUNNEL_LOG" 2>&1 < /dev/null &
+          TUNNEL_PID=$!
+
+          URL=""
+          for _ in $(seq 1 45); do
+            URL="$(grep -Eo 'https://[-a-z0-9]+\.trycloudflare\.com' "$TUNNEL_LOG" | tail -n1 || true)"
+            [[ -n "$URL" ]] && break
+            if ! kill -0 "$TUNNEL_PID" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [[ -z "$URL" ]]; then
+            cat "$TUNNEL_LOG" || true
+            kill "$TUNNEL_PID" 2>/dev/null || true
+            docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+            exit 1
+          fi
+
+          {
+            echo "container=$CONTAINER_NAME"
+            echo "tunnel_pid=$TUNNEL_PID"
+          } > "$STATE_FILE"
+
+          # O preview continua vivo depois que o job termina, mas possui TTL rígido.
+          nohup env -u RUNNER_TRACKING_ID bash -c \
+            "sleep $((TTL * 60)); kill $TUNNEL_PID 2>/dev/null || true; docker rm -f '$CONTAINER_NAME' >/dev/null 2>&1 || true; rm -rf '$BASE_DIR'" \
+            >/dev/null 2>&1 < /dev/null &
+
+          EXPIRES_AT="$(date -u -d "+${TTL} minutes" '+%Y-%m-%d %H:%M UTC' 2>/dev/null || true)"
+          RESULT_FILE="$RUNNER_TEMP/devpilot-preview.txt"
+          {
+            echo "DevPilot Preview"
+            echo "URL: $URL"
+            echo "Login: $EMAIL"
+            echo "Senha: $PASSWORD"
+            echo "Expira: ${EXPIRES_AT:-em aproximadamente ${TTL} minutos}"
+            echo "Ref: $GITHUB_SHA"
+          } > "$RESULT_FILE"
+
+          {
+            echo "## 📱 DevPilot Preview disponível"
+            echo
+            echo "**URL:** $URL"
+            echo
+            echo "**Login:** \`$EMAIL\`"
+            echo
+            echo "**Senha:** \`$PASSWORD\`"
+            echo
+            echo "**Validade:** ${EXPIRES_AT:-aproximadamente ${TTL} minutos}"
+            echo
+            echo "> Ambiente temporário, banco isolado e execução automática desativada."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "result_file=$RESULT_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar acesso como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: devpilot-preview-access-${{ github.run_id }}
+          path: ${{ steps.preview.outputs.result_file }}
+          retention-days: 1
+          if-no-files-found: error
