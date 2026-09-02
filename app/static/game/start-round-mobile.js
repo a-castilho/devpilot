@@ -1,4 +1,6 @@
-/* DevPilot standalone game: explicit first-round start action for mobile and desktop. */
+/* DevPilot standalone game: explicit first-round start action for mobile and desktop.
+ * Decoration follows explicit render events and never observes DOM mutations.
+ */
 (() => {
   'use strict';
 
@@ -6,8 +8,6 @@
   window.__devpilotGameStartRoundReady = true;
 
   let scheduled = false;
-  let observedView = null;
-  let viewObserver = null;
 
   const toastMessage = message => {
     if (typeof window.toast === 'function') return window.toast(message);
@@ -17,6 +17,10 @@
     node.classList.add('show');
     window.setTimeout(() => node.classList.remove('show'), 2200);
   };
+
+  const runAction = (key, action) => typeof window.__devpilotGameRunAction === 'function'
+    ? window.__devpilotGameRunAction(key, action)
+    : Promise.resolve().then(action);
 
   const isInitialRound = view => {
     if (!view) return false;
@@ -28,12 +32,12 @@
   const firstPlayable = view => view?.querySelector('.build-game-phase.current [data-play-phase]:not([disabled])')
     || view?.querySelector('[data-play-phase]:not([disabled])');
 
-  const beginRound = view => {
+  const beginRound = async (view, trigger) => {
     const goal = view?.querySelector('#build-game-goal');
     const value = String(goal?.value || '').trim();
     if (!value) {
       goal?.focus();
-      goal?.scrollIntoView({behavior:'smooth', block:'center'});
+      goal?.scrollIntoView({block:'center'});
       toastMessage('Descreva a entrega da rodada para iniciar o jogo');
       return false;
     }
@@ -48,8 +52,12 @@
       return false;
     }
 
-    phaseButton.scrollIntoView({behavior:'smooth', block:'center'});
+    trigger.disabled = true;
+    phaseButton.scrollIntoView({block:'center'});
     phaseButton.click();
+    window.setTimeout(() => {
+      if (trigger.isConnected) trigger.disabled = false;
+    }, 1200);
     return true;
   };
 
@@ -75,7 +83,7 @@
         if (button.dataset.gameInitialRound !== '1') return;
         event.preventDefault();
         event.stopImmediatePropagation();
-        beginRound(view);
+        void runAction('start-round', () => beginRound(view, button));
       }, true);
     }
 
@@ -88,25 +96,12 @@
     window.setTimeout(() => {
       scheduled = false;
       decorate();
-      installScopedObserver();
     }, 0);
   };
 
-  function installScopedObserver() {
-    const view = document.querySelector('#build-game-view');
-    if (!view || view === observedView) return;
-
-    viewObserver?.disconnect();
-    observedView = view;
-    viewObserver = new MutationObserver(scheduleDecorate);
-    // Observe only replacement of the game shell. Changes inside the shell made by
-    // decorate() must never retrigger this observer and lock the browser main thread.
-    viewObserver.observe(view, {childList:true});
-  }
-
+  document.addEventListener('devpilot:game:rendered', scheduleDecorate);
   document.addEventListener('devpilot:game:core-ready', scheduleDecorate);
   document.addEventListener('devpilot:game:standalone-ready', scheduleDecorate);
   document.addEventListener('devpilot:game:enhancements-ready', scheduleDecorate);
-
   scheduleDecorate();
 })();
