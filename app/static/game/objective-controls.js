@@ -1,188 +1,165 @@
-/* DevPilot standalone game — simple one-click launcher.
- * The real Build Game runtime remains the source of truth. This module only
- * presents project + delivery + play as a clear first step.
- */
+/* DevPilot game v73 — simple UI bound directly to the real game controller. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameObjectiveControlsReady) return;
-  window.__devpilotGameObjectiveControlsReady = true;
+  if (window.__devpilotGameUiV73Ready) return;
+  window.__devpilotGameUiV73Ready = true;
 
-  const ROOT_ID = 'devpilot-game-quick-start';
-  const STYLE_ID = 'devpilot-game-quick-start-style';
+  const ROOT_ID = 'devpilot-game-ui-v73';
+  const STYLE_ID = 'devpilot-game-ui-v73-style';
   let scheduled = false;
 
-  const toastMessage = message => {
-    if (typeof window.toast === 'function') return window.toast(message);
-    const node = document.querySelector('#toast');
-    if (!node) return;
-    node.textContent = message;
-    node.classList.add('show');
-    window.setTimeout(() => node.classList.remove('show'), 2200);
-  };
+  const esc = value => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 
-  const runAction = (key, action) => typeof window.__devpilotGameRunAction === 'function'
-    ? window.__devpilotGameRunAction(key, action)
-    : Promise.resolve().then(action);
+  const controller = () => window.__devpilotGameControllerV73;
+  const projectRows = () => Array.isArray(window.__devpilotGameState?.projects)
+    ? window.__devpilotGameState.projects
+    : [];
 
-  const ensureStyle = () => {
+  const installStyle = () => {
     if (document.getElementById(STYLE_ID)) return;
     const style = document.createElement('style');
     style.id = STYLE_ID;
     style.textContent = `
-      .build-game-shell.devpilot-simple-game>.build-game-hero{display:none}
-      .devpilot-game-quick-start{position:relative;overflow:hidden;padding:clamp(20px,4vw,38px);border:1px solid rgba(76,226,214,.32);border-radius:28px;background:radial-gradient(circle at 88% 8%,rgba(38,220,208,.18),transparent 34%),linear-gradient(145deg,#0c2235,#091522 62%,#111935);box-shadow:0 24px 70px rgba(0,0,0,.28)}
-      .devpilot-game-quick-start:after{content:'🚀';position:absolute;right:clamp(18px,5vw,54px);top:18px;font-size:clamp(4rem,11vw,8rem);opacity:.09;transform:rotate(9deg);pointer-events:none}
-      .devpilot-game-kicker{display:inline-flex;align-items:center;gap:8px;color:#55f3e4;font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
-      .devpilot-game-kicker:before{content:'';width:8px;height:8px;border-radius:50%;background:#55f3e4;box-shadow:0 0 16px #55f3e4}
-      .devpilot-game-quick-start h1{max-width:720px;margin:10px 0 8px;color:#fff;font-size:clamp(1.75rem,5vw,3rem);line-height:1.05;letter-spacing:-.035em}
-      .devpilot-game-quick-start-intro{max-width:690px;margin:0 0 24px;color:#a9bbce;font-size:clamp(.92rem,2vw,1.05rem);line-height:1.55}
-      .devpilot-game-quick-fields{display:grid;grid-template-columns:minmax(210px,.8fr) minmax(320px,1.6fr);gap:16px;align-items:start}
-      .devpilot-game-quick-field{display:grid;gap:8px;color:#c9d7e5;font-size:.82rem;font-weight:800}
-      .devpilot-game-step{display:inline-grid;place-items:center;width:25px;height:25px;margin-right:7px;border:1px solid rgba(85,243,228,.35);border-radius:8px;background:rgba(85,243,228,.1);color:#55f3e4;font-size:.72rem}
-      .devpilot-game-quick-field select,.devpilot-game-quick-field textarea{box-sizing:border-box;width:100%;border:1px solid rgba(131,164,193,.32);border-radius:15px;background:rgba(3,12,23,.76);color:#f5fbff;font:inherit;font-weight:650;outline:none}
-      .devpilot-game-quick-field select{min-height:56px;padding:0 15px}
-      .devpilot-game-quick-field textarea{min-height:112px;padding:15px;resize:vertical;line-height:1.45}
-      .devpilot-game-quick-field select:focus,.devpilot-game-quick-field textarea:focus{border-color:#55f3e4;box-shadow:0 0 0 4px rgba(85,243,228,.1)}
-      .devpilot-game-quick-field textarea[readonly]{opacity:.82;cursor:default}
-      .devpilot-game-play{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:62px;margin-top:18px;border:0;border-radius:16px;background:linear-gradient(135deg,#55f3e4,#43baf4);color:#03121c;font:inherit;font-size:1.05rem;font-weight:950;cursor:pointer;box-shadow:0 14px 32px rgba(67,186,244,.2);touch-action:manipulation}
-      .devpilot-game-play:hover{filter:brightness(1.06);transform:translateY(-1px)}
-      .devpilot-game-play:disabled{opacity:.62;cursor:wait;transform:none}
-      .devpilot-game-quick-note{display:block;margin-top:11px;color:#7f96aa;font-size:.75rem;text-align:center}
-      .devpilot-game-running-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:18px}
-      .devpilot-game-running-actions button{min-height:44px;padding:9px 14px;border:1px solid rgba(113,153,186,.35);border-radius:12px;background:rgba(8,25,41,.74);color:#dcecff;font:inherit;font-weight:800;cursor:pointer}
-      .devpilot-simple-game:not(.devpilot-game-started)>.build-game-round-contract,.devpilot-simple-game:not(.devpilot-game-started)>.build-game-score,.devpilot-simple-game:not(.devpilot-game-started)>.build-game-progress,.devpilot-simple-game:not(.devpilot-game-started)>.build-game-map,.devpilot-simple-game:not(.devpilot-game-started)>article.panel{display:none!important}
-      .devpilot-simple-game.devpilot-game-started:not(.devpilot-game-details)>.build-game-round-contract,.devpilot-simple-game.devpilot-game-started:not(.devpilot-game-details)>article.panel{display:none!important}
-      .devpilot-simple-game.devpilot-game-started:not(.devpilot-game-details) .build-game-phase:not(.current){display:none!important}
-      .devpilot-simple-game.devpilot-game-started .devpilot-game-quick-fields{grid-template-columns:minmax(210px,.7fr) minmax(320px,1.3fr)}
-      @media(max-width:720px){
-        .devpilot-game-quick-start{padding:20px 16px;border-radius:20px}
-        .devpilot-game-quick-start:after{font-size:5rem;right:10px}
-        .devpilot-game-quick-fields,.devpilot-simple-game.devpilot-game-started .devpilot-game-quick-fields{grid-template-columns:1fr}
-        .devpilot-game-quick-field textarea{min-height:104px}
-        .devpilot-game-play{min-height:60px}
-      }
+      .devpilot-game-v73-shell>.build-game-hero,
+      .devpilot-game-v73-shell>.build-game-round-contract,
+      .devpilot-game-v73-shell>.build-game-score,
+      .devpilot-game-v73-shell>.build-game-progress,
+      .devpilot-game-v73-shell>.build-game-map,
+      .devpilot-game-v73-shell>article.panel,
+      .devpilot-game-v73-shell>.build-game-victory{display:none!important}
+      .devpilot-game-v73-shell.show-details>.build-game-map,
+      .devpilot-game-v73-shell.show-details>article.panel{display:grid!important}
+      .game73{display:grid;gap:18px;padding:clamp(20px,4vw,38px);border:1px solid rgba(75,231,215,.3);border-radius:26px;background:radial-gradient(circle at 95% 0,rgba(66,200,255,.15),transparent 34%),linear-gradient(145deg,#0d2234,#071523);box-shadow:0 24px 70px #0005}
+      .game73-kicker{color:#55f3e4;font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+      .game73 h1{margin:3px 0;color:#fff;font-size:clamp(1.8rem,6vw,3rem);line-height:1.05;letter-spacing:-.035em}
+      .game73 p{margin:0;color:#9eb0c2}.game73-goal{color:#fff!important;font-size:1.08rem;font-weight:850;overflow-wrap:anywhere}
+      .game73-fields{display:grid;grid-template-columns:minmax(210px,.75fr) minmax(300px,1.4fr);gap:14px}.game73 label{display:grid;gap:8px;color:#d5e0eb;font-size:.8rem;font-weight:850}
+      .game73 select,.game73 textarea{width:100%;border:1px solid #294158;border-radius:15px;background:#061421;color:#f4f9ff;padding:14px;outline:none}.game73 select{min-height:56px}.game73 textarea{min-height:110px;resize:vertical}.game73 select:focus,.game73 textarea:focus{border-color:#55f3e4;box-shadow:0 0 0 4px #55f3e41a}
+      .game73-primary{width:100%;min-height:64px;border:0;border-radius:17px;background:linear-gradient(135deg,#55f3e4,#45bcf5);color:#03131c;font-size:1.05rem;font-weight:950;cursor:pointer;touch-action:manipulation}.game73-primary:disabled{opacity:.65;cursor:wait}
+      .game73-status{padding:13px 15px;border-radius:14px;background:#0c2938;color:#a9bdce}.game73-error{border:1px solid #ff6577;color:#ffd9df;background:#3a1420}
+      .game73-progress-head{display:flex;justify-content:space-between;gap:12px}.game73-progress-head strong{color:#55f3e4}.game73-progress{height:12px;overflow:hidden;border-radius:999px;background:#ffffff12}.game73-progress i{display:block;height:100%;background:linear-gradient(90deg,#55f3e4,#45bcf5)}
+      .game73-phase{display:grid;grid-template-columns:48px 1fr;gap:12px;align-items:center;padding:15px;border:1px solid #254258;border-radius:16px;background:#081c2b}.game73-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#12374a;font-size:1.3rem}.game73-phase small{color:#55f3e4;font-weight:900}.game73-phase strong{display:block;color:#fff}.game73-phase p{font-size:.8rem}
+      .game73-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px}.game73-secondary{min-height:48px;padding:10px 14px;border:1px solid #2b455e;border-radius:13px;background:#0b1d2e;color:#dce9f6;font-weight:850;cursor:pointer}
+      @media(max-width:720px){.game73{padding:20px 15px;border-radius:20px}.game73-fields{grid-template-columns:1fr}.game73-actions{grid-template-columns:1fr 1fr}.game73-actions .game73-primary{grid-column:1/-1}.game73-secondary{width:100%}}
     `;
     document.head.appendChild(style);
   };
 
-  const runtimeGoal = view => view?.querySelector('#build-game-goal');
-  const runtimeProject = view => view?.querySelector('#build-game-project');
-  const currentPhaseButton = view => view?.querySelector('.build-game-phase.current [data-play-phase]:not([disabled])')
-    || view?.querySelector('[data-play-phase]:not([disabled])');
-
-  const persistGoal = (view, textarea) => {
-    const input = runtimeGoal(view);
-    const value = String(textarea?.value || '').trim();
-    if (!value) {
-      textarea?.focus();
-      toastMessage('Conte em uma frase o que você quer receber nesta rodada');
-      return false;
+  const statusText = state => {
+    if (state.done) return 'Rodada concluída';
+    if (state.failed) return state.verifier ? 'A verificação da etapa falhou' : 'A execução da etapa falhou';
+    if (state.awaitingGate) return 'Execução concluída. Validando a entrega da etapa…';
+    if (state.verifier && state.active) return 'Gate independente validando a entrega…';
+    if (state.active) {
+      const map = {
+        queued: 'Na fila de execução',
+        running: 'Executando automaticamente',
+        review: 'Em revisão',
+        awaiting_approval: 'Aguardando aprovação',
+        blocked: 'Execução bloqueada'
+      };
+      return map[state.taskStatus] || 'Executando automaticamente';
     }
-    if (!input) {
-      toastMessage('A entrega ainda está carregando. Tente novamente.');
-      return false;
-    }
-    input.value = value;
-    input.dispatchEvent(new Event('input', {bubbles:true}));
-    input.dispatchEvent(new Event('change', {bubbles:true}));
-    return true;
-  };
-
-  const startGame = async (view, textarea, trigger) => {
-    if (!runtimeProject(view)?.value) {
-      toastMessage('Escolha um projeto para jogar');
-      return false;
-    }
-    if (!persistGoal(view, textarea)) return false;
-    const phaseButton = currentPhaseButton(view);
-    if (!phaseButton) {
-      toastMessage('A rodada ainda está preparando a primeira etapa');
-      return false;
-    }
-    trigger.disabled = true;
-    trigger.textContent = 'Preparando sua rodada…';
-    phaseButton.click();
-    window.setTimeout(() => {
-      if (!trigger.isConnected) return;
-      trigger.disabled = false;
-      trigger.textContent = '🚀 Criar e jogar';
-    }, 1800);
-    return true;
+    return 'Preparando a próxima etapa…';
   };
 
   const mount = () => {
-    const view = document.querySelector('#build-game-view');
+    const engine = controller();
+    const view = document.getElementById('build-game-view');
     const shell = view?.querySelector('.build-game-shell');
-    const baseProject = runtimeProject(view);
-    const baseGoal = runtimeGoal(view);
-    if (!view || !shell || !baseProject || !baseGoal) return false;
+    if (!engine || !view || !shell) return false;
 
-    const started = baseGoal.readOnly || baseGoal.dataset.roundGoalLocked === 'true';
-    shell.classList.add('devpilot-simple-game');
-    shell.classList.toggle('devpilot-game-started', started);
-
+    installStyle();
+    shell.classList.add('devpilot-game-v73-shell');
     document.getElementById(ROOT_ID)?.remove();
-    ensureStyle();
 
     const host = document.createElement('section');
     host.id = ROOT_ID;
-    host.className = 'devpilot-game-quick-start';
-    host.setAttribute('aria-label', started ? 'Rodada em andamento' : 'Começar nova rodada');
-    host.innerHTML = `
-      <span class="devpilot-game-kicker">${started ? 'RODADA EM ANDAMENTO' : 'NOVO JOGO'}</span>
-      <h1>${started ? 'Sua entrega está sendo construída' : 'O que vamos construir hoje?'}</h1>
-      <p class="devpilot-game-quick-start-intro">${started
-        ? 'Acompanhe a etapa atual. O DevPilot cuida da esteira técnica por você.'
-        : 'Escolha o projeto, descreva a entrega e comece. É só isso.'}</p>
-      <div class="devpilot-game-quick-fields">
-        <label class="devpilot-game-quick-field"><span><b class="devpilot-game-step">1</b>Escolha o projeto</span>
-          <select id="devpilot-game-project">${baseProject.innerHTML}</select>
-        </label>
-        <label class="devpilot-game-quick-field"><span><b class="devpilot-game-step">2</b>Entrega da rodada</span>
-          <textarea id="devpilot-game-delivery" maxlength="500" ${started ? 'readonly aria-readonly="true"' : ''}
-            placeholder="Ex.: criar uma tela de login simples para cliente e administrador">${String(baseGoal.value || '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')}</textarea>
-        </label>
-      </div>
-      ${started ? `
-        <div class="devpilot-game-running-actions">
-          <button type="button" data-simple-refresh>↻ Atualizar progresso</button>
-          <button type="button" data-simple-new>＋ Nova rodada</button>
-          <button type="button" data-simple-details>Ver detalhes</button>
-        </div>
-      ` : `
-        <button class="devpilot-game-play" type="button" data-simple-play>🚀 Criar e jogar</button>
-        <small class="devpilot-game-quick-note">O jogo começa pelo planejamento e segue sozinho, etapa por etapa.</small>
-      `}
-    `;
-
     shell.prepend(host);
+    const state = engine.snapshot();
 
-    const project = host.querySelector('#devpilot-game-project');
-    project.value = baseProject.value;
-    project.addEventListener('change', () => {
-      baseProject.value = project.value;
-      baseProject.dispatchEvent(new Event('change', {bubbles:true}));
+    if (!state.hasTasks) {
+      const options = projectRows().map(project => `<option value="${esc(project.id)}" ${String(project.id) === String(state.projectId) ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
+      host.innerHTML = `
+        <section class="game73">
+          <div><span class="game73-kicker">NOVA RODADA</span><h1>O que vamos entregar?</h1><p>Escolha o projeto, descreva o resultado e toque uma única vez em Jogar agora.</p></div>
+          <div class="game73-fields">
+            <label>Projeto<select data-game73-project>${options}</select></label>
+            <label>Entrega da rodada<textarea data-game73-goal maxlength="500" placeholder="Ex.: criar login com usuário e perfil">${esc(state.goal)}</textarea></label>
+          </div>
+          <button class="game73-primary" type="button" data-game73-start>🚀 Jogar agora</button>
+          <div class="game73-status" data-game73-status>Depois do clique, Planejamento, Implementação, Execução, Testes, Documentação, Git e Entrega seguem pela esteira real.</div>
+        </section>`;
+
+      const button = host.querySelector('[data-game73-start]');
+      const status = host.querySelector('[data-game73-status]');
+      button.onclick = async () => {
+        const projectId = host.querySelector('[data-game73-project]')?.value || '';
+        const goal = host.querySelector('[data-game73-goal]')?.value || '';
+        button.disabled = true;
+        button.textContent = '🚀 Iniciando rodada…';
+        status.classList.remove('game73-error');
+        status.textContent = 'Criando Planejamento na esteira real…';
+        try {
+          await engine.startRound({projectId, goal});
+        } catch (error) {
+          button.disabled = false;
+          button.textContent = '🚀 Jogar agora';
+          status.classList.add('game73-error');
+          status.textContent = error?.message || 'Falha ao iniciar a rodada';
+        }
+      };
+      return true;
+    }
+
+    host.innerHTML = `
+      <section class="game73">
+        <div><span class="game73-kicker">${state.done ? 'MISSÃO CUMPRIDA' : 'RODADA AUTOMÁTICA'}</span><h1>${state.done ? 'Entrega concluída' : 'Construindo sua entrega'}</h1><p class="game73-goal">${esc(state.goal)}</p></div>
+        <div class="game73-progress-head"><span>${esc(state.projectName)}</span><strong>${state.completed}/${state.total} · ${state.percent}%</strong></div>
+        <div class="game73-progress"><i style="width:${state.percent}%"></i></div>
+        ${state.done ? `<div class="game73-status">🏆 A entrega passou pelas sete etapas e pelos gates independentes.</div>` : `<section class="game73-phase"><div class="game73-icon">${esc(state.currentPhaseIcon)}</div><div><small>ETAPA ${state.currentPhaseId}/${state.total}</small><strong>${esc(state.currentPhaseName)}</strong><p>${esc(state.currentPhaseSummary)}</p></div></section><div class="game73-status ${state.failed ? 'game73-error' : ''}">${esc(statusText(state))}</div>`}
+        <div class="game73-actions">
+          ${state.failed ? '<button class="game73-primary" type="button" data-game73-retry>↻ Tentar novamente</button>' : `<button class="game73-primary" type="button" disabled>${state.done ? '🏆 Rodada concluída' : '⚙ Rodada automática'}</button>`}
+          <button class="game73-secondary" type="button" data-game73-refresh>↻ Atualizar</button>
+          <button class="game73-secondary" type="button" data-game73-details>Detalhes</button>
+          <button class="game73-secondary" type="button" data-game73-new>＋ Nova rodada</button>
+        </div>
+      </section>`;
+
+    host.querySelector('[data-game73-refresh]')?.addEventListener('click', async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try { await engine.refresh(); }
+      catch (error) { console.error('[DevPilot Game Refresh]', error); }
+      finally { button.disabled = false; }
     });
 
-    const delivery = host.querySelector('#devpilot-game-delivery');
-    host.querySelector('[data-simple-play]')?.addEventListener('click', event => {
-      void runAction('simple-game-start', () => startGame(view, delivery, event.currentTarget));
+    host.querySelector('[data-game73-retry]')?.addEventListener('click', async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      button.textContent = 'Tentando novamente…';
+      try { await engine.retry(); }
+      catch (error) {
+        button.disabled = false;
+        button.textContent = error?.message || '↻ Tentar novamente';
+      }
     });
-    host.querySelector('[data-simple-refresh]')?.addEventListener('click', () => {
-      void runAction('simple-game-refresh', () => window.loadBuildGame?.());
-    });
-    host.querySelector('[data-simple-new]')?.addEventListener('click', () => {
-      view.querySelector('#build-game-new')?.click();
-    });
-    host.querySelector('[data-simple-details]')?.addEventListener('click', event => {
-      const showing = shell.classList.toggle('devpilot-game-details');
-      event.currentTarget.textContent = showing ? 'Ocultar detalhes' : 'Ver detalhes';
+
+    host.querySelector('[data-game73-new]')?.addEventListener('click', () => void engine.reset());
+    host.querySelector('[data-game73-details]')?.addEventListener('click', event => {
+      const showing = shell.classList.toggle('show-details');
+      event.currentTarget.textContent = showing ? 'Ocultar detalhes' : 'Detalhes';
     });
     return true;
   };
 
-  const scheduleMount = () => {
+  const schedule = () => {
     if (scheduled) return;
     scheduled = true;
     window.setTimeout(() => {
@@ -191,6 +168,8 @@
     }, 0);
   };
 
-  document.addEventListener('devpilot:game:rendered', scheduleMount);
-  scheduleMount();
+  document.addEventListener('devpilot:game:state', schedule);
+  document.addEventListener('devpilot:game:rendered', schedule);
+  document.addEventListener('devpilot:game:error', schedule);
+  schedule();
 })();
