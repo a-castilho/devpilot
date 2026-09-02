@@ -19,10 +19,9 @@ def test_game_guard_dedupes_only_same_semantic_game_action():
 
     assert "gameCreationIdentity" in text
     assert "creationKind" in text
-    assert "semanticMarkers" in text
-    assert "promptValue(prompt, 'SUBFASE')" in text
-    assert "promptValue(prompt, 'TAREFA_ORIGEM')" in text
-    assert "promptValue(prompt, 'ORIGEM_EXECUCAO')" in text
+    assert "normalizeTitle" in text
+    assert "creationKind(prompt, payload?.title)" in text
+    assert "creationKind(taskPrompt, task?.title)" in text
     assert "const gameCreationLocks = new Map();" in text
     assert "game-create:dedupe:join" in text
     assert "game-create:dedupe:existing" in text
