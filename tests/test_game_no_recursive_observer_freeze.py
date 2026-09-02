@@ -42,6 +42,6 @@ def test_optional_enhancements_yield_to_browser_between_modules():
 
 
 def test_android_cache_revision_changes_with_navigation_fix():
-    revision = "release-1.2.0-game-menu-v55-20260902"
+    revision = "release-1.2.0-game-simple-v56-20260902"
     assert revision in BOOT
     assert revision in INDEX
