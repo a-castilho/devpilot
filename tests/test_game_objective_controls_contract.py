@@ -62,6 +62,6 @@ def test_quick_start_validates_project_and_delivery():
 
 
 def test_simple_game_cache_revision_is_fresh():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+    revision = "release-1.2.0-game-entry-minimal-v65-20260902"
     assert revision in source(GAME_HTML)
     assert revision in source(BOOTSTRAP_JS)
