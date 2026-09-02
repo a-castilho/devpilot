@@ -114,4 +114,11 @@ function status(value) {
 // In standalone mode the document already owns the game view, so navigation is a no-op.
 function showView() {}
 
+// Do not rely on implicit classic-script globals: Android/WebView/browser caching paths
+// have historically loaded the standalone bootstrap before these bindings were visible.
+window.api = api;
+window.toast = toast;
+window.status = status;
+window.showView = showView;
+window.__devpilotGameState = state;
 window.__devpilotGameApiReady = true;
