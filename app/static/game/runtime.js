@@ -1,6 +1,9 @@
 /* Minimal shared runtime for the standalone game document. */
 'use strict';
 
+const GAME_PROJECT_KEY = 'devpilot-build-game-project';
+const GAME_PIPELINE_MARKER = '[DEVPILOT_BUILD_GAME_PIPELINE_V2]';
+
 const state = {
   token: localStorage.getItem('devpilot-token') || '',
   projects: [],
@@ -38,11 +41,52 @@ function networkErrorMessage(error) {
   return 'Não foi possível conectar ao DevPilot. Verifique se o servidor continua disponível e tente novamente.';
 }
 
+function standaloneRoute(path, options = {}) {
+  const method = String(options.method || 'GET').toUpperCase();
+  if (method !== 'GET') return {path, kind: 'default'};
+
+  const raw = String(path || '');
+  if (raw === '/projects') {
+    const selected = String(localStorage.getItem(GAME_PROJECT_KEY) || '').trim();
+    const include = selected ? `&include_project_id=${encodeURIComponent(selected)}` : '';
+    return {
+      path: `/ui/projects?limit=50${include}`,
+      kind: 'projects',
+    };
+  }
+
+  if (raw.startsWith('/tasks?')) {
+    const params = new URLSearchParams(raw.split('?', 2)[1] || '');
+    const projectId = String(params.get('project_id') || localStorage.getItem(GAME_PROJECT_KEY) || '').trim();
+    if (projectId) {
+      return {
+        path: `/ui/game-tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
+        kind: 'game-tasks',
+      };
+    }
+  }
+
+  return {path: raw, kind: 'default'};
+}
+
+function normalizeGameTasks(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(row => {
+    const prompt = String(row?.prompt || '');
+    return {
+      ...row,
+      prompt: prompt.includes(GAME_PIPELINE_MARKER)
+        ? prompt
+        : `${prompt}${prompt ? '\n' : ''}${GAME_PIPELINE_MARKER}`,
+    };
+  });
+}
+
 async function requestJson(path, options = {}, attempt = 0) {
   const method = String(options.method || 'GET').toUpperCase();
   const controller = options.signal ? null : new AbortController();
   const timeoutId = controller
-    ? window.setTimeout(() => controller.abort(), Number(options.timeoutMs || 15000))
+    ? window.setTimeout(() => controller.abort(), Number(options.timeoutMs || 10000))
     : 0;
 
   const headers = {
@@ -67,7 +111,7 @@ async function requestJson(path, options = {}, attempt = 0) {
     if (timeoutId) window.clearTimeout(timeoutId);
 
     if (method === 'GET' && attempt === 0 && navigator.onLine !== false) {
-      await new Promise(resolve => window.setTimeout(resolve, 300));
+      await new Promise(resolve => window.setTimeout(resolve, 250));
       return requestJson(path, options, attempt + 1);
     }
 
@@ -87,7 +131,7 @@ async function requestJson(path, options = {}, attempt = 0) {
 
   if (!response.ok) {
     if (method === 'GET' && response.status >= 500 && attempt === 0) {
-      await new Promise(resolve => window.setTimeout(resolve, 300));
+      await new Promise(resolve => window.setTimeout(resolve, 250));
       return requestJson(path, options, attempt + 1);
     }
     throw new Error(errorDetail(data, response.status));
@@ -102,7 +146,15 @@ async function api(path, options = {}) {
     document.getElementById('auth-modal')?.showModal?.();
     throw new Error('Autenticação necessária');
   }
-  return requestJson(path, options);
+
+  const route = standaloneRoute(path, options);
+  const requestOptions = route.kind === 'default'
+    ? options
+    : {...options, timeoutMs: Number(options.timeoutMs || 8000)};
+  const data = await requestJson(route.path, requestOptions);
+
+  if (route.kind === 'game-tasks') return normalizeGameTasks(data);
+  return data;
 }
 
 function status(value) {
@@ -122,3 +174,4 @@ window.status = status;
 window.showView = showView;
 window.__devpilotGameState = state;
 window.__devpilotGameApiReady = true;
+window.__devpilotGameCompactRuntime = true;
