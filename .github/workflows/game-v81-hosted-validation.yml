@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   validate-and-finalize:
-    if: github.event.head_commit.message != 'fix(game): finalize v81 continuity contract'
+    if: "${{ github.event.head_commit.message != 'fix(game): finalize v81 continuity contract' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
