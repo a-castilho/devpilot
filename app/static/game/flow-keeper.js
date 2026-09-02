@@ -1,9 +1,9 @@
-/* DevPilot game v75 — keeps an active round moving even when the first task is not immediately visible in /tasks. */
+/* DevPilot game v76 — passive state watcher: keeps the real pipeline moving without repainting the UI on every poll. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameFlowKeeperV75Ready) return;
-  window.__devpilotGameFlowKeeperV75Ready = true;
+  if (window.__devpilotGameFlowKeeperV76Ready) return;
+  window.__devpilotGameFlowKeeperV76Ready = true;
 
   const VISIBLE_DELAY_MS = 2500;
   const HIDDEN_DELAY_MS = 8000;
@@ -12,14 +12,25 @@
 
   const controller = () => window.__devpilotGameControllerV73;
   const delay = () => document.hidden ? HIDDEN_DELAY_MS : VISIBLE_DELAY_MS;
+  const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
   const shouldKeepMoving = state => Boolean(
-    state &&
-    state.missionId &&
-    state.goal &&
-    !state.done &&
-    !state.failed
+    state && state.missionId && state.goal && !state.done && !state.failed
   );
+
+  const missionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task => {
+    const prompt = String(task?.prompt || '');
+    return prompt.includes(`PARTIDA: ${state.missionId}`) && String(task?.id || '') === String(state.taskId || '');
+  });
+
+  const anyMissionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task =>
+    String(task?.prompt || '').includes(`PARTIDA: ${state.missionId}`)
+  );
+
+  const fetchTasks = async state => {
+    if (typeof window.api !== 'function' || !state.projectId) return [];
+    return window.api(`/tasks?project_id=${encodeURIComponent(state.projectId)}&limit=500`);
+  };
 
   const arm = () => {
     window.clearTimeout(timer);
@@ -40,13 +51,27 @@
 
     busy = true;
     try {
-      // The POST that starts a round may finish before the task appears in the list endpoint.
-      // While that happens, only reload state; do not create another task.
-      if (!state.hasTasks && typeof window.loadBuildGame === 'function') {
-        await window.loadBuildGame();
-      } else {
-        await engine.refresh();
+      const tasks = await fetchTasks(state);
+
+      // Start POST can return before /tasks exposes the created task.
+      // Poll silently until it is visible; only then synchronize/render once.
+      if (!state.hasTasks) {
+        if (anyMissionTask(tasks, state) && typeof window.loadBuildGame === 'function') {
+          await window.loadBuildGame();
+          engine.schedule?.();
+        }
+        return;
       }
+
+      // While the current task keeps the same status, do absolutely nothing to the DOM.
+      // This removes the 2.5s full-screen blink while preserving polling.
+      const remote = missionTask(tasks, state);
+      if (remote && normalize(remote.status) === normalize(state.taskStatus)) return;
+
+      // A real transition happened (queued→running→completed, gate, next phase, etc.).
+      // Let the existing controller synchronize once and advance the real pipeline.
+      await engine.refresh();
+      engine.schedule?.();
     } catch (error) {
       console.error('[DevPilot Game Flow Keeper]', error);
     } finally {
