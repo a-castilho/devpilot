@@ -41,6 +41,11 @@ def test_login_game_start_exit_reopen_stays_responsive_without_duplicate_executi
 
         try:
             page.goto(e2e_server, wait_until="domcontentloaded", timeout=20_000)
+            page.wait_for_selector("#auth-modal", timeout=10_000)
+            if page.locator("#auth-email").count() == 0:
+                page.locator("#public-login").wait_for(state="visible", timeout=10_000)
+                page.locator("#public-login").click()
+            page.locator("#auth-email").wait_for(state="visible", timeout=10_000)
             page.locator("#auth-email").fill("e2e-admin@devpilot.local")
             page.locator("#auth-password").fill("DevPilot-E2E-Password-2026")
             page.locator("#auth-submit").click()
