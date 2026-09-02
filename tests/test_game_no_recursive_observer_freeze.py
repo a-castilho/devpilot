@@ -5,11 +5,12 @@ START = (ROOT / "app/static/game/start-round-mobile.js").read_text(encoding="utf
 OBJECTIVE = (ROOT / "app/static/game/objective-controls.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "app/static/game/game-bootstrap.js").read_text(encoding="utf-8")
 INDEX = (ROOT / "app/static/game/index.html").read_text(encoding="utf-8")
+ACTION = (ROOT / "app/static/game/action-runtime.js").read_text(encoding="utf-8")
 
 
-def test_start_round_does_not_observe_the_whole_document_tree():
-    assert "observer.observe(document.documentElement" not in START
-    assert "viewObserver.observe(view, {childList:true});" in START
+def test_start_round_uses_render_events_without_mutation_observer():
+    assert "MutationObserver" not in START
+    assert "devpilot:game:rendered" in START
     assert "subtree:true" not in START
 
 
@@ -19,19 +20,27 @@ def test_start_round_decorator_is_idempotent_before_touching_text():
     assert "if (scheduled) return;" in START
 
 
-def test_objective_controls_do_not_observe_the_whole_document_tree():
-    assert "observer.observe(document.documentElement" not in OBJECTIVE
-    assert "viewObserver.observe(view, {childList:true});" in OBJECTIVE
+def test_objective_controls_use_render_events_without_mutation_observer():
+    assert "MutationObserver" not in OBJECTIVE
+    assert "devpilot:game:rendered" in OBJECTIVE
     assert "subtree: true" not in OBJECTIVE
     assert "subtree:true" not in OBJECTIVE
+
+
+def test_action_runtime_is_single_loader_coordinator():
+    assert "window.__devpilotBaseLoadBuildGame = baseLoad" in ACTION
+    assert "if (loadInFlight)" in ACTION
+    assert "loadRequested = true" in ACTION
+    assert "devpilot:game:rendered" in ACTION
 
 
 def test_optional_enhancements_yield_to_browser_between_modules():
     assert "const yieldToBrowser" in BOOT
     assert "await yieldToBrowser();" in BOOT
+    assert BOOT.index("game/action-runtime.js") < BOOT.index("game/objective-controls.js")
 
 
-def test_android_cache_revision_changes_with_observer_fix():
-    revision = "release-1.2.0-game-core-20260902-4"
+def test_android_cache_revision_changes_with_action_runtime_fix():
+    revision = "release-1.2.0-game-actions-v54-20260902"
     assert revision in BOOT
     assert revision in INDEX
