@@ -2,7 +2,7 @@
   'use strict';
 
   const GAME_TASK_LIMIT = 24;
-  const GAME_PROJECT_LIMIT = 30;
+  const GAME_PROJECT_LIMIT = 50;
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const INSTALL_FLAG = '__devpilotGameTaskPayloadGuardInstalled';
   const PRECHECK_TIMEOUT_MS = 1400;
@@ -56,17 +56,27 @@
     };
   };
 
-  async function findGameCreation(options, {delayMs = 0, timeoutMs = PRECHECK_TIMEOUT_MS} = {}) {
+  async function findGameCreation(options, delayOrConfig = 0) {
     const identity = gameCreationIdentity(options);
     if (!identity) return null;
 
-    if (delayMs > 0) {
-      await new Promise(resolve => window.setTimeout(resolve, delayMs));
+    const config = typeof delayOrConfig === 'number'
+      ? {
+          delayMs: delayOrConfig,
+          timeoutMs: delayOrConfig > 0 ? RECOVERY_TIMEOUT_MS : PRECHECK_TIMEOUT_MS,
+        }
+      : {
+          delayMs: Number(delayOrConfig?.delayMs || 0),
+          timeoutMs: Number(delayOrConfig?.timeoutMs || PRECHECK_TIMEOUT_MS),
+        };
+
+    if (config.delayMs > 0) {
+      await new Promise(resolve => window.setTimeout(resolve, config.delayMs));
     }
 
     const tasks = await originalApi(
       `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=${GAME_TASK_LIMIT}`,
-      {method: 'GET', timeoutMs, retry: false},
+      {method: 'GET', timeoutMs: config.timeoutMs, retry: false},
     );
 
     if (!Array.isArray(tasks)) return null;
@@ -78,8 +88,20 @@
     }) || null;
   }
 
+  async function precheckGameCreation(options) {
+    try {
+      const existing = await findGameCreation(options);
+      return existing;
+    } catch (precheckError) {
+      trace('game-create:dedupe:precheck-timeout', {
+        message: String(precheckError?.message || precheckError || 'erro'),
+      });
+      return null;
+    }
+  }
+
   async function recoverGameCreation(options) {
-    return findGameCreation(options, {delayMs: 250, timeoutMs: RECOVERY_TIMEOUT_MS});
+    return findGameCreation(options, 350);
   }
 
   window.__devpilotGameTrace = trace;
@@ -115,17 +137,9 @@
           phase: identity.phase,
         });
 
-        // The pre-check protects stale/reloaded tabs, but it must never prevent the
-        // real POST just because a low-memory device or Wi-Fi answered slowly.
-        let existing = null;
-        try {
-          existing = await findGameCreation(options);
-        } catch (precheckError) {
-          trace('game-create:dedupe:precheck-timeout', {
-            message: String(precheckError?.message || precheckError || 'erro'),
-          });
-        }
-
+        // This stale-tab check is bounded. A slow Wi-Fi response never blocks the
+        // real POST indefinitely: timeout/error here simply lets creation continue.
+        const existing = await precheckGameCreation(options);
         if (existing) {
           trace('game-create:dedupe:existing', {
             id: existing.id,
