@@ -11,7 +11,6 @@
   const ENTRY_ASSETS = [
     'game/task-payload-guard.js',
     'game/objective-controls.js',
-    'game/delivery-gate.js',
     'game/flow-keeper.js',
   ];
 
@@ -135,7 +134,7 @@
       if (!hasShell()) throw new Error('A interface principal do jogo não foi renderizada');
 
       window.__devpilotGameCoreReady = true;
-      window.__devpilotGameBootProfile = 'unified-v73';
+      window.__devpilotGameBootProfile = 'server-orchestrated-v77';
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       startEnhancements();
     } catch (error) {
