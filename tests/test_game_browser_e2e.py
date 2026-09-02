@@ -13,7 +13,7 @@ pytestmark = [
 ]
 
 
-def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
+def test_login_game_start_exit_reopen_stays_responsive(e2e_server):
     playwright_api = pytest.importorskip("playwright.sync_api")
     artifact_dir = Path(os.getenv("DEVPILOT_TEST_RESULTS_DIR", ".artifacts/test-results"))
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -64,19 +64,19 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             )
             assert project.get("id")
 
-            page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
-            page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
-            page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
-            page.wait_for_function("() => document.querySelector('#build-game-view')?.children.length > 0", timeout=15_000)
+            page.goto(f"{e2e_server}/assets/game/index.html", wait_until="domcontentloaded", timeout=20_000)
+            page.wait_for_selector('body[data-devpilot-game-standalone="1"][data-devpilot-game-version="v73"]', timeout=10_000)
+            page.wait_for_selector("[data-game73-start]", state="visible", timeout=15_000)
+            page.locator("[data-game73-project]").select_option(str(project["id"]))
+            page.locator("[data-game73-goal]").fill("Executar o smoke E2E real do modo jogo")
+            page.locator("[data-game73-start]").click()
 
-            page.locator("#build-game-goal").fill("Executar o smoke E2E real do modo jogo")
-            first_phase = page.locator("#build-game-view [data-play-phase]").first
-            first_phase.wait_for(state="visible", timeout=10_000)
-            first_phase.click()
-            deadline = time.monotonic() + 8
+            deadline = time.monotonic() + 10
             while task_posts < 1 and time.monotonic() < deadline:
                 page.wait_for_timeout(100)
-            assert task_posts == 1, f"expected exactly one phase task POST, got {task_posts}"
+            assert task_posts == 1, f"expected exactly one initial phase task POST, got {task_posts}"
+            page.wait_for_selector(".game73", state="visible", timeout=10_000)
+            page.wait_for_function("() => Boolean(window.__devpilotGameControllerV73)", timeout=10_000)
 
             initial_heap = page.evaluate("() => performance.memory?.usedJSHeapSize ?? null")
             initial_request_count = len(api_requests)
@@ -84,9 +84,10 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             for _ in range(3):
                 page.locator("#game-exit").click()
                 page.wait_for_url(f"{e2e_server}/", timeout=10_000)
-                page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
+                page.goto(f"{e2e_server}/assets/game/index.html", wait_until="domcontentloaded", timeout=20_000)
                 page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
-                page.wait_for_function("() => document.querySelector('#build-game-view')?.children.length > 0", timeout=15_000)
+                page.wait_for_selector(".game73", state="visible", timeout=15_000)
+                page.wait_for_function("() => Boolean(window.__devpilotGameControllerV73)", timeout=10_000)
 
             page.wait_for_timeout(500)
             final_heap = page.evaluate("() => performance.memory?.usedJSHeapSize ?? null")

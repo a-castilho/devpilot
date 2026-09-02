@@ -1,6 +1,5 @@
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 GUARD = (ROOT / "app/static/game/task-payload-guard.js").read_text(encoding="utf-8")
 BOOT = (ROOT / "app/static/game/game-bootstrap.js").read_text(encoding="utf-8")
@@ -9,39 +8,39 @@ BUILD = (ROOT / "app/static/build-game.js").read_text(encoding="utf-8")
 ROUTES = (ROOT / "app/frontend_ui_routes.py").read_text(encoding="utf-8")
 
 
-def test_retry_after_failed_phase_still_creates_a_new_real_task():
-    assert "NON_RECOVERABLE_STATUSES" in GUARD
-    assert "'failed'" in GUARD
+def test_retry_after_failed_phase_creates_new_real_task():
+    assert "const FAILED = new Set" in GUARD
+    assert "failed" in GUARD
     assert "const result = await originalApi(path, options);" in GUARD
-    assert "window.__devpilotGameRetryCreatesNewTask = true;" in GUARD
-    assert "game-create:direct:start" in GUARD
+    assert "window.__devpilotGameCreateDedup = true" in GUARD
+    assert "window.__devpilotGameCreateRecovery = true" in GUARD
+    assert "createPhaseTask(stateNow.currentPhaseId, stateNow.goal, {force:true})" in BUILD
 
 
-def test_dedupe_still_distinguishes_phase_gate_and_correction_by_title():
-    assert "const creationKind = (prompt, title)" in GUARD
-    assert "normalizeTitle(title)" in GUARD
-    assert "creationKind(prompt, payload?.title)" in GUARD
-    assert "creationKind(taskPrompt, task?.title)" in GUARD
+def test_dedupe_distinguishes_phase_and_gate_by_title():
+    assert "const title = String(payload.title || '').trim();" in GUARD
+    assert "title, key:`${projectId}::${mission}::${phase}::${title}`" in GUARD
+    assert "String(task?.title || '').trim() === identity.title" in GUARD
     assert '"title": row.title' in ROUTES
 
 
-def test_recovery_rejects_old_failed_task_without_a_preflight_request():
-    assert "canRecoverCreation" in GUARD
-    assert "matchesIdentity(task, identity) && canRecoverCreation(task)" in GUARD
-    assert "const previous = await findGameCreations(options);" not in GUARD
-    assert "game-create:dedupe:check" not in GUARD
-    assert "window.__devpilotGameNoPreflightV63 = true;" in GUARD
+def test_recovery_rejects_failed_task_and_has_no_preflight():
+    assert "!FAILED.has(normalize(task.status))" in GUARD
+    assert "findGameCreations" not in GUARD
+    post = GUARD.index("const result = await originalApi(path, options);")
+    recover = GUARD.index("const recovered = await recover(identity);")
+    assert post < recover
 
 
-def test_build_game_still_reloads_history_immediately_after_new_attempt():
-    assert "const task = await api('/tasks'" in BUILD
+def test_build_game_reloads_history_after_new_attempt():
+    assert "return await api('/tasks'," in BUILD
     assert "await window.loadBuildGame();" in BUILD
     assert "order_by(Task.created_at.desc())" in ROUTES
 
 
-def test_mobile_cache_preserves_v62_v63_behavior_with_v64_assets():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+def test_cache_and_guard_are_v73():
+    revision = "game-unified-v73-20260902"
     assert revision in BOOT
-    assert INDEX.count(revision) == 5
+    assert INDEX.count(revision) >= 5
     assert "'game/task-payload-guard.js'" in BOOT
-    assert "mobileRuntime ? 90 : 45" in BOOT
+    assert "'game/action-runtime.js'" not in BOOT

@@ -1,22 +1,27 @@
 from pathlib import Path
 
 INDEX = Path("app/static/game/index.html").read_text(encoding="utf-8")
-SOURCE = Path("app/static/game/start-round-mobile.js").read_text(encoding="utf-8")
+BOOT = Path("app/static/game/game-bootstrap.js").read_text(encoding="utf-8")
+UI = Path("app/static/game/objective-controls.js").read_text(encoding="utf-8")
+BUILD = Path("app/static/build-game.js").read_text(encoding="utf-8")
 
 
-def test_game_loads_explicit_start_round_recovery_with_fresh_cache_key():
-    assert "game/start-round-mobile.js?v=frontend-v53-game-start" in INDEX
-    assert "objective-controls.js?v=frontend-v53-game-start" in INDEX
-    assert "build-game.js?v=frontend-v53-game-start" in INDEX
+def test_start_round_helper_is_replaced_by_unified_ui():
+    assert "game/start-round-mobile.js" not in INDEX
+    assert "'game/start-round-mobile.js'" not in BOOT
+    assert "'game/objective-controls.js'" in BOOT
+    assert "data-game73-start" in UI
+    assert "🚀 Jogar agora" in UI
 
 
-def test_initial_round_relabels_new_round_as_start_game():
-    assert "button.textContent = initial ? 'Iniciar jogo' : 'Nova rodada'" in SOURCE
-    assert "data-play-phase" in SOURCE
-    assert "build-game-goal" in SOURCE
+def test_initial_round_calls_real_controller_directly():
+    assert "await engine.startRound({projectId, goal});" in UI
+    assert "phaseButton.click()" not in UI
+    assert "data-play-phase" not in UI
+    assert "window.__devpilotGameControllerV73" in BUILD
 
 
-def test_start_requires_goal_and_delegates_to_real_phase_button():
-    assert "Descreva a entrega da rodada para iniciar o jogo" in SOURCE
-    assert "phaseButton.click()" in SOURCE
-    assert "stopImmediatePropagation" in SOURCE
+def test_start_validates_project_and_goal_in_engine():
+    assert "if (!targetProject) throw new Error('Escolha um projeto')" in BUILD
+    assert "if (!targetGoal) throw new Error('Descreva a entrega da rodada')" in BUILD
+    assert "await createPhaseTask(1, targetGoal, {force:true});" in BUILD

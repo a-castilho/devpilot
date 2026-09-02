@@ -5,12 +5,14 @@ GAME_WEAPONS_JS = Path("app/static/game-weapons.js")
 TASK_MODAL_JS = Path("app/static/task-modal.js")
 
 
-def test_game_weapons_is_loaded_by_task_modal():
+def test_game_weapons_are_decoupled_from_canonical_task_submit():
     loader = TASK_MODAL_JS.read_text(encoding="utf-8")
+    source = GAME_WEAPONS_JS.read_text(encoding="utf-8")
 
-    assert "/assets/game-weapons.js?v=20260824-1" in loader
-    assert "data-game-weapons-loader" in loader
-    assert "gameWeaponsLoader" in loader
+    assert "game-weapons.js" not in loader
+    assert "__devpilotCanonicalExecutionSubmitV34" in loader
+    assert "#build-game-view.active" in source
+    assert "devpilot:game:standalone-ready" in source
 
 
 def test_new_task_becomes_weapon_development_only_in_game_mode():
@@ -45,9 +47,11 @@ def test_normal_task_vocabulary_is_restored_outside_game_mode():
     assert "parts.mode.dispatchEvent(new Event('change'" in source
 
 
-def test_game_weapon_ui_tracks_navigation_and_dynamic_game_view():
+def test_game_weapon_ui_tracks_navigation_with_events_not_global_observer():
     source = GAME_WEAPONS_JS.read_text(encoding="utf-8")
 
-    assert "MutationObserver" in source
-    assert "attributeFilter: ['class', 'open']" in source
+    assert "MutationObserver" not in source
+    assert "devpilot:game:standalone-ready" in source
+    assert "devpilot:view-changed" in source
+    assert "scheduleSync" in source
     assert "[data-project-build-game]" in source

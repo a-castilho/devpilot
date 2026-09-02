@@ -5,6 +5,8 @@ BOOT = (ROOT / "app/static/game/game-bootstrap.js").read_text(encoding="utf-8")
 ACTION = (ROOT / "app/static/game/action-runtime.js").read_text(encoding="utf-8")
 INDEX = (ROOT / "app/static/game/index.html").read_text(encoding="utf-8")
 
+REVISION = "game-unified-v73-20260902"
+
 
 def test_first_render_has_only_three_critical_scripts():
     assert INDEX.count('<script src="/assets/') == 3
@@ -14,30 +16,28 @@ def test_first_render_has_only_three_critical_scripts():
     assert '/assets/game/action-runtime.js' not in INDEX
 
 
-def test_core_render_finishes_before_any_enhancement_starts():
+def test_core_render_finishes_before_enhancements_start():
     core = BOOT.index("await withTimeout(window.loadBuildGame()")
     ready = BOOT.index("window.__devpilotGameCoreReady = true")
-    enhancements = BOOT.index("startEnhancementsAfterPaint();")
+    enhancements = BOOT.index("startEnhancements();")
     assert core < ready < enhancements
     assert "requestAnimationFrame" in BOOT
-    assert "await yieldToBrowser();" in BOOT
 
 
-def test_action_runtime_is_first_post_paint_enhancement():
-    assert BOOT.index("'game/action-runtime.js'") < BOOT.index("'game/task-payload-guard.js'")
+def test_entry_enhancements_do_not_wrap_the_loader():
+    assert "'game/action-runtime.js'" not in BOOT
+    assert "'game/task-payload-guard.js'" in BOOT
+    assert "'game/objective-controls.js'" in BOOT
+    assert "'game/delivery-gate.js'" in BOOT
     assert "const REQUIRED_ASSET" not in BOOT
     assert "REQUIRED_TIMEOUT_MS" not in BOOT
 
 
-def test_action_runtime_never_replays_loader_in_a_while_loop():
+def test_legacy_action_runtime_has_no_recursive_loader_loop():
     assert "while (loadRequested)" not in ACTION
     assert "loadRequested = true" not in ACTION
-    assert "coalescedLoadCount += 1" in ACTION
-    assert "return loadInFlight" in ACTION
-    assert "Promise.resolve().then(async () =>" in ACTION
 
 
-def test_cache_revision_forces_browsers_off_regressed_assets():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
-    assert revision in INDEX
-    assert revision in BOOT
+def test_cache_revision_is_current():
+    assert REVISION in INDEX
+    assert REVISION in BOOT

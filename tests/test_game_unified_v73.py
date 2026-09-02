@@ -68,5 +68,6 @@ def test_guard_is_bounded_and_only_wraps_task_creation():
 def test_gate_allows_explicit_retry_of_failed_verifier():
     source = text(GATE)
     assert "retryFailed = false" in source
-    assert "retryFailed && FAILED.has(status)" in source
+    assert "retryFailed && FAILED.has(taskStatus)" in source
+    assert "!isVerifier(task) && normalize(task.status) === 'completed'" in source
     assert "window.__devpilotEnsureDeliveryGate = ensureVerifier" in source

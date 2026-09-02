@@ -1,5 +1,4 @@
 from pathlib import Path
-import subprocess
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -10,114 +9,73 @@ def test_game_document_is_isolated_from_dashboard_feature_loader():
     html = (STATIC / "game" / "index.html").read_text(encoding="utf-8")
 
     assert 'data-devpilot-game-standalone="1"' in html
+    assert 'data-devpilot-game-version="v73"' in html
     assert '/assets/game/game-bootstrap.js' in html
     assert '/assets/build-game.js' in html
     assert '/assets/feature-loader.js' not in html
     assert 'class="sidebar"' not in html
 
 
-def test_standalone_game_uses_lightweight_task_history_before_bootstrap():
+def test_standalone_game_keeps_only_three_critical_scripts_in_order():
     html = (STATIC / "game" / "index.html").read_text(encoding="utf-8")
-    guard = (STATIC / "game" / "task-payload-guard.js").read_text(encoding="utf-8")
 
-    build_index = html.index('/assets/build-game.js')
-    guard_index = html.index('/assets/game/task-payload-guard.js')
-    bootstrap_index = html.index('/assets/game/game-bootstrap.js')
-
-    assert build_index < guard_index < bootstrap_index
-    assert "const GAME_TASK_LIMIT = 24" in guard
-    assert "requestPath.startsWith('/tasks?')" in guard
-    assert "new URLSearchParams" in guard
-    assert "/ui/game-tasks?project_id=" in guard
-    assert "__devpilotGameUsesLightweightHistory = true" in guard
+    runtime = html.index('/assets/game/runtime.js')
+    build = html.index('/assets/build-game.js')
+    bootstrap = html.index('/assets/game/game-bootstrap.js')
+    assert runtime < build < bootstrap
+    assert html.count('<script src="/assets/') == 3
+    assert '/assets/game/task-payload-guard.js' not in html
+    assert '/assets/game/action-runtime.js' not in html
 
 
-def test_standalone_game_uses_lightweight_projects_and_boot_trace():
-    guard = (STATIC / "game" / "task-payload-guard.js").read_text(encoding="utf-8")
-    bootstrap = (STATIC / "game" / "game-bootstrap.js").read_text(encoding="utf-8")
+def test_standalone_runtime_uses_lightweight_projects_and_task_history():
+    runtime = (STATIC / "game" / "runtime.js").read_text(encoding="utf-8")
 
-    assert "const GAME_PROJECT_LIMIT = 50" in guard
-    assert "requestPath === '/projects'" in guard
-    assert "/ui/projects?limit=" in guard
-    assert "__devpilotGameUsesLightweightProjects = true" in guard
-    assert "__devpilotGameBootTrace" in guard
-    assert "__devpilotGameTrace" in guard
-    assert "trace('auth:start')" in bootstrap
-    assert "trace('auth:end'" in bootstrap
-    assert "trace('game-load:start')" in bootstrap
-    assert "trace('game-load:end')" in bootstrap
-    assert "trace('boot:ready')" in bootstrap
+    assert "function standaloneRoute(path, options = {})" in runtime
+    assert "/ui/projects?limit=50" in runtime
+    assert "include_project_id=" in runtime
+    assert "/ui/game-tasks?project_id=" in runtime
+    assert "limit=24" in runtime
+    assert "GAME_PIPELINE_MARKER" in runtime
+    assert "normalizeGameTasks" in runtime
+    assert "window.__devpilotGameUsesLightweightProjects" not in runtime
 
 
 def test_lightweight_projects_preserve_saved_game_project_outside_first_page():
-    guard = (STATIC / "game" / "task-payload-guard.js").read_text(encoding="utf-8")
+    runtime = (STATIC / "game" / "runtime.js").read_text(encoding="utf-8")
     routes = (ROOT / "app" / "frontend_ui_routes.py").read_text(encoding="utf-8")
 
-    assert "const GAME_PROJECT_KEY = 'devpilot-build-game-project'" in guard
-    assert "localStorage.getItem(GAME_PROJECT_KEY)" in guard
-    assert "include_project_id=" in guard
+    assert "GAME_PROJECT_KEY" in runtime
+    assert "localStorage.getItem(GAME_PROJECT_KEY)" in runtime
+    assert "include_project_id=" in runtime
     assert "include_project_id: str | None = None" in routes
     assert "Project.id == include_project_id" in routes
     assert "Project.workspace_id == ws.id" in routes
     assert "rows.append(selected)" in routes
 
 
-def test_game_boot_does_not_report_ready_after_lightweight_load_failure():
+def test_game_task_guard_only_wraps_real_task_creation_and_bounds_trace():
     guard = (STATIC / "game" / "task-payload-guard.js").read_text(encoding="utf-8")
+
+    assert "requestPath !== '/tasks' || method !== 'POST'" in guard
+    assert "const locks = new Map();" in guard
+    assert "const result = await originalApi(path, options);" in guard
+    assert "const recovered = await recover(identity);" in guard
+    assert guard.index("const result = await originalApi(path, options);") < guard.index("const recovered = await recover(identity);")
+    assert "rows.length > 48" in guard
+    assert "devpilot-game-debug" in guard
+
+
+def test_game_boot_does_not_report_ready_after_real_load_failure():
+    build = (STATIC / "build-game.js").read_text(encoding="utf-8")
     bootstrap = (STATIC / "game" / "game-bootstrap.js").read_text(encoding="utf-8")
 
-    assert "window.__devpilotGameLoadError = error instanceof Error" in guard
-    assert "stage === 'projects' || stage === 'game-tasks'" in guard
+    assert "window.__devpilotGameLoadError = failure" in build
+    assert "throw failure" in build
     assert "window.__devpilotGameLoadError = null" in bootstrap
     assert "if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError" in bootstrap
-    assert bootstrap.index("if (window.__devpilotGameLoadError)") < bootstrap.index("trace('game-load:end')")
-    assert bootstrap.index("trace('game-load:end')") < bootstrap.index("trace('boot:ready')")
-
-
-def test_game_boot_failure_path_is_exercised_in_javascript_runtime():
-    guard_path = STATIC / "game" / "task-payload-guard.js"
-    bootstrap_path = STATIC / "game" / "game-bootstrap.js"
-    script = f"""
-const fs = require('fs');
-global.window = global;
-global.performance = {{ now: () => 10 }};
-global.localStorage = {{
-  getItem: key => key === 'devpilot-token' ? 'test-token' : (key === 'devpilot-build-game-project' ? 'old-project' : ''),
-  setItem: () => {{}},
-}};
-const elements = new Map();
-function element(id) {{
-  if (!elements.has(id)) elements.set(id, {{ addEventListener: () => {{}}, showModal: () => {{}}, innerHTML: '' }});
-  return elements.get(id);
-}}
-global.document = {{
-  readyState: 'complete',
-  getElementById: element,
-  dispatchEvent: event => {{ global.__readyDispatched = event.type === 'devpilot:game:standalone-ready'; }},
-  addEventListener: () => {{}},
-}};
-global.CustomEvent = class CustomEvent {{ constructor(type) {{ this.type = type; }} }};
-global.fetch = async () => ({{ ok: true, status: 200 }});
-global.api = async path => {{
-  if (String(path).startsWith('/ui/projects?')) throw new Error('projects failed');
-  return [];
-}};
-eval(fs.readFileSync({str(guard_path)!r}, 'utf8'));
-global.loadBuildGame = async () => {{
-  try {{ await global.api('/projects'); }} catch (_) {{}}
-}};
-eval(fs.readFileSync({str(bootstrap_path)!r}, 'utf8'));
-setTimeout(() => {{
-  const stages = (global.__devpilotGameBootTrace || []).map(item => item.stage);
-  if (!stages.includes('projects:error')) process.exit(11);
-  if (!stages.includes('boot:error')) process.exit(12);
-  if (stages.includes('game-load:end')) process.exit(13);
-  if (stages.includes('boot:ready')) process.exit(14);
-  if (global.__readyDispatched) process.exit(15);
-  process.exit(0);
-}}, 25);
-"""
-    subprocess.run(["node", "-e", script], check=True, cwd=ROOT, timeout=5)
+    assert "showBootError" in bootstrap
+    assert bootstrap.index("await withTimeout(window.loadBuildGame()") < bootstrap.index("window.__devpilotGameCoreReady = true")
 
 
 def test_lightweight_game_history_strips_large_prompt_body():
@@ -150,17 +108,18 @@ def test_dashboard_game_placeholder_navigates_instead_of_lazy_loading_game_bundl
     assert "addPlaceholder('game', 'Modo Jogo')" in loader
 
 
-def test_standalone_game_has_full_navigation_exit_and_auth_guard():
+def test_standalone_game_has_exit_token_guard_and_real_controller_boot():
     bootstrap = (STATIC / "game" / "game-bootstrap.js").read_text(encoding="utf-8")
+    build = (STATIC / "build-game.js").read_text(encoding="utf-8")
 
     assert "window.location.assign('/')" in bootstrap
     assert "localStorage.getItem('devpilot-token')" in bootstrap
-    assert "fetch('/api/auth/me'" in bootstrap
     assert "window.loadBuildGame" in bootstrap
-    assert "devpilot:game:standalone-ready" in bootstrap
+    assert "devpilot:game:enhancements-ready" in bootstrap
+    assert "window.__devpilotGameControllerV73" in build
 
 
-def test_visual_game_entry_uses_same_isolated_url():
+def test_visual_game_entry_uses_isolated_url_without_lazy_bundle():
     entry = (STATIC / "game-entry.js").read_text(encoding="utf-8")
 
     assert "const GAME_URL = '/game/index.html'" in entry

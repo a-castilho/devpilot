@@ -12,6 +12,7 @@
   const PROJECT_KEY = 'devpilot-build-game-project';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const MAX_PHASES = 7;
+  const TASK_LIMIT = 24;
   const inFlight = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
 
@@ -26,7 +27,7 @@
   const isGameTask = task => String(task?.prompt || '').includes(GAME_MARKER) || String(task?.title || '').startsWith('[Jogo]');
   const isVerifier = task => String(task?.prompt || '').includes(VERIFIER_MARKER) || String(task?.title || '').startsWith('[Jogo] Gate');
 
-  const verifierPrompt = ({missionId, phaseId, goal, sourceTask}) => `${GAME_MARKER}\n${VERIFIER_MARKER}\n[DEVPILOT_BUILD_GAME_PIPELINE_V2]\n[DEVPILOT_MODE=develop]\nPARTIDA: ${missionId}\nFASE: ${phaseId}/${MAX_PHASES}\nOBJETIVO: ${goal}\nORIGEM_EXECUCAO: ${sourceTask.id}\n\nMISSÃO: VERIFICAR ENTREGA REAL\nVocê é o gate independente da esteira. Não aceite o status completed da execução anterior como prova suficiente. Inspecione o projeto no estado atual e prove que a entrega desta fase existe de verdade.\n\nCONTRATO DE ENTREGA:\n- Leia AGENTS.md, documentação e .devpilot/build-game.md.\n- Compare o OBJETIVO com critérios de aceite concretos.\n- Verifique código, configuração, migrações, testes e integração necessários.\n- Execute as verificações reais aplicáveis: teste, lint/typecheck, build e smoke.\n- Registre critério, evidência, comando e resultado em .devpilot/build-game.md.\n- Se qualquer critério obrigatório não puder ser provado, NÃO conclua.\n\nCRITÉRIO DE APROVAÇÃO:\nA tarefa só pode terminar como completed quando a fase estiver materializada, verificável e sem falhas obrigatórias não resolvidas.`;
+  const verifierPrompt = ({missionId, phaseId, goal, sourceTask}) => `${GAME_MARKER}\n${VERIFIER_MARKER}\n[DEVPILOT_BUILD_GAME_PIPELINE_V2]\n[DEVPILOT_MODE=develop]\nPARTIDA: ${missionId}\nFASE: ${phaseId}/${MAX_PHASES}\nOBJETIVO: ${goal}\nORIGEM_EXECUCAO: ${sourceTask.id}\n\nMISSÃO: VERIFICAR ENTREGA REAL\nVocê é o gate independente da esteira. Não aceite o status completed da execução anterior como prova suficiente. Inspecione o projeto no estado atual e prove que a entrega desta fase existe de verdade e funciona no sistema do cliente.\n\nCONTRATO DE ENTREGA:\n- Leia AGENTS.md, documentação, .devpilot/build-game.md e o diff acumulado da partida.\n- Compare o OBJETIVO com critérios de aceite concretos e preserve o pedido literal do usuário.\n- Verifique artefatos persistentes: código, configuração, migrações, testes e integrações necessários.\n- Execute as verificações reais aplicáveis: teste, lint/typecheck, build e smoke.\n- Quando houver aplicação executável, valide o fluxo real por interface, API, CLI ou mecanismo equivalente.\n- Quando houver banco, confirme schema/migração aplicável e o estado resultante.\n- Quando houver Delivery Target configurado e autorizado, valide o ambiente real com healthcheck/smoke.\n- Registre critério, evidência, comando executado, resultado e pendências em .devpilot/build-game.md.\n- A evidência deve ser reproduzível por outra pessoa; uma mensagem de sucesso sem prova não conta.\n- Se qualquer critério obrigatório não puder ser provado, NÃO conclua.\n\nCRITÉRIO DE APROVAÇÃO:\nA tarefa só pode terminar como completed quando a funcionalidade desta fase estiver materializada no projeto, as verificações aplicáveis passarem e houver evidência reproduzível registrada. Na fase ${MAX_PHASES}, revalide o objetivo completo ponta a ponta contra o Delivery Target quando existir.`;
 
   const createVerifier = async ({projectId, missionId, phaseId, sourceTask}) => {
     const goal = goalFromTask(sourceTask);
@@ -57,7 +58,7 @@
     inFlight.add(key);
     try {
       const tasks = await window.api(
-        `/tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
+        `/tasks?project_id=${encodeURIComponent(projectId)}&limit=${TASK_LIMIT}`,
         {timeoutMs:4000, retry:false},
       );
       const missionTasks = (Array.isArray(tasks) ? tasks : [])
@@ -70,9 +71,9 @@
         if (!latest) break;
 
         if (isVerifier(latest)) {
-          const status = normalize(latest.status);
-          if (status === 'completed') continue;
-          if (retryFailed && FAILED.has(status)) {
+          const taskStatus = normalize(latest.status);
+          if (taskStatus === 'completed') continue;
+          if (retryFailed && FAILED.has(taskStatus)) {
             const base = phaseTasks.find(task => !isVerifier(task) && normalize(task.status) === 'completed');
             if (base) return createVerifier({projectId, missionId, phaseId, sourceTask:base});
           }
