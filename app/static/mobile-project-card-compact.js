@@ -5,8 +5,10 @@
   const WRAP_FLAG = '__devpilotProjectsMemoryGuard';
   const LOAD_WRAP_FLAG = '__devpilotProjectsLoadGuard';
   const BUILDER_OPEN_FLAG = 'devpilotLowPowerOpening';
-  const mobileViewport = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
-  const lowPower = () => document.documentElement.classList.contains('devpilot-low-power') || mobileViewport();
+  const SHIPS_SCRIPT = 'project-ships.js';
+  const mobileViewport = () => window.matchMedia?.('(max-width: 640px)')?.matches === true;
+  const desktopShipsViewport = () => window.matchMedia?.('(min-width: 641px)')?.matches === true;
+  const lowPower = () => mobileViewport();
   const batchSize = () => lowPower() ? 6 : 15;
   const fetchLimit = () => lowPower() ? 12 : 50;
 
@@ -56,7 +58,20 @@
         filter: none !important;
       }
 
-      @media (max-width: 900px) {
+      @media (min-width: 641px) {
+        html.devpilot-low-power #projects-view .project-visual-overview {
+          display: grid !important;
+        }
+        html.devpilot-low-power #projects-view .project-ship-svg,
+        html.devpilot-low-power #projects-view .project-ship-hangar {
+          display: block !important;
+        }
+        html.devpilot-low-power #projects-view .project-ship-svg {
+          filter: drop-shadow(0 13px 12px #0009) !important;
+        }
+      }
+
+      @media (max-width: 640px) {
         #projects-view .project-visual-overview {
           display: none !important;
         }
@@ -116,6 +131,34 @@
     document.head.appendChild(style);
   }
 
+  function ensureProjectShips() {
+    if (!desktopShipsViewport()) return;
+    if (document.documentElement.classList.contains('devpilot-project-ships-ready')) return;
+
+    const existing = Array.from(document.scripts).find(script => {
+      try {
+        return new URL(script.src || '', location.href).pathname.endsWith(`/${SHIPS_SCRIPT}`);
+      } catch (_) {
+        return false;
+      }
+    });
+    if (existing) return;
+
+    const revision = String(window.__devpilotAssetRevisions?.[SHIPS_SCRIPT] || Date.now());
+    const script = document.createElement('script');
+    script.src = `/assets/${SHIPS_SCRIPT}?v=${encodeURIComponent(revision)}`;
+    script.async = false;
+    script.dataset.devpilotProjectShipsFallback = '1';
+    script.onload = () => {
+      document.documentElement.dataset.devpilotProjectShipsFallback = 'loaded';
+    };
+    script.onerror = () => {
+      document.documentElement.dataset.devpilotProjectShipsFallback = 'failed';
+      console.error('[DevPilot] Falha ao carregar naves dos projetos.');
+    };
+    document.body.appendChild(script);
+  }
+
   function markLowPowerCards(projects, target) {
     if (!lowPower()) return;
     const cards = Array.from(target.children).filter(node => node.classList?.contains('project-card'));
@@ -173,6 +216,7 @@
         markLowPowerCards(visibleProjects, target);
         renderFooter(target, fullProjects.length, visibleProjects.length);
       }
+      ensureProjectShips();
       return result;
     };
 
@@ -348,6 +392,15 @@
   injectStyles();
   installRenderGuard();
   installLoadGuard();
+  ensureProjectShips();
+
+  window.matchMedia?.('(min-width: 641px)')?.addEventListener?.('change', event => {
+    if (event.matches) ensureProjectShips();
+  });
+
+  document.addEventListener('devpilot:feature-ready', event => {
+    if (event?.detail?.feature === 'projects') ensureProjectShips();
+  });
 
   document.addEventListener('click', event => {
     if (!lowPower()) return;
