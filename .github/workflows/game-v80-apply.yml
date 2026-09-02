@@ -24,7 +24,9 @@ jobs:
           python-version: '3.12'
 
       - name: Apply integration
-        run: python scripts/apply_game_v80.py
+        run: |
+          python scripts/apply_game_v80.py
+          python scripts/apply_game_v80_followup.py
 
       - name: Install test dependencies
         run: python -m pip install -e '.[test]'
@@ -45,7 +47,8 @@ jobs:
           python -m pytest -q \
             tests/test_game_development_continuity_v80.py \
             tests/test_game_ships_stable_runtime_contract.py \
-            tests/test_game_delivery_gate.py
+            tests/test_game_delivery_gate.py \
+            tests/test_failure_recovery_flow_contract.py
 
       - name: Commit integrated game
         run: |
@@ -56,5 +59,5 @@ jobs:
             echo 'GAME_V80_ALREADY_APPLIED=1'
             exit 0
           fi
-          git commit -m 'feat(game): integrar continuidade de desenvolvimento v80'
+          git commit -m 'feat(game): consolidar continuidade multi-projeto v80'
           git push origin HEAD:feat/game-development-continuity-v80
