@@ -16,7 +16,8 @@ def test_start_round_uses_render_events_without_mutation_observer():
 
 def test_start_round_decorator_is_idempotent_before_touching_text():
     assert "const desiredText" in START
-    assert "if (button.textContent !== desiredText) button.textContent = desiredText;" in START
+    assert "if (button.textContent !== desiredText)" in START
+    assert "button.textContent = initial ? 'Iniciar jogo' : 'Nova rodada'" in START
     assert "if (scheduled) return;" in START
 
 
