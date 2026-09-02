@@ -110,7 +110,7 @@ async function requestJson(path, options = {}, attempt = 0) {
   } catch (error) {
     if (timeoutId) window.clearTimeout(timeoutId);
 
-    if (method === 'GET' && attempt === 0 && navigator.onLine !== false) {
+    if (method === 'GET' && options.retry !== false && attempt === 0 && navigator.onLine !== false) {
       await new Promise(resolve => window.setTimeout(resolve, 250));
       return requestJson(path, options, attempt + 1);
     }
@@ -130,7 +130,7 @@ async function requestJson(path, options = {}, attempt = 0) {
   }
 
   if (!response.ok) {
-    if (method === 'GET' && response.status >= 500 && attempt === 0) {
+    if (method === 'GET' && options.retry !== false && response.status >= 500 && attempt === 0) {
       await new Promise(resolve => window.setTimeout(resolve, 250));
       return requestJson(path, options, attempt + 1);
     }
@@ -150,7 +150,7 @@ async function api(path, options = {}) {
   const route = standaloneRoute(path, options);
   const requestOptions = route.kind === 'default'
     ? options
-    : {...options, timeoutMs: Number(options.timeoutMs || 8000)};
+    : {...options, timeoutMs: Number(options.timeoutMs || 5000), retry: false};
   const data = await requestJson(route.path, requestOptions);
 
   if (route.kind === 'game-tasks') return normalizeGameTasks(data);
@@ -166,8 +166,6 @@ function status(value) {
 // In standalone mode the document already owns the game view, so navigation is a no-op.
 function showView() {}
 
-// Do not rely on implicit classic-script globals: Android/WebView/browser caching paths
-// have historically loaded the standalone bootstrap before these bindings were visible.
 window.api = api;
 window.toast = toast;
 window.status = status;
@@ -175,3 +173,4 @@ window.showView = showView;
 window.__devpilotGameState = state;
 window.__devpilotGameApiReady = true;
 window.__devpilotGameCompactRuntime = true;
+window.__devpilotGameStartupRequestTimeoutMs = 5000;
