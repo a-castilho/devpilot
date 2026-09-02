@@ -23,6 +23,7 @@ def test_completed_execution_requires_independent_verifier_task():
 
     assert "[DEVPILOT_DELIVERY_VERIFIER_V1]" in script
     assert "MAX_PHASES = 7" in script
+    assert "TASK_LIMIT = 24" in script
     assert "normalize(latest.status) !== 'completed'" in script
     assert "Gate ${phaseId} · Verificar entrega real" in script
     assert "requires_approval: false" in script
@@ -55,4 +56,6 @@ def test_delivery_gate_does_not_wrap_main_loader():
     script = DELIVERY_GATE_JS.read_text(encoding="utf-8")
 
     assert "window.loadBuildGame = async" not in script
+    assert "const originalLoad = window.loadBuildGame" not in script
     assert "__devpilotDeliveryGateDoesNotWrapLoader = true" in script
+    assert "devpilot:game:rendered" in script

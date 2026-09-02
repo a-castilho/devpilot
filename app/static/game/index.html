@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#07111f">
   <title>DevPilot — Modo Jogo</title>
-  <link rel="stylesheet" href="/assets/styles.css?v=release-1.2.0-game-menu-v55-20260902">
-  <link rel="stylesheet" href="/assets/game-shell.css?v=release-1.2.0-game-menu-v55-20260902">
+  <link rel="stylesheet" href="/assets/styles.css?v=release-1.2.0-game-entry-minimal-v65-20260902">
+  <link rel="stylesheet" href="/assets/game-shell.css?v=release-1.2.0-game-entry-minimal-v65-20260902">
 </head>
 <body data-devpilot-game-standalone="1">
   <header class="devpilot-game-hud">
@@ -15,26 +15,13 @@
       <span>MISSÃO ATIVA</span>
       <strong>Modo Jogo isolado</strong>
     </div>
-    <button id="game-menu-toggle" class="devpilot-game-menu-toggle" type="button"
-      aria-label="Abrir menu do DevPilot" aria-controls="game-menu" aria-expanded="false">☰</button>
-    <nav id="game-menu" class="devpilot-game-menu" aria-label="Menu principal" hidden>
-      <strong>DevPilot</strong>
-      <button type="button" data-game-dashboard-view="overview">Visão geral</button>
-      <button type="button" data-game-dashboard-view="organizations">Organizações</button>
-      <button type="button" data-game-dashboard-view="projects">Projetos</button>
-      <button type="button" data-game-dashboard-view="tasks">Execuções</button>
-      <button type="button" data-game-dashboard-view="providers">Modelos de IA</button>
-      <button type="button" data-game-dashboard-view="reports">Relatórios</button>
-      <button type="button" data-game-dashboard-view="audit">Auditoria</button>
-      <button type="button" class="active" aria-current="page">Modo Jogo</button>
-    </nav>
   </header>
 
   <main class="devpilot-game-stage">
     <section class="view active devpilot-game-view-mounted" id="build-game-view" aria-live="polite">
       <div class="empty" data-game-boot-state="loading" role="status">
         <strong>Preparando Modo Jogo…</strong>
-        <p>Carregando projeto e histórico leve da missão.</p>
+        <p>Carregando somente o núcleo necessário para iniciar.</p>
       </div>
     </section>
   </main>
@@ -49,8 +36,98 @@
     </form>
   </dialog>
 
-  <script src="/assets/game/runtime.js?v=release-1.2.0-game-menu-v55-20260902"></script>
-  <script src="/assets/build-game.js?v=release-1.2.0-game-menu-v55-20260902"></script>
-  <script src="/assets/game/game-bootstrap.js?v=release-1.2.0-game-menu-v55-20260902"></script>
+  <!-- Critical path: communication runtime, game engine and bootstrap. -->
+  <script src="/assets/game/runtime.js?v=release-1.2.0-game-entry-minimal-v65-20260902"></script>
+  <script src="/assets/build-game.js?v=release-1.2.0-game-entry-minimal-v65-20260902"></script>
+  <script data-game-nonblocking-entry-v67>
+  (() => {
+    'use strict';
+
+    if (window.__devpilotGameNonBlockingEntryV67) return;
+    window.__devpilotGameNonBlockingEntryV67 = true;
+
+    const target = document.getElementById('build-game-view');
+    const baseLoad = window.loadBuildGame;
+    if (!target || typeof baseLoad !== 'function') return;
+
+    let hydrationPromise = null;
+    let hydrated = false;
+    let bootstrapCallPending = true;
+
+    const renderEntryShell = (message, failed = false) => {
+      if (hydrated) return;
+      target.innerHTML = `
+        <div class="build-game-shell" data-game-entry-shell-v67="1">
+          <div class="empty" data-game-entry-state="${failed ? 'error' : 'loading'}" role="${failed ? 'alert' : 'status'}">
+            <strong>${failed ? 'Não foi possível carregar os dados do jogo.' : 'Modo Jogo pronto para abrir'}</strong>
+            <p data-game-entry-status-v67>${message}</p>
+            ${failed ? '<button class="primary" type="button" data-game-entry-retry-v67>Tentar novamente</button>' : ''}
+          </div>
+        </div>
+      `;
+      target.querySelector('[data-game-entry-retry-v67]')?.addEventListener('click', () => {
+        void hydrate(true);
+      });
+    };
+
+    const setStatus = message => {
+      const node = target.querySelector('[data-game-entry-status-v67]');
+      if (node) node.textContent = message;
+    };
+
+    const hydrate = async force => {
+      if (hydrationPromise && !force) return hydrationPromise;
+      if (hydrationPromise && force) return hydrationPromise;
+
+      renderEntryShell('Carregando projetos e progresso em segundo plano…');
+
+      hydrationPromise = Promise.resolve()
+        .then(() => baseLoad())
+        .then(() => {
+          if (!target.querySelector('#build-game-project')) {
+            throw new Error('O servidor respondeu, mas a interface do jogo não foi montada.');
+          }
+          hydrated = true;
+          window.__devpilotGameEntryHydratedV67 = true;
+          document.dispatchEvent(new CustomEvent('devpilot:game:rendered', {
+            detail: {source: 'entry-v67', initial: true},
+          }));
+          return true;
+        })
+        .catch(error => {
+          hydrated = false;
+          const message = String(error?.message || 'Falha ao consultar projetos ou progresso.');
+          renderEntryShell(`${message} A tela continua disponível; tente novamente.`, true);
+          return false;
+        })
+        .finally(() => {
+          hydrationPromise = null;
+        });
+
+      return hydrationPromise;
+    };
+
+    renderEntryShell('Abrindo a interface agora; os dados serão carregados sem bloquear a tela…');
+    void hydrate(false);
+
+    window.__devpilotBaseLoadBuildGameV67 = baseLoad;
+    window.loadBuildGame = (...args) => {
+      if (bootstrapCallPending) {
+        bootstrapCallPending = false;
+        if (!hydrated && !hydrationPromise) void hydrate(false);
+        return Promise.resolve({deferred: !hydrated, source: 'entry-v67'});
+      }
+      if (!hydrated) return hydrationPromise || hydrate(false);
+      return baseLoad(...args);
+    };
+
+    window.setTimeout(() => {
+      if (!hydrated && hydrationPromise) {
+        setStatus('O servidor está respondendo devagar, mas a página não está travada. Aguarde mais alguns segundos…');
+      }
+    }, 3500);
+  })();
+  </script>
+  <script src="/assets/game/game-bootstrap.js?v=release-1.2.0-game-entry-minimal-v65-20260902"></script>
 </body>
 </html>

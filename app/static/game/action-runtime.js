@@ -1,6 +1,6 @@
 /* DevPilot standalone game action runtime.
- * Owns the only post-boot wrapper around loadBuildGame and serializes UI actions
- * so low-memory mobile browsers never process overlapping renders.
+ * Installs only after the core game has rendered. It serializes refreshes and
+ * drops overlapping reload requests so low-memory browsers can always paint.
  */
 (() => {
   'use strict';
@@ -14,8 +14,8 @@
   window.__devpilotBaseLoadBuildGame = baseLoad;
 
   let loadInFlight = null;
-  let loadRequested = false;
   let renderSequence = 0;
+  let coalescedLoadCount = 0;
   const actions = new Map();
   const lastTap = new Map();
 
@@ -28,28 +28,26 @@
     }));
   };
 
-  const runLoadCycle = async args => {
-    let result;
-    do {
-      loadRequested = false;
-      result = await baseLoad(...args);
-      emitRendered('load');
-      await yieldToBrowser();
-    } while (loadRequested);
-    return result;
-  };
-
   window.loadBuildGame = async (...args) => {
     if (loadInFlight) {
-      loadRequested = true;
+      coalescedLoadCount += 1;
       return loadInFlight;
     }
 
-    loadInFlight = runLoadCycle(args);
+    // Schedule the actual loader on the next microtask. Assigning loadInFlight
+    // first also protects against a synchronous/re-entrant loadBuildGame call.
+    const currentLoad = Promise.resolve().then(async () => {
+      const result = await baseLoad(...args);
+      emitRendered('load');
+      await yieldToBrowser();
+      return result;
+    });
+
+    loadInFlight = currentLoad;
     try {
-      return await loadInFlight;
+      return await currentLoad;
     } finally {
-      loadInFlight = null;
+      if (loadInFlight === currentLoad) loadInFlight = null;
     }
   };
 
@@ -71,7 +69,7 @@
   };
 
   // Prevent rapid double taps from scheduling duplicate work while still letting
-  // normal clicks bubble to the owning handler.
+  // the first normal click reach the owning handler.
   document.addEventListener('click', event => {
     const button = event.target?.closest?.(
       '[data-play-phase],[data-game-refresh],[data-objective-start],[data-objective-save],[data-objective-new],[data-objective-refresh],#build-game-new'
@@ -97,9 +95,8 @@
   window.__devpilotGameRunAction = runAction;
   window.__devpilotGameLoadInFlight = () => Boolean(loadInFlight);
   window.__devpilotGameRenderSequence = () => renderSequence;
+  window.__devpilotGameCoalescedLoadCount = () => coalescedLoadCount;
+  window.__devpilotGameActionRuntimeVersion = 'v60-core-first';
 
-  // Core render happened before optional enhancements are loaded. Emit one stable
-  // render event after installing the coordinator so enhancement modules can mount
-  // without observing the DOM continuously.
   window.setTimeout(() => emitRendered('action-runtime-ready'), 0);
 })();

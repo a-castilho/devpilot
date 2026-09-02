@@ -61,24 +61,29 @@
     taskModal: ['task-modal.js'],
     gameWeapons: ['game-weapons.js'],
 
-    /* Execuções: renderer operacional, exclusão, recuperação e layout entram ao abrir a tela. */
+    /*
+     * Execuções: tudo que pode alterar cards/ações entra antes da tela ficar
+     * interativa. Assim o clique em Detalhes nunca troca o renderer ou o layout.
+     */
     tasks: [
       'tasks-operational-ui.js',
       'project-delete-ui.js',
       'task-recovery-flow.js',
       'tasks-recovery-layout-v41.js',
+      'task-completion-documentation.js',
     ],
 
     tasksAnalytics: ['task-analytics.js'],
 
+    /* Detalhes é estritamente local: não pode re-renderizar a lista de execuções. */
     tasksDetails: [
       'execution-results-v28.js',
-      'task-completion-documentation.js',
-      'task-failures.js',
-      'task-image-upload.js',
     ],
 
+    /* Recursos legados/auxiliares permanecem disponíveis fora do clique Detalhes. */
     tasksEnhancements: [
+      'task-failures.js',
+      'task-image-upload.js',
       'consolidated-ui.js',
       'analysis-commercial-proposal.js',
       'analysis-failure-actions.js',

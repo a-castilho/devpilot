@@ -1,6 +1,17 @@
 (() => {
   'use strict';
 
+  // /assets/game/index.html is served directly by Starlette StaticFiles and can
+  // never fall through to the authenticated dashboard SPA. If an older backend
+  // serves the dashboard document for any legacy game URL, this pre-auth loader
+  // redirects before app.js, /auth/me, /overview or /tasks can start.
+  const GAME_FALLBACK_PATHS = new Set(['/game', '/game/', '/game/index.html']);
+  if (GAME_FALLBACK_PATHS.has(window.location.pathname)) {
+    const target = `/assets/game/index.html${window.location.search || ''}${window.location.hash || ''}`;
+    window.location.replace(target);
+    return;
+  }
+
   const TOKEN_KEY = 'devpilot-token';
 
   function tokenExpired(token) {

@@ -5,19 +5,36 @@
   window.__devpilotStandaloneGameReady = true;
 
   const CORE_TIMEOUT_MS = 7000;
-  const REQUIRED_TIMEOUT_MS = 3500;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-menu-v55-20260902';
-  const REQUIRED_ASSET = 'game/action-runtime.js';
-  const OPTIONAL_ASSETS = [
+  const ASSET_REVISION = 'release-1.2.0-game-entry-minimal-v65-20260902';
+
+  // Entry must stay tiny. These are the only modules allowed to load
+  // automatically immediately after the first usable paint.
+  const ENTRY_ASSETS = [
+    'game/action-runtime.js',
     'game/task-payload-guard.js',
     'game/objective-controls.js',
-    'game/start-round-mobile.js',
+  ];
+
+  // Verification is important, but it must never compete with initial paint.
+  const BACKGROUND_ASSETS = [
     'game/delivery-gate.js',
+  ];
+
+  // Delivery/deploy UI is irrelevant until the mission is actually complete.
+  const VICTORY_ASSETS = [
     'build-game-url-bonus.js',
     'game/final-delivery-summary.js',
-    'game/pipeline-v2-compat.js',
   ];
+
+  const ALLOWED_ASSETS = new Set([
+    ...ENTRY_ASSETS,
+    ...BACKGROUND_ASSETS,
+    ...VICTORY_ASSETS,
+  ]);
+  const assetLoads = new Map();
+  let victoryAssetsStarted = false;
+  let backgroundAssetsStarted = false;
 
   const backToDashboard = () => window.location.assign('/');
   const openDashboardView = view => {
@@ -28,10 +45,13 @@
   };
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
-  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 45));
+  const mobileRuntime = window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, mobileRuntime ? 90 : 45));
   const hasRenderedShell = target => Boolean(
     target && typeof target.querySelector === 'function' && target.querySelector('.build-game-shell')
   );
+  const hasVictory = () => Boolean(document.querySelector('#build-game-view .build-game-victory'));
+  const hasMission = () => Boolean(String(localStorage.getItem('devpilot-build-game-mission') || '').trim());
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
@@ -63,7 +83,7 @@
     }
   });
 
-  function showBooting(message = 'Carregando projeto e histórico leve da missão…') {
+  function showBooting(message = 'Carregando somente o núcleo necessário para iniciar…') {
     const target = gameTarget();
     if (!target || hasRenderedShell(target)) return;
     target.innerHTML = `
@@ -107,7 +127,13 @@
   }
 
   function loadAsset(name, timeoutMs = OPTIONAL_TIMEOUT_MS) {
-    return new Promise(resolve => {
+    const assetName = String(name || '');
+    if (!ALLOWED_ASSETS.has(assetName)) {
+      return Promise.resolve({name: assetName, ok: false, blocked: true});
+    }
+    if (assetLoads.has(assetName)) return assetLoads.get(assetName);
+
+    const promise = new Promise(resolve => {
       const script = document.createElement('script');
       let settled = false;
       const finish = ok => {
@@ -115,32 +141,90 @@
         settled = true;
         window.clearTimeout(timer);
         if (!ok) script.remove();
-        resolve({name, ok});
+        resolve({name: assetName, ok});
       };
       const timer = window.setTimeout(() => finish(false), timeoutMs);
-      script.src = `/assets/${name}?v=${encodeURIComponent(ASSET_REVISION)}`;
+      script.src = `/assets/${assetName}?v=${encodeURIComponent(ASSET_REVISION)}`;
       script.async = false;
       script.dataset.devpilotGameOptional = '1';
+      script.dataset.devpilotGameAsset = assetName;
+      script.dataset.devpilotGameRevision = ASSET_REVISION;
       script.onload = () => finish(true);
       script.onerror = () => finish(false);
       document.body.appendChild(script);
     });
+
+    assetLoads.set(assetName, promise);
+    return promise;
   }
 
-  async function loadEnhancements() {
-    trace('enhancements:start');
+  async function loadAssetGroup(names, stage) {
+    trace(`${stage}:start`);
     const results = [];
-    for (const name of OPTIONAL_ASSETS) {
+    for (const name of names) {
       await yieldToBrowser();
       const result = await loadAsset(name);
       results.push(result);
       if (!result.ok) console.warn(`[DevPilot Game] Recurso opcional indisponível: ${name}`);
     }
+    trace(`${stage}:end`, {failed: results.filter(item => !item.ok).map(item => item.name)});
+    return results;
+  }
+
+  function scheduleIdle(action, delayMs = 1400) {
+    window.setTimeout(() => {
+      if (typeof window.requestIdleCallback === 'function') {
+        window.requestIdleCallback(() => void action(), {timeout: 2200});
+        return;
+      }
+      void action();
+    }, delayMs);
+  }
+
+  async function loadEntryEnhancements() {
+    const results = await loadAssetGroup(ENTRY_ASSETS, 'entry-enhancements');
     window.__devpilotGameEnhancementResults = results;
+    window.__devpilotGameEntryAssets = [...ENTRY_ASSETS];
     document.dispatchEvent(new CustomEvent('devpilot:game:standalone-ready', {detail:{results}}));
     document.dispatchEvent(new CustomEvent('devpilot:game:enhancements-ready', {detail:{results}}));
-    trace('enhancements:end', {failed: results.filter(item => !item.ok).map(item => item.name)});
+    return results;
   }
+
+  function scheduleBackgroundGate() {
+    if (backgroundAssetsStarted || !hasMission()) return;
+    backgroundAssetsStarted = true;
+    scheduleIdle(async () => {
+      const results = await loadAssetGroup(BACKGROUND_ASSETS, 'background-gate');
+      window.__devpilotGameBackgroundResults = results;
+    }, mobileRuntime ? 2600 : 1600);
+  }
+
+  function scheduleVictoryEnhancements() {
+    if (victoryAssetsStarted || !hasVictory()) return;
+    victoryAssetsStarted = true;
+    scheduleIdle(async () => {
+      const results = await loadAssetGroup(VICTORY_ASSETS, 'victory-enhancements');
+      window.__devpilotGameVictoryResults = results;
+    }, mobileRuntime ? 900 : 450);
+  }
+
+  function startEnhancementsAfterPaint() {
+    const start = () => window.setTimeout(async () => {
+      await loadEntryEnhancements();
+      scheduleBackgroundGate();
+      scheduleVictoryEnhancements();
+    }, 0);
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(start);
+    } else {
+      start();
+    }
+  }
+
+  document.addEventListener('devpilot:game:rendered', () => {
+    scheduleBackgroundGate();
+    scheduleVictoryEnhancements();
+  });
 
   async function boot() {
     trace('boot:start');
@@ -162,17 +246,6 @@
       }
 
       window.__devpilotGameLoadError = null;
-
-      // The action coordinator is a required part of the standalone lifecycle.
-      // Install it before the first render so every render emits the event used by
-      // the objective and first-round controls.
-      trace('action-runtime:start');
-      const coordinator = await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS);
-      if (!coordinator.ok || !window.__devpilotGameActionRuntimeReady) {
-        throw new Error('Coordenador de ações do Modo Jogo indisponível');
-      }
-      trace('action-runtime:end');
-
       trace('game-load:start');
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do Modo Jogo');
 
@@ -185,12 +258,11 @@
 
       trace('game-load:end');
       window.__devpilotGameCoreReady = true;
+      window.__devpilotGameBootProfile = 'minimal-v65';
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // Optional enhancements never block the usable game UI. Each module yields
-      // to the browser between loads.
-      void loadEnhancements();
+      startEnhancementsAfterPaint();
     } catch (error) {
       window.__devpilotGameLoadError = error;
       trace('boot:error', {message: String(error?.message || error || 'erro')});

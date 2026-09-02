@@ -5,10 +5,7 @@
   const GAME_PROJECT_LIMIT = 50;
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const INSTALL_FLAG = '__devpilotGameTaskPayloadGuardInstalled';
-  const PRECHECK_TIMEOUT_MS = 1400;
-  const CREATE_TIMEOUT_MS = 6500;
-  const RECOVERY_TIMEOUT_MS = 2200;
-  const TRACE_LIMIT = 80;
+  const NON_RECOVERABLE_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'archived']);
 
   if (window[INSTALL_FLAG]) return;
 
@@ -22,16 +19,28 @@
     const entry = {stage, at: now(), ...detail};
     if (!Array.isArray(window.__devpilotGameBootTrace)) window.__devpilotGameBootTrace = [];
     window.__devpilotGameBootTrace.push(entry);
-    if (window.__devpilotGameBootTrace.length > TRACE_LIMIT) {
-      window.__devpilotGameBootTrace.splice(0, window.__devpilotGameBootTrace.length - TRACE_LIMIT);
-    }
+    console.debug('[DevPilot Game Trace]', entry);
     return entry;
   };
+
+  const normalizeStatus = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  const normalizeTitle = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
 
   const promptValue = (prompt, label) => {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return String(prompt || '').match(new RegExp(`^${escaped}:\\s*(.+)$`, 'mi'))?.[1]?.trim() || '';
   };
+
+  const semanticMarkers = prompt => (
+    String(prompt || '').match(/\[DEVPILOT_[^\]]+\]/g) || []
+  )
+    .filter(marker => !marker.startsWith('[DEVPILOT_MODE='))
+    .sort()
+    .join('|');
+
+  // The compact endpoint preserves title + PARTIDA/FASE. Title separates a base
+  // phase from verifier gates and corrective subphases without parsing heavy payloads.
+  const creationKind = (prompt, title) => normalizeTitle(title) || semanticMarkers(prompt);
 
   const requestPayload = options => {
     if (!options?.body || typeof options.body !== 'string') return {};
@@ -45,67 +54,42 @@
     const prompt = String(payload?.prompt || '');
     const mission = promptValue(prompt, 'PARTIDA');
     const phase = promptValue(prompt, 'FASE');
+    const kind = creationKind(prompt, payload?.title);
 
-    if (!projectId || !mission || !phase) return null;
+    if (!projectId || !mission || !phase || !kind) return null;
 
     return {
       projectId,
       mission,
       phase,
-      key: `${projectId}::${mission}::${phase}`,
+      kind,
+      key: `${projectId}::${mission}::${phase}::${kind}`,
     };
   };
 
-  async function findGameCreation(options, delayOrConfig = 0) {
+  const matchesIdentity = (task, identity) => {
+    const taskPrompt = String(task?.prompt || '');
+    return promptValue(taskPrompt, 'PARTIDA') === identity.mission
+      && promptValue(taskPrompt, 'FASE') === identity.phase
+      && creationKind(taskPrompt, task?.title) === identity.kind;
+  };
+
+  const canRecoverCreation = task => (
+    Boolean(task) && !NON_RECOVERABLE_STATUSES.has(normalizeStatus(task.status))
+  );
+
+  async function recoverGameCreation(options) {
     const identity = gameCreationIdentity(options);
     if (!identity) return null;
 
-    const config = typeof delayOrConfig === 'number'
-      ? {
-          delayMs: delayOrConfig,
-          timeoutMs: delayOrConfig > 0 ? RECOVERY_TIMEOUT_MS : PRECHECK_TIMEOUT_MS,
-        }
-      : {
-          delayMs: Number(delayOrConfig?.delayMs || 0),
-          timeoutMs: Number(delayOrConfig?.timeoutMs || PRECHECK_TIMEOUT_MS),
-        };
-
-    if (config.delayMs > 0) {
-      await new Promise(resolve => window.setTimeout(resolve, config.delayMs));
-    }
-
+    await new Promise(resolve => window.setTimeout(resolve, 300));
     const tasks = await originalApi(
       `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=${GAME_TASK_LIMIT}`,
-      {method: 'GET', timeoutMs: config.timeoutMs, retry: false},
+      {method: 'GET', timeoutMs: 3500, retry: false}
     );
 
     if (!Array.isArray(tasks)) return null;
-
-    return tasks.find(task => {
-      const taskPrompt = String(task?.prompt || '');
-      return promptValue(taskPrompt, 'PARTIDA') === identity.mission
-        && promptValue(taskPrompt, 'FASE') === identity.phase;
-    }) || null;
-  }
-
-  async function precheckGameCreation(options) {
-    try {
-      return await findGameCreation(options);
-    } catch (precheckError) {
-      trace('game-create:dedupe:precheck-failed', {
-        message: String(precheckError?.message || precheckError || 'erro'),
-      });
-      const error = new Error(
-        'Não foi possível confirmar se esta etapa já existe. Verifique a conexão e tente novamente.'
-      );
-      error.cause = precheckError;
-      error.code = 'GAME_DEDUPE_PRECHECK_FAILED';
-      throw error;
-    }
-  }
-
-  async function recoverGameCreation(options) {
-    return findGameCreation(options, 350);
+    return tasks.find(task => matchesIdentity(task, identity) && canRecoverCreation(task)) || null;
   }
 
   window.__devpilotGameTrace = trace;
@@ -129,36 +113,24 @@
         projectId: identity.projectId,
         mission: identity.mission,
         phase: identity.phase,
+        kind: identity.kind,
       });
       return inFlight;
     }
 
+    // Mobile fast path: POST immediately. The old v62 guard performed a history GET
+    // before every phase creation, turning one tap into a serial GET -> POST chain.
+    // The button lock + this in-flight map already prevent duplicate taps. Only when
+    // the POST itself fails do we perform one compact recovery lookup.
     const creation = (async () => {
       try {
-        trace('game-create:dedupe:check', {
+        trace('game-create:direct:start', {
           projectId: identity.projectId,
           mission: identity.mission,
           phase: identity.phase,
+          kind: identity.kind,
         });
-
-        // Fail closed when the stale-tab check is inconclusive. The backend create
-        // endpoint has no idempotency key, so continuing could enqueue a duplicate.
-        const existing = await precheckGameCreation(options);
-        if (existing) {
-          trace('game-create:dedupe:existing', {
-            id: existing.id,
-            projectId: identity.projectId,
-            mission: identity.mission,
-            phase: identity.phase,
-          });
-          window.toast?.('Esta etapa já está registrada. A tarefa existente será reutilizada.');
-          return existing;
-        }
-
-        const result = await originalApi(path, {
-          ...options,
-          timeoutMs: Number(options?.timeoutMs || CREATE_TIMEOUT_MS),
-        });
+        const result = await originalApi(path, options);
         trace('game-create:end', {id: result?.id || undefined});
         return result;
       } catch (error) {
@@ -253,6 +225,7 @@
   window.__devpilotGameUsesLightweightProjects = true;
   window.__devpilotGameCreateRecovery = true;
   window.__devpilotGameCreateDedup = true;
-  window.__devpilotGameTraceLimit = TRACE_LIMIT;
-  window.__devpilotGamePrecheckTimeoutMs = PRECHECK_TIMEOUT_MS;
+  window.__devpilotGameRetryCreatesNewTask = true;
+  window.__devpilotGameCreationIdentityV62 = true;
+  window.__devpilotGameNoPreflightV63 = true;
 })();
