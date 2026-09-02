@@ -43,12 +43,15 @@ def test_game_shell_exit_restores_overview_without_synthetic_sidebar_click():
     assert "overview.click()" not in source
 
 
-def test_mobile_menu_boot_is_single_mount_and_wait_observer_is_released():
+def test_mobile_menu_boot_is_single_mount_and_event_driven():
     source = MOBILE_MENU_JS.read_text(encoding="utf-8")
-    assert "if (document.querySelector('.mobile-simple-nav')) return true" in source
-    assert "if (waitObserver) return" in source
-    assert "waitObserver?.disconnect()" in source
-    assert "waitObserver = null" in source
+    assert "window.__devpilotMobileAccordionMenuStable" in source
+    assert "let mounted = false" in source
+    assert "if (existingRoot)" in source
+    assert "mounted = true" in source
+    assert "if (syncFrame) return" in source
+    assert "requestAnimationFrame(sync)" in source
+    assert "MutationObserver" not in source
 
 
 def test_first_game_entry_isolated_from_dashboard_feature_loader():
