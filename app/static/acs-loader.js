@@ -1,6 +1,13 @@
 (() => {
   'use strict';
 
+  const GAME_PATHS = new Set(['/game', '/game/']);
+  if (GAME_PATHS.has(window.location.pathname)) {
+    const target = `/game/index.html${window.location.search || ''}${window.location.hash || ''}`;
+    window.location.replace(target);
+    return;
+  }
+
   const TOKEN_KEY = 'devpilot-token';
 
   function tokenExpired(token) {
