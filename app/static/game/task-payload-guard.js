@@ -2,9 +2,13 @@
   'use strict';
 
   const GAME_TASK_LIMIT = 24;
-  const GAME_PROJECT_LIMIT = 50;
+  const GAME_PROJECT_LIMIT = 30;
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const INSTALL_FLAG = '__devpilotGameTaskPayloadGuardInstalled';
+  const PRECHECK_TIMEOUT_MS = 1400;
+  const CREATE_TIMEOUT_MS = 6500;
+  const RECOVERY_TIMEOUT_MS = 2200;
+  const TRACE_LIMIT = 80;
 
   if (window[INSTALL_FLAG]) return;
 
@@ -18,7 +22,9 @@
     const entry = {stage, at: now(), ...detail};
     if (!Array.isArray(window.__devpilotGameBootTrace)) window.__devpilotGameBootTrace = [];
     window.__devpilotGameBootTrace.push(entry);
-    console.debug('[DevPilot Game Trace]', entry);
+    if (window.__devpilotGameBootTrace.length > TRACE_LIMIT) {
+      window.__devpilotGameBootTrace.splice(0, window.__devpilotGameBootTrace.length - TRACE_LIMIT);
+    }
     return entry;
   };
 
@@ -50,7 +56,7 @@
     };
   };
 
-  async function findGameCreation(options, delayMs = 0) {
+  async function findGameCreation(options, {delayMs = 0, timeoutMs = PRECHECK_TIMEOUT_MS} = {}) {
     const identity = gameCreationIdentity(options);
     if (!identity) return null;
 
@@ -60,7 +66,7 @@
 
     const tasks = await originalApi(
       `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=${GAME_TASK_LIMIT}`,
-      {method: 'GET'}
+      {method: 'GET', timeoutMs, retry: false},
     );
 
     if (!Array.isArray(tasks)) return null;
@@ -73,7 +79,7 @@
   }
 
   async function recoverGameCreation(options) {
-    return findGameCreation(options, 350);
+    return findGameCreation(options, {delayMs: 250, timeoutMs: RECOVERY_TIMEOUT_MS});
   }
 
   window.__devpilotGameTrace = trace;
@@ -108,7 +114,18 @@
           mission: identity.mission,
           phase: identity.phase,
         });
-        const existing = await findGameCreation(options);
+
+        // The pre-check protects stale/reloaded tabs, but it must never prevent the
+        // real POST just because a low-memory device or Wi-Fi answered slowly.
+        let existing = null;
+        try {
+          existing = await findGameCreation(options);
+        } catch (precheckError) {
+          trace('game-create:dedupe:precheck-timeout', {
+            message: String(precheckError?.message || precheckError || 'erro'),
+          });
+        }
+
         if (existing) {
           trace('game-create:dedupe:existing', {
             id: existing.id,
@@ -120,7 +137,10 @@
           return existing;
         }
 
-        const result = await originalApi(path, options);
+        const result = await originalApi(path, {
+          ...options,
+          timeoutMs: Number(options?.timeoutMs || CREATE_TIMEOUT_MS),
+        });
         trace('game-create:end', {id: result?.id || undefined});
         return result;
       } catch (error) {
@@ -215,4 +235,6 @@
   window.__devpilotGameUsesLightweightProjects = true;
   window.__devpilotGameCreateRecovery = true;
   window.__devpilotGameCreateDedup = true;
+  window.__devpilotGameTraceLimit = TRACE_LIMIT;
+  window.__devpilotGamePrecheckTimeoutMs = PRECHECK_TIMEOUT_MS;
 })();
