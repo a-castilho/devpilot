@@ -8,6 +8,7 @@
   const STYLE_ID = 'devpilot-game-shell-style';
   const ROOT_ID = 'devpilot-game-shell';
   const VIEW_ID = 'build-game-view';
+  const TOKEN_KEY = 'devpilot-token';
   const METRICS = window.__devpilotGameRuntime = window.__devpilotGameRuntime || {
     enters: 0,
     exits: 0,
@@ -25,6 +26,7 @@
   let feedbackWired = false;
   let baseLoadBuildGame = null;
   let loadInFlight = null;
+  let logoutInProgress = false;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
@@ -113,7 +115,7 @@
   }
 
   function enterGame(view = document.getElementById(VIEW_ID)) {
-    if (!view) return false;
+    if (!view || logoutInProgress) return false;
     const root = ensureRoot();
     const slot = root.querySelector('[data-game-slot]');
     if (!slot) return false;
@@ -147,6 +149,18 @@
     else originalParent.appendChild(view);
   }
 
+  function forceLogoutAfterGameExit() {
+    if (logoutInProgress) return true;
+    logoutInProgress = true;
+    try {
+      localStorage.removeItem('devpilot-token');
+      sessionStorage.clear();
+    } finally {
+      window.location.replace('/');
+    }
+    return true;
+  }
+
   function exitGame() {
     const root = document.getElementById(ROOT_ID);
     const view = activeView || document.getElementById(VIEW_ID);
@@ -158,30 +172,18 @@
     activeView = null;
     if (wasActive) {
       METRICS.exits += 1;
-      events.emit('exited');
+      events.emit('exited', {session_ended: true});
+      return forceLogoutAfterGameExit();
     }
     return true;
   }
 
   function leaveGameToOverview() {
-    exitGame();
-    if (typeof showView === 'function') {
-      showView('overview');
-    } else {
-      document.querySelectorAll('.view').forEach(view => {
-        view.classList.toggle('active', view.id === 'overview-view');
-      });
-      document.querySelectorAll('.sidebar .nav').forEach(nav => {
-        nav.classList.toggle('active', nav.dataset.view === 'overview');
-      });
-    }
-    const title = document.querySelector('#page-title');
-    if (title) title.textContent = 'Visão geral';
-    window.requestAnimationFrame(() => window.scrollTo({top: 0, left: 0, behavior: 'auto'}));
-    return true;
+    return exitGame();
   }
 
   function sync() {
+    if (logoutInProgress) return false;
     const view = document.getElementById(VIEW_ID);
     if (!view) return false;
     if (view.classList.contains('active')) return enterGame(view);
@@ -255,7 +257,7 @@
   }
 
   async function openBaseGameFromNavigation(button) {
-    if (!button || button.dataset.devpilotBaseOpening === '1') return;
+    if (!button || button.dataset.devpilotBaseOpening === '1' || logoutInProgress) return;
     button.dataset.devpilotBaseOpening = '1';
     button.setAttribute('aria-busy', 'true');
     try {
@@ -319,7 +321,7 @@
   });
 
   document.addEventListener('devpilot:feature-ready', event => {
-    if (event.detail?.feature !== 'game') return;
+    if (event.detail?.feature !== 'game' || logoutInProgress) return;
     guardLoaderDuringBundleBoot();
     sync();
   });

@@ -48,6 +48,16 @@ def test_game_shell_exposes_event_bus_and_feedback_bridge():
     assert "window.DevPilotResponses?.info" in js
 
 
+def test_game_exit_always_ends_authenticated_session_and_restarts_at_login():
+    js = SHELL_JS.read_text(encoding="utf-8")
+    assert "localStorage.removeItem('devpilot-token')" in js
+    assert "window.location.replace('/')" in js
+    assert "logoutInProgress" in js
+    leave_block = js[js.index("function leaveGameToOverview()"):js.index("function sync()")]
+    assert "showView('overview')" not in leave_block
+    assert "exitGame()" in leave_block
+
+
 def test_game_shell_is_mobile_first_and_does_not_reuse_dashboard_navigation():
     css = SHELL_CSS.read_text(encoding="utf-8")
     assert "position:fixed;inset:0" in css
