@@ -114,6 +114,13 @@ async function loadDashboard() {
     try {
       state.currentUser = await api('/auth/me');
       applyRoleVisibility();
+
+      const requestedView = String(sessionStorage.getItem('devpilot-dashboard-view') || '').trim();
+      if (requestedView && document.getElementById(`${requestedView}-view`)) {
+        sessionStorage.removeItem('devpilot-dashboard-view');
+        showView(requestedView);
+      }
+
       const [overview, recentTasks] = await Promise.all([
         api('/overview'),
         api('/ui/tasks?limit=20'),
