@@ -72,7 +72,7 @@ def recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
         f"[failure-code:{code}]\n"
         f"[failure-requires-authorization:{str(authorization).lower()}]\n\n"
         "MISSÃO DE RECUPERAÇÃO\n"
-        "Uma execução anterior falhou depois do ciclo normal de autocorreção. Sua função é remover a causa raiz de forma verificável, sem repetir cegamente a mesma tentativa.\n\n"
+        "Uma execução anterior falhou depois do ciclo normal de autocorreção. Sua função é remover a causa raiz de forma verificável e não repetir cegamente a mesma tentativa.\n\n"
         "PROTOCOLO OBRIGATÓRIO\n"
         "1. Leia AGENTS.md, documentação aplicável e o estado real do repositório antes de alterar qualquer coisa.\n"
         "2. Use a falha abaixo como evidência inicial, mas confirme a causa raiz no ambiente atual.\n"
