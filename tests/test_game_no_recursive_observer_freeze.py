@@ -44,9 +44,10 @@ def test_optional_enhancements_only_start_after_core_render_and_yield_between_mo
     assert core < ready < enhancements
     assert "await yieldToBrowser();" in BOOT
     assert BOOT.index("game/action-runtime.js") < BOOT.index("game/delivery-gate.js")
+    assert "requestIdleCallback" in BOOT
 
 
-def test_android_cache_revision_changes_with_v64_entry_fix():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+def test_android_cache_revision_changes_with_v65_entry_fix():
+    revision = "release-1.2.0-game-entry-minimal-v65-20260902"
     assert revision in BOOT
     assert INDEX.count(revision) == 5
