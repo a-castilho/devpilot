@@ -13,7 +13,7 @@ pytestmark = [
 ]
 
 
-def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
+def test_login_game_start_exit_reopen_stays_responsive_without_duplicate_execution(e2e_server):
     playwright_api = pytest.importorskip("playwright.sync_api")
     artifact_dir = Path(os.getenv("DEVPILOT_TEST_RESULTS_DIR", ".artifacts/test-results"))
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -54,7 +54,7 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                     headers: {'Content-Type': 'application/json', Authorization: `Bearer ${token}`},
                     body: JSON.stringify({
                       name: 'Game E2E Project', slug: 'game-e2e-project',
-                      description: 'Validar o ciclo real do modo jogo sem congelamento.',
+                      description: 'Validar o ciclo real do modo jogo sem congelamento e sem tarefa duplicada.',
                       repository_url: 'https://github.com/example/devpilot-game-e2e.git', default_branch: 'main'
                     })
                   });
@@ -67,16 +67,21 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
             page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
             page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
-            page.wait_for_function("() => document.querySelector('#build-game-view')?.children.length > 0", timeout=15_000)
+            page.wait_for_selector("[data-game73-start]", state="visible", timeout=15_000)
 
-            page.locator("#build-game-goal").fill("Executar o smoke E2E real do modo jogo")
-            first_phase = page.locator("#build-game-view [data-play-phase]").first
-            first_phase.wait_for(state="visible", timeout=10_000)
-            first_phase.click()
+            page.locator("[data-game73-project]").select_option(str(project["id"]))
+            page.locator("[data-game73-goal]").fill("Executar o smoke E2E real do modo jogo sem criar ação repetida")
+            page.wait_for_function("() => !document.querySelector('[data-game73-start]')?.disabled", timeout=5_000)
+            page.locator("[data-game73-start]").click()
+
             deadline = time.monotonic() + 8
             while task_posts < 1 and time.monotonic() < deadline:
                 page.wait_for_timeout(100)
-            assert task_posts == 1, f"expected exactly one phase task POST, got {task_posts}"
+            assert task_posts == 1, f"expected exactly one initial game task POST, got {task_posts}"
+
+            # Keep the controller/flow keeper alive long enough to catch a sequential duplicate.
+            page.wait_for_timeout(6_000)
+            assert task_posts == 1, f"duplicate execution POST detected after start: {task_posts}"
 
             initial_heap = page.evaluate("() => performance.memory?.usedJSHeapSize ?? null")
             initial_request_count = len(api_requests)
@@ -86,7 +91,11 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
                 page.wait_for_url(f"{e2e_server}/", timeout=10_000)
                 page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
                 page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
-                page.wait_for_function("() => document.querySelector('#build-game-view')?.children.length > 0", timeout=15_000)
+                page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
+                page.wait_for_function(
+                    "() => document.querySelector('#build-game-view')?.textContent?.trim().length > 0",
+                    timeout=15_000,
+                )
 
             page.wait_for_timeout(500)
             final_heap = page.evaluate("() => performance.memory?.usedJSHeapSize ?? null")
@@ -95,6 +104,7 @@ def test_login_game_phase_exit_reopen_stays_responsive(e2e_server):
             assert not page_errors, f"JavaScript errors during game lifecycle: {page_errors}"
             assert not server_errors, f"HTTP 5xx during game lifecycle: {server_errors}"
             assert extra_requests <= 40, f"possible request storm: {extra_requests} API requests after initial game entry"
+            assert task_posts == 1, f"reopening game duplicated initial execution: {task_posts}"
             if initial_heap is not None and final_heap is not None:
                 growth = final_heap - initial_heap
                 assert growth < 64 * 1024 * 1024, f"possible browser memory leak: heap grew by {growth} bytes"
