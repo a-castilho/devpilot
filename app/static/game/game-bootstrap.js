@@ -6,21 +6,22 @@
 
   const CORE_TIMEOUT_MS = 7000;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-core-20260902-4';
+  const ASSET_REVISION = 'release-1.2.0-game-actions-v54-20260902';
   const OPTIONAL_ASSETS = [
+    'game/action-runtime.js',
+    'game/task-payload-guard.js',
     'game/objective-controls.js',
     'game/start-round-mobile.js',
     'game/delivery-gate.js',
     'build-game-url-bonus.js',
     'game/final-delivery-summary.js',
-    'game/task-payload-guard.js',
     'game/pipeline-v2-compat.js',
   ];
 
   const backToDashboard = () => window.location.assign('/');
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
-  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 40));
+  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 45));
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
@@ -139,8 +140,8 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // Enhancements never block the usable game UI and yield between modules so
-      // low-memory Android browsers keep processing taps, paint and scrolling.
+      // Enhancements never block the usable game UI. The action coordinator is
+      // loaded first and every later module yields to the browser between loads.
       void loadEnhancements();
     } catch (error) {
       window.__devpilotGameLoadError = error;
@@ -150,7 +151,5 @@
     }
   }
 
-  // The document elements already exist because this script is loaded at the end of <body>.
-  // Start immediately so a slow optional asset can never postpone DOMContentLoaded and freeze the game.
   window.queueMicrotask ? window.queueMicrotask(() => void boot()) : window.setTimeout(() => void boot(), 0);
 })();
