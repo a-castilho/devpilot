@@ -36,9 +36,98 @@
     </form>
   </dialog>
 
-  <!-- Critical path: only communication runtime, game engine and bootstrap. -->
+  <!-- Critical path: communication runtime, game engine and bootstrap. -->
   <script src="/assets/game/runtime.js?v=release-1.2.0-game-entry-minimal-v65-20260902"></script>
   <script src="/assets/build-game.js?v=release-1.2.0-game-entry-minimal-v65-20260902"></script>
+  <script data-game-nonblocking-entry-v67>
+  (() => {
+    'use strict';
+
+    if (window.__devpilotGameNonBlockingEntryV67) return;
+    window.__devpilotGameNonBlockingEntryV67 = true;
+
+    const target = document.getElementById('build-game-view');
+    const baseLoad = window.loadBuildGame;
+    if (!target || typeof baseLoad !== 'function') return;
+
+    let hydrationPromise = null;
+    let hydrated = false;
+    let bootstrapCallPending = true;
+
+    const renderEntryShell = (message, failed = false) => {
+      if (hydrated) return;
+      target.innerHTML = `
+        <div class="build-game-shell" data-game-entry-shell-v67="1">
+          <div class="empty" data-game-entry-state="${failed ? 'error' : 'loading'}" role="${failed ? 'alert' : 'status'}">
+            <strong>${failed ? 'Não foi possível carregar os dados do jogo.' : 'Modo Jogo pronto para abrir'}</strong>
+            <p data-game-entry-status-v67>${message}</p>
+            ${failed ? '<button class="primary" type="button" data-game-entry-retry-v67>Tentar novamente</button>' : ''}
+          </div>
+        </div>
+      `;
+      target.querySelector('[data-game-entry-retry-v67]')?.addEventListener('click', () => {
+        void hydrate(true);
+      });
+    };
+
+    const setStatus = message => {
+      const node = target.querySelector('[data-game-entry-status-v67]');
+      if (node) node.textContent = message;
+    };
+
+    const hydrate = async force => {
+      if (hydrationPromise && !force) return hydrationPromise;
+      if (hydrationPromise && force) return hydrationPromise;
+
+      renderEntryShell('Carregando projetos e progresso em segundo plano…');
+
+      hydrationPromise = Promise.resolve()
+        .then(() => baseLoad())
+        .then(() => {
+          if (!target.querySelector('#build-game-project')) {
+            throw new Error('O servidor respondeu, mas a interface do jogo não foi montada.');
+          }
+          hydrated = true;
+          window.__devpilotGameEntryHydratedV67 = true;
+          document.dispatchEvent(new CustomEvent('devpilot:game:rendered', {
+            detail: {source: 'entry-v67', initial: true},
+          }));
+          return true;
+        })
+        .catch(error => {
+          hydrated = false;
+          const message = String(error?.message || 'Falha ao consultar projetos ou progresso.');
+          renderEntryShell(`${message} A tela continua disponível; tente novamente.`, true);
+          return false;
+        })
+        .finally(() => {
+          hydrationPromise = null;
+        });
+
+      return hydrationPromise;
+    };
+
+    renderEntryShell('Abrindo a interface agora; os dados serão carregados sem bloquear a tela…');
+    void hydrate(false);
+
+    window.__devpilotBaseLoadBuildGameV67 = baseLoad;
+    window.loadBuildGame = (...args) => {
+      if (bootstrapCallPending) {
+        bootstrapCallPending = false;
+        if (!hydrated && !hydrationPromise) void hydrate(false);
+        return Promise.resolve({deferred: !hydrated, source: 'entry-v67'});
+      }
+      if (!hydrated) return hydrationPromise || hydrate(false);
+      return baseLoad(...args);
+    };
+
+    window.setTimeout(() => {
+      if (!hydrated && hydrationPromise) {
+        setStatus('O servidor está respondendo devagar, mas a página não está travada. Aguarde mais alguns segundos…');
+      }
+    }, 3500);
+  })();
+  </script>
   <script src="/assets/game/game-bootstrap.js?v=release-1.2.0-game-entry-minimal-v65-20260902"></script>
 </body>
 </html>
