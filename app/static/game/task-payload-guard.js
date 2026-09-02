@@ -5,7 +5,7 @@
   const GAME_PROJECT_LIMIT = 50;
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const INSTALL_FLAG = '__devpilotGameTaskPayloadGuardInstalled';
-  const RETRYABLE_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'archived']);
+  const NON_RECOVERABLE_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'archived']);
 
   if (window[INSTALL_FLAG]) return;
 
@@ -38,9 +38,8 @@
     .sort()
     .join('|');
 
-  // The compact game endpoint keeps title + PARTIDA/FASE but intentionally strips
-  // most prompt internals. Title is therefore the stable semantic discriminator:
-  // base phase, verifier gate and corrective subphase have different titles.
+  // The compact endpoint preserves title + PARTIDA/FASE. Title separates a base
+  // phase from verifier gates and corrective subphases without parsing heavy payloads.
   const creationKind = (prompt, title) => normalizeTitle(title) || semanticMarkers(prompt);
 
   const requestPayload = options => {
@@ -75,36 +74,23 @@
       && creationKind(taskPrompt, task?.title) === identity.kind;
   };
 
-  async function findGameCreations(options, delayMs = 0) {
+  const canRecoverCreation = task => (
+    Boolean(task) && !NON_RECOVERABLE_STATUSES.has(normalizeStatus(task.status))
+  );
+
+  async function recoverGameCreation(options) {
     const identity = gameCreationIdentity(options);
-    if (!identity) return [];
+    if (!identity) return null;
 
-    if (delayMs > 0) {
-      await new Promise(resolve => window.setTimeout(resolve, delayMs));
-    }
-
+    await new Promise(resolve => window.setTimeout(resolve, 300));
     const tasks = await originalApi(
       `/ui/game-tasks?project_id=${encodeURIComponent(identity.projectId)}&limit=${GAME_TASK_LIMIT}`,
-      {method: 'GET'}
+      {method: 'GET', timeoutMs: 3500, retry: false}
     );
 
-    if (!Array.isArray(tasks)) return [];
-    return tasks.filter(task => matchesIdentity(task, identity));
+    if (!Array.isArray(tasks)) return null;
+    return tasks.find(task => matchesIdentity(task, identity) && canRecoverCreation(task)) || null;
   }
-
-  async function findGameCreation(options, delayMs = 0, excludedIds = new Set()) {
-    const tasks = await findGameCreations(options, delayMs);
-    return tasks.find(task => !excludedIds.has(String(task?.id || ''))) || null;
-  }
-
-  async function recoverGameCreation(options, excludedIds = new Set()) {
-    return findGameCreation(options, 350, excludedIds);
-  }
-
-  const canReusePersistedCreation = task => {
-    if (!task) return false;
-    return !RETRYABLE_STATUSES.has(normalizeStatus(task.status));
-  };
 
   window.__devpilotGameTrace = trace;
   trace('guard:ready');
@@ -132,54 +118,28 @@
       return inFlight;
     }
 
+    // Mobile fast path: POST immediately. The old v62 guard performed a history GET
+    // before every phase creation, turning one tap into a serial GET -> POST chain.
+    // The button lock + this in-flight map already prevent duplicate taps. Only when
+    // the POST itself fails do we perform one compact recovery lookup.
     const creation = (async () => {
-      let previousIds = new Set();
       try {
-        trace('game-create:dedupe:check', {
+        trace('game-create:direct:start', {
           projectId: identity.projectId,
           mission: identity.mission,
           phase: identity.phase,
           kind: identity.kind,
         });
-
-        const previous = await findGameCreations(options);
-        previousIds = new Set(previous.map(task => String(task?.id || '')).filter(Boolean));
-        const latest = previous[0] || null;
-
-        if (canReusePersistedCreation(latest)) {
-          trace('game-create:dedupe:existing', {
-            id: latest.id,
-            status: normalizeStatus(latest.status),
-            projectId: identity.projectId,
-            mission: identity.mission,
-            phase: identity.phase,
-            kind: identity.kind,
-          });
-          window.toast?.('Esta etapa já está registrada. A tarefa existente será reutilizada.');
-          return latest;
-        }
-
-        if (latest) {
-          trace('game-create:retry:new-attempt', {
-            previousId: latest.id,
-            previousStatus: normalizeStatus(latest.status),
-            projectId: identity.projectId,
-            mission: identity.mission,
-            phase: identity.phase,
-            kind: identity.kind,
-          });
-        }
-
         const result = await originalApi(path, options);
         trace('game-create:end', {id: result?.id || undefined});
         return result;
       } catch (error) {
         try {
           trace('game-create:recover:start');
-          const recovered = await recoverGameCreation(options, previousIds);
+          const recovered = await recoverGameCreation(options);
           if (recovered) {
             trace('game-create:recover:end', {id: recovered.id});
-            window.toast?.('Fase registrada. A conexão oscilou, mas a nova execução foi confirmada.');
+            window.toast?.('Fase registrada. A conexão oscilou, mas a execução foi confirmada.');
             return recovered;
           }
           trace('game-create:recover:miss');
@@ -267,4 +227,5 @@
   window.__devpilotGameCreateDedup = true;
   window.__devpilotGameRetryCreatesNewTask = true;
   window.__devpilotGameCreationIdentityV62 = true;
+  window.__devpilotGameNoPreflightV63 = true;
 })();

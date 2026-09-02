@@ -6,7 +6,7 @@
 
   const CORE_TIMEOUT_MS = 7000;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-core-first-v60-20260902-retry-v62';
+  const ASSET_REVISION = 'release-1.2.0-game-core-first-v60-20260902-retry-v62-mobile-fast-v63';
   const OPTIONAL_ASSETS = [
     'game/action-runtime.js',
     'game/task-payload-guard.js',
@@ -27,7 +27,8 @@
   };
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
-  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 45));
+  const mobileRuntime = window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, mobileRuntime ? 90 : 45));
   const hasRenderedShell = target => Boolean(
     target && typeof target.querySelector === 'function' && target.querySelector('.build-game-shell')
   );
@@ -120,6 +121,7 @@
       script.src = `/assets/${name}?v=${encodeURIComponent(ASSET_REVISION)}`;
       script.async = false;
       script.dataset.devpilotGameOptional = '1';
+      script.dataset.devpilotGameRevision = ASSET_REVISION;
       script.onload = () => finish(true);
       script.onerror = () => finish(false);
       document.body.appendChild(script);
@@ -130,7 +132,7 @@
     trace('enhancements:start');
     const results = [];
     for (const name of OPTIONAL_ASSETS) {
-      // Give the browser a paint/input opportunity before every enhancement.
+      // Mobile gets a longer main-thread break before parsing each enhancement.
       await yieldToBrowser();
       const result = await loadAsset(name);
       results.push(result);
@@ -189,8 +191,7 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // The UI is already usable. Enhancements, including action-runtime, start
-      // only after a browser paint and never participate in the critical path.
+      // The UI is already usable. Enhancements start after paint and always yield.
       startEnhancementsAfterPaint();
     } catch (error) {
       window.__devpilotGameLoadError = error;
