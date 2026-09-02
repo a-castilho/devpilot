@@ -38,6 +38,6 @@ def test_action_runtime_never_replays_loader_in_a_while_loop():
 
 
 def test_cache_revision_forces_browsers_off_regressed_assets():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+    revision = "release-1.2.0-game-entry-minimal-v65-20260902"
     assert revision in INDEX
     assert revision in BOOT

@@ -31,7 +31,7 @@ def test_failed_history_is_not_accepted_as_successful_recovery():
 
 
 def test_android_gets_one_consistent_current_revision_for_every_critical_asset():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+    revision = "release-1.2.0-game-entry-minimal-v65-20260902"
     assert revision in BOOT
     assert INDEX.count(revision) == 5
     assert "/assets/game/runtime.js" in INDEX
@@ -43,6 +43,7 @@ def test_mobile_yields_longer_between_optional_modules():
     assert "const mobileRuntime" in BOOT
     assert "mobileRuntime ? 90 : 45" in BOOT
     assert "await yieldToBrowser();" in BOOT
+    assert "requestIdleCallback" in BOOT
 
 
 def test_observer_regression_is_removed_from_standalone_controls():

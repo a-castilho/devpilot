@@ -9,7 +9,7 @@ PROJECTS = (ROOT / "app/static/mobile-project-card-compact.js").read_text(encodi
 
 
 def test_standalone_game_assets_are_cache_busted_and_never_start_blank():
-    revision = "release-1.2.0-game-entry-stable-v64-20260902"
+    revision = "release-1.2.0-game-entry-minimal-v65-20260902"
     assert revision in GAME_INDEX
     assert 'data-game-boot-state="loading"' in GAME_INDEX
     assert "/assets/game/runtime.js" in GAME_INDEX
