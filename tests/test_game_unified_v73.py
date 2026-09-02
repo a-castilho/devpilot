@@ -15,7 +15,8 @@ def text(path: Path) -> str:
 
 def test_entry_has_one_controller_and_no_v67_bridge():
     source = text(INDEX)
-    assert "game-unified-v73-20260902" in source
+    assert "game-flow-v74-20260902" in source
+    assert 'data-devpilot-game-version="v74"' in source
     assert "data-game-nonblocking-entry-v67" not in source
     assert "/assets/game/standalone.css" in source
     assert "/assets/styles.css" not in source
@@ -28,6 +29,7 @@ def test_boot_does_not_load_action_runtime_wrapper():
     assert "objective-controls.js" in entry
     assert "delivery-gate.js" in entry
     assert "action-runtime.js" not in entry
+    assert "game-flow-v74-20260902" in source
     assert "unified-v73" in source
 
 
@@ -51,11 +53,20 @@ def test_phase_only_passes_after_independent_verifier():
 def test_simple_ui_calls_controller_not_hidden_buttons():
     source = text(UI)
     assert "__devpilotGameUiV73Ready" in source
-    assert "await engine.startRound({projectId, goal})" in source
+    assert "await engine.startRound({projectId, goal: targetGoal})" in source
     assert "Jogar agora" in source
-    assert "Rodada automática" in source
+    assert "Trabalhando automaticamente" in source
+    assert "Depois do clique você fica nesta tela" in source
+    assert "data-game74-example" in source
+    assert "DRAFT_GOAL_KEY" in source
     assert "phaseButton.click" not in source
     assert "data-play-phase" not in source
+
+
+def test_running_round_does_not_offer_accidental_reset():
+    source = text(UI)
+    assert "state.done ? '<button class=\"game74-secondary\" type=\"button\" data-game73-new>＋ Nova rodada</button>'" in source
+    assert "Corrigir e continuar" in source
 
 
 def test_guard_is_bounded_and_only_wraps_task_creation():
