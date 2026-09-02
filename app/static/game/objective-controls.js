@@ -1,4 +1,4 @@
-/* DevPilot game v73 — simple UI bound directly to the real game controller. */
+/* DevPilot game v74 — fluxo simples, contínuo e em uma única tela. */
 (() => {
   'use strict';
 
@@ -6,7 +6,9 @@
   window.__devpilotGameUiV73Ready = true;
 
   const ROOT_ID = 'devpilot-game-ui-v73';
-  const STYLE_ID = 'devpilot-game-ui-v73-style';
+  const STYLE_ID = 'devpilot-game-ui-v74-style';
+  const DRAFT_PROJECT_KEY = 'devpilot-game-v74-project';
+  const DRAFT_GOAL_KEY = 'devpilot-game-v74-goal';
   let scheduled = false;
 
   const esc = value => String(value ?? '')
@@ -35,39 +37,45 @@
       .devpilot-game-v73-shell>.build-game-victory{display:none!important}
       .devpilot-game-v73-shell.show-details>.build-game-map,
       .devpilot-game-v73-shell.show-details>article.panel{display:grid!important}
-      .game73{display:grid;gap:18px;padding:clamp(20px,4vw,38px);border:1px solid rgba(75,231,215,.3);border-radius:26px;background:radial-gradient(circle at 95% 0,rgba(66,200,255,.15),transparent 34%),linear-gradient(145deg,#0d2234,#071523);box-shadow:0 24px 70px #0005}
-      .game73-kicker{color:#55f3e4;font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
-      .game73 h1{margin:3px 0;color:#fff;font-size:clamp(1.8rem,6vw,3rem);line-height:1.05;letter-spacing:-.035em}
-      .game73 p{margin:0;color:#9eb0c2}.game73-goal{color:#fff!important;font-size:1.08rem;font-weight:850;overflow-wrap:anywhere}
-      .game73-fields{display:grid;grid-template-columns:minmax(210px,.75fr) minmax(300px,1.4fr);gap:14px}.game73 label{display:grid;gap:8px;color:#d5e0eb;font-size:.8rem;font-weight:850}
-      .game73 select,.game73 textarea{width:100%;border:1px solid #294158;border-radius:15px;background:#061421;color:#f4f9ff;padding:14px;outline:none}.game73 select{min-height:56px}.game73 textarea{min-height:110px;resize:vertical}.game73 select:focus,.game73 textarea:focus{border-color:#55f3e4;box-shadow:0 0 0 4px #55f3e41a}
-      .game73-primary{width:100%;min-height:64px;border:0;border-radius:17px;background:linear-gradient(135deg,#55f3e4,#45bcf5);color:#03131c;font-size:1.05rem;font-weight:950;cursor:pointer;touch-action:manipulation}.game73-primary:disabled{opacity:.65;cursor:wait}
-      .game73-status{padding:13px 15px;border-radius:14px;background:#0c2938;color:#a9bdce}.game73-error{border:1px solid #ff6577;color:#ffd9df;background:#3a1420}
-      .game73-progress-head{display:flex;justify-content:space-between;gap:12px}.game73-progress-head strong{color:#55f3e4}.game73-progress{height:12px;overflow:hidden;border-radius:999px;background:#ffffff12}.game73-progress i{display:block;height:100%;background:linear-gradient(90deg,#55f3e4,#45bcf5)}
-      .game73-phase{display:grid;grid-template-columns:48px 1fr;gap:12px;align-items:center;padding:15px;border:1px solid #254258;border-radius:16px;background:#081c2b}.game73-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#12374a;font-size:1.3rem}.game73-phase small{color:#55f3e4;font-weight:900}.game73-phase strong{display:block;color:#fff}.game73-phase p{font-size:.8rem}
-      .game73-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px}.game73-secondary{min-height:48px;padding:10px 14px;border:1px solid #2b455e;border-radius:13px;background:#0b1d2e;color:#dce9f6;font-weight:850;cursor:pointer}
-      @media(max-width:720px){.game73{padding:20px 15px;border-radius:20px}.game73-fields{grid-template-columns:1fr}.game73-actions{grid-template-columns:1fr 1fr}.game73-actions .game73-primary{grid-column:1/-1}.game73-secondary{width:100%}}
+      .game74{display:grid;gap:20px;padding:clamp(20px,4vw,38px);border:1px solid rgba(75,231,215,.3);border-radius:26px;background:radial-gradient(circle at 95% 0,rgba(66,200,255,.15),transparent 34%),linear-gradient(145deg,#0d2234,#071523);box-shadow:0 24px 70px #0005}
+      .game74-kicker{color:#55f3e4;font-size:.72rem;font-weight:900;letter-spacing:.12em;text-transform:uppercase}
+      .game74 h1{margin:3px 0;color:#fff;font-size:clamp(1.85rem,6vw,3rem);line-height:1.05;letter-spacing:-.035em}
+      .game74 p{margin:0;color:#9eb0c2}.game74-goal{color:#fff!important;font-size:1.08rem;font-weight:850;overflow-wrap:anywhere}
+      .game74-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:12px;border:1px solid #223d55;border-radius:16px;background:#06131f99}.game74-step{display:grid;place-items:center;gap:6px;color:#71879b;font-size:.72rem;font-weight:850}.game74-step b{display:grid;place-items:center;width:34px;height:34px;border-radius:999px;background:#132638;color:#b2c1cf}.game74-step.active{color:#55f3e4}.game74-step.active b{background:linear-gradient(135deg,#55f3e4,#45bcf5);color:#03131c}.game74-step.done{color:#95e8d7}.game74-step.done b{background:#143b3a;color:#55f3e4}
+      .game74-fields{display:grid;grid-template-columns:minmax(210px,.75fr) minmax(300px,1.4fr);gap:14px}.game74 label{display:grid;gap:8px;color:#d5e0eb;font-size:.82rem;font-weight:850}
+      .game74 select,.game74 textarea{width:100%;border:1px solid #294158;border-radius:15px;background:#061421;color:#f4f9ff;padding:14px;outline:none}.game74 select{min-height:56px}.game74 textarea{min-height:124px;resize:vertical}.game74 select:focus,.game74 textarea:focus{border-color:#55f3e4;box-shadow:0 0 0 4px #55f3e41a}
+      .game74-suggestions{display:flex;flex-wrap:wrap;gap:8px}.game74-chip{min-height:38px;padding:8px 12px;border:1px solid #31516b;border-radius:999px;background:#0a1b2a;color:#cde0ef;font-weight:800;cursor:pointer}.game74-chip:hover,.game74-chip:focus{border-color:#55f3e4;color:#fff}
+      .game74-primary{width:100%;min-height:64px;border:0;border-radius:17px;background:linear-gradient(135deg,#55f3e4,#45bcf5);color:#03131c;font-size:1.08rem;font-weight:950;cursor:pointer;touch-action:manipulation;box-shadow:0 16px 34px #25cfd229}.game74-primary:disabled{opacity:.52;cursor:not-allowed;box-shadow:none}
+      .game74-help{text-align:center;color:#7f94a7!important;font-size:.82rem}.game74-status{padding:13px 15px;border-radius:14px;background:#0c2938;color:#a9bdce}.game74-status strong{color:#fff}.game74-error{border:1px solid #ff6577;color:#ffd9df;background:#3a1420}
+      .game74-progress-head{display:flex;justify-content:space-between;gap:12px}.game74-progress-head strong{color:#55f3e4}.game74-progress{height:12px;overflow:hidden;border-radius:999px;background:#ffffff12}.game74-progress i{display:block;height:100%;background:linear-gradient(90deg,#55f3e4,#45bcf5);transition:width .35s ease}
+      .game74-phase{display:grid;grid-template-columns:48px 1fr;gap:12px;align-items:center;padding:15px;border:1px solid #254258;border-radius:16px;background:#081c2b}.game74-icon{display:grid;place-items:center;width:46px;height:46px;border-radius:14px;background:#12374a;font-size:1.3rem}.game74-phase small{color:#55f3e4;font-weight:900}.game74-phase strong{display:block;color:#fff}.game74-phase p{font-size:.8rem}
+      .game74-live{display:flex;align-items:center;gap:9px;color:#b8c9d8}.game74-live i{width:9px;height:9px;border-radius:999px;background:#55f3e4;box-shadow:0 0 0 5px #55f3e414;animation:game74pulse 1.5s infinite}@keyframes game74pulse{50%{opacity:.45;transform:scale(.8)}}
+      .game74-actions{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px}.game74-secondary{min-height:48px;padding:10px 14px;border:1px solid #2b455e;border-radius:13px;background:#0b1d2e;color:#dce9f6;font-weight:850;cursor:pointer}.game74-secondary:disabled{opacity:.5;cursor:not-allowed}
+      @media(max-width:720px){.game74{padding:20px 15px;border-radius:20px;gap:18px}.game74-fields{grid-template-columns:1fr}.game74-actions{grid-template-columns:1fr 1fr}.game74-actions .game74-primary{grid-column:1/-1}.game74-secondary{width:100%}.game74 h1{font-size:2rem}}
     `;
     document.head.appendChild(style);
   };
 
   const statusText = state => {
-    if (state.done) return 'Rodada concluída';
-    if (state.failed) return state.verifier ? 'A verificação da etapa falhou' : 'A execução da etapa falhou';
+    if (state.done) return 'Rodada concluída e pronta para entrega.';
+    if (state.failed) return state.verifier ? 'A verificação da etapa falhou.' : 'A execução da etapa falhou.';
     if (state.awaitingGate) return 'Execução concluída. Validando a entrega da etapa…';
-    if (state.verifier && state.active) return 'Gate independente validando a entrega…';
+    if (state.verifier && state.active) return 'Validando automaticamente a entrega…';
     if (state.active) {
       const map = {
-        queued: 'Na fila de execução',
-        running: 'Executando automaticamente',
-        review: 'Em revisão',
-        awaiting_approval: 'Aguardando aprovação',
-        blocked: 'Execução bloqueada'
+        queued: 'Na fila de execução…',
+        running: 'Executando automaticamente…',
+        review: 'Revisando automaticamente…',
+        awaiting_approval: 'Aguardando aprovação…',
+        blocked: 'Execução bloqueada.'
       };
-      return map[state.taskStatus] || 'Executando automaticamente';
+      return map[state.taskStatus] || 'Executando automaticamente…';
     }
     return 'Preparando a próxima etapa…';
   };
+
+  const draftProject = state => localStorage.getItem(DRAFT_PROJECT_KEY) || state.projectId || '';
+  const draftGoal = state => localStorage.getItem(DRAFT_GOAL_KEY) || state.goal || '';
 
   const mount = () => {
     const engine = controller();
@@ -85,76 +93,120 @@
     const state = engine.snapshot();
 
     if (!state.hasTasks) {
-      const options = projectRows().map(project => `<option value="${esc(project.id)}" ${String(project.id) === String(state.projectId) ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
+      const selectedDraftProject = draftProject(state);
+      const selectedDraftGoal = draftGoal(state);
+      const options = projectRows().map(project => `<option value="${esc(project.id)}" ${String(project.id) === String(selectedDraftProject) ? 'selected' : ''}>${esc(project.name)}</option>`).join('');
       host.innerHTML = `
-        <section class="game73">
-          <div><span class="game73-kicker">NOVA RODADA</span><h1>O que vamos entregar?</h1><p>Escolha o projeto, descreva o resultado e toque uma única vez em Jogar agora.</p></div>
-          <div class="game73-fields">
-            <label>Projeto<select data-game73-project>${options}</select></label>
-            <label>Entrega da rodada<textarea data-game73-goal maxlength="500" placeholder="Ex.: criar login com usuário e perfil">${esc(state.goal)}</textarea></label>
+        <section class="game74">
+          <div><span class="game74-kicker">NOVA RODADA</span><h1>O que vamos entregar?</h1><p>Você só precisa escolher o projeto, dizer o resultado e tocar em Jogar agora.</p></div>
+          <div class="game74-steps" aria-label="Fluxo da rodada"><span class="game74-step active"><b>1</b>Projeto</span><span class="game74-step"><b>2</b>Entrega</span><span class="game74-step"><b>3</b>Jogar</span></div>
+          <div class="game74-fields">
+            <label>1. Escolha o projeto<select data-game73-project>${options}</select></label>
+            <label>2. Descreva sua entrega<textarea data-game73-goal maxlength="500" placeholder="Ex.: criar login e senha com perfil de usuário">${esc(selectedDraftGoal)}</textarea></label>
           </div>
-          <button class="game73-primary" type="button" data-game73-start>🚀 Jogar agora</button>
-          <div class="game73-status" data-game73-status>Depois do clique, Planejamento, Implementação, Execução, Testes, Documentação, Git e Entrega seguem pela esteira real.</div>
+          <div class="game74-suggestions" aria-label="Exemplos de entrega">
+            <button class="game74-chip" type="button" data-game74-example="Criar tela de login e senha com perfil de usuário">Tela de login</button>
+            <button class="game74-chip" type="button" data-game74-example="Criar cadastro completo de usuário com validações">Cadastro</button>
+            <button class="game74-chip" type="button" data-game74-example="Criar dashboard responsivo com as informações principais do projeto">Dashboard</button>
+          </div>
+          <button class="game74-primary" type="button" data-game73-start>🚀 Jogar agora</button>
+          <p class="game74-help">Depois do clique você fica nesta tela. O DevPilot planeja, implementa, testa e entrega automaticamente.</p>
+          <div class="game74-status" data-game73-status><strong>Pronto para começar.</strong> Preencha a entrega da rodada.</div>
         </section>`;
 
+      const project = host.querySelector('[data-game73-project]');
+      const goal = host.querySelector('[data-game73-goal]');
       const button = host.querySelector('[data-game73-start]');
       const status = host.querySelector('[data-game73-status]');
+
+      const syncStartState = () => {
+        const valid = Boolean(project?.value && String(goal?.value || '').trim().length >= 3);
+        button.disabled = !valid;
+        status.classList.remove('game74-error');
+        status.innerHTML = valid
+          ? '<strong>Tudo pronto.</strong> Toque em Jogar agora para iniciar a rodada.'
+          : '<strong>Falta só a entrega.</strong> Escreva em poucas palavras o que quer receber.';
+      };
+
+      project?.addEventListener('change', () => {
+        localStorage.setItem(DRAFT_PROJECT_KEY, project.value || '');
+        syncStartState();
+      });
+      goal?.addEventListener('input', () => {
+        localStorage.setItem(DRAFT_GOAL_KEY, goal.value || '');
+        syncStartState();
+      });
+      host.querySelectorAll('[data-game74-example]').forEach(chip => chip.addEventListener('click', () => {
+        if (!goal) return;
+        goal.value = chip.dataset.game74Example || '';
+        localStorage.setItem(DRAFT_GOAL_KEY, goal.value);
+        goal.focus();
+        syncStartState();
+      }));
+
       button.onclick = async () => {
-        const projectId = host.querySelector('[data-game73-project]')?.value || '';
-        const goal = host.querySelector('[data-game73-goal]')?.value || '';
+        const projectId = project?.value || '';
+        const targetGoal = goal?.value || '';
         button.disabled = true;
         button.textContent = '🚀 Iniciando rodada…';
-        status.classList.remove('game73-error');
-        status.textContent = 'Criando Planejamento na esteira real…';
+        status.classList.remove('game74-error');
+        status.innerHTML = '<strong>Rodada iniciada.</strong> Criando Planejamento na esteira real…';
         try {
-          await engine.startRound({projectId, goal});
+          await engine.startRound({projectId, goal: targetGoal});
+          localStorage.removeItem(DRAFT_GOAL_KEY);
+          localStorage.setItem(DRAFT_PROJECT_KEY, projectId);
         } catch (error) {
           button.disabled = false;
           button.textContent = '🚀 Jogar agora';
-          status.classList.add('game73-error');
+          status.classList.add('game74-error');
           status.textContent = error?.message || 'Falha ao iniciar a rodada';
         }
       };
+      syncStartState();
       return true;
     }
 
+    const step1Class = 'game74-step done';
+    const step2Class = state.done ? 'game74-step done' : 'game74-step active';
+    const step3Class = state.done ? 'game74-step active' : 'game74-step';
     host.innerHTML = `
-      <section class="game73">
-        <div><span class="game73-kicker">${state.done ? 'MISSÃO CUMPRIDA' : 'RODADA AUTOMÁTICA'}</span><h1>${state.done ? 'Entrega concluída' : 'Construindo sua entrega'}</h1><p class="game73-goal">${esc(state.goal)}</p></div>
-        <div class="game73-progress-head"><span>${esc(state.projectName)}</span><strong>${state.completed}/${state.total} · ${state.percent}%</strong></div>
-        <div class="game73-progress"><i style="width:${state.percent}%"></i></div>
-        ${state.done ? `<div class="game73-status">🏆 A entrega passou pelas sete etapas e pelos gates independentes.</div>` : `<section class="game73-phase"><div class="game73-icon">${esc(state.currentPhaseIcon)}</div><div><small>ETAPA ${state.currentPhaseId}/${state.total}</small><strong>${esc(state.currentPhaseName)}</strong><p>${esc(state.currentPhaseSummary)}</p></div></section><div class="game73-status ${state.failed ? 'game73-error' : ''}">${esc(statusText(state))}</div>`}
-        <div class="game73-actions">
-          ${state.failed ? '<button class="game73-primary" type="button" data-game73-retry>↻ Tentar novamente</button>' : `<button class="game73-primary" type="button" disabled>${state.done ? '🏆 Rodada concluída' : '⚙ Rodada automática'}</button>`}
-          <button class="game73-secondary" type="button" data-game73-refresh>↻ Atualizar</button>
-          <button class="game73-secondary" type="button" data-game73-details>Detalhes</button>
-          <button class="game73-secondary" type="button" data-game73-new>＋ Nova rodada</button>
+      <section class="game74">
+        <div><span class="game74-kicker">${state.done ? 'MISSÃO CUMPRIDA' : 'RODADA EM ANDAMENTO'}</span><h1>${state.done ? 'Entrega concluída' : 'Estamos construindo sua entrega'}</h1><p class="game74-goal">${esc(state.goal)}</p></div>
+        <div class="game74-steps" aria-label="Fluxo da rodada"><span class="${step1Class}"><b>✓</b>Projeto</span><span class="${step2Class}"><b>${state.done ? '✓' : '2'}</b>Executar</span><span class="${step3Class}"><b>${state.done ? '3' : '3'}</b>Entregar</span></div>
+        <div class="game74-progress-head"><span>${esc(state.projectName)}</span><strong>${state.completed}/${state.total} · ${state.percent}%</strong></div>
+        <div class="game74-progress"><i style="width:${state.percent}%"></i></div>
+        ${state.done ? `<div class="game74-status">🏆 <strong>Pronto.</strong> A entrega passou pelas sete etapas e pelos gates independentes.</div>` : `<section class="game74-phase"><div class="game74-icon">${esc(state.currentPhaseIcon)}</div><div><small>ETAPA ${state.currentPhaseId}/${state.total}</small><strong>${esc(state.currentPhaseName)}</strong><p>${esc(state.currentPhaseSummary)}</p></div></section><div class="game74-live"><i></i><span>${esc(statusText(state))}</span></div><div class="game74-status ${state.failed ? 'game74-error' : ''}">${esc(statusText(state))}</div>`}
+        <div class="game74-actions">
+          ${state.failed ? '<button class="game74-primary" type="button" data-game73-retry>↻ Corrigir e continuar</button>' : `<button class="game74-primary" type="button" disabled>${state.done ? '🏆 Entrega pronta' : '⚙ Trabalhando automaticamente'}</button>`}
+          <button class="game74-secondary" type="button" data-game73-details>Ver detalhes</button>
+          ${state.done ? '<button class="game74-secondary" type="button" data-game73-new>＋ Nova rodada</button>' : '<button class="game74-secondary" type="button" data-game73-refresh>↻ Atualizar agora</button>'}
         </div>
       </section>`;
 
     host.querySelector('[data-game73-refresh]')?.addEventListener('click', async event => {
       const button = event.currentTarget;
       button.disabled = true;
+      button.textContent = 'Atualizando…';
       try { await engine.refresh(); }
       catch (error) { console.error('[DevPilot Game Refresh]', error); }
-      finally { button.disabled = false; }
+      finally { button.disabled = false; button.textContent = '↻ Atualizar agora'; }
     });
 
     host.querySelector('[data-game73-retry]')?.addEventListener('click', async event => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = 'Tentando novamente…';
+      button.textContent = 'Corrigindo…';
       try { await engine.retry(); }
       catch (error) {
         button.disabled = false;
-        button.textContent = error?.message || '↻ Tentar novamente';
+        button.textContent = error?.message || '↻ Corrigir e continuar';
       }
     });
 
     host.querySelector('[data-game73-new]')?.addEventListener('click', () => void engine.reset());
     host.querySelector('[data-game73-details]')?.addEventListener('click', event => {
       const showing = shell.classList.toggle('show-details');
-      event.currentTarget.textContent = showing ? 'Ocultar detalhes' : 'Detalhes';
+      event.currentTarget.textContent = showing ? 'Ocultar detalhes' : 'Ver detalhes';
     });
     return true;
   };
