@@ -1,0 +1,57 @@
+name: Game v81 hosted validation
+
+on:
+  push:
+    branches:
+      - fix/game-development-tool-v81
+
+permissions:
+  contents: read
+
+concurrency:
+  group: game-v81-hosted-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      DEVPILOT_RUN_BROWSER_E2E: "1"
+      DEVPILOT_RUN_CRITICAL_MATRIX: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Resolve policy base
+        run: |
+          BASE="$(git merge-base origin/main HEAD)"
+          echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -e '.[test,e2e]'
+
+      - name: Install Chromium
+        run: python3 -m playwright install --with-deps chromium
+
+      - name: Run same complete validation as official quality gate
+        run: |
+          export PYTHON_BIN="$(command -v python3)"
+          bash scripts/test-all.sh
+
+      - name: Publish result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: game-v81-hosted-${{ github.run_id }}
+          path: .artifacts/test-results
+          if-no-files-found: warn
+          retention-days: 7
