@@ -12,35 +12,33 @@ def test_delivery_gate_never_wraps_main_game_loader():
     assert "TASK_LIMIT = 24" in GATE
     assert "window.loadBuildGame = async" not in GATE
     assert "__devpilotDeliveryGateDoesNotWrapLoader = true" in GATE
-    assert "setTimeout(scheduleGate" in GATE
+    assert "devpilot:game:rendered" in GATE
 
 
-def test_task_creation_precheck_is_bounded_and_fails_closed():
-    assert "PRECHECK_TIMEOUT_MS = 1400" in GUARD
-    assert "CREATE_TIMEOUT_MS = 6500" in GUARD
-    assert "RECOVERY_TIMEOUT_MS = 2200" in GUARD
-    assert "game-create:dedupe:precheck-failed" in GUARD
-    assert "GAME_DEDUPE_PRECHECK_FAILED" in GUARD
-    assert "continuing could enqueue a duplicate" in GUARD
-    assert "return null;" not in GUARD[GUARD.index("async function precheckGameCreation"):GUARD.index("async function recoverGameCreation")]
+def test_task_creation_is_post_first_and_recovery_is_bounded():
+    post = GUARD.index("const result = await originalApi(path, options);")
+    recover = GUARD.index("const recovered = await recover(identity);")
+    assert post < recover
+    assert "timeoutMs:3500" in GUARD
+    assert "retry:false" in GUARD
+    assert "findGameCreations" not in GUARD
 
 
 def test_game_trace_memory_is_bounded():
-    assert "TRACE_LIMIT = 80" in GUARD
-    assert "window.__devpilotGameBootTrace.splice" in GUARD
-    assert "console.debug('[DevPilot Game Trace]'" not in GUARD
+    assert "rows.length > 48" in GUARD
+    assert "rows.splice(0, rows.length - 48)" in GUARD
+    assert "devpilot-game-debug" in GUARD
 
 
-def test_action_runtime_blocks_fast_duplicate_taps():
-    assert "now - previous < 650" in ACTION
-    assert "event.stopImmediatePropagation()" in ACTION
-    assert "__devpilotGameRunAction" in ACTION
+def test_legacy_action_runtime_cannot_block_current_game_startup():
+    assert "'game/action-runtime.js'" not in BOOT
+    assert "while (loadRequested)" not in ACTION
+    assert "loadRequested = true" not in ACTION
 
 
-def test_boot_requires_coordinator_before_initial_render_and_enhancements():
-    assert "const REQUIRED_ASSET = 'game/action-runtime.js'" in BOOT
-    assert "await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS)" in BOOT
-    assert "Coordenador de ações do Modo Jogo indisponível" in BOOT
-    assert BOOT.index("game/action-runtime.js") < BOOT.index("game/task-payload-guard.js")
-    assert BOOT.index("game/task-payload-guard.js") < BOOT.index("game/objective-controls.js")
-    assert BOOT.index("game/objective-controls.js") < BOOT.index("game/delivery-gate.js")
+def test_boot_loads_current_guard_ui_and_gate_after_real_core():
+    assert "await withTimeout(window.loadBuildGame()" in BOOT
+    assert "window.__devpilotGameCoreReady = true" in BOOT
+    assert "startEnhancements();" in BOOT
+    assert BOOT.index("'game/task-payload-guard.js'") < BOOT.index("'game/objective-controls.js'")
+    assert BOOT.index("'game/objective-controls.js'") < BOOT.index("'game/delivery-gate.js'")
