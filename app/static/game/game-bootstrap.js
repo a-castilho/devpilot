@@ -5,11 +5,10 @@
   window.__devpilotStandaloneGameReady = true;
 
   const CORE_TIMEOUT_MS = 7000;
-  const REQUIRED_TIMEOUT_MS = 3500;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-recovery-v57-20260902';
-  const REQUIRED_ASSET = 'game/action-runtime.js';
+  const ASSET_REVISION = 'release-1.2.0-game-core-first-v60-20260902';
   const OPTIONAL_ASSETS = [
+    'game/action-runtime.js',
     'game/task-payload-guard.js',
     'game/objective-controls.js',
     'game/start-round-mobile.js',
@@ -63,7 +62,7 @@
     }
   });
 
-  function showBooting(message = 'Carregando projeto e histórico leve da missão…') {
+  function showBooting(message = 'Carregando somente o núcleo necessário para iniciar…') {
     const target = gameTarget();
     if (!target || hasRenderedShell(target)) return;
     target.innerHTML = `
@@ -131,6 +130,7 @@
     trace('enhancements:start');
     const results = [];
     for (const name of OPTIONAL_ASSETS) {
+      // Give the browser a paint/input opportunity before every enhancement.
       await yieldToBrowser();
       const result = await loadAsset(name);
       results.push(result);
@@ -140,6 +140,15 @@
     document.dispatchEvent(new CustomEvent('devpilot:game:standalone-ready', {detail:{results}}));
     document.dispatchEvent(new CustomEvent('devpilot:game:enhancements-ready', {detail:{results}}));
     trace('enhancements:end', {failed: results.filter(item => !item.ok).map(item => item.name)});
+  }
+
+  function startEnhancementsAfterPaint() {
+    const start = () => window.setTimeout(() => void loadEnhancements(), 0);
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(start);
+    } else {
+      start();
+    }
   }
 
   async function boot() {
@@ -162,15 +171,10 @@
       }
 
       window.__devpilotGameLoadError = null;
-
-      trace('action-runtime:start');
-      const coordinator = await loadAsset(REQUIRED_ASSET, REQUIRED_TIMEOUT_MS);
-      if (!coordinator.ok || !window.__devpilotGameActionRuntimeReady) {
-        throw new Error('Coordenador de ações do Modo Jogo indisponível');
-      }
-      trace('action-runtime:end');
-
       trace('game-load:start');
+
+      // Historical stable behavior: render the core with the original loader.
+      // No action coordinator or optional module may delay the first usable paint.
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do Modo Jogo');
 
       if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
@@ -185,7 +189,9 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      void loadEnhancements();
+      // The UI is already usable. Enhancements, including action-runtime, start
+      // only after a browser paint and never participate in the critical path.
+      startEnhancementsAfterPaint();
     } catch (error) {
       window.__devpilotGameLoadError = error;
       trace('boot:error', {message: String(error?.message || error || 'erro')});
@@ -194,5 +200,6 @@
     }
   }
 
+  // The document elements already exist because this script is loaded at the end of <body>.
   window.queueMicrotask ? window.queueMicrotask(() => void boot()) : window.setTimeout(() => void boot(), 0);
 })();
