@@ -22,13 +22,16 @@
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
   const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 45));
+  const hasRenderedShell = target => Boolean(
+    target && typeof target.querySelector === 'function' && target.querySelector('.build-game-shell')
+  );
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
 
   function showBooting(message = 'Carregando projeto e histórico leve da missão…') {
     const target = gameTarget();
-    if (!target || target.querySelector('.build-game-shell')) return;
+    if (!target || hasRenderedShell(target)) return;
     target.innerHTML = `
       <div class="empty" data-game-boot-state="loading" role="status">
         <strong>Preparando Modo Jogo…</strong>
@@ -131,7 +134,7 @@
       if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
 
       const target = gameTarget();
-      if (!target?.querySelector('.build-game-shell')) {
+      if (!hasRenderedShell(target)) {
         throw new Error('A interface principal do jogo não foi renderizada.');
       }
 
