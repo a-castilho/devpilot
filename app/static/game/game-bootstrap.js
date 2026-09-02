@@ -6,7 +6,7 @@
 
   const CORE_TIMEOUT_MS = 7000;
   const OPTIONAL_TIMEOUT_MS = 3000;
-  const ASSET_REVISION = 'release-1.2.0-game-core-20260902-3';
+  const ASSET_REVISION = 'release-1.2.0-game-core-20260902-4';
   const OPTIONAL_ASSETS = [
     'game/objective-controls.js',
     'game/start-round-mobile.js',
@@ -20,6 +20,7 @@
   const backToDashboard = () => window.location.assign('/');
   const trace = (stage, detail = {}) => window.__devpilotGameTrace?.(stage, detail);
   const gameTarget = () => document.getElementById('build-game-view');
+  const yieldToBrowser = () => new Promise(resolve => window.setTimeout(resolve, 40));
 
   document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
   document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
@@ -92,6 +93,7 @@
     trace('enhancements:start');
     const results = [];
     for (const name of OPTIONAL_ASSETS) {
+      await yieldToBrowser();
       const result = await loadOptionalAsset(name);
       results.push(result);
       if (!result.ok) console.warn(`[DevPilot Game] Recurso opcional indisponível: ${name}`);
@@ -137,7 +139,8 @@
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       trace('boot:ready');
 
-      // Enhancements never block the usable game UI.
+      // Enhancements never block the usable game UI and yield between modules so
+      // low-memory Android browsers keep processing taps, paint and scrolling.
       void loadEnhancements();
     } catch (error) {
       window.__devpilotGameLoadError = error;
