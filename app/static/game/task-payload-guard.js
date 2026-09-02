@@ -5,6 +5,7 @@
   const GAME_PROJECT_LIMIT = 50;
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const INSTALL_FLAG = '__devpilotGameTaskPayloadGuardInstalled';
+  const RETRYABLE_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'archived']);
 
   if (window[INSTALL_FLAG]) return;
 
@@ -22,10 +23,25 @@
     return entry;
   };
 
+  const normalizeStatus = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  const normalizeTitle = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
   const promptValue = (prompt, label) => {
     const escaped = String(label || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     return String(prompt || '').match(new RegExp(`^${escaped}:\\s*(.+)$`, 'mi'))?.[1]?.trim() || '';
   };
+
+  const semanticMarkers = prompt => (
+    String(prompt || '').match(/\[DEVPILOT_[^\]]+\]/g) || []
+  )
+    .filter(marker => !marker.startsWith('[DEVPILOT_MODE='))
+    .sort()
+    .join('|');
+
+  // The compact game endpoint keeps title + PARTIDA/FASE but intentionally strips
+  // most prompt internals. Title is therefore the stable semantic discriminator:
+  // base phase, verifier gate and corrective subphase have different titles.
+  const creationKind = (prompt, title) => normalizeTitle(title) || semanticMarkers(prompt);
 
   const requestPayload = options => {
     if (!options?.body || typeof options.body !== 'string') return {};
@@ -39,20 +55,29 @@
     const prompt = String(payload?.prompt || '');
     const mission = promptValue(prompt, 'PARTIDA');
     const phase = promptValue(prompt, 'FASE');
+    const kind = creationKind(prompt, payload?.title);
 
-    if (!projectId || !mission || !phase) return null;
+    if (!projectId || !mission || !phase || !kind) return null;
 
     return {
       projectId,
       mission,
       phase,
-      key: `${projectId}::${mission}::${phase}`,
+      kind,
+      key: `${projectId}::${mission}::${phase}::${kind}`,
     };
   };
 
-  async function findGameCreation(options, delayMs = 0) {
+  const matchesIdentity = (task, identity) => {
+    const taskPrompt = String(task?.prompt || '');
+    return promptValue(taskPrompt, 'PARTIDA') === identity.mission
+      && promptValue(taskPrompt, 'FASE') === identity.phase
+      && creationKind(taskPrompt, task?.title) === identity.kind;
+  };
+
+  async function findGameCreations(options, delayMs = 0) {
     const identity = gameCreationIdentity(options);
-    if (!identity) return null;
+    if (!identity) return [];
 
     if (delayMs > 0) {
       await new Promise(resolve => window.setTimeout(resolve, delayMs));
@@ -63,18 +88,23 @@
       {method: 'GET'}
     );
 
-    if (!Array.isArray(tasks)) return null;
-
-    return tasks.find(task => {
-      const taskPrompt = String(task?.prompt || '');
-      return promptValue(taskPrompt, 'PARTIDA') === identity.mission
-        && promptValue(taskPrompt, 'FASE') === identity.phase;
-    }) || null;
+    if (!Array.isArray(tasks)) return [];
+    return tasks.filter(task => matchesIdentity(task, identity));
   }
 
-  async function recoverGameCreation(options) {
-    return findGameCreation(options, 350);
+  async function findGameCreation(options, delayMs = 0, excludedIds = new Set()) {
+    const tasks = await findGameCreations(options, delayMs);
+    return tasks.find(task => !excludedIds.has(String(task?.id || ''))) || null;
   }
+
+  async function recoverGameCreation(options, excludedIds = new Set()) {
+    return findGameCreation(options, 350, excludedIds);
+  }
+
+  const canReusePersistedCreation = task => {
+    if (!task) return false;
+    return !RETRYABLE_STATUSES.has(normalizeStatus(task.status));
+  };
 
   window.__devpilotGameTrace = trace;
   trace('guard:ready');
@@ -97,27 +127,47 @@
         projectId: identity.projectId,
         mission: identity.mission,
         phase: identity.phase,
+        kind: identity.kind,
       });
       return inFlight;
     }
 
     const creation = (async () => {
+      let previousIds = new Set();
       try {
         trace('game-create:dedupe:check', {
           projectId: identity.projectId,
           mission: identity.mission,
           phase: identity.phase,
+          kind: identity.kind,
         });
-        const existing = await findGameCreation(options);
-        if (existing) {
+
+        const previous = await findGameCreations(options);
+        previousIds = new Set(previous.map(task => String(task?.id || '')).filter(Boolean));
+        const latest = previous[0] || null;
+
+        if (canReusePersistedCreation(latest)) {
           trace('game-create:dedupe:existing', {
-            id: existing.id,
+            id: latest.id,
+            status: normalizeStatus(latest.status),
             projectId: identity.projectId,
             mission: identity.mission,
             phase: identity.phase,
+            kind: identity.kind,
           });
           window.toast?.('Esta etapa já está registrada. A tarefa existente será reutilizada.');
-          return existing;
+          return latest;
+        }
+
+        if (latest) {
+          trace('game-create:retry:new-attempt', {
+            previousId: latest.id,
+            previousStatus: normalizeStatus(latest.status),
+            projectId: identity.projectId,
+            mission: identity.mission,
+            phase: identity.phase,
+            kind: identity.kind,
+          });
         }
 
         const result = await originalApi(path, options);
@@ -126,10 +176,10 @@
       } catch (error) {
         try {
           trace('game-create:recover:start');
-          const recovered = await recoverGameCreation(options);
+          const recovered = await recoverGameCreation(options, previousIds);
           if (recovered) {
             trace('game-create:recover:end', {id: recovered.id});
-            window.toast?.('Fase registrada. A conexão oscilou, mas a execução foi confirmada.');
+            window.toast?.('Fase registrada. A conexão oscilou, mas a nova execução foi confirmada.');
             return recovered;
           }
           trace('game-create:recover:miss');
@@ -215,4 +265,6 @@
   window.__devpilotGameUsesLightweightProjects = true;
   window.__devpilotGameCreateRecovery = true;
   window.__devpilotGameCreateDedup = true;
+  window.__devpilotGameRetryCreatesNewTask = true;
+  window.__devpilotGameCreationIdentityV62 = true;
 })();
