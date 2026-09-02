@@ -5,6 +5,10 @@
   if (window.__devpilotGameStartRoundReady) return;
   window.__devpilotGameStartRoundReady = true;
 
+  let scheduled = false;
+  let observedView = null;
+  let viewObserver = null;
+
   const toastMessage = message => {
     if (typeof window.toast === 'function') return window.toast(message);
     const node = document.querySelector('#toast');
@@ -34,7 +38,7 @@
       return false;
     }
 
-    goal.value = value;
+    if (goal.value !== value) goal.value = value;
     goal.dispatchEvent(new Event('input', {bubbles:true}));
     goal.dispatchEvent(new Event('change', {bubbles:true}));
 
@@ -55,25 +59,54 @@
     if (!view || !button) return false;
 
     const initial = isInitialRound(view);
-    button.dataset.gameInitialRound = initial ? '1' : '0';
-    button.textContent = initial ? 'Iniciar jogo' : 'Nova rodada';
+    const stateValue = initial ? '1' : '0';
+    const desiredText = initial ? 'Iniciar jogo' : 'Nova rodada';
+    const desiredLabel = initial ? 'Iniciar jogo com a entrega informada' : 'Começar uma nova rodada';
+
+    if (button.dataset.gameInitialRound !== stateValue) button.dataset.gameInitialRound = stateValue;
+    if (button.textContent !== desiredText) button.textContent = desiredText;
     button.classList.toggle('primary', initial);
     button.classList.toggle('ghost', !initial);
-    button.setAttribute('aria-label', initial ? 'Iniciar jogo com a entrega informada' : 'Começar uma nova rodada');
+    if (button.getAttribute('aria-label') !== desiredLabel) button.setAttribute('aria-label', desiredLabel);
 
-    if (button.dataset.gameStartRoundBound === '1') return true;
-    button.dataset.gameStartRoundBound = '1';
-    button.addEventListener('click', event => {
-      if (button.dataset.gameInitialRound !== '1') return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      beginRound(view);
-    }, true);
+    if (button.dataset.gameStartRoundBound !== '1') {
+      button.dataset.gameStartRoundBound = '1';
+      button.addEventListener('click', event => {
+        if (button.dataset.gameInitialRound !== '1') return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        beginRound(view);
+      }, true);
+    }
+
     return true;
   };
 
-  const observer = new MutationObserver(() => decorate());
-  observer.observe(document.documentElement, {childList:true, subtree:true});
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', decorate, {once:true});
-  else decorate();
+  const scheduleDecorate = () => {
+    if (scheduled) return;
+    scheduled = true;
+    window.setTimeout(() => {
+      scheduled = false;
+      decorate();
+      installScopedObserver();
+    }, 0);
+  };
+
+  function installScopedObserver() {
+    const view = document.querySelector('#build-game-view');
+    if (!view || view === observedView) return;
+
+    viewObserver?.disconnect();
+    observedView = view;
+    viewObserver = new MutationObserver(scheduleDecorate);
+    // Observe only replacement of the game shell. Changes inside the shell made by
+    // decorate() must never retrigger this observer and lock the browser main thread.
+    viewObserver.observe(view, {childList:true});
+  }
+
+  document.addEventListener('devpilot:game:core-ready', scheduleDecorate);
+  document.addEventListener('devpilot:game:standalone-ready', scheduleDecorate);
+  document.addEventListener('devpilot:game:enhancements-ready', scheduleDecorate);
+
+  scheduleDecorate();
 })();
