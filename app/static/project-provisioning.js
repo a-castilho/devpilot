@@ -136,6 +136,35 @@
     return result;
   }
 
+  function buildBuilderAgentsMd(form, data) {
+    const listFor = key => {
+      const section = [...form.querySelectorAll('[data-builder-group]')]
+        .find(item => item.dataset.builderGroup === key);
+      if (!section) return 'Não definido';
+      const labels = [...section.querySelectorAll('.choice-card.selected[data-option]')]
+        .map(card => String(card.querySelector('strong')?.textContent || card.dataset.option || '').trim())
+        .filter(Boolean);
+      return labels.join(', ') || 'Não definido';
+    };
+    const projectName = String(form.elements.namedItem('name')?.value || '').trim() || 'Novo projeto';
+    const description = String(form.elements.namedItem('description')?.value || '').trim();
+    const customRules = String(form.elements.namedItem('extra_rules')?.value || '').trim();
+    const deliveryLabels = {
+      conventional_commits: 'Conventional Commits',
+      protected_main: 'branch principal protegida',
+      pull_request_review: 'revisão por Pull Request',
+      migrations_reversible: 'migrações reversíveis',
+    };
+    const delivery = Object.entries(data.delivery || {})
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => deliveryLabels[key])
+      .filter(Boolean);
+    const custom = Array.isArray(data.custom_technologies) && data.custom_technologies.length
+      ? `\n- Tecnologias adicionais: ${data.custom_technologies.join(', ')}`
+      : '';
+    return `# AGENTS.md — ${projectName}\n\n## Objetivo\n${description || 'Implementar e evoluir o projeto conforme a especificação técnica selecionada no DevPilot.'}\n\n## Stack selecionada\n- Tipo: ${listFor('project_type')}\n- Linguagens: ${listFor('languages')}\n- Backend: ${listFor('backend')}\n- Frontend: ${listFor('frontend')}\n- UI/CSS: ${listFor('web_ui')}\n- CMS/conteúdo: ${listFor('cms_content')}\n- Arquitetura: ${listFor('architecture')}\n- Padrões: ${listFor('patterns')}\n- Dados/cache: ${listFor('databases')}\n- APIs/integrações: ${listFor('interfaces')}\n- Marketing/analytics: ${listFor('marketing_analytics')}\n- Pagamentos/comércio: ${listFor('commerce_payments')}\n- Segurança: ${listFor('security')}\n- Testes: ${listFor('tests')}\n- Qualidade: ${listFor('quality')}\n- Infra/deploy: ${listFor('infrastructure')}\n- Documentação: ${listFor('documentation')}${custom}\n\n## Regras de engenharia\n- Preserve isolamento de módulos, tenants e credenciais conforme a arquitetura escolhida.\n- Não exponha segredos, tokens ou variáveis sensíveis no código, logs ou respostas.\n- Implemente validação de entrada, tratamento explícito de falhas e observabilidade nas operações críticas.\n- Mantenha dependências externas atrás de adapters/interfaces quando aplicável.\n- Toda alteração relevante deve incluir testes compatíveis com a estratégia selecionada.\n- Mudanças destrutivas, deploy, merge, push e dependências exigem aprovação antes da execução.\n- Registre decisões arquiteturais importantes e mantenha a documentação sincronizada com o código.\n${delivery.length ? `- Fluxo de entrega: ${delivery.join(', ')}.\n` : ''}${customRules ? `\n## Regras adicionais do cliente\n${customRules}\n` : ''}`;
+  }
+
   function decoratePendingProjects() {
     const host = document.querySelector('#projects-list');
     if (!host || typeof state === 'undefined' || !Array.isArray(state.projects)) return;
@@ -167,8 +196,148 @@
       #projects-list .analyze[disabled]{opacity:.45;cursor:not-allowed}
       [data-git-admin-only][hidden]{display:none!important}
       @media(max-width:760px){.project-builder-aside{padding-bottom:88px}}
+      @media(max-width:900px){
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-group-head{align-items:center!important;flex-wrap:wrap!important;gap:8px!important}
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-group-head>div{min-width:0!important;flex:1 1 190px!important}
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-group-head>span{display:none!important}
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-mobile-group-toggle{flex:0 0 auto!important;min-height:38px!important;padding:7px 11px!important;font-size:13px!important}
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-mobile-group-state{display:block!important;flex:1 0 100%!important;color:var(--muted,#8fa3bf)!important;font-size:12px!important;line-height:1.35!important}
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-summary,
+        #project-builder-form[data-mobile-performance-guard="1"] .builder-agents details{display:none!important}
+        #project-builder-form[data-mobile-performance-guard="1"] .choice-card{transition:none!important}
+      }
     `;
     document.head.appendChild(style);
+  }
+
+  function initMobileBuilderPerformanceGuard() {
+    const form = document.querySelector('#project-builder-form');
+    const groupsHost = document.querySelector('#project-builder-groups');
+    if (!form || !groupsHost || !window.matchMedia?.('(max-width: 900px)')?.matches) return;
+    if (form.dataset.mobilePerformanceGuard === '1') return;
+    form.dataset.mobilePerformanceGuard = '1';
+    injectStyles();
+
+    // O project-builder gera mais de uma centena de cards. Escondemos o host antes
+    // da montagem para que o Chromium mobile não faça layout/paint do grid inteiro.
+    groupsHost.style.setProperty('display', 'none', 'important');
+
+    // No mobile o resumo completo e o preview do AGENTS.md não precisam ser
+    // recalculados a cada tecla. O AGENTS.md definitivo é gerado no submit.
+    const summary = form.querySelector('#project-builder-summary');
+    if (summary) {
+      summary.removeAttribute('id');
+      summary.replaceChildren();
+    }
+    const preview = form.querySelector('#project-builder-agents-preview');
+    if (preview) {
+      preview.removeAttribute('id');
+      preview.textContent = '';
+    }
+
+    const refreshGroupState = section => {
+      const stateLine = section.querySelector('.builder-mobile-group-state');
+      if (!stateLine) return;
+      const selected = [...section.querySelectorAll('.choice-card.selected[data-option]')]
+        .map(card => String(card.querySelector('strong')?.textContent || '').trim())
+        .filter(Boolean);
+      stateLine.textContent = selected.length
+        ? `${selected.length} selecionada${selected.length === 1 ? '' : 's'}: ${selected.slice(0, 2).join(', ')}${selected.length > 2 ? '…' : ''}`
+        : 'Nenhuma opção selecionada';
+    };
+
+    const closeOtherGroups = activeSection => {
+      groupsHost.querySelectorAll('[data-builder-group]').forEach(section => {
+        if (section === activeSection) return;
+        const strip = section.querySelector('.choice-strip');
+        const button = section.querySelector('.builder-mobile-group-toggle');
+        if (strip) {
+          strip.style.setProperty('display', 'none', 'important');
+          strip.setAttribute('aria-hidden', 'true');
+        }
+        if (button) {
+          button.setAttribute('aria-expanded', 'false');
+          button.textContent = 'Configurar';
+        }
+      });
+    };
+
+    const installGroups = () => {
+      const sections = [...groupsHost.querySelectorAll('[data-builder-group]')];
+      if (!sections.length || groupsHost.dataset.mobileAccordionReady === '1') return false;
+      groupsHost.dataset.mobileAccordionReady = '1';
+
+      sections.forEach((section, index) => {
+        const head = section.querySelector('.builder-group-head');
+        const strip = section.querySelector('.choice-strip');
+        if (!head || !strip) return;
+
+        const stateLine = document.createElement('small');
+        stateLine.className = 'builder-mobile-group-state';
+        head.appendChild(stateLine);
+
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'ghost builder-mobile-group-toggle';
+        toggle.setAttribute('aria-expanded', index === 0 ? 'true' : 'false');
+        toggle.textContent = index === 0 ? 'Fechar' : 'Configurar';
+        head.appendChild(toggle);
+
+        if (index !== 0) {
+          strip.style.setProperty('display', 'none', 'important');
+          strip.setAttribute('aria-hidden', 'true');
+        } else {
+          strip.style.removeProperty('display');
+          strip.removeAttribute('aria-hidden');
+        }
+
+        toggle.addEventListener('click', () => {
+          const expanded = toggle.getAttribute('aria-expanded') === 'true';
+          closeOtherGroups(expanded ? null : section);
+          if (expanded) {
+            strip.style.setProperty('display', 'none', 'important');
+            strip.setAttribute('aria-hidden', 'true');
+            toggle.setAttribute('aria-expanded', 'false');
+            toggle.textContent = 'Configurar';
+          } else {
+            strip.style.removeProperty('display');
+            strip.removeAttribute('aria-hidden');
+            toggle.setAttribute('aria-expanded', 'true');
+            toggle.textContent = 'Fechar';
+          }
+        });
+        refreshGroupState(section);
+      });
+
+      groupsHost.addEventListener('click', event => {
+        if (!event.target.closest?.('.choice-card')) return;
+        window.setTimeout(() => {
+          const section = event.target.closest('[data-builder-group]');
+          if (section) refreshGroupState(section);
+        }, 0);
+      });
+      form.querySelectorAll('[data-builder-preset]').forEach(button => {
+        button.addEventListener('click', () => window.setTimeout(() => {
+          sections.forEach(refreshGroupState);
+        }, 0));
+      });
+      form.addEventListener('reset', () => window.setTimeout(() => sections.forEach(refreshGroupState), 0));
+
+      groupsHost.style.removeProperty('display');
+      const heroCopy = form.querySelector('.project-builder-hero p');
+      if (heroCopy) heroCopy.textContent = 'Abra uma categoria por vez e escolha as opções. Isso mantém o cadastro leve no celular.';
+      return true;
+    };
+
+    const observer = new MutationObserver(() => {
+      if (installGroups()) observer.disconnect();
+    });
+    observer.observe(groupsHost, {childList: true});
+    if (installGroups()) observer.disconnect();
+
+    window.setTimeout(() => {
+      if (groupsHost.dataset.mobileAccordionReady !== '1') groupsHost.style.removeProperty('display');
+    }, 2500);
   }
 
   function initLegacyProjectForm() {
@@ -450,8 +619,9 @@
       const slug = String(form.elements.namedItem('slug')?.value || '').trim();
       const description = String(form.elements.namedItem('description')?.value || '').trim();
       const model = String(form.elements.namedItem('model')?.value || 'gpt-5.4').trim();
-      const agentsMd = String(form.querySelector('#project-builder-agents-preview')?.textContent || '');
       const blueprint = builderBlueprint(form);
+      const previewText = String(form.querySelector('#project-builder-agents-preview')?.textContent || '').trim();
+      const agentsMd = previewText || buildBuilderAgentsMd(form, blueprint);
       if (submit) {
         submit.disabled = true;
         submit.setAttribute('aria-busy', 'true');
@@ -522,5 +692,6 @@
   }
 
   initLegacyProjectForm();
+  initMobileBuilderPerformanceGuard();
   initBuilderRepositoryFlow();
 })();
