@@ -1,0 +1,70 @@
+name: Stabilize Project Registration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/stabilize-project-registration.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Remove automatic second-wave builder loader
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('app/static/feature-loader.js')
+          text = path.read_text(encoding='utf-8')
+          original = text
+          text = text.replace('  let projectBuilderEnhancementsScheduled = false;\n', '')
+          text = re.sub(
+              r"\n  function scheduleProjectBuilderEnhancements\(\) \{.*?\n  \}\n\n  async function loadFeature",
+              "\n  async function loadFeature",
+              text,
+              flags=re.S,
+          )
+          text = text.replace(
+              "      if (feature === 'projectBuilder' && !cancelled) scheduleProjectBuilderEnhancements();\n",
+              '',
+          )
+          if text == original:
+              raise SystemExit('Nenhuma alteração aplicada ao feature-loader')
+          if 'requestIdleCallback' in text:
+              raise SystemExit('requestIdleCallback ainda presente no feature-loader')
+          if 'scheduleProjectBuilderEnhancements' in text:
+              raise SystemExit('segunda onda do Project Builder ainda presente')
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate consolidated loader
+        run: |
+          set -euo pipefail
+          node --check app/static/feature-loader.js
+          python3 scripts/check-engineering-standards.py
+          grep -q "showProjectBuilderImmediately" app/static/feature-loader.js
+          grep -q "projectBuilder" app/static/feature-loader.js
+          ! grep -q "requestIdleCallback" app/static/feature-loader.js
+          echo "LOADER_CONSOLIDATED_OK"
+
+      - name: Commit consolidated stable loader
+        run: |
+          set -euo pipefail
+          git config user.name "DevPilot Stabilizer"
+          git config user.email "devpilot-stabilizer@users.noreply.github.com"
+          git add app/static/feature-loader.js
+          git commit -m "fix(frontend): consolidar loader do cadastro sem idle automático"
+          git push origin HEAD:main
