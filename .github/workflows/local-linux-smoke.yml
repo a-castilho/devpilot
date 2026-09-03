@@ -27,9 +27,15 @@ jobs:
           node --check app/static/project-builder.js
           node --check app/static/project-builder-mobile-runtime-v39.js
           node --check app/static/mobile-game-ships-stable.js
+          node --check app/static/game/flow-keeper.js
+          node --check app/static/game/recovery-runtime.js
+          node --check app/static/executions-focus-v19.js
           grep -q "provision_repository_in_background" app/project_provisioning_routes.py
           grep -q "repository_provision_state" app/project_provisioning_routes.py
           grep -q "Project Builder Mobile V39 virtualizado" app/static/project-builder-mobile-runtime-v39.js
+          grep -q "__devpilotGameFlowKeeperV91Ready" app/static/game/flow-keeper.js
+          grep -q "__devpilotStandaloneGameV91Ready" app/static/game/game-bootstrap.js
+          grep -q "__devpilotExecutionsFocusV20" app/static/executions-focus-v19.js
           echo "SOURCE_CONTRACTS_OK"
 
       - name: Update actual local Linux checkout safely
@@ -69,7 +75,7 @@ jobs:
           docker compose logs --tail=120 app postgres || true
           exit 1
 
-      - name: Verify V39 and V40 are actually served locally
+      - name: Verify daily version is actually served locally
         run: |
           set -euo pipefail
           cd "$HOME/Documents/devpilot"
@@ -77,12 +83,17 @@ jobs:
           grep -q "repository_provision_state" app/project_provisioning_routes.py
           curl -fsS --max-time 5 http://127.0.0.1:8080/assets/project-builder-mobile-runtime-v39.js | grep -q "Project Builder Mobile V39 virtualizado"
           curl -fsS --max-time 5 http://127.0.0.1:8080/assets/mobile-accordion-menu.js | grep -q "game-ships-stable-20260903-v39"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/game/flow-keeper.js | grep -q "__devpilotGameFlowKeeperV91Ready"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/game/game-bootstrap.js | grep -q "__devpilotStandaloneGameV91Ready"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/executions-focus-v19.js | grep -q "__devpilotExecutionsFocusV20"
           docker compose exec -T app python -m compileall -q app
           docker compose exec -T app python - <<'PY'
           from app.project_provisioning_routes import provision_repository_in_background
           assert callable(provision_repository_in_background)
           print('V40_BACKGROUND_PROVISION_OK')
           PY
+          echo "V91_GAME_RECOVERY_SERVED_OK"
+          echo "V20_EXECUTION_DETAILS_SERVED_OK"
           echo "LOCAL_LINUX_SMOKE_OK"
 
       - name: Show diagnostics on failure
