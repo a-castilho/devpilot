@@ -75,11 +75,22 @@ def test_workspace_skins_is_presentation_only() -> None:
     assert "MutationObserver" not in source
 
 
+def test_game_ships_cannot_inject_or_touch_builder_runtime() -> None:
+    source = read("mobile-game-ships-stable.js")
+
+    assert "__devpilotMobileGameShipsStableV94" in source
+    assert "project-builder-mobile-runtime-v39.js" not in source
+    assert "ensureBuilderRuntime" not in source
+    assert "project-builder-groups" not in source
+    assert "document.createElement('script')" not in source
+
+
 def test_changed_frontend_javascript_has_valid_syntax() -> None:
     for name in (
         "project-builder.js",
         "viewport-adaptive-v15.js",
         "workspace-skins.js",
+        "mobile-game-ships-stable.js",
     ):
         subprocess.run(
             ["node", "--check", str(STATIC / name)],
