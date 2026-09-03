@@ -76,6 +76,22 @@ html[data-devpilot-view="overview"] #overview-view {
   display: block;
 }
 
+/*
+ * O builder possui muitas opções técnicas. Cada categoria fora do viewport é
+ * isolada do layout/paint até se aproximar da área visível. O DOM continua
+ * completo para presets, acessibilidade e geração do blueprint, mas não força
+ * o Chromium/Brave a calcular e pintar todos os cards ao abrir a tela.
+ */
+#new-project-view .builder-group {
+  content-visibility: auto;
+  contain-intrinsic-size: 190px;
+  contain: layout style paint;
+}
+
+#new-project-view .choice-strip {
+  contain: layout paint;
+}
+
 @media (max-width: 900px) {
   html.dp-page-switching .mobile-simple-sheet,
   html.dp-page-switching .mobile-simple-backdrop {

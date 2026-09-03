@@ -1,6 +1,13 @@
 (() => {
+  'use strict';
+
+  if (window.__devpilotProjectBuilderV94) return;
+
   const form = document.querySelector('#project-builder-form');
-  if (!form) return;
+  const host = document.querySelector('#project-builder-groups');
+  if (!form || !host) return;
+
+  const bootStartedAt = performance.now();
 
   const groups = [
     {
@@ -334,7 +341,18 @@
   };
 
   const selected = Object.create(null);
+  const groupByKey = new Map(groups.map(group => [group.key, group]));
+  const optionLabels = new Map(groups.map(group => [
+    group.key,
+    new Map(group.options.map(([id, label]) => [id, label])),
+  ]));
+
   let slugEdited = false;
+  let summaryFrame = 0;
+  let dragStrip = null;
+  let dragStartX = 0;
+  let dragStartScroll = 0;
+  let dragMoved = false;
 
   const slugify = value => String(value || '')
     .normalize('NFD')
@@ -348,23 +366,30 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;',
   })[char]);
 
-  const optionLabel = (groupKey, optionId) => {
-    const group = groups.find(item => item.key === groupKey);
-    const option = group?.options.find(item => item[0] === optionId);
-    return option?.[1] || optionId;
-  };
-
   const asArray = value => Array.isArray(value) ? value : [];
+  const optionLabel = (groupKey, optionId) => optionLabels.get(groupKey)?.get(optionId) || optionId;
+
+  function recordDiagnostic(name, startedAt, detail = {}) {
+    const durationMs = Math.round((performance.now() - startedAt) * 10) / 10;
+    const entry = {scope:'new-project', name, durationMs, at:Date.now(), ...detail};
+    window.__devpilotFrontendDiagnostics = Array.isArray(window.__devpilotFrontendDiagnostics)
+      ? window.__devpilotFrontendDiagnostics
+      : [];
+    window.__devpilotFrontendDiagnostics.push(entry);
+    if (window.__devpilotFrontendDiagnostics.length > 80) window.__devpilotFrontendDiagnostics.shift();
+    if (durationMs >= 50) console.warn('[DevPilot] operação lenta no Novo projeto', entry);
+    return durationMs;
+  }
 
   function seedDefaults() {
+    groups.forEach(group => { selected[group.key] = new Set(); });
     Object.entries(presets['saas-balanced']).forEach(([key, values]) => {
       selected[key] = new Set(values);
     });
   }
 
   function renderGroups() {
-    const host = document.querySelector('#project-builder-groups');
-    if (!host) return;
+    const startedAt = performance.now();
     host.innerHTML = groups.map(group => `
       <section class="builder-group" data-builder-group="${escapeHtml(group.key)}">
         <div class="builder-group-head">
@@ -378,59 +403,25 @@
             </button>`).join('')}
         </div>
       </section>`).join('');
-
-    host.querySelectorAll('.choice-card').forEach(button => {
-      button.addEventListener('click', () => {
-        const strip = button.closest('.choice-strip');
-        if (strip?.dataset.dragged === '1') {
-          strip.dataset.dragged = '0';
-          return;
-        }
-        selectOption(button.dataset.group, button.dataset.option);
-      });
-    });
-
-    host.querySelectorAll('.choice-strip').forEach(enableMouseDrag);
-    syncSelectionUI();
+    recordDiagnostic('render-groups', startedAt, {groups:groups.length, options:groups.reduce((sum, group) => sum + group.options.length, 0)});
   }
 
-  function enableMouseDrag(strip) {
-    let down = false;
-    let startX = 0;
-    let startScroll = 0;
-    let moved = false;
-
-    strip.addEventListener('pointerdown', event => {
-      if (event.pointerType !== 'mouse' || event.button !== 0) return;
-      down = true;
-      moved = false;
-      startX = event.clientX;
-      startScroll = strip.scrollLeft;
-      strip.classList.add('is-dragging');
+  function syncSelectionUI() {
+    const startedAt = performance.now();
+    host.querySelectorAll('.choice-card[data-group][data-option]').forEach(button => {
+      const active = selected[button.dataset.group]?.has(button.dataset.option) || false;
+      if (button.classList.contains('selected') !== active) button.classList.toggle('selected', active);
+      const pressed = String(active);
+      if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
     });
-    strip.addEventListener('pointermove', event => {
-      if (!down) return;
-      const delta = event.clientX - startX;
-      if (Math.abs(delta) > 6) moved = true;
-      if (moved) strip.scrollLeft = startScroll - delta;
-    });
-    const stop = () => {
-      if (!down) return;
-      down = false;
-      strip.classList.remove('is-dragging');
-      strip.dataset.dragged = moved ? '1' : '0';
-      if (moved) window.setTimeout(() => { strip.dataset.dragged = '0'; }, 120);
-    };
-    strip.addEventListener('pointerup', stop);
-    strip.addEventListener('pointercancel', stop);
-    strip.addEventListener('pointerleave', stop);
+    recordDiagnostic('sync-selection', startedAt);
+    scheduleSummary();
   }
 
   function selectOption(groupKey, optionId) {
-    const group = groups.find(item => item.key === groupKey);
+    const group = groupByKey.get(groupKey);
     if (!group) return;
-    if (!selected[groupKey]) selected[groupKey] = new Set();
-    const set = selected[groupKey];
+    const set = selected[groupKey] || (selected[groupKey] = new Set());
     if (group.multiple) {
       if (set.has(optionId)) set.delete(optionId); else set.add(optionId);
     } else {
@@ -440,21 +431,12 @@
     syncSelectionUI();
   }
 
-  function syncSelectionUI() {
-    form.querySelectorAll('.choice-card').forEach(button => {
-      const active = selected[button.dataset.group]?.has(button.dataset.option) || false;
-      button.classList.toggle('selected', active);
-      button.setAttribute('aria-pressed', String(active));
-    });
-    updateSummary();
-  }
-
   function applyPreset(name) {
     const preset = presets[name];
     if (!preset) return;
     groups.forEach(group => { selected[group.key] = new Set(); });
     Object.entries(preset).forEach(([key, values]) => { selected[key] = new Set(values); });
-    document.querySelectorAll('[data-builder-preset]').forEach(button => {
+    form.querySelectorAll('[data-builder-preset]').forEach(button => {
       button.classList.toggle('active', button.dataset.builderPreset === name);
     });
     syncSelectionUI();
@@ -462,9 +444,7 @@
 
   function blueprint() {
     const result = {};
-    groups.forEach(group => {
-      result[group.key] = [...(selected[group.key] || [])];
-    });
+    groups.forEach(group => { result[group.key] = [...(selected[group.key] || [])]; });
     result.custom_technologies = String(form.elements.namedItem('custom_technologies')?.value || '')
       .split(',').map(item => item.trim()).filter(Boolean).slice(0, 30);
     result.delivery = {
@@ -484,19 +464,29 @@
     const projectName = String(form.elements.namedItem('name')?.value || '').trim() || 'Novo projeto';
     const description = String(form.elements.namedItem('description')?.value || '').trim();
     const customRules = String(form.elements.namedItem('extra_rules')?.value || '').trim();
-    const delivery = Object.entries(data.delivery).filter(([, enabled]) => enabled).map(([key]) => ({
-      conventional_commits: 'Conventional Commits', protected_main: 'branch principal protegida', pull_request_review: 'revisão por Pull Request', migrations_reversible: 'migrações reversíveis',
-    })[key]);
+    const deliveryLabels = {
+      conventional_commits: 'Conventional Commits',
+      protected_main: 'branch principal protegida',
+      pull_request_review: 'revisão por Pull Request',
+      migrations_reversible: 'migrações reversíveis',
+    };
+    const delivery = Object.entries(data.delivery || {})
+      .filter(([, enabled]) => enabled)
+      .map(([key]) => deliveryLabels[key])
+      .filter(Boolean);
 
     return `# AGENTS.md — ${projectName}\n\n## Objetivo\n${description || 'Implementar e evoluir o projeto conforme a especificação técnica selecionada no DevPilot.'}\n\n## Stack selecionada\n- Tipo: ${listFor('project_type', data)}\n- Linguagens: ${listFor('languages', data)}\n- Backend: ${listFor('backend', data)}\n- Frontend: ${listFor('frontend', data)}\n- UI/CSS: ${listFor('web_ui', data)}\n- CMS/conteúdo: ${listFor('cms_content', data)}\n- Arquitetura: ${listFor('architecture', data)}\n- Padrões: ${listFor('patterns', data)}\n- Dados/cache: ${listFor('databases', data)}\n- APIs/integrações: ${listFor('interfaces', data)}\n- Marketing/analytics: ${listFor('marketing_analytics', data)}\n- Pagamentos/comércio: ${listFor('commerce_payments', data)}\n- Segurança: ${listFor('security', data)}\n- Testes: ${listFor('tests', data)}\n- Qualidade: ${listFor('quality', data)}\n- Infra/deploy: ${listFor('infrastructure', data)}\n- Documentação: ${listFor('documentation', data)}${data.custom_technologies.length ? `\n- Tecnologias adicionais: ${data.custom_technologies.join(', ')}` : ''}\n\n## Regras de engenharia\n- Preserve isolamento de módulos, tenants e credenciais conforme a arquitetura escolhida.\n- Não exponha segredos, tokens ou variáveis sensíveis no código, logs ou respostas.\n- Implemente validação de entrada, tratamento explícito de falhas e observabilidade nas operações críticas.\n- Mantenha dependências externas atrás de adapters/interfaces quando aplicável.\n- Toda alteração relevante deve incluir testes compatíveis com a estratégia selecionada.\n- Mudanças destrutivas, deploy, merge, push e dependências exigem aprovação antes da execução.\n- Registre decisões arquiteturais importantes e mantenha a documentação sincronizada com o código.\n${delivery.length ? `- Fluxo de entrega: ${delivery.join(', ')}.\n` : ''}${customRules ? `\n## Regras adicionais do cliente\n${customRules}\n` : ''}`;
   }
 
   function updateSummary() {
+    summaryFrame = 0;
+    const startedAt = performance.now();
     const data = blueprint();
     const count = groups.reduce((sum, group) => sum + asArray(data[group.key]).length, 0) + data.custom_technologies.length;
-    const countEl = document.querySelector('#project-builder-selection-count');
+    const countEl = form.querySelector('#project-builder-selection-count');
     if (countEl) countEl.textContent = `${count} escolhas`;
-    const summary = document.querySelector('#project-builder-summary');
+
+    const summary = form.querySelector('#project-builder-summary');
     if (summary) {
       const rows = [
         ['Projeto', listFor('project_type', data)], ['Linguagens', listFor('languages', data)],
@@ -507,67 +497,116 @@
       ];
       summary.innerHTML = rows.map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join('');
     }
-    const preview = document.querySelector('#project-builder-agents-preview');
-    if (preview) preview.textContent = buildAgentsMd(data);
+
+    const preview = form.querySelector('#project-builder-agents-preview');
+    const details = preview?.closest('details');
+    if (preview && details?.open) preview.textContent = buildAgentsMd(data);
+    recordDiagnostic('update-summary', startedAt, {preview:Boolean(preview && details?.open)});
   }
 
-  function castilhoOrganization() {
-    return state.organizations.find(org => String(org.external_login || '').toLowerCase() === 'a-castilho') || null;
-  }
-
-  function fillBuilderOrganizations() {
-    const select = document.querySelector('#project-builder-organization');
-    if (!select) return;
-    select.innerHTML = '<option value="">Sem organização</option>' + (isSuperAdmin()
-      ? state.organizations.map(org => `<option value="${escapeHtml(org.id)}">${escapeHtml(org.name)}</option>`).join('')
-      : '');
-    const castilho = castilhoOrganization();
-    if (castilho) select.value = castilho.id;
+  function scheduleSummary() {
+    if (summaryFrame) return;
+    summaryFrame = window.requestAnimationFrame(updateSummary);
   }
 
   function syncRepositoryMode() {
     const mode = form.elements.namedItem('repository_mode')?.value || 'connect';
     const create = mode === 'create';
-    const existing = document.querySelector('#project-builder-existing-repository');
+    const existing = form.querySelector('#project-builder-existing-repository');
     if (existing) existing.hidden = create;
     const url = form.elements.namedItem('repository_url');
     if (url) url.required = !create;
-    const organization = document.querySelector('#project-builder-organization');
+    const organization = form.querySelector('#project-builder-organization');
     if (organization) organization.disabled = create;
-    const notice = document.querySelector('#project-builder-repository-notice');
+    const notice = form.querySelector('#project-builder-repository-notice');
     if (notice) {
       notice.textContent = create
-        ? (isSuperAdmin() ? 'O DevPilot tentará criar um repositório privado na organização a-castilho. Se o GitHub estiver indisponível, o projeto será salvo com Git pendente.' : 'O DevPilot salvará o projeto e configurará o Git automaticamente quando disponível.')
+        ? (typeof isSuperAdmin === 'function' && isSuperAdmin()
+          ? 'O DevPilot tentará criar um repositório privado na organização a-castilho. Se o GitHub estiver indisponível, o projeto será salvo com Git pendente.'
+          : 'O DevPilot salvará o projeto e configurará o Git automaticamente quando disponível.')
         : 'Informe um repositório Git já existente para conectar o projeto.';
     }
-    document.querySelectorAll('[data-repository-choice]').forEach(card => {
+    form.querySelectorAll('[data-repository-choice]').forEach(card => {
       card.classList.toggle('selected', card.dataset.repositoryChoice === mode);
     });
   }
 
-  function openBuilder() {
-    fillBuilderOrganizations();
-    if (!isSuperAdmin()) {
-      const createRadio = form.querySelector('input[name="repository_mode"][value="create"]');
-      if (createRadio) {
-        createRadio.disabled = false;
-        createRadio.checked = true;
-      }
-      const connectRadio = form.querySelector('input[name="repository_mode"][value="connect"]');
-      if (connectRadio) connectRadio.checked = false;
+  function navigateProjects() {
+    if (typeof window.devpilotNavigate === 'function') {
+      void window.devpilotNavigate('projects', {source:'project-builder-back', immediate:true});
+      return;
     }
-    syncRepositoryMode();
-    showView('new-project');
-    const title = document.querySelector('#page-title');
-    if (title) title.textContent = 'Novo projeto';
-    window.scrollTo({top: 0, behavior: 'smooth'});
+    if (typeof window.showView === 'function') window.showView('projects');
   }
 
-  document.querySelectorAll('[data-project-builder-open]').forEach(button => button.addEventListener('click', openBuilder));
-  document.querySelectorAll('[data-project-builder-close]').forEach(button => button.addEventListener('click', () => showView('projects')));
-  document.querySelectorAll('[data-builder-preset]').forEach(button => button.addEventListener('click', () => applyPreset(button.dataset.builderPreset)));
-  form.querySelectorAll('input[name="repository_mode"]').forEach(input => input.addEventListener('change', syncRepositoryMode));
-  form.querySelectorAll('input, textarea, select').forEach(input => input.addEventListener('input', updateSummary));
+  function startDrag(strip, event) {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return;
+    dragStrip = strip;
+    dragStartX = event.clientX;
+    dragStartScroll = strip.scrollLeft;
+    dragMoved = false;
+    strip.classList.add('is-dragging');
+  }
+
+  function moveDrag(event) {
+    if (!dragStrip) return;
+    const delta = event.clientX - dragStartX;
+    if (Math.abs(delta) > 6) dragMoved = true;
+    if (dragMoved) dragStrip.scrollLeft = dragStartScroll - delta;
+  }
+
+  function stopDrag() {
+    if (!dragStrip) return;
+    const strip = dragStrip;
+    dragStrip = null;
+    strip.classList.remove('is-dragging');
+    strip.dataset.dragged = dragMoved ? '1' : '0';
+    if (dragMoved) window.setTimeout(() => { strip.dataset.dragged = '0'; }, 120);
+  }
+
+  host.addEventListener('click', event => {
+    const button = event.target.closest?.('.choice-card[data-group][data-option]');
+    if (!button || !host.contains(button)) return;
+    const strip = button.closest('.choice-strip');
+    if (strip?.dataset.dragged === '1') {
+      strip.dataset.dragged = '0';
+      return;
+    }
+    selectOption(button.dataset.group, button.dataset.option);
+  });
+
+  host.addEventListener('pointerdown', event => {
+    const strip = event.target.closest?.('.choice-strip');
+    if (strip && host.contains(strip)) startDrag(strip, event);
+  });
+  host.addEventListener('pointermove', moveDrag);
+  host.addEventListener('pointerup', stopDrag);
+  host.addEventListener('pointercancel', stopDrag);
+  host.addEventListener('pointerleave', stopDrag);
+
+  form.addEventListener('click', event => {
+    const preset = event.target.closest?.('[data-builder-preset]');
+    if (preset && form.contains(preset)) applyPreset(preset.dataset.builderPreset);
+  });
+
+  document.querySelectorAll('[data-project-builder-close]').forEach(button => {
+    button.addEventListener('click', navigateProjects);
+  });
+
+  form.addEventListener('change', event => {
+    if (event.target?.name === 'repository_mode') syncRepositoryMode();
+  });
+
+  form.addEventListener('input', event => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
+    scheduleSummary();
+  });
+
+  const previewDetails = form.querySelector('#project-builder-agents-preview')?.closest('details');
+  previewDetails?.addEventListener('toggle', () => {
+    if (previewDetails.open) scheduleSummary();
+  });
 
   const nameInput = form.elements.namedItem('name');
   const slugInput = form.elements.namedItem('slug');
@@ -576,7 +615,6 @@
     if (slugEdited) return;
     const value = slugify(nameInput.value);
     if (slugInput) slugInput.value = value.length === 1 ? `${value}-repo` : value;
-    updateSummary();
   });
 
   form.addEventListener('submit', async event => {
@@ -600,11 +638,11 @@
         project_blueprint: data,
       },
     };
-    const submit = document.querySelector('#project-builder-submit');
+    const submit = form.querySelector('#project-builder-submit');
     if (submit) { submit.disabled = true; submit.textContent = 'Criando projeto…'; }
     try {
       if (mode === 'create') {
-        const project = await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
+        const project = await api('/projects/provision', {method:'POST', body:JSON.stringify(common)});
         let config = project?.codex_config;
         if (typeof config === 'string') {
           try { config = JSON.parse(config); } catch (_) { config = {}; }
@@ -617,26 +655,45 @@
       } else {
         const repositoryUrl = String(form.elements.namedItem('repository_url')?.value || '').trim();
         if (!repositoryUrl) throw new Error('Informe o repositório Git existente');
-        await api('/projects', {method: 'POST', body: JSON.stringify({
+        await api('/projects', {method:'POST', body:JSON.stringify({
           ...common,
-          repository_url: repositoryUrl,
-          organization_id: isSuperAdmin() ? (form.elements.namedItem('organization_id')?.value || null) : null,
-          default_branch: String(form.elements.namedItem('default_branch')?.value || 'main').trim() || 'main',
+          repository_url:repositoryUrl,
+          organization_id:typeof isSuperAdmin === 'function' && isSuperAdmin()
+            ? (form.elements.namedItem('organization_id')?.value || null)
+            : null,
+          default_branch:String(form.elements.namedItem('default_branch')?.value || 'main').trim() || 'main',
         })});
         toast(`Projeto ${name} conectado com a especificação técnica`);
       }
       form.reset();
       slugEdited = false;
       applyPreset('saas-balanced');
-      showView('projects');
+      navigateProjects();
     } catch (error) {
-      toast(error.message || 'Falha ao criar projeto');
+      toast(error?.message || 'Falha ao criar projeto');
     } finally {
       if (submit) { submit.disabled = false; submit.textContent = 'Criar projeto'; }
     }
   });
 
+  form.addEventListener('reset', () => {
+    slugEdited = false;
+    window.requestAnimationFrame(() => {
+      applyPreset('saas-balanced');
+      syncRepositoryMode();
+    });
+  });
+
   seedDefaults();
   renderGroups();
+  syncSelectionUI();
   syncRepositoryMode();
+
+  const bootDurationMs = recordDiagnostic('builder-init', bootStartedAt, {
+    options:groups.reduce((sum, group) => sum + group.options.length, 0),
+  });
+  window.__devpilotProjectBuilderV94 = Object.freeze({version:'v94', bootDurationMs});
+  document.dispatchEvent(new CustomEvent('devpilot:project-builder-ready', {
+    detail:{version:'v94', bootDurationMs},
+  }));
 })();

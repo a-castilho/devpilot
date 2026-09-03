@@ -25,11 +25,19 @@ jobs:
         run: |
           set -euo pipefail
           node --check app/static/project-builder.js
-          node --check app/static/project-builder-mobile-runtime-v39.js
-          node --check app/static/mobile-game-ships-stable.js
+          node --check app/static/viewport-adaptive-v15.js
+          node --check app/static/mobile-accordion-menu.js
+          node --check app/static/workspace-skins.js
+          grep -q "__devpilotProjectBuilderV94" app/static/project-builder.js
+          grep -q "__devpilotTaskActionSafeOpenV41" app/static/viewport-adaptive-v15.js
+          grep -q "__devpilotMobileAccordionMenuV94" app/static/mobile-accordion-menu.js
+          grep -q "__devpilotWorkspaceSkinsV94" app/static/workspace-skins.js
+          ! grep -q "data-project-builder-open" app/static/viewport-adaptive-v15.js
+          ! grep -q "document.createElement('script')" app/static/mobile-accordion-menu.js
+          test ! -e app/static/project-builder-mobile-runtime-v39.js
+          test ! -e app/static/mobile-game-ships-stable.js
           grep -q "provision_repository_in_background" app/project_provisioning_routes.py
           grep -q "repository_provision_state" app/project_provisioning_routes.py
-          grep -q "Project Builder Mobile V39 virtualizado" app/static/project-builder-mobile-runtime-v39.js
           echo "SOURCE_CONTRACTS_OK"
 
       - name: Update actual local Linux checkout safely
@@ -69,20 +77,22 @@ jobs:
           docker compose logs --tail=120 app postgres || true
           exit 1
 
-      - name: Verify V39 and V40 are actually served locally
+      - name: Verify V94 is actually served locally
         run: |
           set -euo pipefail
           cd "$HOME/Documents/devpilot"
           grep -q "provision_repository_in_background" app/project_provisioning_routes.py
           grep -q "repository_provision_state" app/project_provisioning_routes.py
-          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/project-builder-mobile-runtime-v39.js | grep -q "Project Builder Mobile V39 virtualizado"
-          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/mobile-accordion-menu.js | grep -q "game-ships-stable-20260903-v39"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/project-builder.js | grep -q "__devpilotProjectBuilderV94"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/viewport-adaptive-v15.js | grep -q "__devpilotTaskActionSafeOpenV41"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/mobile-accordion-menu.js | grep -q "__devpilotMobileAccordionMenuV94"
           docker compose exec -T app python -m compileall -q app
           docker compose exec -T app python - <<'PY'
           from app.project_provisioning_routes import provision_repository_in_background
           assert callable(provision_repository_in_background)
           print('V40_BACKGROUND_PROVISION_OK')
           PY
+          echo "V94_NEW_PROJECT_RUNTIME_OK"
           echo "LOCAL_LINUX_SMOKE_OK"
 
       - name: Show diagnostics on failure

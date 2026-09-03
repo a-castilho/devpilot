@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = (ROOT / "app/project_provisioning_routes.py").read_text(encoding="utf-8")
 BUILDER = (ROOT / "app/static/project-builder.js").read_text(encoding="utf-8")
+PROVISIONING = (ROOT / "app/static/project-provisioning.js").read_text(encoding="utf-8")
+LOADER = (ROOT / "app/static/feature-loader.js").read_text(encoding="utf-8")
 
 
 def test_registration_persists_before_external_github_io():
@@ -38,14 +40,18 @@ def test_builder_does_not_require_cached_castilho_organization_before_submit():
     assert 'GitHub pendente' in submit
 
 
-def test_regular_builder_defaults_to_automatic_git_and_success_does_not_wait_dashboard_reload():
-    open_builder = BUILDER.split('function openBuilder()', 1)[1].split(
-        "document.querySelectorAll('[data-project-builder-open]')", 1
-    )[0]
-    submit = BUILDER.split("form.addEventListener('submit'", 1)[1]
+def test_regular_user_automatic_git_is_owned_by_provisioning_runtime():
+    assert 'function forceAutomaticMode()' in PROVISIONING
+    assert 'if (!admin) forceAutomaticMode();' in PROVISIONING
+    assert 'async function createAutomaticProject()' in PROVISIONING
+    automatic = PROVISIONING.split('async function createAutomaticProject()', 1)[1]
+    assert "await api('/projects/provision'" in automatic
+    assert "event.stopImmediatePropagation();" in PROVISIONING
 
-    assert 'createRadio.disabled = false' in open_builder
-    assert 'createRadio.checked = true' in open_builder
-    assert 'connectRadio.checked = false' in open_builder
-    assert "showView('projects');" in submit
-    assert 'await load();' not in submit
+
+def test_navigation_and_form_runtime_have_separate_owners():
+    assert "async function openProjectBuilderDirect" in LOADER
+    assert "target.closest('[data-project-builder-open]')" in LOADER
+    assert "[data-project-builder-open]" not in BUILDER
+    assert "function navigateProjects()" in BUILDER
+    assert "window.devpilotNavigate('projects'" in BUILDER
