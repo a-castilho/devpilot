@@ -9,6 +9,7 @@
   const PROJECT_KEY = 'devpilot-build-game-project';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const ACTIVE_SELECTOR = '[data-game90-project-switch]';
+  const PROGRESS_SELECTOR = '#devpilot-game-stable-round-v84 .game74-progress-head, #devpilot-game-ui-v73 .game74-progress-head';
   let scheduled = false;
 
   const controller = () => window.__devpilotGameControllerV73;
@@ -80,13 +81,8 @@
     return option;
   };
 
-  const mountActiveSelector = () => {
-    installStyle();
-    const state = currentState();
-    if (!state.hasTasks) return false;
-    const progressHead = document.querySelector('#devpilot-game-ui-v73 .game74-progress-head');
+  const mountOnProgressHead = (progressHead, state) => {
     if (!progressHead) return false;
-
     progressHead.classList.add('game90-project-progress');
     let label = progressHead.querySelector('.game90-project-switch');
     let select = progressHead.querySelector(ACTIVE_SELECTOR);
@@ -123,6 +119,15 @@
     return true;
   };
 
+  const mountActiveSelector = () => {
+    installStyle();
+    const state = currentState();
+    if (!state.hasTasks) return false;
+    const progressHeads = [...document.querySelectorAll(PROGRESS_SELECTOR)];
+    if (!progressHeads.length) return false;
+    return progressHeads.map(progressHead => mountOnProgressHead(progressHead, state)).some(Boolean);
+  };
+
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
@@ -147,5 +152,6 @@
   document.addEventListener('devpilot:game:rendered', schedule);
   document.addEventListener('devpilot:game:error', schedule);
   window.__devpilotGameSwitchProjectV90 = switchProject;
+  window.__devpilotGameMountProjectSwitchV90 = mountActiveSelector;
   schedule();
 })();
