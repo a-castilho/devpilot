@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  if (window.__devpilotMobileGameShipsStable) return;
-  window.__devpilotMobileGameShipsStable = true;
+  if (window.__devpilotMobileGameShipsStableV94) return;
+  window.__devpilotMobileGameShipsStableV94 = true;
 
   const GAME_URL = '/game/index.html';
   const PROJECT_KEY = 'devpilot-build-game-project';
@@ -13,17 +13,6 @@
   let projectsObserver = null;
 
   const isMobile = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
-
-  function ensureBuilderRuntime() {
-    if (!isMobile() || window.__devpilotProjectBuilderMobileRuntimeV39) return;
-    if (document.querySelector('script[data-project-builder-mobile-v39="1"]')) return;
-    const script = document.createElement('script');
-    script.src = '/assets/project-builder-mobile-runtime-v39.js?v=20260903-v39';
-    script.async = false;
-    script.dataset.projectBuilderMobileV39 = '1';
-    script.onerror = () => console.error('[DevPilot] Falha ao carregar Project Builder Mobile V39');
-    document.body.appendChild(script);
-  }
 
   const hashText = value => {
     let hash = 2166136261;
@@ -188,7 +177,6 @@
   function sync() {
     syncFrame = 0;
     installStyle();
-    ensureBuilderRuntime();
     ensureBottomGameButton();
     ensureSidebarGameButton();
     observeProjectsOnly();
@@ -209,8 +197,8 @@
     openGame(button.dataset.projectGameStable);
   }, true);
 
-  // V39: nada de MutationObserver global no documentElement. O runtime de naves
-  // observa apenas a lista de projetos e fica inerte durante o cadastro.
+  // Este domínio observa somente a lista de Projetos. Não carrega, observa nem
+  // modifica o Project Builder; cadastro e jogo têm ciclos de vida independentes.
   document.addEventListener('devpilot:view-changed', scheduleSync);
   document.addEventListener('devpilot:feature-ready', scheduleSync);
   document.addEventListener('devpilot:page-ready', scheduleSync);
