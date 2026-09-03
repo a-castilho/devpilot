@@ -21,8 +21,8 @@
       name: 'Planejamento',
       xp: 100,
       summary: 'Transformar o pedido em plano e critérios de aceite verificáveis.',
-      evidence: 'Plano persistido, baseline executado e critérios de aceite ligados ao pedido.',
-      mission: `Leia AGENTS.md, documentação e repositório antes de agir. Preserve literalmente o objetivo informado pelo usuário. Registre .devpilot/build-game.md com objetivo, estado inicial, escopo, fora de escopo, critérios de aceite, riscos, arquivos prováveis e comandos reais de instalação, execução, lint, build e testes. Execute a verificação de baseline. Não implemente a funcionalidade nesta etapa e não invente resultado.`
+      evidence: 'Preflight de duplicidade concluído, System Design registrado ou dispensado com justificativa, baseline executado e critérios de aceite ligados ao pedido.',
+      mission: `Leia AGENTS.md, docs/SYSTEM_DESIGN.md, documentação aplicável e o repositório antes de agir. Preserve literalmente o objetivo informado pelo usuário. Antes de qualquer edição de implementação, faça o preflight de duplicidade: procure tarefas, execuções e alterações existentes que já atendam ou estejam atendendo o mesmo objetivo; quando existir trabalho válido, continue/reutilize em vez de criar implementação paralela. Classifique a mudança conforme docs/SYSTEM_DESIGN.md. Para SIMPLE, registre "System Design dispensado" com justificativa. Para STRUCTURAL, registre System Design conciso cobrindo arquitetura afetada, componentes, contratos, dados, segurança, dependências, falhas e recuperação, escalabilidade, observabilidade, topologia de entrega, compatibilidade, rollback, testes, riscos e trade-offs. Registre .devpilot/build-game.md com objetivo, estado inicial, resultado do preflight, decisão de System Design, escopo, fora de escopo, critérios de aceite, riscos, arquivos prováveis e comandos reais de instalação, execução, lint, build e testes. Execute a verificação de baseline. Não implemente a funcionalidade nesta etapa e não invente resultado.`
     },
     {
       id: 2,
