@@ -537,7 +537,7 @@
     const notice = document.querySelector('#project-builder-repository-notice');
     if (notice) {
       notice.textContent = create
-        ? (isSuperAdmin() ? 'O DevPilot criará um repositório privado na organização a-castilho.' : 'A criação automática de repositório exige perfil Super Admin.')
+        ? (isSuperAdmin() ? 'O DevPilot tentará criar um repositório privado na organização a-castilho. Se o GitHub estiver indisponível, o projeto será salvo com Git pendente.' : 'O DevPilot salvará o projeto e configurará o Git automaticamente quando disponível.')
         : 'Informe um repositório Git já existente para conectar o projeto.';
     }
     document.querySelectorAll('[data-repository-choice]').forEach(card => {
@@ -549,9 +549,12 @@
     fillBuilderOrganizations();
     if (!isSuperAdmin()) {
       const createRadio = form.querySelector('input[name="repository_mode"][value="create"]');
-      if (createRadio) createRadio.disabled = true;
+      if (createRadio) {
+        createRadio.disabled = false;
+        createRadio.checked = true;
+      }
       const connectRadio = form.querySelector('input[name="repository_mode"][value="connect"]');
-      if (connectRadio) connectRadio.checked = true;
+      if (connectRadio) connectRadio.checked = false;
     }
     syncRepositoryMode();
     showView('new-project');
@@ -601,10 +604,16 @@
     if (submit) { submit.disabled = true; submit.textContent = 'Criando projeto…'; }
     try {
       if (mode === 'create') {
-        if (!isSuperAdmin()) throw new Error('A criação automática exige perfil Super Admin');
-        if (!castilhoOrganization()) throw new Error('Conecte primeiro a organização a-castilho em Organizações');
-        await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
-        toast(`Projeto ${name} criado com repositório privado`);
+        const project = await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
+        let config = project?.codex_config;
+        if (typeof config === 'string') {
+          try { config = JSON.parse(config); } catch (_) { config = {}; }
+        }
+        const repositoryPending = !String(project?.repository_url || '').trim()
+          && Boolean(config && typeof config === 'object' && config.repository_pending);
+        toast(repositoryPending
+          ? `Projeto ${name} criado. GitHub pendente — conecte o repositório depois em Projetos.`
+          : `Projeto ${name} criado com repositório privado`);
       } else {
         const repositoryUrl = String(form.elements.namedItem('repository_url')?.value || '').trim();
         if (!repositoryUrl) throw new Error('Informe o repositório Git existente');
@@ -619,7 +628,6 @@
       form.reset();
       slugEdited = false;
       applyPreset('saas-balanced');
-      await load();
       showView('projects');
     } catch (error) {
       toast(error.message || 'Falha ao criar projeto');
