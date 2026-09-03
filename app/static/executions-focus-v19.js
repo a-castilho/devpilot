@@ -243,6 +243,37 @@
     return true;
   }
 
+  function syncDetailsStateAfterClick(event) {
+    const button = event.target.closest?.(
+      '#tasks-view .tasks-v9-details[data-id], #tasks-view .task-instructions-load[data-id]'
+    );
+    if (!button) return;
+
+    const id = String(button.dataset.id || '');
+    const view = qs('#tasks-view');
+    if (!id || !view) return;
+
+    const escaped = escapeSelector(id);
+    const row =
+      qs(`[data-task-details-row="${escaped}"]`, view) ||
+      qs(`.task-inline-details[data-task-instructions="${escaped}"]`, view);
+    if (!row) return;
+
+    // O onclick do renderer já executou quando o evento chega ao bubble do
+    // document. Espelhar o estado visual em aria/data evita que o reconciliador
+    // V41 interprete aria-hidden antigo como "fechado" e recolha o painel logo
+    // após o clique.
+    const open = !row.hidden && row.style.getPropertyValue('display') !== 'none';
+    row.setAttribute('aria-hidden', open ? 'false' : 'true');
+    row.dataset.dpDetailsActive = open ? '1' : '0';
+    row.dataset.dpV13Open = open ? '1' : '0';
+    button.setAttribute('aria-expanded', open ? 'true' : 'false');
+
+    if (button.classList.contains('tasks-v9-details')) {
+      button.textContent = open ? 'Ocultar' : 'Detalhes';
+    }
+  }
+
   window.devpilotFocusExecution = requestFocus;
 
   document.addEventListener('click', event => {
@@ -258,6 +289,10 @@
       source: 'click',
     });
   }, true);
+
+  // Bubble phase de propósito: precisa rodar depois do onclick que abre/fecha o
+  // detalhe e antes dos timers de reconciliação agendados em capture phase.
+  document.addEventListener('click', syncDetailsStateAfterClick, false);
 
   document.addEventListener('devpilot:view-changed', () => {
     if (pending) window.setTimeout(() => tryFocus(0), 25);
