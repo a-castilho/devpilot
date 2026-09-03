@@ -1,152 +1,23 @@
 (() => {
   'use strict';
-
-  if (window.__devpilotStandaloneGameV73Ready) return;
-  window.__devpilotStandaloneGameV73Ready = true;
-
+  if (window.__devpilotStandaloneGameV87Ready) return;
+  window.__devpilotStandaloneGameV87Ready = true;
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
-  const ASSET_REVISION = 'game-flow-v85-20260903';
-
-  const ENTRY_ASSETS = [
-    'game/task-payload-guard.js',
-    'game/objective-controls.js',
-    'game/stable-round-ui.js',
-    'game/delivery-gate.js',
-    'game/recovery-runtime.js',
-    'game/flow-keeper.js',
-  ];
-
-  const VICTORY_ASSETS = [
-    'build-game-url-bonus.js',
-    'game/final-delivery-summary.js',
-  ];
-
-  const ALLOWED_ASSETS = new Set([...ENTRY_ASSETS, ...VICTORY_ASSETS]);
-  const assetLoads = new Map();
-  let victoryStarted = false;
-
-  const target = () => document.getElementById('build-game-view');
-  const hasShell = () => Boolean(target()?.querySelector('.build-game-shell'));
-  const hasVictory = () => Boolean(target()?.querySelector('.build-game-victory'));
-  const backToDashboard = () => window.location.assign('/');
-
-  document.getElementById('game-exit')?.addEventListener('click', backToDashboard);
-  document.getElementById('game-auth-back')?.addEventListener('click', backToDashboard);
-
-  const showBooting = message => {
-    const node = target();
-    if (!node || hasShell()) return;
-    node.innerHTML = `<div class="empty" data-game-boot-state="loading" role="status"><strong>Preparando Modo Jogo…</strong><p>${message || 'Carregando projetos e rodada.'}</p></div>`;
-  };
-
-  const showBootError = error => {
-    const node = target();
-    if (!node) return;
-    const message = String(error?.message || 'Falha inesperada');
-    node.innerHTML = `<div class="empty" data-game-boot-state="error" role="alert"><strong>Não foi possível iniciar o jogo.</strong><p>${message}</p><div class="hero-actions"><button class="primary" id="game-error-retry" type="button">Tentar novamente</button><button class="ghost" id="game-error-back" type="button">Voltar ao painel</button></div></div>`;
-    document.getElementById('game-error-retry')?.addEventListener('click', () => void boot());
-    document.getElementById('game-error-back')?.addEventListener('click', backToDashboard);
-  };
-
-  const withTimeout = (promise, label, timeoutMs = CORE_TIMEOUT_MS) => {
-    let timer = 0;
-    const timeout = new Promise((_, reject) => {
-      timer = window.setTimeout(() => reject(new Error(`${label} excedeu ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
-    });
-    return Promise.race([Promise.resolve(promise), timeout]).finally(() => window.clearTimeout(timer));
-  };
-
-  const loadAsset = (name, timeoutMs = OPTIONAL_TIMEOUT_MS) => {
-    const assetName = String(name || '');
-    if (!ALLOWED_ASSETS.has(assetName)) return Promise.resolve({name:assetName, ok:false, blocked:true});
-    if (assetLoads.has(assetName)) return assetLoads.get(assetName);
-
-    const promise = new Promise(resolve => {
-      const script = document.createElement('script');
-      let settled = false;
-      const finish = ok => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timer);
-        if (!ok) script.remove();
-        resolve({name:assetName, ok});
-      };
-      const timer = window.setTimeout(() => finish(false), timeoutMs);
-      script.src = `/assets/${assetName}?v=${encodeURIComponent(ASSET_REVISION)}`;
-      script.async = false;
-      script.dataset.devpilotGameAsset = assetName;
-      script.onload = () => finish(true);
-      script.onerror = () => finish(false);
-      document.body.appendChild(script);
-    });
-
-    assetLoads.set(assetName, promise);
-    return promise;
-  };
-
-  const loadGroup = async names => {
-    const results = [];
-    for (const name of names) {
-      const result = await loadAsset(name);
-      results.push(result);
-      if (!result.ok) console.warn(`[DevPilot Game] Recurso indisponível: ${name}`);
-      await new Promise(resolve => window.setTimeout(resolve, 0));
-    }
-    return results;
-  };
-
-  const scheduleVictory = () => {
-    if (victoryStarted || !hasVictory()) return;
-    victoryStarted = true;
-    window.setTimeout(() => void loadGroup(VICTORY_ASSETS), 350);
-  };
-
-  document.addEventListener('devpilot:game:state', scheduleVictory);
-  document.addEventListener('devpilot:game:rendered', scheduleVictory);
-
-  const startEnhancements = () => {
-    const run = async () => {
-      const results = await loadGroup(ENTRY_ASSETS);
-      window.__devpilotGameEnhancementResults = results;
-      document.dispatchEvent(new CustomEvent('devpilot:game:enhancements-ready', {detail:{results}}));
-      scheduleVictory();
-    };
-    if (typeof window.requestAnimationFrame === 'function') {
-      window.requestAnimationFrame(() => window.setTimeout(() => void run(), 0));
-    } else {
-      window.setTimeout(() => void run(), 0);
-    }
-  };
-
-  async function boot() {
-    showBooting('Carregando o núcleo do jogo…');
-    const token = String(localStorage.getItem('devpilot-token') || '').trim();
-    if (!token) {
-      document.getElementById('auth-modal')?.showModal?.();
-      return;
-    }
-
-    try {
-      if (typeof window.api !== 'function' || !window.__devpilotGameApiReady) throw new Error('Runtime de comunicação indisponível');
-      if (typeof window.loadBuildGame !== 'function' || !window.__devpilotGameControllerV73) throw new Error('Motor do jogo indisponível');
-
-      window.__devpilotGameLoadError = null;
-      await withTimeout(window.loadBuildGame(), 'Carregamento principal do jogo');
-      if (window.__devpilotGameLoadError) throw window.__devpilotGameLoadError;
-      if (!hasShell()) throw new Error('A interface principal do jogo não foi renderizada');
-
-      window.__devpilotGameCoreReady = true;
-      window.__devpilotGameBootProfile = 'unified-v85';
-      document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
-      startEnhancements();
-    } catch (error) {
-      window.__devpilotGameLoadError = error instanceof Error ? error : new Error(String(error || 'Falha no jogo'));
-      console.error('[DevPilot Game]', error);
-      showBootError(window.__devpilotGameLoadError);
-    }
-  }
-
-  if (window.queueMicrotask) window.queueMicrotask(() => void boot());
-  else window.setTimeout(() => void boot(), 0);
+  const ASSET_REVISION = 'game-flow-v87-20260903';
+  const ENTRY_ASSETS = ['game/task-payload-guard.js','game/objective-controls.js','game/stable-round-ui.js','game/delivery-gate.js','game/recovery-runtime.js','game/flow-keeper.js'];
+  const VICTORY_ASSETS = ['build-game-url-bonus.js','game/final-delivery-summary.js'];
+  const ALLOWED_ASSETS = new Set([...ENTRY_ASSETS,...VICTORY_ASSETS]);
+  const assetLoads = new Map(); let victoryStarted=false;
+  const target=()=>document.getElementById('build-game-view'); const hasShell=()=>Boolean(target()?.querySelector('.build-game-shell')); const hasVictory=()=>Boolean(target()?.querySelector('.build-game-victory')); const backToDashboard=()=>window.location.assign('/');
+  document.getElementById('game-exit')?.addEventListener('click',backToDashboard); document.getElementById('game-auth-back')?.addEventListener('click',backToDashboard);
+  const showBooting=message=>{const node=target();if(!node||hasShell())return;node.innerHTML=`<div class="empty" data-game-boot-state="loading" role="status"><strong>Preparando Modo Jogo…</strong><p>${message||'Carregando projetos e rodada.'}</p></div>`;};
+  const showBootError=error=>{const node=target();if(!node)return;const message=String(error?.message||'Falha inesperada');node.innerHTML=`<div class="empty" data-game-boot-state="error" role="alert"><strong>Não foi possível iniciar o jogo.</strong><p>${message}</p><div class="hero-actions"><button class="primary" id="game-error-retry" type="button">Tentar novamente</button><button class="ghost" id="game-error-back" type="button">Voltar ao painel</button></div></div>`;document.getElementById('game-error-retry')?.addEventListener('click',()=>void boot());document.getElementById('game-error-back')?.addEventListener('click',backToDashboard);};
+  const withTimeout=(promise,label,timeoutMs=CORE_TIMEOUT_MS)=>{let timer=0;const timeout=new Promise((_,reject)=>{timer=window.setTimeout(()=>reject(new Error(`${label} excedeu ${Math.round(timeoutMs/1000)}s`)),timeoutMs);});return Promise.race([Promise.resolve(promise),timeout]).finally(()=>window.clearTimeout(timer));};
+  const loadAsset=(name,timeoutMs=OPTIONAL_TIMEOUT_MS)=>{const assetName=String(name||'');if(!ALLOWED_ASSETS.has(assetName))return Promise.resolve({name:assetName,ok:false,blocked:true});if(assetLoads.has(assetName))return assetLoads.get(assetName);const promise=new Promise(resolve=>{const script=document.createElement('script');let settled=false;const finish=ok=>{if(settled)return;settled=true;window.clearTimeout(timer);if(!ok)script.remove();resolve({name:assetName,ok});};const timer=window.setTimeout(()=>finish(false),timeoutMs);script.src=`/assets/${assetName}?v=${encodeURIComponent(ASSET_REVISION)}`;script.async=false;script.dataset.devpilotGameAsset=assetName;script.onload=()=>finish(true);script.onerror=()=>finish(false);document.body.appendChild(script);});assetLoads.set(assetName,promise);return promise;};
+  const loadGroup=async names=>{const results=[];for(const name of names){const result=await loadAsset(name);results.push(result);if(!result.ok)console.warn(`[DevPilot Game] Recurso indisponível: ${name}`);await new Promise(resolve=>window.setTimeout(resolve,0));}return results;};
+  const scheduleVictory=()=>{if(victoryStarted||!hasVictory())return;victoryStarted=true;window.setTimeout(()=>void loadGroup(VICTORY_ASSETS),350);}; document.addEventListener('devpilot:game:state',scheduleVictory);document.addEventListener('devpilot:game:rendered',scheduleVictory);
+  const startEnhancements=()=>{const run=async()=>{const results=await loadGroup(ENTRY_ASSETS);window.__devpilotGameEnhancementResults=results;document.dispatchEvent(new CustomEvent('devpilot:game:enhancements-ready',{detail:{results}}));scheduleVictory();};window.requestAnimationFrame?window.requestAnimationFrame(()=>window.setTimeout(()=>void run(),0)):window.setTimeout(()=>void run(),0);};
+  async function boot(){showBooting('Carregando o núcleo do jogo…');const token=String(localStorage.getItem('devpilot-token')||'').trim();if(!token){document.getElementById('auth-modal')?.showModal?.();return;}try{if(typeof window.api!=='function'||!window.__devpilotGameApiReady)throw new Error('Runtime de comunicação indisponível');if(typeof window.loadBuildGame!=='function'||!window.__devpilotGameControllerV73)throw new Error('Motor do jogo indisponível');window.__devpilotGameLoadError=null;await withTimeout(window.loadBuildGame(),'Carregamento principal do jogo');if(window.__devpilotGameLoadError)throw window.__devpilotGameLoadError;if(!hasShell())throw new Error('A interface principal do jogo não foi renderizada');window.__devpilotGameCoreReady=true;window.__devpilotGameBootProfile='unified-v87';document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));startEnhancements();}catch(error){window.__devpilotGameLoadError=error instanceof Error?error:new Error(String(error||'Falha no jogo'));console.error('[DevPilot Game]',error);showBootError(window.__devpilotGameLoadError);}}
+  if(window.queueMicrotask)window.queueMicrotask(()=>void boot());else window.setTimeout(()=>void boot(),0);
 })();
