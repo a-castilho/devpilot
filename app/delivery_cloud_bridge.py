@@ -295,6 +295,17 @@ def _adaptive_verify(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+@delivery.router.post("/projects/{project_id}/delivery/auto")
+def automatic_delivery(
+    project_id: str,
+    db: Session = delivery.Depends(delivery.get_db),
+    actor: str = delivery.Depends(delivery.require_access),
+):
+    """Continue the idempotent delivery state machine for an authenticated project user."""
+    project = delivery.project_or_404(db, project_id)
+    return delivery.run_delivery(db, project, actor)
+
+
 def install_delivery_cloud_bridge() -> None:
     """Use system cloud credentials and adapt final delivery to the real project architecture."""
     if not getattr(delivery.connection, "_devpilot_cloud_admin_bridge", False):
