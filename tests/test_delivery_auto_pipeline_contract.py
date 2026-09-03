@@ -28,10 +28,17 @@ def test_game_starts_delivery_after_final_verifier():
     source = GAME_GATE.read_text(encoding="utf-8")
     assert "finalVerifierApproved" in source
     assert "ensureAutomaticDelivery" in source
-    assert "/delivery/${endpoint}" in source
+    assert "/delivery/auto`" in source
     assert "DELIVERY_RETRY_MS = 15000" in source
     assert "scheduleDeliveryRetry" in source
     assert "devpilot:delivery:ready" in source
+
+
+def test_automatic_delivery_does_not_require_owner_or_admin():
+    source = CLOUD_BRIDGE.read_text(encoding="utf-8")
+    assert '@delivery.router.post("/projects/{project_id}/delivery/auto")' in source
+    assert 'actor: str = delivery.Depends(delivery.require_access)' in source
+    assert 'return delivery.run_delivery(db, project, actor)' in source
 
 
 def test_frontend_only_is_not_forced_through_render_gate():
@@ -45,6 +52,7 @@ def run_contract():
     test_render_must_be_healthy_before_vercel()
     test_backend_url_is_injected_before_a_rebuild()
     test_game_starts_delivery_after_final_verifier()
+    test_automatic_delivery_does_not_require_owner_or_admin()
     test_frontend_only_is_not_forced_through_render_gate()
     print("DELIVERY_AUTO_PIPELINE=OK")
 
