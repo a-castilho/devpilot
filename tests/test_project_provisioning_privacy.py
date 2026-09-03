@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 from starlette.requests import Request
 
 import app.project_provisioning_routes as provisioning_routes
@@ -45,7 +45,7 @@ def request(method: str, path: str) -> Request:
 class FakeProvisionSession:
     def __init__(self):
         self.workspace = Workspace(id="workspace-1", name="DevPilot", slug="default")
-        self.scalar_results = [self.workspace, None, None]
+        self.scalar_results = [self.workspace, None]
         self.added = []
         self.commits = 0
 
@@ -133,24 +133,34 @@ def test_super_admin_keeps_manual_project_repository_option():
     assert actor == "user:user-1"
 
 
-def test_regular_user_registration_survives_missing_github_organization(monkeypatch):
-    """Cadastro é transacionalmente preservado mesmo quando o Git não pode ser provisionado."""
+def test_registration_returns_before_any_github_call(monkeypatch):
+    """The request transaction must not perform provider I/O; Git is queued after the response."""
     session = FakeProvisionSession()
     audit_events = []
+    background_tasks = BackgroundTasks()
+
     monkeypatch.setattr(
         provisioning_routes,
         "record",
         lambda _db, **payload: audit_events.append(payload),
+    )
+    monkeypatch.setattr(
+        provisioning_routes,
+        "create_github_repository",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("GitHub must not run in the registration request")
+        ),
     )
 
     project = provision_project(
         ProjectProvisionCreate(
             name="Projeto Cliente",
             slug="projeto-cliente",
-            description="Cadastro sem depender da disponibilidade do GitHub",
+            description="Cadastro sem depender da latência do GitHub",
             agents_md="# AGENTS.md",
             codex_config={"model": "gpt-5.4"},
         ),
+        background_tasks=background_tasks,
         db=session,
         principal=principal(Role.OWNER),
         actor="user:user-1",
@@ -163,6 +173,9 @@ def test_regular_user_registration_survives_missing_github_organization(monkeypa
     assert project.default_branch == "main"
     assert config["repository_pending"] is True
     assert config["repository_mode"] == "deferred"
+    assert config["repository_provision_state"] == "queued"
     assert session.commits == 1
-    assert any(event.get("action") == "project.repository_provision" for event in audit_events)
+    assert len(background_tasks.tasks) == 1
+    assert background_tasks.tasks[0].func is provisioning_routes.provision_repository_in_background
     assert any(event.get("action") == "project.created_without_repository" for event in audit_events)
+    assert not any(event.get("action") == "project.repository_provision" for event in audit_events)
