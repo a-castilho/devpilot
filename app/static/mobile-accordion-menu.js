@@ -1,21 +1,11 @@
 (() => {
   'use strict';
 
-  if (window.__devpilotMobileAccordionMenuStable) return;
-  window.__devpilotMobileAccordionMenuStable = true;
+  if (window.__devpilotMobileAccordionMenuV94) return;
+  window.__devpilotMobileAccordionMenuV94 = true;
 
   let mounted = false;
   let syncFrame = 0;
-
-  function ensureGameShipsRuntime() {
-    if (window.__devpilotMobileGameShipsStable || document.querySelector('script[data-mobile-game-ships-stable="1"]')) return;
-    const script = document.createElement('script');
-    script.src = '/assets/mobile-game-ships-stable.js?v=game-ships-stable-20260903-v39';
-    script.async = false;
-    script.dataset.mobileGameShipsStable = '1';
-    script.onerror = () => console.error('[DevPilot] Falha ao carregar runtime de jogo e naves mobile');
-    document.body.appendChild(script);
-  }
 
   function ensureMobileRouteOverrides() {
     if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
@@ -63,19 +53,18 @@
     const sidebar = document.querySelector('.sidebar');
     return {
       sidebar,
-      sourceNav: sidebar?.querySelector(':scope > nav') || null,
-      root: sidebar?.querySelector(':scope > .mobile-simple-nav') || null,
-      sheet: document.querySelector('.mobile-simple-sheet'),
-      backdrop: document.querySelector('.mobile-simple-backdrop'),
+      sourceNav:sidebar?.querySelector(':scope > nav') || null,
+      root:sidebar?.querySelector(':scope > .mobile-simple-nav') || null,
+      sheet:document.querySelector('.mobile-simple-sheet'),
+      backdrop:document.querySelector('.mobile-simple-backdrop'),
     };
   }
 
   function mountMobileMenu() {
     ensureMobileRouteOverrides();
-    ensureGameShipsRuntime();
     if (window.innerWidth > 900) return false;
 
-    const {sidebar, sourceNav, root: existingRoot} = sourceElements();
+    const {sidebar, sourceNav, root:existingRoot} = sourceElements();
     if (!sidebar || !sourceNav) return false;
     if (existingRoot) {
       mounted = true;
@@ -238,7 +227,6 @@
   }
 
   function boot() {
-    ensureGameShipsRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
   }
 
@@ -249,7 +237,6 @@
   }
 
   window.addEventListener('resize', () => {
-    ensureGameShipsRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
     scheduleSync();
   }, {passive:true});
@@ -259,5 +246,5 @@
   document.addEventListener('devpilot:feature-ready', scheduleSync);
   document.addEventListener('devpilot:login-complete', scheduleSync);
 
-  console.info('[DevPilot] Menu mobile estável com acesso direto ao Jogo e naves');
+  console.info('[DevPilot] Menu mobile V94 sem loaders ocultos');
 })();
