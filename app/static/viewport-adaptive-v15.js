@@ -125,33 +125,6 @@
     ensureStylesheet('link[data-layout-authority-v37]', '/assets/layout-authority-v37.css?v=20260830-1', 'layoutAuthorityV37');
   }
 
-  function showViewFallback(viewName) {
-    document.querySelectorAll('main .view').forEach(view => {
-      const active = view.id === `${viewName}-view`;
-      view.classList.toggle('active', active);
-      view.hidden = !active;
-      view.setAttribute('aria-hidden', active ? 'false' : 'true');
-    });
-    const title = document.querySelector('#page-title');
-    if (title && viewName === 'new-project') title.textContent = 'Novo projeto';
-  }
-
-  function openProjectBuilderSafe() {
-    if (typeof window.devpilotNavigate === 'function') {
-      void window.devpilotNavigate('new-project', {source:'primary-action-safe-open', immediate:true});
-    } else if (typeof window.showView === 'function') {
-      window.showView('new-project');
-    } else {
-      showViewFallback('new-project');
-    }
-
-    window.requestAnimationFrame(() => window.scrollTo({top:0, left:0, behavior:'auto'}));
-    if (typeof window.__devpilotLoadFeature === 'function') {
-      void Promise.resolve(window.__devpilotLoadFeature('projectBuilder'))
-        .catch(error => console.warn('[DevPilot] Project Builder carregou parcialmente', error));
-    }
-  }
-
   function openTaskModalSafe(trigger) {
     const projectId = String(trigger?.dataset?.projectTask || '');
     const source = projectId ? 'project' : 'dashboard';
@@ -183,21 +156,17 @@
     }
   }
 
-  function installPrimaryActionSafeOpen() {
-    if (window.__devpilotPrimaryActionSafeOpenV29) return;
-    window.__devpilotPrimaryActionSafeOpenV29 = true;
+  function installTaskActionSafeOpen() {
+    if (window.__devpilotTaskActionSafeOpenV41) return;
+    window.__devpilotTaskActionSafeOpenV41 = true;
 
+    // Novo projeto não pertence mais a este runtime. O feature-loader é o único
+    // owner do CTA e aplica o contrato V34/V40: mostrar a view antes de qualquer
+    // await. Manter um segundo capture handler aqui fazia o V29 vencer a corrida
+    // e impedia openProjectBuilderDirect() de receber o clique.
     window.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
       if (!target) return;
-
-      const projectTrigger = target.closest('[data-project-builder-open]');
-      if (projectTrigger) {
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        openProjectBuilderSafe();
-        return;
-      }
 
       const taskTrigger = target.closest('[data-open="task-modal"], [data-project-task]');
       if (!taskTrigger) return;
@@ -209,7 +178,7 @@
 
   loadCss();
   apply();
-  installPrimaryActionSafeOpen();
+  installTaskActionSafeOpen();
 
   // Regra V38: scroll do visualViewport nunca deve recalcular layout global.
   // resize de mobile só é relevante quando há mudança de largura/orientação.
@@ -220,5 +189,5 @@
   document.addEventListener('devpilot:dashboard-revealed', schedule);
   document.addEventListener('devpilot:feature-ready', schedule);
 
-  console.info('[DevPilot] Viewport Adaptive V38 sem reflow durante scroll mobile');
+  console.info('[DevPilot] Viewport Adaptive V41 sem interceptar Novo projeto');
 })();
