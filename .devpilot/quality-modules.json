@@ -206,10 +206,13 @@
         "tests/test_progressive_frontend_boot.py",
         "tests/test_spa_static_path_isolation.py",
         "tests/test_mobile_*.py",
-        "tests/test_profile_ui_integrity.py"
+        "tests/test_profile_ui_integrity.py",
+        "tests/test_new_project_runtime_quality_v94.py",
+        "tests/test_project_builder_nonblocking_v34.py"
       ],
       "browser_tests": [
         "tests/test_critical_flows_browser_e2e.py",
+        "tests/test_new_project_browser_e2e.py",
         "tests/test_game_browser_e2e.py",
         "tests/test_rag_browser_e2e.py"
       ],
