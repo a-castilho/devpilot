@@ -81,7 +81,7 @@
       target.style.removeProperty('display');
       return;
     }
-    target.style.display = detailsOpen ? 'block' : 'none';
+    target.style.setProperty('display', detailsOpen ? 'block' : 'none', 'important');
   };
 
   const bindActions = (root, engine) => {
