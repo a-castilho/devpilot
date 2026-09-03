@@ -146,8 +146,42 @@
     );
   }
 
+  function installNewProjectSafeOpen() {
+    if (window.__devpilotNewProjectSafeOpenV28) return;
+    window.__devpilotNewProjectSafeOpenV28 = true;
+
+    document.addEventListener('click', event => {
+      const target = event.target instanceof Element ? event.target : null;
+      const trigger = target?.closest('[data-project-builder-open]');
+      if (!trigger) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+
+      const open = () => {
+        if (typeof window.devpilotNavigate === 'function') {
+          void window.devpilotNavigate('new-project', {source:'new-project-safe-open'});
+          return;
+        }
+        if (typeof window.showView === 'function') {
+          window.showView('new-project');
+          return;
+        }
+        document.querySelectorAll('main .view').forEach(view => {
+          const active = view.id === 'new-project-view';
+          view.classList.toggle('active', active);
+          view.hidden = !active;
+          view.setAttribute('aria-hidden', active ? 'false' : 'true');
+        });
+      };
+
+      open();
+    }, true);
+  }
+
   loadCss();
   apply();
+  installNewProjectSafeOpen();
 
   window.addEventListener('resize', schedule, {passive:true});
   window.addEventListener('orientationchange', schedule, {passive:true});
