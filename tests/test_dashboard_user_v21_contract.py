@@ -5,7 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_dashboard_user_v21_contract():
     runtime = (ROOT / 'app/static/dashboard-user-v21.js').read_text(encoding='utf-8')
-    viewport = (ROOT / 'app/static/viewport-adaptive-v15.js').read_text(encoding='utf-8')
+    feature_loader = (ROOT / 'app/static/feature-loader.js').read_text(encoding='utf-8')
 
     assert '__devpilotDashboardUserV21' in runtime
     assert 'CENTRAL OPERACIONAL' in runtime
@@ -13,8 +13,12 @@ def test_dashboard_user_v21_contract():
     assert 'Últimas execuções' in runtime
     assert "#overview-view" in runtime
     assert "#metrics" in runtime
-    assert "dashboard-user-v21.js" in viewport
-    assert 'loadDashboardUserV21' in viewport
+
+    # O dashboard V21 hoje é carregado pelo feature-loader central. O contrato
+    # antigo que procurava loadDashboardUserV21 em viewport-adaptive-v15.js não
+    # representa mais a arquitetura real e gerava falso negativo no teste local.
+    assert "shellCommon" in feature_loader
+    assert "'dashboard-user-v21.js'" in feature_loader
 
     # O painel operacional deve usar uma única população para todos os números.
     # A API /overview continua válida para projetos, mas totais históricos de
