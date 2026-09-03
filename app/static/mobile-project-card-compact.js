@@ -4,7 +4,6 @@
   const STYLE_ID = 'devpilot-mobile-project-card-compact-style';
   const WRAP_FLAG = '__devpilotProjectsMemoryGuard';
   const LOAD_WRAP_FLAG = '__devpilotProjectsLoadGuard';
-  const BUILDER_OPEN_FLAG = 'devpilotLowPowerOpening';
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const GAME_MISSION_KEY = 'devpilot-build-game-mission';
   const GAME_URL = '/game/index.html';
@@ -338,91 +337,6 @@
     try { loadProjects = guardedLoadProjects; } catch (_) {}
   }
 
-  function showBuilderView() {
-    if (typeof showView === 'function') {
-      showView('new-project');
-    } else {
-      document.querySelectorAll('.view').forEach(view => {
-        view.classList.toggle('active', view.id === 'new-project-view');
-      });
-    }
-    const title = document.querySelector('#page-title');
-    if (title) title.textContent = 'Novo projeto';
-    window.scrollTo({top:0, left:0, behavior:'auto'});
-  }
-
-  function showBuilderLoading(message, error = false) {
-    const host = document.querySelector('#project-builder-groups');
-    if (!host || host.querySelector('.builder-group')) return;
-    host.textContent = '';
-    const notice = document.createElement('div');
-    notice.className = 'empty';
-    notice.dataset.projectBuilderLoading = error ? 'error' : 'loading';
-    notice.setAttribute('role', error ? 'alert' : 'status');
-    notice.textContent = message;
-    host.appendChild(notice);
-  }
-
-  function syncBuilderOrganizations() {
-    if (typeof state === 'undefined' || !Array.isArray(state.organizations)) return;
-    const select = document.querySelector('#project-builder-organization');
-    if (!select) return;
-    const current = String(select.value || '');
-    select.replaceChildren(new Option('Sem organização', ''));
-    if (typeof isSuperAdmin === 'function' && isSuperAdmin()) {
-      state.organizations.forEach(org => {
-        select.add(new Option(String(org?.name || ''), String(org?.id || ''));
-      });
-    }
-    const castilho = state.organizations.find(org => String(org?.external_login || '').toLowerCase() === 'a-castilho');
-    if (castilho) select.value = String(castilho.id);
-    else if (current && Array.from(select.options).some(option => option.value === current)) select.value = current;
-  }
-
-  function refreshBuilderOrganizations() {
-    const admin = typeof isSuperAdmin === 'function' && isSuperAdmin();
-    if (!admin || typeof loadOrganizations !== 'function') return;
-    const organizations = typeof state !== 'undefined' && Array.isArray(state.organizations)
-      ? state.organizations
-      : [];
-    if (organizations.length) {
-      syncBuilderOrganizations();
-      return;
-    }
-    void Promise.resolve(loadOrganizations())
-      .then(syncBuilderOrganizations)
-      .catch(error => console.warn('[DevPilot] Organizações não carregadas no Novo projeto', error));
-  }
-
-  async function openBuilderLowPower(trigger) {
-    if (!trigger || trigger.dataset[BUILDER_OPEN_FLAG] === '1') return;
-    trigger.dataset[BUILDER_OPEN_FLAG] = '1';
-    trigger.setAttribute('aria-busy', 'true');
-
-    showBuilderView();
-    showBuilderLoading('Carregando cadastro de projeto…');
-
-    try {
-      if (typeof window.__devpilotLoadFeature !== 'function') {
-        throw new Error('Carregador do cadastro indisponível.');
-      }
-      const ready = await window.__devpilotLoadFeature('projectBuilder');
-      const groups = document.querySelector('#project-builder-groups');
-      if (!groups?.querySelector('.builder-group')) {
-        throw new Error('Não foi possível carregar o cadastro de projeto.');
-      }
-      if (!ready) window.toast?.('Cadastro aberto; algum recurso auxiliar ficou indisponível.');
-      window.setTimeout(refreshBuilderOrganizations, 0);
-    } catch (error) {
-      console.error('[DevPilot] Falha ao abrir Novo projeto em modo leve', error);
-      showBuilderLoading(error?.message || 'Não foi possível carregar o cadastro de projeto.', true);
-      window.toast?.(error?.message || 'Não foi possível abrir o cadastro de projeto.');
-    } finally {
-      trigger.removeAttribute('aria-busy');
-      delete trigger.dataset[BUILDER_OPEN_FLAG];
-    }
-  }
-
   function openGame(projectId) {
     const id = String(projectId || '').trim();
     if (!id) return;
@@ -446,16 +360,6 @@
   installLoadGuard();
 
   document.addEventListener('click', event => {
-    if (!lowPower()) return;
-    const target = event.target instanceof Element ? event.target : null;
-    const trigger = target?.closest('[data-project-builder-open]');
-    if (!trigger) return;
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    void openBuilderLowPower(trigger);
-  }, true);
-
-  document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
 
@@ -477,4 +381,6 @@
     event.preventDefault();
     loadMore();
   });
+
+  console.info('[DevPilot] Mobile Projects Runtime V33 ativo');
 })();
