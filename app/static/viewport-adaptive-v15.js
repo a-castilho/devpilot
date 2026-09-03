@@ -79,7 +79,38 @@
     if (title && viewName === 'new-project') title.textContent = 'Novo projeto';
   }
 
+  function isMobilePrimaryAction() {
+    return window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  }
+
+  function openProjectBuilderMobileDirect() {
+    // No celular o formulário já está no HTML e project-builder.js é carregado
+    // diretamente no bootstrap. Portanto não esperamos lazy loader, organizações,
+    // entregas ou outros módulos antes de mostrar a tela.
+    showViewFallback('new-project');
+    root.dataset.devpilotView = 'new-project';
+    root.classList.remove('dp-page-switching');
+
+    const nextHash = '#/new-project';
+    if (location.hash !== nextHash) {
+      history.pushState({devpilotView:'new-project'}, '', `${location.pathname}${location.search}${nextHash}`);
+    }
+
+    document.body.classList.remove('mobile-simple-open');
+    document.querySelector('.mobile-simple-close')?.click?.();
+    document.dispatchEvent(new CustomEvent('devpilot:view-changed', {
+      detail:{view:'new-project', source:'mobile-primary-action-direct'},
+    }));
+    document.dispatchEvent(new CustomEvent('devpilot:mobile-new-project-opened'));
+    window.requestAnimationFrame(() => window.scrollTo({top:0, left:0, behavior:'auto'}));
+  }
+
   function openProjectBuilderSafe() {
+    if (isMobilePrimaryAction()) {
+      openProjectBuilderMobileDirect();
+      return;
+    }
+
     if (typeof window.devpilotNavigate === 'function') {
       void window.devpilotNavigate('new-project', {source:'primary-action-safe-open', immediate:true});
     } else if (typeof window.showView === 'function') {
@@ -127,8 +158,8 @@
   }
 
   function installPrimaryActionSafeOpen() {
-    if (window.__devpilotPrimaryActionSafeOpenV29) return;
-    window.__devpilotPrimaryActionSafeOpenV29 = true;
+    if (window.__devpilotPrimaryActionSafeOpenV30) return;
+    window.__devpilotPrimaryActionSafeOpenV30 = true;
 
     window.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
@@ -162,5 +193,5 @@
   document.addEventListener('devpilot:dashboard-revealed', schedule);
   document.addEventListener('devpilot:feature-ready', schedule);
 
-  console.info('[DevPilot] Viewport Adaptive V37 autoridade final ativa');
+  console.info('[DevPilot] Viewport Adaptive V38 mobile direct open ativo');
 })();
