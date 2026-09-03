@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.game_rule_routes import router as game_rule_router
+from app.pipeline_repair_routes import router as pipeline_repair_router
 from app.security import Principal, Role, require_roles
 from app.services.audit import record
 from app.version import __version__
@@ -174,8 +175,7 @@ def run_local_test(
     return result
 
 
-# Main imports only this symbol. Keep the existing local-test API and aggregate the
-# independent game-rules bounded context without coupling either router to app.main.
 router = APIRouter()
 router.include_router(local_test_router)
 router.include_router(game_rule_router)
+router.include_router(pipeline_repair_router)
