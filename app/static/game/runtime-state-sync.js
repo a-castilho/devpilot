@@ -1,14 +1,14 @@
-/* DevPilot game v82 — make the orchestrator runtime the source of truth for task state. */
+/* DevPilot game v91 — runtime state is authoritative; internal recovery tasks stay outside the game pipeline. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameRuntimeStateSyncV82Ready) return;
-  window.__devpilotGameRuntimeStateSyncV82Ready = true;
+  if (window.__devpilotGameRuntimeStateSyncV91Ready) return;
+  window.__devpilotGameRuntimeStateSyncV91Ready = true;
 
   const originalApi = window.api;
   if (typeof originalApi !== 'function') return;
 
-  const STOPPED = new Set(['paused', 'pause_requested', 'canceled', 'cancel_requested', 'archived']);
+  const FAILURE_RECOVERY_MARKER = '[DEVPILOT_FAILURE_RECOVERY_V1]';
   let runtimeCache = {at: 0, states: {}};
   let runtimeInFlight = null;
 
@@ -17,6 +17,12 @@
     const method = String(options?.method || 'GET').toUpperCase();
     return method === 'GET' && /^\/tasks(?:\?|$)/.test(String(path || ''));
   };
+  const isFailureRecoveryTask = task => Boolean(
+    task && (
+      String(task.source || '').trim().toLowerCase() === 'failure-recovery' ||
+      String(task.prompt || '').includes(FAILURE_RECOVERY_MARKER)
+    )
+  );
 
   const loadRuntime = async () => {
     if (now() - runtimeCache.at < 1200) return runtimeCache.states;
@@ -69,7 +75,13 @@
       loadRuntime(),
     ]);
     if (!Array.isArray(rows)) return rows;
-    return rows.map(task => effectiveTask(task, states));
+
+    // Recovery prompts intentionally embed the original game prompt for context. Without this
+    // boundary filter, the game controller can mistake a recovery task for a newer phase task,
+    // create a gate for the repair itself and corrupt progression after refresh/reload.
+    return rows
+      .filter(task => !isFailureRecoveryTask(task))
+      .map(task => effectiveTask(task, states));
   };
 
   window.__devpilotGameRawApi = originalApi;
