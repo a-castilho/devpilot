@@ -20,6 +20,7 @@ _ORIGINAL_CONNECTION = delivery.connection
 _ORIGINAL_REQUEST_JSON = delivery.request_json
 _ORIGINAL_SELECTED_PROVIDERS = delivery.selected_providers
 _ORIGINAL_VERIFY = delivery.verify
+_ORIGINAL_PROVISION_VERCEL = delivery.provision_vercel
 
 
 def _cloud_admin_row(
@@ -201,6 +202,57 @@ def _probe(url: str) -> tuple[bool, int]:
     return 200 <= response.status_code < 400, response.status_code
 
 
+def _gated_provision_vercel(
+    client,
+    token: str,
+    account_id: str,
+    project,
+    state: dict[str, Any],
+    backend_url: str | None,
+    repo_full_name: str,
+) -> str:
+    """Do not build the frontend until the required Render backend is reachable."""
+    requested = {str(item).strip().lower() for item in (state.get("requested") or []) if item}
+    providers = state.setdefault("providers", {})
+    render = providers.setdefault("render", {}) if "render" in requested else {}
+    effective_backend_url = str(backend_url or render.get("url") or "").rstrip("/")
+
+    if "render" in requested:
+        health_url = f"{effective_backend_url}/health" if effective_backend_url else ""
+        ready, status_code = _probe(health_url) if health_url else (False, 0)
+        render["status"] = "ready" if ready else "deploying"
+        render["health_status_code"] = status_code
+        render["health_url"] = health_url
+        if not ready:
+            vercel = providers.setdefault("vercel", {})
+            vercel["status"] = "waiting_backend"
+            state["status"] = "deploying"
+            state["waiting_for"] = "render_ready"
+            return str(vercel.get("url") or "")
+
+    vercel = providers.setdefault("vercel", {})
+    configured_backend = str(vercel.get("backend_url") or "").rstrip("/")
+    if effective_backend_url and configured_backend != effective_backend_url:
+        # Recover old/partial deployments: env must be written before the build that consumes it.
+        vercel["backend_configured"] = False
+        vercel["deployment_id"] = ""
+        vercel["url"] = ""
+
+    result = _ORIGINAL_PROVISION_VERCEL(
+        client,
+        token,
+        account_id,
+        project,
+        state,
+        effective_backend_url or None,
+        repo_full_name,
+    )
+    if effective_backend_url and vercel.get("backend_configured"):
+        vercel["backend_url"] = effective_backend_url
+    state.pop("waiting_for", None)
+    return result
+
+
 def _adaptive_verify(state: dict[str, Any]) -> dict[str, Any]:
     """Verify only requested components; database proof comes from Neon provisioning, not Vercel /health."""
     providers = state.get("providers") if isinstance(state.get("providers"), dict) else {}
@@ -220,6 +272,8 @@ def _adaptive_verify(state: dict[str, Any]) -> dict[str, Any]:
         render = providers.get("render") if isinstance(providers.get("render"), dict) else {}
         render_url = str(render.get("url") or "").rstrip("/")
         ok, status_code = _probe(f"{render_url}/health") if render_url else (False, 0)
+        render["status"] = "ready" if ok else "deploying"
+        render["health_status_code"] = status_code
         checks.append({"name": "backend", "provider": "render", "ok": ok, "status_code": status_code, "url": f"{render_url}/health" if render_url else ""})
         if render_url:
             public_url = render_url
@@ -252,6 +306,9 @@ def install_delivery_cloud_bridge() -> None:
     if not getattr(delivery.selected_providers, "_devpilot_adaptive_delivery", False):
         setattr(_adaptive_selected_providers, "_devpilot_adaptive_delivery", True)
         delivery.selected_providers = _adaptive_selected_providers
+    if not getattr(delivery.provision_vercel, "_devpilot_render_ready_gate", False):
+        setattr(_gated_provision_vercel, "_devpilot_render_ready_gate", True)
+        delivery.provision_vercel = _gated_provision_vercel
     if not getattr(delivery.verify, "_devpilot_adaptive_verify", False):
         setattr(_adaptive_verify, "_devpilot_adaptive_verify", True)
         delivery.verify = _adaptive_verify
