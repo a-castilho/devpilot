@@ -19,11 +19,14 @@ html[data-devpilot-view] main .view[hidden] {
   display: none !important;
 }
 
+/*
+ * A navegação lazy nunca bloqueia toda a área principal. A view ativa continua
+ * recebendo toque/clique enquanto módulos auxiliares carregam em segundo plano.
+ */
 html.dp-page-switching main {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
-html.dp-page-switching main .view.active,
 html[data-devpilot-view] main .view.dp-page-leaving {
   opacity: 0 !important;
   transform: translateY(5px) scale(.998);
@@ -57,9 +60,11 @@ html[data-devpilot-view]:not([data-devpilot-view="overview"]) #mission-control-p
 }
 
 /*
- * Em telas de menu, somente a view selecionada participa do layout.
+ * Somente a view selecionada participa do layout. Novo projeto faz parte do
+ * contrato explícito para não depender de regras genéricas/legadas de .view.
  */
 html[data-devpilot-view="projects"] #projects-view,
+html[data-devpilot-view="new-project"] #new-project-view,
 html[data-devpilot-view="tasks"] #tasks-view,
 html[data-devpilot-view="providers"] #providers-view,
 html[data-devpilot-view="reports"] #reports-view,
@@ -88,7 +93,6 @@ html[data-devpilot-view="overview"] #overview-view {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html.dp-page-switching main .view.active,
   html[data-devpilot-view] main .view.dp-page-leaving,
   html[data-devpilot-view] main .view.dp-page-entering {
     animation: none !important;
