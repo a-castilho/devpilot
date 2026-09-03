@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import Organization, Project, ProviderCredential, Repository, Workspace
 from app.security import Principal, Role, require_access, require_super_admin, session_principal
 from app.services.audit import record
@@ -17,6 +18,7 @@ from app.services.vault import Vault
 
 AUTHORIZED_ORGANIZATION = "a-castilho"
 GENERIC_PROJECT_CREATE_ERROR = "Não foi possível criar o projeto. A administração foi notificada."
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
 
 
@@ -112,6 +114,19 @@ def provisioning_client_error(principal: Principal, error: Exception) -> HTTPExc
     return HTTPException(status_code=503, detail=GENERIC_PROJECT_CREATE_ERROR)
 
 
+def project_config(project: Project) -> dict:
+    raw = project.codex_config
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            value = json.loads(raw)
+        except (TypeError, ValueError):
+            return {}
+        return dict(value) if isinstance(value, dict) else {}
+    return {}
+
+
 def persist_deferred_project(
     db: Session,
     *,
@@ -129,6 +144,9 @@ def persist_deferred_project(
     config = dict(codex_config)
     config["repository_pending"] = True
     config["repository_mode"] = "deferred"
+    config["repository_provision_state"] = (
+        "queued" if source == "automatic_provision_queued" else "pending"
+    )
 
     item = Project(
         workspace_id=ws.id,
@@ -152,6 +170,7 @@ def persist_deferred_project(
         details={
             "slug": item.slug,
             "repository_pending": True,
+            "repository_provision_state": config["repository_provision_state"],
             "organization_id": item.organization_id,
             "source": source,
         },
@@ -159,6 +178,104 @@ def persist_deferred_project(
     db.commit()
     db.refresh(item)
     return item
+
+
+def provision_repository_in_background(
+    project_id: str,
+    workspace_id: str,
+    actor: str,
+) -> None:
+    """Provision Git after registration so provider latency never blocks the form submit."""
+    with SessionLocal() as db:
+        project = db.scalar(
+            select(Project).where(
+                Project.id == project_id,
+                Project.workspace_id == workspace_id,
+            )
+        )
+        if not project or str(project.repository_url or "").strip():
+            return
+
+        organization: Organization | None = None
+        try:
+            organization = authorized_organization(db, workspace_id)
+            access_token = organization_access_token(db, workspace_id, organization)
+            remote = create_github_repository(
+                AUTHORIZED_ORGANIZATION,
+                project.slug,
+                project.description,
+                access_token,
+            )
+        except Exception as error:  # external provider failure must never unwind the registration response
+            config = project_config(project)
+            config["repository_pending"] = True
+            config["repository_mode"] = "deferred"
+            config["repository_provision_state"] = "failed"
+            project.codex_config = json.dumps(config)
+            record(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                actor=actor,
+                action="project.repository_provision",
+                outcome="failed",
+                details={
+                    "organization_id": organization.id if organization else None,
+                    "repository_name": project.slug,
+                    "error": str(error.detail) if isinstance(error, HTTPException) else str(error),
+                    "background": True,
+                },
+            )
+            db.commit()
+            logger.warning(
+                "Background repository provisioning failed for project %s: %s",
+                project_id,
+                error,
+            )
+            return
+
+        project.organization_id = organization.id
+        project.repository_url = remote["clone_url"]
+        project.default_branch = remote["default_branch"]
+        config = project_config(project)
+        config["repository_pending"] = False
+        config["repository_mode"] = "automatic"
+        config["repository_provision_state"] = "ready"
+        project.codex_config = json.dumps(config)
+
+        repository = db.scalar(select(Repository).where(Repository.project_id == project.id))
+        if not repository:
+            db.add(
+                Repository(
+                    organization_id=organization.id,
+                    project_id=project.id,
+                    external_id=remote["external_id"],
+                    name=remote["name"],
+                    full_name=remote["full_name"],
+                    description=remote["description"],
+                    clone_url=remote["clone_url"],
+                    default_branch=remote["default_branch"],
+                    visibility=remote["visibility"],
+                    archived=remote["archived"],
+                )
+            )
+
+        record(
+            db,
+            workspace_id=workspace_id,
+            project_id=project.id,
+            actor=actor,
+            action="project.repository_provisioned",
+            details={
+                "organization_id": organization.id,
+                "repository": remote["full_name"],
+                "visibility": remote["visibility"],
+                "authorized": True,
+                "credential_source": "super_admin_managed_organization",
+                "background": True,
+            },
+        )
+        db.commit()
 
 
 @router.post("/projects/deferred", status_code=201)
@@ -194,11 +311,12 @@ def create_project_without_repository(
 @router.post("/projects/provision", status_code=201)
 def provision_project(
     payload: ProjectProvisionCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    """Create Git automatically; never lose an authorized project registration if Git is unavailable."""
+    """Persist first and provision Git only after the HTTP response is ready."""
     ws = workspace(db)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
@@ -206,90 +324,23 @@ def provision_project(
     if existing:
         raise HTTPException(409, f"Project slug already exists: {payload.slug}")
 
-    organization: Organization | None = None
-    try:
-        organization = authorized_organization(db, ws.id)
-        access_token = organization_access_token(db, ws.id, organization)
-        remote = create_github_repository(
-            AUTHORIZED_ORGANIZATION,
-            payload.slug,
-            payload.description,
-            access_token,
-        )
-    except (HTTPException, GitHubProvisioningError) as error:
-        record(
-            db,
-            workspace_id=ws.id,
-            actor=actor,
-            action="project.repository_provision",
-            outcome="failed",
-            details={
-                "organization_id": organization.id if organization else None,
-                "repository_name": payload.slug,
-                "error": str(error.detail) if isinstance(error, HTTPException) else str(error),
-            },
-        )
-
-        # Cadastro e Git são operações diferentes. OWNER/ADMIN já são autorizados a usar
-        # /projects/provision; portanto uma indisponibilidade de credencial, organização ou
-        # GitHub não pode apagar o cadastro que o usuário acabou de concluir. Persistimos o
-        # projeto com repository_pending e mantemos os detalhes sensíveis somente na auditoria.
-        return persist_deferred_project(
-            db,
-            ws=ws,
-            name=payload.name,
-            slug=payload.slug,
-            description=payload.description,
-            agents_md=payload.agents_md,
-            codex_config=payload.codex_config,
-            organization=organization,
-            default_branch="main",
-            actor=actor,
-            source="automatic_provision_fallback",
-        )
-
-    item = Project(
-        workspace_id=ws.id,
-        organization_id=organization.id,
+    item = persist_deferred_project(
+        db,
+        ws=ws,
         name=payload.name,
         slug=payload.slug,
         description=payload.description,
-        repository_url=remote["clone_url"],
-        default_branch=remote["default_branch"],
         agents_md=payload.agents_md,
-        codex_config=json.dumps(payload.codex_config),
-    )
-    db.add(item)
-    db.flush()
-
-    repository = Repository(
-        organization_id=organization.id,
-        project_id=item.id,
-        external_id=remote["external_id"],
-        name=remote["name"],
-        full_name=remote["full_name"],
-        description=remote["description"],
-        clone_url=remote["clone_url"],
-        default_branch=remote["default_branch"],
-        visibility=remote["visibility"],
-        archived=remote["archived"],
-    )
-    db.add(repository)
-
-    record(
-        db,
-        workspace_id=ws.id,
-        project_id=item.id,
+        codex_config=payload.codex_config,
+        organization=None,
+        default_branch="main",
         actor=actor,
-        action="project.repository_provisioned",
-        details={
-            "organization_id": organization.id,
-            "repository": remote["full_name"],
-            "visibility": remote["visibility"],
-            "authorized": True,
-            "credential_source": "super_admin_managed_organization",
-        },
+        source="automatic_provision_queued",
     )
-    db.commit()
-    db.refresh(item)
+    background_tasks.add_task(
+        provision_repository_in_background,
+        item.id,
+        ws.id,
+        actor,
+    )
     return item
