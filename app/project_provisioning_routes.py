@@ -198,7 +198,7 @@ def provision_project(
     principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    """Create Git automatically with the centrally managed SUPER_ADMIN organization credential."""
+    """Create Git automatically; never lose an authorized project registration if Git is unavailable."""
     ws = workspace(db)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
@@ -230,25 +230,23 @@ def provision_project(
             },
         )
 
-        # A falha do GitHub não deve impedir o Super Admin de cadastrar o projeto.
-        # O projeto fica explicitamente pendente de repositório e pode ser conectado depois.
-        if principal.role is Role.SUPER_ADMIN:
-            return persist_deferred_project(
-                db,
-                ws=ws,
-                name=payload.name,
-                slug=payload.slug,
-                description=payload.description,
-                agents_md=payload.agents_md,
-                codex_config=payload.codex_config,
-                organization=organization,
-                default_branch="main",
-                actor=actor,
-                source="automatic_provision_fallback",
-            )
-
-        db.commit()
-        raise provisioning_client_error(principal, error) from error
+        # Cadastro e Git são operações diferentes. OWNER/ADMIN já são autorizados a usar
+        # /projects/provision; portanto uma indisponibilidade de credencial, organização ou
+        # GitHub não pode apagar o cadastro que o usuário acabou de concluir. Persistimos o
+        # projeto com repository_pending e mantemos os detalhes sensíveis somente na auditoria.
+        return persist_deferred_project(
+            db,
+            ws=ws,
+            name=payload.name,
+            slug=payload.slug,
+            description=payload.description,
+            agents_md=payload.agents_md,
+            codex_config=payload.codex_config,
+            organization=organization,
+            default_branch="main",
+            actor=actor,
+            source="automatic_provision_fallback",
+        )
 
     item = Project(
         workspace_id=ws.id,
