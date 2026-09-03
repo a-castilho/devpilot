@@ -89,6 +89,7 @@
       if (!node.classList?.contains('selected')) cache.appendChild(node);
     });
     record.cache = cache;
+    record.strip.style.setProperty('display', 'none', 'important');
     record.strip.dataset.mobileV39Closed = '1';
     record.strip.setAttribute('aria-hidden', 'true');
     record.toggle?.setAttribute('aria-expanded', 'false');
@@ -102,6 +103,7 @@
       if (other !== record) compactRecord(other);
     });
     mountAll(record);
+    record.strip.style.removeProperty('display');
     record.strip.dataset.mobileV39Closed = '0';
     record.strip.removeAttribute('aria-hidden');
     record.toggle?.setAttribute('aria-expanded', 'true');
@@ -116,6 +118,7 @@
       records.forEach(record => {
         if (record.key === activeKey) {
           mountAll(record);
+          record.strip.style.removeProperty('display');
           record.strip.dataset.mobileV39Closed = '0';
           record.strip.removeAttribute('aria-hidden');
           refreshState(record);
@@ -129,6 +132,7 @@
   function mountEverythingForNativeSync() {
     records.forEach(record => {
       mountAll(record);
+      record.strip.style.removeProperty('display');
       record.strip.dataset.mobileV39Closed = '0';
       record.strip.removeAttribute('aria-hidden');
     });

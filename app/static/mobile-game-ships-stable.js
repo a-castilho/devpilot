@@ -9,8 +9,21 @@
   const MISSION_KEY = 'devpilot-build-game-mission';
   const STYLE_ID = 'devpilot-mobile-game-ships-stable-style';
   let syncFrame = 0;
+  let observedProjectsHost = null;
+  let projectsObserver = null;
 
   const isMobile = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
+
+  function ensureBuilderRuntime() {
+    if (!isMobile() || window.__devpilotProjectBuilderMobileRuntimeV39) return;
+    if (document.querySelector('script[data-project-builder-mobile-v39="1"]')) return;
+    const script = document.createElement('script');
+    script.src = '/assets/project-builder-mobile-runtime-v39.js?v=20260903-v39';
+    script.async = false;
+    script.dataset.projectBuilderMobileV39 = '1';
+    script.onerror = () => console.error('[DevPilot] Falha ao carregar Project Builder Mobile V39');
+    document.body.appendChild(script);
+  }
 
   const hashText = value => {
     let hash = 2166136261;
@@ -105,8 +118,12 @@
     window.location.assign(GAME_URL);
   }
 
+  function projectsViewActive() {
+    return document.getElementById('projects-view')?.classList.contains('active') === true;
+  }
+
   function decorateCards() {
-    if (!isMobile()) return;
+    if (!isMobile() || !projectsViewActive()) return;
     const host = document.getElementById('projects-list');
     if (!host) return;
     const cards = [...host.children].filter(node => node.classList?.contains('project-card'));
@@ -157,11 +174,24 @@
     nav.appendChild(button);
   }
 
+  function observeProjectsOnly() {
+    const host = document.getElementById('projects-list');
+    if (!host || host === observedProjectsHost) return;
+    projectsObserver?.disconnect();
+    observedProjectsHost = host;
+    projectsObserver = new MutationObserver(() => {
+      if (projectsViewActive()) scheduleSync();
+    });
+    projectsObserver.observe(host, {childList:true, subtree:true});
+  }
+
   function sync() {
     syncFrame = 0;
     installStyle();
+    ensureBuilderRuntime();
     ensureBottomGameButton();
     ensureSidebarGameButton();
+    observeProjectsOnly();
     decorateCards();
   }
 
@@ -179,8 +209,8 @@
     openGame(button.dataset.projectGameStable);
   }, true);
 
-  const observer = new MutationObserver(scheduleSync);
-  observer.observe(document.documentElement, {childList:true, subtree:true});
+  // V39: nada de MutationObserver global no documentElement. O runtime de naves
+  // observa apenas a lista de projetos e fica inerte durante o cadastro.
   document.addEventListener('devpilot:view-changed', scheduleSync);
   document.addEventListener('devpilot:feature-ready', scheduleSync);
   document.addEventListener('devpilot:page-ready', scheduleSync);
