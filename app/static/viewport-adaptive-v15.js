@@ -131,7 +131,7 @@
     );
     ensureStylesheet(
       'link[data-page-navigation-v26]',
-      '/assets/page-navigation-v26.css?v=20260830-1',
+      '/assets/page-navigation-v26.css?v=20260903-viewfix1',
       'pageNavigationV26'
     );
     ensureStylesheet(
