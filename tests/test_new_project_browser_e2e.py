@@ -36,11 +36,12 @@ def test_new_project_opens_without_freezing_browser(e2e_server):
 
         try:
             _login(page, e2e_server)
+            page.wait_for_function("() => typeof window.devpilotNavigate === 'function'", timeout=10_000)
 
             # Entrar em Projetos e abrir o cadastro precisa trocar a view antes do
             # carregamento do bundle pesado. O limite é propositalmente folgado para CI,
             # mas curto o suficiente para capturar o congelamento observado no Chromium.
-            page.evaluate("() => window.devpilotNavigate?.('projects', {source:'e2e', immediate:true})")
+            page.evaluate("() => window.devpilotNavigate('projects', {source:'e2e', immediate:true})")
             page.wait_for_selector("#projects-view.active", state="visible", timeout=10_000)
             trigger = page.locator('[data-project-builder-open]:visible').first
             trigger.wait_for(state="visible", timeout=10_000)
