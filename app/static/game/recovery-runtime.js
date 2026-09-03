@@ -1,9 +1,9 @@
-/* DevPilot game v81 — canonical failure recovery over the backend state machine. */
+/* DevPilot game v82 — canonical failure recovery over the backend state machine. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameRecoveryV81Ready) return;
-  window.__devpilotGameRecoveryV81Ready = true;
+  if (window.__devpilotGameRecoveryV82Ready) return;
+  window.__devpilotGameRecoveryV82Ready = true;
 
   const patched = new WeakSet();
   const inFlight = new Map();
@@ -18,9 +18,32 @@
     });
   };
 
-  const waitForCanonicalRecovery = async (engine, state) => {
+  const orchestratorState = async taskId => {
+    if (!taskId) return '';
+    const cached = window.__devpilotGameRuntimeStates?.()?.[taskId]?.state;
+    if (cached) return String(cached).trim().toLowerCase();
+    try {
+      const payload = await window.api(`/tasks/${encodeURIComponent(taskId)}/orchestrator`, {
+        timeoutMs: 7000,
+        retry: false,
+      });
+      return String(payload?.state || '').trim().toLowerCase();
+    } catch (_) {
+      return '';
+    }
+  };
+
+  const waitForCanonicalRecovery = async (engine, state, originalRetry) => {
     const taskId = String(state?.taskId || '').trim();
     if (!taskId) throw new Error('Execução com falha sem identificador.');
+
+    // Archived/canceled runtime rows are intentionally invisible to the worker even when
+    // tasks.status is still queued. They cannot enter failure-recovery because the persisted
+    // Task row did not fail. Create exactly one replacement phase through the controller.
+    const runtimeState = await orchestratorState(taskId);
+    if (runtimeState === 'archived' || runtimeState === 'canceled' || runtimeState === 'cancel_requested') {
+      return originalRetry();
+    }
 
     let recovery = await recoveryRequest(taskId).catch(() => null);
     if (!recovery || recovery.state === 'ready_to_recover') {
@@ -31,9 +54,8 @@
       detail: {taskId, recovery},
     }));
 
-    // The worker owns the recovery lifecycle. Never create a second [Jogo] correction task.
-    // Once recovery succeeds it requeues the SAME original task; the normal game refresh then
-    // sees queued/running/completed and continues to the independent verifier.
+    // The worker owns normal failed-task recovery. Once recovery succeeds it requeues the SAME
+    // original task; the normal game refresh then sees queued/running/completed and continues.
     if (recovery?.state === 'resolved' || recovery?.state === 'retesting') {
       await window.loadBuildGame?.();
       engine.schedule?.();
@@ -50,13 +72,11 @@
       const state = engine.snapshot?.();
       if (!state?.failed || !state?.currentPhaseId) return originalRetry();
 
-      // Verifier retries keep the verifier-specific contract. Base phase failures use the
-      // backend recovery state machine, which is idempotent and already integrated with worker.
       if (state.verifier) return originalRetry();
 
       const key = `${state.missionId}:${state.currentPhaseId}:${state.taskId}`;
       if (inFlight.has(key)) return inFlight.get(key);
-      const promise = waitForCanonicalRecovery(engine, state)
+      const promise = waitForCanonicalRecovery(engine, state, originalRetry)
         .catch(error => {
           console.error('[DevPilot Game Recovery]', error);
           throw error;
