@@ -21,6 +21,7 @@
   ]);
   const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
   let navigationEpoch = 0;
+  let projectBuilderEnhancementsScheduled = false;
 
   const FEATURE_BUNDLES = Object.freeze({
     shellCommon: [
@@ -41,11 +42,16 @@
       'provider-ollama.js',
     ],
 
+    // Cadastro: somente o runtime essencial entra no caminho crítico.
+    // Perfil automático é carregado em idle apenas em máquinas folgadas e
+    // o runtime de cards mobile não pertence à tela de cadastro.
     projectBuilder: [
       'project-provisioning.js',
       'project-builder.js',
+    ],
+
+    projectBuilderEnhancements: [
       'project-description-profile.js',
-      'mobile-project-card-compact.js',
     ],
 
     projects: [
@@ -266,6 +272,22 @@
     });
   }
 
+  function scheduleProjectBuilderEnhancements() {
+    if (projectBuilderEnhancementsScheduled || constrainedProjectsRuntime()) return;
+    projectBuilderEnhancementsScheduled = true;
+    const run = () => {
+      void loadFeature('projectBuilderEnhancements').catch(error => {
+        projectBuilderEnhancementsScheduled = false;
+        console.warn('[DevPilot] Perfil automático do cadastro ficou indisponível', error);
+      });
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(run, {timeout: 1800});
+    } else {
+      window.setTimeout(run, 240);
+    }
+  }
+
   async function loadFeature(feature, options = {}) {
     const files = filesForFeature(feature);
     if (!Array.isArray(files)) return false;
@@ -301,6 +323,7 @@
       document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
         detail:{feature, failures, cancelled, durationMs:Math.round(performance.now() - featureStarted)},
       }));
+      if (feature === 'projectBuilder' && !cancelled) scheduleProjectBuilderEnhancements();
       return !cancelled && failures.length === 0;
     })();
 
@@ -438,16 +461,50 @@
     return true;
   }
 
+  function hydrateBuilderOrganizations(admin) {
+    const organizationSelect = document.querySelector('#project-builder-organization');
+    if (!organizationSelect || typeof state === 'undefined') return;
+    const organizations = Array.isArray(state.organizations) ? state.organizations : [];
+    organizationSelect.replaceChildren(new Option('Sem organização', ''));
+    if (admin) {
+      organizations.forEach(org => organizationSelect.add(new Option(String(org.name || ''), String(org.id))));
+    }
+    const castilho = organizations.find(org => String(org.external_login || '').toLowerCase() === 'a-castilho');
+    if (castilho) organizationSelect.value = String(castilho.id);
+  }
+
+  function showProjectBuilderImmediately() {
+    if (typeof showView === 'function') showView('new-project');
+    else {
+      document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === 'new-project-view'));
+    }
+    const title = document.querySelector('#page-title');
+    if (title) title.textContent = 'Novo projeto';
+    window.scrollTo({top:0, left:0, behavior:'auto'});
+  }
+
   async function openProjectBuilderDirect(trigger) {
     if (!trigger || trigger.dataset.devpilotOpening === '1') return false;
     trigger.dataset.devpilotOpening = '1';
     trigger.setAttribute('aria-busy', 'true');
-    try {
-      if (typeof isSuperAdmin === 'function' && isSuperAdmin() && typeof loadOrganizations === 'function') {
-        const organizations = typeof state !== 'undefined' && Array.isArray(state.organizations) ? state.organizations : [];
-        if (!organizations.length) await loadOrganizations();
-      }
 
+    // Feedback visual primeiro: rede, organizações e bundles nunca podem segurar
+    // a troca para a tela de cadastro.
+    showProjectBuilderImmediately();
+
+    const admin = typeof isSuperAdmin === 'function' && isSuperAdmin();
+    let organizationsPromise = Promise.resolve([]);
+    if (admin && typeof loadOrganizations === 'function') {
+      const organizations = typeof state !== 'undefined' && Array.isArray(state.organizations) ? state.organizations : [];
+      if (!organizations.length) {
+        organizationsPromise = Promise.resolve(loadOrganizations()).catch(error => {
+          console.warn('[DevPilot] Organizações serão preenchidas depois', error);
+          return [];
+        });
+      }
+    }
+
+    try {
       const ready = await loadFeature('projectBuilder');
       const feature = featureState.get('projectBuilder') || {};
       const failures = Array.isArray(feature.failures) ? feature.failures : [];
@@ -458,18 +515,6 @@
       }
       if (!ready) window.toast?.('Cadastro aberto; algum recurso auxiliar ficou indisponível.');
 
-      const admin = typeof isSuperAdmin === 'function' && isSuperAdmin();
-      const organizationSelect = document.querySelector('#project-builder-organization');
-      if (organizationSelect && typeof state !== 'undefined') {
-        const organizations = Array.isArray(state.organizations) ? state.organizations : [];
-        organizationSelect.replaceChildren(new Option('Sem organização', ''));
-        if (admin) {
-          organizations.forEach(org => organizationSelect.add(new Option(String(org.name || ''), String(org.id))));
-        }
-        const castilho = organizations.find(org => String(org.external_login || '').toLowerCase() === 'a-castilho');
-        if (castilho) organizationSelect.value = String(castilho.id);
-      }
-
       if (!admin) {
         const createRadio = form.querySelector('input[name="repository_mode"][value="create"]');
         const connectRadio = form.querySelector('input[name="repository_mode"][value="connect"]');
@@ -477,13 +522,8 @@
         if (connectRadio) connectRadio.checked = true;
       }
 
-      if (typeof showView === 'function') showView('new-project');
-      else {
-        document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === 'new-project-view'));
-      }
-      const title = document.querySelector('#page-title');
-      if (title) title.textContent = 'Novo projeto';
-      window.scrollTo({top:0, left:0, behavior:'auto'});
+      hydrateBuilderOrganizations(admin);
+      void organizationsPromise.then(() => hydrateBuilderOrganizations(admin));
       return true;
     } catch (error) {
       console.error('[DevPilot] Falha ao abrir Novo projeto', error);
