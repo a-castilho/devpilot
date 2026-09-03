@@ -1,24 +1,23 @@
-/* DevPilot game v78 — passive state watcher with automatic self-repair for failed phases. */
+/* DevPilot game v85 — passive watcher with observable automatic self-repair. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameFlowKeeperV78Ready) return;
-  window.__devpilotGameFlowKeeperV78Ready = true;
+  if (window.__devpilotGameFlowKeeperV85Ready) return;
+  window.__devpilotGameFlowKeeperV85Ready = true;
 
   const VISIBLE_DELAY_MS = 2500;
   const HIDDEN_DELAY_MS = 8000;
-  const FAILED_DELAY_MS = 350;
+  const FAILED_DELAY_MS = 500;
+  const REPAIR_CONFIRM_MS = 4500;
   let timer = 0;
   let busy = false;
-  const repairedFailures = new Set();
+  const repairAttempts = new Map();
 
   const controller = () => window.__devpilotGameControllerV73;
   const delay = state => state?.failed ? FAILED_DELAY_MS : (document.hidden ? HIDDEN_DELAY_MS : VISIBLE_DELAY_MS);
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
-  const shouldKeepMoving = state => Boolean(
-    state && state.missionId && state.goal && !state.done
-  );
+  const shouldKeepMoving = state => Boolean(state && state.missionId && state.goal && !state.done);
 
   const failureKey = state => [
     state?.missionId || 'mission',
@@ -32,15 +31,10 @@
     const message = state?.verifier
       ? 'A validação falhou. Corrigindo e validando novamente…'
       : 'A etapa falhou. Corrigindo automaticamente e continuando…';
-    document.querySelectorAll('.game74-live span, [data-game73-status]').forEach(node => {
+    document.querySelectorAll('.game74-live span, [data-game73-status], #devpilot-game-stable-round-v84 .game74-live span').forEach(node => {
       node.textContent = message;
       node.classList?.remove?.('game74-error');
     });
-    const retry = document.querySelector('[data-game73-retry]');
-    if (retry) {
-      retry.disabled = true;
-      retry.textContent = '↻ Corrigindo automaticamente…';
-    }
   };
 
   const missionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task => {
@@ -48,7 +42,7 @@
     return prompt.includes(`PARTIDA: ${state.missionId}`) && String(task?.id || '') === String(state.taskId || '');
   });
 
-  const anyMissionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task =>
+  const missionTasks = (tasks, state) => (Array.isArray(tasks) ? tasks : []).filter(task =>
     String(task?.prompt || '').includes(`PARTIDA: ${state.missionId}`)
   );
 
@@ -68,27 +62,38 @@
     timer = window.setTimeout(run, delay(state));
   };
 
+  const changedAfterRepair = (before, after, tasks) => {
+    if (!after) return false;
+    if (!after.failed) return true;
+    if (String(after.taskId || '') !== String(before.taskId || '')) return true;
+    const rows = missionTasks(tasks, before);
+    return rows.some(task => String(task?.id || '') !== String(before.taskId || '') && Number(String(task?.prompt || '').match(/^FASE:\s*(\d+)\//mi)?.[1] || 0) === Number(before.currentPhaseId || 0));
+  };
+
   async function repairFailedState(engine, state) {
     const key = failureKey(state);
     announceRepairing(state);
+    const previous = repairAttempts.get(key) || {lastAt: 0, count: 0};
+    const now = Date.now();
 
-    // One retry request per failed task. If the correction itself fails and creates a
-    // new failed task, the task id changes and that new failure gets one retry too.
-    // This prevents duplicate task creation while keeping the round self-healing.
-    if (!repairedFailures.has(key)) {
-      repairedFailures.add(key);
-      try {
-        await engine.retry();
-      } catch (error) {
-        repairedFailures.delete(key);
-        throw error;
+    if (!previous.lastAt || now - previous.lastAt >= REPAIR_CONFIRM_MS) {
+      repairAttempts.set(key, {lastAt: now, count: previous.count + 1});
+      await engine.retry();
+      await new Promise(resolve => window.setTimeout(resolve, 250));
+      await engine.refresh();
+      const after = engine.snapshot?.();
+      const tasks = await fetchTasks(state);
+      if (changedAfterRepair(state, after, tasks)) {
+        repairAttempts.delete(key);
+        return;
       }
       return;
     }
 
-    // retry() may return before /tasks exposes the replacement task. Keep syncing
-    // until the controller sees the new task instead of retrying the same failure.
     await engine.refresh();
+    const after = engine.snapshot?.();
+    const tasks = await fetchTasks(state);
+    if (changedAfterRepair(state, after, tasks)) repairAttempts.delete(key);
   }
 
   async function run() {
@@ -105,24 +110,17 @@
       }
 
       const tasks = await fetchTasks(state);
-
-      // Start POST can return before /tasks exposes the created task.
-      // Poll silently until it is visible; only then synchronize/render once.
       if (!state.hasTasks) {
-        if (anyMissionTask(tasks, state) && typeof window.loadBuildGame === 'function') {
+        if (missionTasks(tasks, state).length && typeof window.loadBuildGame === 'function') {
           await window.loadBuildGame();
           engine.schedule?.();
         }
         return;
       }
 
-      // While the current task keeps the same status, do absolutely nothing to the DOM.
-      // This removes the 2.5s full-screen blink while preserving polling.
       const remote = missionTask(tasks, state);
       if (remote && normalize(remote.status) === normalize(state.taskStatus)) return;
 
-      // A real transition happened (queued→running→completed, gate, next phase, etc.).
-      // Let the existing controller synchronize once and advance the real pipeline.
       await engine.refresh();
       engine.schedule?.();
     } catch (error) {
