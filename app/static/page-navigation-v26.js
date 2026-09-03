@@ -17,6 +17,7 @@
   let switching = false;
   let pendingView = '';
   let navigationEpoch = 0;
+  let mobileProjectsLoading = null;
 
   const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
 
@@ -93,6 +94,26 @@
     catch (error) { console.error(`[DevPilot] Falha ao carregar ${feature}`, error); return false; }
   }
 
+  function isMobileProjects(viewName) {
+    return viewName === 'projects' && window.matchMedia?.('(max-width: 900px)')?.matches === true;
+  }
+
+  async function loadMobileProjectsAfterFeature() {
+    if (mobileProjectsLoading) return mobileProjectsLoading;
+    mobileProjectsLoading = (async () => {
+      const ready = await ensureFeature('projects');
+      const guarded = typeof window.loadProjects === 'function' && Boolean(window.loadProjects.__devpilotProjectsOriginal);
+      if (!ready && !guarded) {
+        window.toast?.('Não foi possível ativar o modo leve de Projetos.');
+        return false;
+      }
+      if (typeof window.loadProjects !== 'function') return false;
+      await window.loadProjects();
+      return true;
+    })().finally(() => { mobileProjectsLoading = null; });
+    return mobileProjectsLoading;
+  }
+
   function runNativeView(viewName) {
     if (typeof window.showView === 'function') {
       window.showView(viewName);
@@ -133,13 +154,9 @@
     pendingView = viewName;
     closeMobileMenu();
 
-    // A troca visual é atômica e imediata. O carregamento lazy nunca pode
-    // manter a view anterior por baixo nem bloquear os cliques da nova tela.
     root.classList.add('dp-page-switching');
     commitView(viewName, options);
 
-    // Recursos da view são carregados depois que a tela já está utilizável.
-    // Timeout/erro de bundle não deixa a SPA presa em estado de switching.
     let ready = true;
     try {
       ready = await ensureFeature(viewName);
@@ -153,11 +170,21 @@
   window.devpilotNavigate = navigate;
 
   function installVisibilitySafeShowView() {
-    if (window.__devpilotVisibilitySafeShowViewV39) return;
+    if (window.__devpilotVisibilitySafeShowViewV40) return;
     const nativeShowView = window.showView;
     if (typeof nativeShowView !== 'function') return;
-    window.__devpilotVisibilitySafeShowViewV39 = true;
+    window.__devpilotVisibilitySafeShowViewV40 = true;
     window.showView = function devpilotVisibilitySafeShowView(viewName) {
+      if (isMobileProjects(viewName)) {
+        markOnlyView(viewName);
+        restoreViewVisibility(viewName);
+        updateTitle(viewName);
+        root.dataset.devpilotView = viewName;
+        root.classList.remove('dp-page-switching');
+        void loadMobileProjectsAfterFeature();
+        return true;
+      }
+
       const result = nativeShowView.apply(this, arguments);
       if (viewName === 'organizations' && typeof window.isSuperAdmin === 'function' && !window.isSuperAdmin()) return result;
       if (!document.getElementById(`${viewName}-view`)) return result;
