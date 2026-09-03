@@ -71,12 +71,15 @@
     // recreates the same phase/gate; recovery-runtime intentionally falls back to originalRetry.
     if (isCanceled(state)) {
       busy = true;
+      const key = failureKey(state);
       try {
-        recoveryChecks.set(failureKey(state), Date.now());
+        recoveryChecks.set(key, Date.now());
         await engine.retry();
         await engine.refresh?.();
       } catch (error) {
-        recoveryChecks.delete(failureKey(state));
+        // Keep the timestamp: an unavailable API must not turn the 250ms first-attempt path
+        // into a request storm. The observer retries on the normal bounded cadence.
+        recoveryChecks.set(key, Date.now());
         console.error('[DevPilot Game Flow Keeper]', error);
       } finally {
         busy = false;
@@ -97,13 +100,8 @@
       // Delegate the failure immediately once. Afterwards only re-read/escalate canonical
       // recovery every 30s. This prevents request storms and duplicate repair authority.
       if (!lastRecoveryCheck || now - lastRecoveryCheck >= RECOVERY_RECHECK_MS) {
-        try {
-          await engine.retry();
-          recoveryChecks.set(key, now);
-        } catch (error) {
-          recoveryChecks.delete(key);
-          throw error;
-        }
+        recoveryChecks.set(key, now);
+        await engine.retry();
 
         const recovery = recoveryFor(state);
         if (isTerminalRecovery(recovery)) return;
