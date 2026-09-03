@@ -21,7 +21,6 @@
   ]);
   const FEATURE_SCRIPT_TIMEOUT_MS = 12000;
   let navigationEpoch = 0;
-  let projectBuilderEnhancementsScheduled = false;
 
   const FEATURE_BUNDLES = Object.freeze({
     shellCommon: [
@@ -272,22 +271,6 @@
     });
   }
 
-  function scheduleProjectBuilderEnhancements() {
-    if (projectBuilderEnhancementsScheduled || constrainedProjectsRuntime()) return;
-    projectBuilderEnhancementsScheduled = true;
-    const run = () => {
-      void loadFeature('projectBuilderEnhancements').catch(error => {
-        projectBuilderEnhancementsScheduled = false;
-        console.warn('[DevPilot] Perfil automático do cadastro ficou indisponível', error);
-      });
-    };
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(run, {timeout: 1800});
-    } else {
-      window.setTimeout(run, 240);
-    }
-  }
-
   async function loadFeature(feature, options = {}) {
     const files = filesForFeature(feature);
     if (!Array.isArray(files)) return false;
@@ -323,7 +306,6 @@
       document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
         detail:{feature, failures, cancelled, durationMs:Math.round(performance.now() - featureStarted)},
       }));
-      if (feature === 'projectBuilder' && !cancelled) scheduleProjectBuilderEnhancements();
       return !cancelled && failures.length === 0;
     })();
 
