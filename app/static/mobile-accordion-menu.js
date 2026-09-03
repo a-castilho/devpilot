@@ -10,7 +10,7 @@
   function ensureGameShipsRuntime() {
     if (window.__devpilotMobileGameShipsStable || document.querySelector('script[data-mobile-game-ships-stable="1"]')) return;
     const script = document.createElement('script');
-    script.src = '/assets/mobile-game-ships-stable.js?v=game-ships-stable-20260902-2';
+    script.src = '/assets/mobile-game-ships-stable.js?v=game-ships-stable-20260903-v39';
     script.async = false;
     script.dataset.mobileGameShipsStable = '1';
     script.onerror = () => console.error('[DevPilot] Falha ao carregar runtime de jogo e naves mobile');
