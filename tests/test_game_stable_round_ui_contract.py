@@ -4,6 +4,7 @@ ROOT = Path(__file__).resolve().parents[1]
 STABLE = ROOT / "app/static/game/stable-round-ui.js"
 RECOVERY = ROOT / "app/static/game/recovery-runtime.js"
 KEEPER = ROOT / "app/static/game/flow-keeper.js"
+RUNTIME_SYNC = ROOT / "app/static/game/runtime-state-sync.js"
 BOOT = ROOT / "app/static/game/game-bootstrap.js"
 INDEX = ROOT / "app/static/game/index.html"
 
@@ -44,6 +45,14 @@ def test_recovery_has_one_backend_owner_and_bounded_observer():
     assert "shouldKeepMoving" not in keeper
 
 
+def test_internal_recovery_task_never_becomes_game_phase():
+    source = RUNTIME_SYNC.read_text(encoding="utf-8")
+    assert "[DEVPILOT_FAILURE_RECOVERY_V1]" in source
+    assert "failure-recovery" in source
+    assert ".filter(task => !isFailureRecoveryTask(task))" in source
+    assert "mistake a recovery task for a newer phase task" in source
+
+
 def test_bootstrap_loads_stable_ui_and_uses_one_revision():
     boot = BOOT.read_text(encoding="utf-8")
     html = INDEX.read_text(encoding="utf-8")
@@ -57,6 +66,7 @@ def run_contract():
     test_active_round_surface_lives_outside_polling_target()
     test_failure_surface_reports_exact_position_reason_and_outcome()
     test_recovery_has_one_backend_owner_and_bounded_observer()
+    test_internal_recovery_task_never_becomes_game_phase()
     test_bootstrap_loads_stable_ui_and_uses_one_revision()
     print("GAME_STABLE_ROUND_UI=OK")
 
