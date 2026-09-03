@@ -21,6 +21,9 @@
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
+  const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  const recoverableFailure = state => ['failed', 'blocked'].includes(normalize(state?.taskStatus));
+  const canceledExecution = state => ['canceled', 'cancelled'].includes(normalize(state?.taskStatus));
 
   const controller = () => window.__devpilotGameControllerV73;
   const view = () => document.getElementById('build-game-view');
@@ -46,16 +49,18 @@
 
   const statusText = (state, recovery) => {
     if (state.done) return 'Rodada concluída e pronta para entrega.';
-    if (state.failed) {
+    if (recoverableFailure(state)) {
       const recoveryState = String(recovery?.state || '');
       if (recoveryState === 'agent_recovery') return 'Corrigindo a causa da falha automaticamente…';
       if (recoveryState === 'retesting') return 'Correção aplicada. Retestando esta mesma etapa…';
       if (recoveryState === 'resolved') return 'Falha corrigida. Retomando a rodada…';
       if (isTerminalRecovery(recovery)) return 'A correção automática parou com diagnóstico. Veja o motivo e a posição abaixo.';
+      if (normalize(state.taskStatus) === 'blocked') return 'A execução foi bloqueada. Diagnosticando a causa para retomar esta mesma etapa…';
       return state.verifier
         ? 'A validação falhou. Enviando o mesmo gate para recuperação segura…'
         : 'A execução falhou. Enviando a mesma etapa para recuperação segura…';
     }
+    if (canceledExecution(state)) return 'A execução anterior foi encerrada. Recriando esta mesma etapa automaticamente…';
     if (state.awaitingGate) return 'Execução concluída. Validando a entrega da etapa…';
     if (state.verifier && state.active) return 'Validando automaticamente a entrega…';
     const map = {
@@ -64,15 +69,13 @@
       running: 'Executando automaticamente…',
       review: 'Revisando automaticamente…',
       awaiting_approval: 'Aguardando autorização necessária…',
-      blocked: 'Execução bloqueada.',
       paused: 'Execução pausada.',
-      canceled: 'Execução anterior encerrada; preparando substituição…'
     };
-    return map[String(state.taskStatus || '').toLowerCase()] || 'Preparando a próxima etapa…';
+    return map[normalize(state.taskStatus)] || 'Preparando a próxima etapa…';
   };
 
   const diagnosticHtml = (state, recovery) => {
-    if (!state.failed) return '';
+    if (!recoverableFailure(state)) return '';
     const failure = recovery?.failure || recovery?.recovery_task?.failure || null;
     const reason = failure?.message
       || recovery?.recovery_task?.failure?.message
@@ -157,9 +160,9 @@
       const current = event.currentTarget;
       current.disabled = true;
       const old = current.textContent;
-      current.textContent = state.failed ? 'Atualizando diagnóstico…' : 'Atualizando…';
+      current.textContent = recoverableFailure(state) ? 'Atualizando diagnóstico…' : 'Atualizando…';
       try {
-        if (state.failed && state.taskId) await window.__devpilotGameRefreshRecovery?.(state.taskId);
+        if (recoverableFailure(state) && state.taskId) await window.__devpilotGameRefreshRecovery?.(state.taskId);
         await engine.refresh?.();
       } catch (error) {
         console.error('[DevPilot Stable UI Refresh]', error);
@@ -174,14 +177,14 @@
     root.querySelector('[data-stable-retry]')?.addEventListener('click', async event => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = 'Corrigindo automaticamente…';
+      button.textContent = recoverableFailure(state) ? 'Corrigindo automaticamente…' : 'Recriando etapa…';
       try {
         await engine.retry?.();
       } catch (error) {
         console.error('[DevPilot Stable UI Retry]', error);
         if (button.isConnected) {
           button.disabled = false;
-          button.textContent = '↻ Corrigir e continuar';
+          button.textContent = recoverableFailure(state) ? '↻ Corrigir e continuar' : '↻ Recriar e continuar';
         }
       }
     });
@@ -214,6 +217,8 @@
     }
 
     const recovery = recoveryFor(state);
+    const failed = recoverableFailure(state);
+    const canceled = canceledExecution(state);
     root.hidden = false;
     setDetailsVisibility(true);
     const nextSignature = signature(state, recovery);
@@ -221,7 +226,7 @@
     lastSignature = nextSignature;
 
     const message = statusText(state, recovery);
-    const terminalRecovery = state.failed && isTerminalRecovery(recovery);
+    const terminalRecovery = failed && isTerminalRecovery(recovery);
     const step2Class = state.done ? 'game74-step done' : 'game74-step active';
     const step3Class = state.done ? 'game74-step active' : 'game74-step';
 
@@ -247,19 +252,21 @@
             <div><small>ETAPA ${state.currentPhaseId}/${state.total}</small><strong>${esc(state.currentPhaseName)}</strong><p>${esc(state.currentPhaseSummary)}</p></div>
           </section>
           <div class="game74-live"><i></i><span>${esc(message)}</span></div>
-          <div class="game74-status ${state.failed ? 'game74-error' : ''}">${esc(message)}</div>
+          <div class="game74-status ${failed ? 'game74-error' : ''}">${esc(message)}</div>
           ${diagnosticHtml(state, recovery)}
         `}
         <div class="game74-actions">
-          ${state.failed
+          ${failed
             ? (terminalRecovery
               ? '<button class="game74-primary" type="button" data-stable-refresh>↻ Atualizar diagnóstico</button>'
               : '<button class="game74-primary" type="button" data-stable-retry>↻ Corrigir e continuar</button>')
-            : `<button class="game74-primary" type="button" disabled>${state.done ? '🏆 Entrega pronta' : '⚙ Trabalhando automaticamente'}</button>`}
+            : (canceled
+              ? '<button class="game74-primary" type="button" data-stable-retry>↻ Recriar e continuar</button>'
+              : `<button class="game74-primary" type="button" disabled>${state.done ? '🏆 Entrega pronta' : '⚙ Trabalhando automaticamente'}</button>`)}
           <button class="game74-secondary" type="button" data-stable-details>${detailsOpen ? 'Ocultar detalhes' : 'Ver detalhes'}</button>
           ${state.done
             ? '<button class="game74-secondary" type="button" data-stable-new>＋ Nova rodada</button>'
-            : (state.failed ? '' : '<button class="game74-secondary" type="button" data-stable-refresh>↻ Atualizar agora</button>')}
+            : ((failed || canceled) ? '' : '<button class="game74-secondary" type="button" data-stable-refresh>↻ Atualizar agora</button>')}
         </div>
       </section>`;
 
