@@ -139,7 +139,10 @@
     root.hidden = false;
     setDetailsVisibility(true);
     const nextSignature = signature(state);
-    if (nextSignature === lastSignature) return true;
+    if (nextSignature === lastSignature) {
+      window.__devpilotGameMountProjectSwitchV90?.();
+      return true;
+    }
     lastSignature = nextSignature;
 
     const message = statusText(state);
@@ -182,6 +185,7 @@
       </section>`;
 
     bindActions(root, engine);
+    window.__devpilotGameMountProjectSwitchV90?.();
     return true;
   };
 
