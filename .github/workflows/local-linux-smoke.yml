@@ -1,0 +1,96 @@
+name: Local Linux Smoke
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devpilot-local-linux-smoke
+  cancel-in-progress: true
+
+jobs:
+  local-linux-smoke:
+    name: DevPilot local Linux smoke
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'self-hosted' }}
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository snapshot
+        uses: actions/checkout@v4
+
+      - name: Validate consolidated source contracts
+        run: |
+          set -euo pipefail
+          node --check app/static/project-builder.js
+          node --check app/static/project-builder-mobile-runtime-v39.js
+          node --check app/static/mobile-game-ships-stable.js
+          grep -q "provision_repository_in_background" app/project_provisioning_routes.py
+          grep -q "repository_provision_state" app/project_provisioning_routes.py
+          grep -q "Project Builder Mobile V39 virtualizado" app/static/project-builder-mobile-runtime-v39.js
+          echo "SOURCE_CONTRACTS_OK"
+
+      - name: Update actual local Linux checkout safely
+        run: |
+          set -euo pipefail
+          LOCAL_REPO="$HOME/Documents/devpilot"
+          test -d "$LOCAL_REPO/.git"
+          cd "$LOCAL_REPO"
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "LOCAL_WORKTREE_DIRTY"
+            git status --short
+            exit 42
+          fi
+          git fetch origin main
+          git switch main
+          git pull --ff-only origin main
+          echo "LOCAL_COMMIT=$(git rev-parse HEAD)"
+          git log -1 --oneline
+
+      - name: Build and start local app
+        run: |
+          set -euo pipefail
+          cd "$HOME/Documents/devpilot"
+          docker compose up -d --build postgres redis app
+
+      - name: Wait for local health
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 45); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8080/health > /tmp/devpilot-health.json; then
+              cat /tmp/devpilot-health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          cd "$HOME/Documents/devpilot"
+          docker compose logs --tail=120 app postgres || true
+          exit 1
+
+      - name: Verify V39 and V40 are actually served locally
+        run: |
+          set -euo pipefail
+          cd "$HOME/Documents/devpilot"
+          grep -q "provision_repository_in_background" app/project_provisioning_routes.py
+          grep -q "repository_provision_state" app/project_provisioning_routes.py
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/project-builder-mobile-runtime-v39.js | grep -q "Project Builder Mobile V39 virtualizado"
+          curl -fsS --max-time 5 http://127.0.0.1:8080/assets/mobile-accordion-menu.js | grep -q "game-ships-stable-20260903-v39"
+          docker compose exec -T app python -m compileall -q app
+          docker compose exec -T app python - <<'PY'
+          from app.project_provisioning_routes import provision_repository_in_background
+          assert callable(provision_repository_in_background)
+          print('V40_BACKGROUND_PROVISION_OK')
+          PY
+          echo "LOCAL_LINUX_SMOKE_OK"
+
+      - name: Show diagnostics on failure
+        if: failure()
+        run: |
+          cd "$HOME/Documents/devpilot" 2>/dev/null || exit 0
+          echo "=== GIT ==="
+          git status --short || true
+          git log -1 --oneline || true
+          echo "=== APP LOG ==="
+          docker compose logs --tail=160 app postgres || true
