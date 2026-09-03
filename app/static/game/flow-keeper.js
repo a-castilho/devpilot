@@ -13,6 +13,7 @@
     'intervention_required',
     'recovery_exhausted',
   ]);
+  const OBSERVED_FAILURE_STATUSES = new Set(['failed', 'blocked', 'canceled', 'cancelled']);
 
   let timer = 0;
   let busy = false;
@@ -21,8 +22,10 @@
   const controller = () => window.__devpilotGameControllerV73;
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const shouldWatchFailure = state => Boolean(
-    state && state.missionId && state.goal && state.taskId && state.failed && !state.done
+    state && state.missionId && state.goal && state.taskId &&
+    OBSERVED_FAILURE_STATUSES.has(normalize(state.taskStatus)) && !state.done
   );
+  const isCanceled = state => ['canceled', 'cancelled'].includes(normalize(state?.taskStatus));
   const failureKey = state => [
     state?.missionId || 'mission',
     state?.currentPhaseId || 'phase',
@@ -45,7 +48,7 @@
     window.clearTimeout(timer);
     const engine = controller();
     const state = engine?.snapshot?.();
-    if (!engine || !shouldWatchFailure(state) || isTerminalRecovery(recoveryFor(state))) {
+    if (!engine || !shouldWatchFailure(state) || (!isCanceled(state) && isTerminalRecovery(recoveryFor(state)))) {
       timer = 0;
       return;
     }
@@ -63,6 +66,24 @@
     const engine = controller();
     const state = engine?.snapshot?.();
     if (!engine || !shouldWatchFailure(state)) return arm();
+
+    // Cancellation is not a recoverable execution failure. The original controller safely
+    // recreates the same phase/gate; recovery-runtime intentionally falls back to originalRetry.
+    if (isCanceled(state)) {
+      busy = true;
+      try {
+        recoveryChecks.set(failureKey(state), Date.now());
+        await engine.retry();
+        await engine.refresh?.();
+      } catch (error) {
+        recoveryChecks.delete(failureKey(state));
+        console.error('[DevPilot Game Flow Keeper]', error);
+      } finally {
+        busy = false;
+        arm();
+      }
+      return;
+    }
 
     const existingRecovery = recoveryFor(state);
     if (isTerminalRecovery(existingRecovery)) return arm();
@@ -87,7 +108,7 @@
         const recovery = recoveryFor(state);
         if (isTerminalRecovery(recovery)) return;
         const afterRetry = engine.snapshot?.();
-        if (!afterRetry?.failed || String(afterRetry.taskId || '') !== String(state.taskId || '')) return;
+        if (!shouldWatchFailure(afterRetry) || String(afterRetry.taskId || '') !== String(state.taskId || '')) return;
       }
 
       // Observe the same original task while the worker repairs/retests it. A status change
