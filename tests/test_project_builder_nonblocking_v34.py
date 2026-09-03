@@ -14,11 +14,10 @@ def test_project_builder_critical_bundle_contains_only_essential_runtime():
     assert "mobile-project-card-compact.js" not in block
 
 
-def test_project_builder_enhancement_is_deferred_and_skipped_on_constrained_runtime():
+def test_project_builder_enhancement_is_not_automatically_scheduled():
     assert "projectBuilderEnhancements" in FEATURE_LOADER
-    assert "requestIdleCallback" in FEATURE_LOADER
-    assert "constrainedProjectsRuntime()" in FEATURE_LOADER
-    assert "if (projectBuilderEnhancementsScheduled || constrainedProjectsRuntime()) return;" in FEATURE_LOADER
+    assert "requestIdleCallback" not in FEATURE_LOADER
+    assert "loadFeature('projectBuilderEnhancements')" not in FEATURE_LOADER
 
 
 def test_project_builder_changes_view_before_waiting_for_network_or_bundles():
