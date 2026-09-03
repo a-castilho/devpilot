@@ -84,8 +84,7 @@
       }
       if (currentStatus === 'blocked') return false;
 
-      const endpoint = currentStatus === 'failed' ? 'retry' : 'start';
-      const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/${endpoint}`, {
+      const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
         method: 'POST',
         timeoutMs: 45000,
         retry: false,
