@@ -11,13 +11,12 @@
     reports: 'Relatórios', audit: 'Auditoria', organizations: 'Organizações', users: 'Usuários', profile: 'Perfil',
   };
   const FEATURE_BY_VIEW = {
-    projects: 'projects', tasks: 'tasks', providers: 'providers', reports: 'reports', audit: 'audit', organizations: 'organizations',
+    projects: 'projects', 'new-project': 'projectBuilder', tasks: 'tasks', providers: 'providers', reports: 'reports', audit: 'audit', organizations: 'organizations',
   };
 
   let switching = false;
   let pendingView = '';
   let navigationEpoch = 0;
-  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true;
 
   const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR').replace(/\s+/g, ' ').trim();
 
@@ -54,6 +53,7 @@
       view.classList.toggle('active', active);
       view.hidden = !active;
       view.setAttribute('aria-hidden', active ? 'false' : 'true');
+      view.classList.remove('dp-page-leaving', 'dp-page-entering');
     });
     document.querySelectorAll(MAIN_NAV_SELECTOR).forEach(nav => {
       const active = resolveView(nav) === viewName;
@@ -101,8 +101,8 @@
     markOnlyView(viewName);
   }
 
-  function finish(viewName, options, epoch) {
-    if (epoch !== navigationEpoch || pendingView !== viewName) return;
+  function commitView(viewName, options = {}) {
+    runNativeView(viewName);
     markOnlyView(viewName);
     restoreViewVisibility(viewName);
     updateTitle(viewName);
@@ -110,7 +110,13 @@
     root.dataset.devpilotView = viewName;
     root.classList.remove('dp-page-switching');
     document.dispatchEvent(new CustomEvent('devpilot:view-changed', {detail:{view:viewName, source:options.source || 'menu'}}));
-    document.dispatchEvent(new CustomEvent('devpilot:page-ready', {detail:{view:viewName, source:options.source || 'menu'}}));
+  }
+
+  function finish(viewName, options, epoch, ready) {
+    if (epoch !== navigationEpoch || pendingView !== viewName) return;
+    root.classList.remove('dp-page-switching');
+    if (!ready) window.toast?.(`Alguns recursos de ${VIEW_TITLES[viewName] || viewName} não puderam ser carregados.`);
+    document.dispatchEvent(new CustomEvent('devpilot:page-ready', {detail:{view:viewName, source:options.source || 'menu', resourcesReady:Boolean(ready)}}));
     switching = false;
     pendingView = '';
   }
@@ -126,15 +132,22 @@
     switching = true;
     pendingView = viewName;
     closeMobileMenu();
+
+    // A troca visual é atômica e imediata. O carregamento lazy nunca pode
+    // manter a view anterior por baixo nem bloquear os cliques da nova tela.
     root.classList.add('dp-page-switching');
+    commitView(viewName, options);
 
-    const ready = await ensureFeature(viewName);
-    if (epoch !== navigationEpoch) return false;
-    if (!ready) window.toast?.(`Alguns recursos de ${VIEW_TITLES[viewName] || viewName} não puderam ser carregados.`);
-
-    runNativeView(viewName);
-    window.requestAnimationFrame(() => finish(viewName, options, epoch));
-    return true;
+    // Recursos da view são carregados depois que a tela já está utilizável.
+    // Timeout/erro de bundle não deixa a SPA presa em estado de switching.
+    let ready = true;
+    try {
+      ready = await ensureFeature(viewName);
+      if (epoch !== navigationEpoch) return false;
+      return true;
+    } finally {
+      finish(viewName, options, epoch, ready);
+    }
   }
 
   window.devpilotNavigate = navigate;
@@ -152,6 +165,7 @@
       restoreViewVisibility(viewName);
       updateTitle(viewName);
       root.dataset.devpilotView = viewName;
+      root.classList.remove('dp-page-switching');
       return result;
     };
   }
@@ -176,6 +190,7 @@
     markOnlyView(viewName);
     updateTitle(viewName);
     root.dataset.devpilotView = viewName;
+    root.classList.remove('dp-page-switching');
   }
 
   ensureGameUiStyles();
