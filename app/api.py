@@ -182,18 +182,54 @@ def git_error(error: Exception) -> HTTPException:
 @router.get("/overview")
 def overview(db: Session = Depends(get_db)):
     ws = workspace(db)
-    projects = db.scalar(select(func.count(Project.id)).where(Project.workspace_id == ws.id)) or 0
-    tasks = db.scalar(select(func.count(Task.id)).where(Task.workspace_id == ws.id)) or 0
-    running = db.scalar(
-        select(func.count(Task.id)).where(
-            Task.workspace_id == ws.id,
-            Task.status.in_([TaskStatus.queued, TaskStatus.running, TaskStatus.review]),
+    projects = db.scalar(
+        select(func.count(Project.id)).where(Project.workspace_id == ws.id)
+    ) or 0
+
+    status_counts = {status.value: 0 for status in TaskStatus}
+
+    rows = db.execute(
+        select(Task.status, func.count(Task.id))
+        .where(Task.workspace_id == ws.id)
+        .group_by(Task.status)
+    ).all()
+
+    for task_status, count in rows:
+        key = task_status.value if isinstance(task_status, TaskStatus) else str(task_status)
+        if key in status_counts:
+            status_counts[key] = int(count)
+
+    active = sum(
+        status_counts[status.value]
+        for status in (
+            TaskStatus.queued,
+            TaskStatus.planning,
+            TaskStatus.running,
+            TaskStatus.review,
         )
-    ) or 0
-    completed = db.scalar(
-        select(func.count(Task.id)).where(Task.workspace_id == ws.id, Task.status == TaskStatus.completed)
-    ) or 0
-    return {"workspace": ws.name, "projects": projects, "tasks": tasks, "active": running, "completed": completed}
+    )
+
+    approvals = status_counts[TaskStatus.awaiting_approval.value]
+    failed = (
+        status_counts[TaskStatus.failed.value]
+        + status_counts[TaskStatus.blocked.value]
+    )
+    completed = status_counts[TaskStatus.completed.value]
+    tasks = sum(status_counts.values())
+
+    return {
+        "workspace": ws.name,
+        "projects": projects,
+        "tasks": tasks,
+        "active": active,
+        "completed": completed,
+        "status_counts": status_counts,
+        "attention": {
+            "active": active,
+            "approvals": approvals,
+            "failed": failed,
+        },
+    }
 
 
 @router.get("/organizations")
