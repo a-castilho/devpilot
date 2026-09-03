@@ -6,6 +6,8 @@
 
   const root = document.documentElement;
   let frame = 0;
+  let lastSignature = '';
+  let lastObservedWidth = 0;
 
   function metrics() {
     const viewport = window.visualViewport;
@@ -24,28 +26,83 @@
     return {width, height, screenWidth, screenHeight, ratio, dpr, zoomedOut, compact, short, boost};
   }
 
+  function viewportMode(value) {
+    if (value.width <= 600) return 'phone';
+    if (value.width <= 900) return 'tablet';
+    return value.compact ? 'compact' : 'wide';
+  }
+
+  function setClass(name, enabled) {
+    if (root.classList.contains(name) === enabled) return;
+    root.classList.toggle(name, enabled);
+  }
+
+  function setStyle(name, value) {
+    if (root.style.getPropertyValue(name) === value) return;
+    root.style.setProperty(name, value);
+  }
+
+  function setData(name, value) {
+    if (root.dataset[name] === value) return;
+    root.dataset[name] = value;
+  }
+
   function apply() {
     frame = 0;
     const value = metrics();
-    root.classList.toggle('dp-zoom-out', value.zoomedOut);
-    root.classList.toggle('dp-space-compact', value.compact);
-    root.classList.toggle('dp-space-short', value.short);
-    root.classList.toggle('dp-vp-phone', value.width <= 600);
-    root.classList.toggle('dp-vp-tablet', value.width > 600 && value.width <= 900);
-    root.classList.toggle('dp-vp-notebook', value.width > 900 && value.compact);
-    root.classList.toggle('dp-vp-wide', value.width > 1280 && !value.compact);
-    root.style.setProperty('--dp-ui-boost', value.boost.toFixed(3));
-    root.style.setProperty('--dp-viewport-width', `${Math.round(value.width)}px`);
-    root.style.setProperty('--dp-viewport-height', `${Math.round(value.height)}px`);
-    root.dataset.dpViewport = value.width <= 600 ? 'phone' : value.width <= 900 ? 'tablet' : value.compact ? 'compact' : 'wide';
-    root.dataset.dpZoom = value.zoomedOut ? 'out' : 'normal';
-    root.dataset.dpBoost = value.boost.toFixed(2);
+    const mode = viewportMode(value);
+    const width = Math.round(value.width);
+    const height = Math.round(value.height);
+    const boost3 = value.boost.toFixed(3);
+    const boost2 = value.boost.toFixed(2);
+
+    // No mobile a barra de endereço do Chromium altera apenas a altura do
+    // visualViewport durante o scroll. Altura não participa do contrato visual
+    // do DevPilot; reescrever classes/CSS vars nesse gesto força style/layout
+    // em toda a página e era perceptível no cadastro de projeto.
+    const mobile = width <= 900;
+    const signature = mobile
+      ? [width, mode, value.zoomedOut, value.compact, boost3].join('|')
+      : [width, height, mode, value.zoomedOut, value.compact, value.short, boost3].join('|');
+
+    lastObservedWidth = width;
+    if (signature === lastSignature) return;
+    lastSignature = signature;
+
+    setClass('dp-zoom-out', value.zoomedOut);
+    setClass('dp-space-compact', value.compact);
+    setClass('dp-space-short', value.short);
+    setClass('dp-vp-phone', value.width <= 600);
+    setClass('dp-vp-tablet', value.width > 600 && value.width <= 900);
+    setClass('dp-vp-notebook', value.width > 900 && value.compact);
+    setClass('dp-vp-wide', value.width > 1280 && !value.compact);
+    setStyle('--dp-ui-boost', boost3);
+    setStyle('--dp-viewport-width', `${width}px`);
+
+    // Mantém a variável por compatibilidade, mas em mobile ela só é atualizada
+    // quando a assinatura estrutural muda (largura/orientação), nunca no scroll.
+    setStyle('--dp-viewport-height', `${height}px`);
+    setData('dpViewport', mode);
+    setData('dpZoom', value.zoomedOut ? 'out' : 'normal');
+    setData('dpBoost', boost2);
     document.dispatchEvent(new CustomEvent('devpilot:viewport-adapted', {detail:value}));
   }
 
   function schedule() {
     if (frame) return;
     frame = window.requestAnimationFrame(apply);
+  }
+
+  function scheduleViewportResize() {
+    const width = Math.round(Number(window.visualViewport?.width || window.innerWidth || 0));
+    // Chrome/Brave mobile dispara resize quando a barra do navegador aparece ou
+    // some. Se a largura não mudou, isso é chrome do navegador, não layout.
+    if (width > 0 && width <= 900 && lastObservedWidth > 0 && Math.abs(width - lastObservedWidth) < 2) return;
+    schedule();
+  }
+
+  function scheduleOrientationChange() {
+    window.setTimeout(schedule, 40);
   }
 
   function ensureStylesheet(selector, href, datasetKey) {
@@ -154,13 +211,14 @@
   apply();
   installPrimaryActionSafeOpen();
 
-  window.addEventListener('resize', schedule, {passive:true});
-  window.addEventListener('orientationchange', schedule, {passive:true});
-  window.visualViewport?.addEventListener('resize', schedule, {passive:true});
-  window.visualViewport?.addEventListener('scroll', schedule, {passive:true});
+  // Regra V38: scroll do visualViewport nunca deve recalcular layout global.
+  // resize de mobile só é relevante quando há mudança de largura/orientação.
+  window.addEventListener('resize', scheduleViewportResize, {passive:true});
+  window.addEventListener('orientationchange', scheduleOrientationChange, {passive:true});
+  window.visualViewport?.addEventListener('resize', scheduleViewportResize, {passive:true});
   document.addEventListener('devpilot:view-changed', schedule);
   document.addEventListener('devpilot:dashboard-revealed', schedule);
   document.addEventListener('devpilot:feature-ready', schedule);
 
-  console.info('[DevPilot] Viewport Adaptive V37 autoridade final ativa');
+  console.info('[DevPilot] Viewport Adaptive V38 sem reflow durante scroll mobile');
 })();
