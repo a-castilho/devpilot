@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import threading
 
+from app.game_round_orchestrator import GameRoundOrchestrator
 from app.services.runtime_preflight import worker_runtime_paths
 from app.worker import process_one
 
 
 class EmbeddedWorker:
-    """Small in-process worker for single-instance homologation environments.
-
-    Production deployments should keep using a dedicated worker service. This
-    helper exists so a free Render web service can exercise the complete queue
-    flow without provisioning a paid background worker.
-    """
+    """Small in-process worker for single-instance homologation environments."""
 
     def __init__(self, poll_seconds: float = 2.0) -> None:
         self.poll_seconds = max(0.05, float(poll_seconds))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._game = GameRoundOrchestrator()
 
     @property
     def is_running(self) -> bool:
@@ -44,6 +41,11 @@ class EmbeddedWorker:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            try:
+                self._game.tick()
+            except Exception as error:  # pragma: no cover - defensive runtime guard
+                print(f"[embedded-worker] game orchestrator error: {error}", flush=True)
+
             try:
                 processed = process_one()
             except Exception as error:  # pragma: no cover - defensive runtime guard

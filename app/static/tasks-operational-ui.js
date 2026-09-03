@@ -7,11 +7,16 @@
   }
 
   window.__devpilotTasksOperationalV9 = true;
+  window.__devpilotTasksLiveSyncV81 = true;
 
+  const LIVE_POLL_MS = 3000;
   const ui = {
     limit: 12,
     detailCache: new Map(),
     loading: false,
+    liveBusy: false,
+    liveTimer: 0,
+    liveSignature: '',
   };
 
   const TERMINAL = new Set(['awaiting_approval', 'completed', 'failed', 'blocked']);
@@ -28,10 +33,7 @@
   }
 
   function notify(message) {
-    if (typeof toast === 'function') {
-      toast(message);
-      return;
-    }
+    if (typeof toast === 'function') return toast(message);
     console.info('[DevPilot]', message);
   }
 
@@ -41,42 +43,28 @@
 
   function statusLabel(value) {
     const status = normalizeStatus(value);
-    const labels = {
-      queued: 'Na fila',
-      planning: 'Planejando',
-      running: 'Executando',
-      review: 'Em revisão',
-      awaiting_approval: 'Aguardando aprovação',
-      completed: 'Concluída',
-      failed: 'Falhou',
-      blocked: 'Bloqueada',
-    };
-    return labels[status] || status || '—';
+    return ({
+      queued:'Na fila', planning:'Planejando', running:'Executando', review:'Em revisão',
+      awaiting_approval:'Aguardando aprovação', completed:'Concluída', failed:'Falhou', blocked:'Bloqueada',
+    })[status] || status || '—';
   }
 
   function taskType(task) {
     const source = String(task?.source || '').toLowerCase();
     const title = String(task?.title || '').toLowerCase();
     if (
-      source.includes('analysis') ||
-      source.includes('verification') ||
-      title.startsWith('análise') ||
-      title.startsWith('analise') ||
-      title.includes('auditoria') ||
-      title.includes('revisão')
+      source.includes('analysis') || source.includes('verification') ||
+      title.startsWith('análise') || title.startsWith('analise') ||
+      title.includes('auditoria') || title.includes('revisão')
     ) return 'analysis';
     return 'execution';
   }
 
-  function taskTypeLabel(task) {
-    return taskType(task) === 'analysis' ? 'Análise' : 'Execução';
-  }
+  const taskTypeLabel = task => taskType(task) === 'analysis' ? 'Análise' : 'Execução';
 
   function projectName(task) {
     if (task?.project_name) return String(task.project_name);
-    const projects = typeof state !== 'undefined' && Array.isArray(state.projects)
-      ? state.projects
-      : [];
+    const projects = typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : [];
     return String(
       projects.find(project => String(project.id) === String(task?.project_id))?.name ||
       'Projeto não identificado'
@@ -123,8 +111,7 @@
 
     if (search) {
       const haystack = [task.title, projectName(task), task.source, statusLabel(task.status)]
-        .join(' ')
-        .toLowerCase();
+        .join(' ').toLowerCase();
       if (!haystack.includes(search)) return false;
     }
     return true;
@@ -172,11 +159,6 @@
       return;
     }
 
-    target.querySelectorAll('.task-details-row, .task-instructions-row').forEach(row => {
-      row.hidden = true;
-      row.style.display = 'none';
-    });
-
     target.innerHTML = filtered.map(task => {
       const id = String(task.id || '');
       const type = taskType(task);
@@ -206,11 +188,7 @@
           </td>
         </tr>
         <tr class="task-details-row task-instructions-row" data-task-details-row="${html(id)}" hidden>
-          <td colspan="3">
-            <div id="execution-details-${html(id)}" class="tasks-v9-details-panel" data-task-details="${html(id)}" aria-live="polite">
-              <span class="tasks-v9-detail-loading">Carregando detalhes…</span>
-            </div>
-          </td>
+          <td colspan="3"><div id="execution-details-${html(id)}" class="tasks-v9-details-panel" data-task-details="${html(id)}" aria-live="polite"><span class="tasks-v9-detail-loading">Carregando detalhes…</span></div></td>
         </tr>`;
     }).join('');
 
@@ -256,11 +234,9 @@
     row.style.display = '';
     button.textContent = 'Ocultar';
     button.setAttribute('aria-expanded', 'true');
-
     if (panel.dataset.loaded === '1') return;
-    panel.setAttribute('aria-busy', 'true');
-    panel.innerHTML = '<span class="tasks-v9-detail-loading">Carregando detalhes…</span>';
 
+    panel.setAttribute('aria-busy', 'true');
     try {
       const task = await fetchDetail(id);
       panel.dataset.loaded = '1';
@@ -299,29 +275,22 @@
     const id = String(button.dataset.id || '');
     const task = (state.tasks || []).find(item => String(item.id) === id);
     if (!task) return;
-
-    const confirmed = window.confirm(
-      `Excluir a execução “${task.title}”?\n\nOs runs vinculados serão removidos. Esta ação não pode ser desfeita.`
-    );
-    if (!confirmed) return;
+    if (!window.confirm(`Excluir a execução “${task.title}”?\n\nOs runs vinculados serão removidos. Esta ação não pode ser desfeita.`)) return;
 
     button.disabled = true;
     button.textContent = 'Excluindo…';
-
     try {
       const token = String(localStorage.getItem('devpilot-token') || '').trim();
       const response = await fetch(`/api/tasks/${encodeURIComponent(id)}`, {
-        method:'DELETE',
+        method: 'DELETE',
         headers:{Authorization:`Bearer ${token}`},
         cache:'no-store',
       });
-
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
         const detail = typeof data?.detail === 'string' ? data.detail : 'Não foi possível excluir a execução';
         throw new Error(detail === 'Active task cannot be deleted' ? 'Execução ativa não pode ser excluída.' : detail);
       }
-
       state.tasks = (state.tasks || []).filter(item => String(item.id) !== id);
       ui.detailCache.delete(id);
       renderOperationalTasks();
@@ -346,12 +315,50 @@
     });
   }
 
+  function taskSignature(tasks) {
+    return (Array.isArray(tasks) ? tasks : [])
+      .map(task => [task.id, task.project_id, normalizeStatus(task.status), task.updated_at || task.created_at || ''].join(':'))
+      .join('|');
+  }
+
+  function tasksViewIsVisible() {
+    return !document.hidden && document.querySelector('#tasks-view')?.classList.contains('active') === true;
+  }
+
+  function scheduleLiveSync(delay = LIVE_POLL_MS) {
+    window.clearTimeout(ui.liveTimer);
+    ui.liveTimer = window.setTimeout(() => void syncLiveTasks(), delay);
+  }
+
+  async function syncLiveTasks() {
+    if (!tasksViewIsVisible()) return scheduleLiveSync(1500);
+    if (ui.liveBusy || ui.loading) return scheduleLiveSync();
+
+    ui.liveBusy = true;
+    try {
+      const safeLimit = Math.max(1, Math.min(50, Number(ui.limit) || 12));
+      const tasks = await api(`/ui/tasks?limit=${safeLimit}`, {retry:false, timeoutMs:5000});
+      const rows = Array.isArray(tasks) ? tasks : [];
+      const nextSignature = taskSignature(rows);
+      if (nextSignature !== ui.liveSignature) {
+        ui.liveSignature = nextSignature;
+        state.tasks = rows;
+        ui.detailCache.clear();
+        renderOperationalTasks();
+      }
+    } catch (error) {
+      console.warn('[DevPilot Execuções] sincronização temporariamente indisponível', error);
+    } finally {
+      ui.liveBusy = false;
+      scheduleLiveSync();
+    }
+  }
+
   async function reloadTasks(limit = ui.limit) {
     if (ui.loading) return;
     ui.loading = true;
     const refresh = document.querySelector('#tasks-v9-refresh');
     const target = document.querySelector('#tasks-table');
-
     if (refresh) {
       refresh.disabled = true;
       refresh.setAttribute('aria-busy', 'true');
@@ -366,6 +373,8 @@
       const tasks = await api(`/ui/tasks?limit=${safeLimit}`);
       state.tasks = Array.isArray(tasks) ? tasks : [];
       ui.limit = safeLimit;
+      ui.liveSignature = taskSignature(state.tasks);
+      ui.detailCache.clear();
       renderOperationalTasks();
     } catch (error) {
       notify(error?.message || 'Falha ao atualizar execuções');
@@ -386,22 +395,17 @@
     const target = document.querySelector('#task-analytics');
     if (!target) return;
     const opening = target.hidden;
-
     if (!opening) {
       target.hidden = true;
       button.textContent = 'Indicadores';
       button.setAttribute('aria-expanded', 'false');
       return;
     }
-
     if (typeof window.renderTaskAnalytics !== 'function') {
       target.hidden = true;
-      button.textContent = 'Indicadores';
-      button.setAttribute('aria-expanded', 'false');
       notify('Os indicadores ainda não estão disponíveis. Tente novamente.');
       return;
     }
-
     target.hidden = false;
     button.setAttribute('aria-expanded', 'true');
     window.renderTaskAnalytics();
@@ -409,32 +413,23 @@
   }
 
   function bindToolbar() {
-    const search = document.querySelector('#tasks-v9-search');
-    const project = document.querySelector('#tasks-v9-project');
-    const status = document.querySelector('#tasks-v9-status');
-    const type = document.querySelector('#tasks-v9-type');
-
-    [search, project, status, type].filter(Boolean).forEach(input => {
-      input.addEventListener(input.tagName === 'INPUT' ? 'input' : 'change', renderOperationalTasks);
-    });
+    const inputs = [
+      document.querySelector('#tasks-v9-search'),
+      document.querySelector('#tasks-v9-project'),
+      document.querySelector('#tasks-v9-status'),
+      document.querySelector('#tasks-v9-type'),
+    ].filter(Boolean);
+    inputs.forEach(input => input.addEventListener(input.tagName === 'INPUT' ? 'input' : 'change', renderOperationalTasks));
 
     document.querySelector('#tasks-v9-refresh')?.addEventListener('click', () => void reloadTasks(ui.limit));
-
     document.querySelector('#tasks-v9-more')?.addEventListener('click', () => {
       const next = Math.min(50, ui.limit + 12);
-      if (next === ui.limit) {
-        notify('As 50 execuções mais recentes já estão carregadas');
-        return;
-      }
+      if (next === ui.limit) return notify('As 50 execuções mais recentes já estão carregadas');
       void reloadTasks(next);
     });
-
     document.querySelector('#tasks-v9-back')?.addEventListener('click', () => {
       const overview = document.querySelector('[data-view="overview"]');
-      if (overview) {
-        overview.click();
-        return;
-      }
+      if (overview) return overview.click();
       if (typeof setView === 'function') setView('overview');
     });
 
@@ -449,21 +444,20 @@
   function install() {
     const target = document.querySelector('#tasks-table');
     if (!target) return;
-
     window.renderTasks = renderOperationalTasks;
     try { renderTasks = renderOperationalTasks; } catch (_) {}
     bindToolbar();
 
     if (typeof state !== 'undefined' && Array.isArray(state.tasks) && state.tasks.length) {
+      ui.liveSignature = taskSignature(state.tasks);
       renderOperationalTasks();
     } else {
       void reloadTasks(ui.limit);
     }
+    scheduleLiveSync(500);
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', install, {once:true});
-  } else {
-    install();
-  }
+  document.addEventListener('visibilitychange', () => scheduleLiveSync(150));
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, {once:true});
+  else install();
 })();

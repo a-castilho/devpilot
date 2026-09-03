@@ -6,13 +6,12 @@
 
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
-  const ASSET_REVISION = 'game-flow-v80-20260902';
+  const ASSET_REVISION = 'game-data-v81-20260903';
 
   const ENTRY_ASSETS = [
     'game/task-payload-guard.js',
     'game/objective-controls.js',
-    'game/delivery-gate.js',
-    'game/recovery-runtime.js',
+    'game/project-switch-approval.js',
     'game/flow-keeper.js',
   ];
 
@@ -51,14 +50,20 @@
   const withTimeout = (promise, label, timeoutMs = CORE_TIMEOUT_MS) => {
     let timer = 0;
     const timeout = new Promise((_, reject) => {
-      timer = window.setTimeout(() => reject(new Error(`${label} excedeu ${Math.round(timeoutMs / 1000)}s`)), timeoutMs);
+      timer = window.setTimeout(
+        () => reject(new Error(`${label} excedeu ${Math.round(timeoutMs / 1000)}s`)),
+        timeoutMs,
+      );
     });
-    return Promise.race([Promise.resolve(promise), timeout]).finally(() => window.clearTimeout(timer));
+    return Promise.race([Promise.resolve(promise), timeout])
+      .finally(() => window.clearTimeout(timer));
   };
 
   const loadAsset = (name, timeoutMs = OPTIONAL_TIMEOUT_MS) => {
     const assetName = String(name || '');
-    if (!ALLOWED_ASSETS.has(assetName)) return Promise.resolve({name:assetName, ok:false, blocked:true});
+    if (!ALLOWED_ASSETS.has(assetName)) {
+      return Promise.resolve({name:assetName, ok:false, blocked:true});
+    }
     if (assetLoads.has(assetName)) return assetLoads.get(assetName);
 
     const promise = new Promise(resolve => {
@@ -127,8 +132,12 @@
     }
 
     try {
-      if (typeof window.api !== 'function' || !window.__devpilotGameApiReady) throw new Error('Runtime de comunicação indisponível');
-      if (typeof window.loadBuildGame !== 'function' || !window.__devpilotGameControllerV73) throw new Error('Motor do jogo indisponível');
+      if (typeof window.api !== 'function' || !window.__devpilotGameApiReady) {
+        throw new Error('Runtime de comunicação indisponível');
+      }
+      if (typeof window.loadBuildGame !== 'function' || !window.__devpilotGameControllerV73) {
+        throw new Error('Motor do jogo indisponível');
+      }
 
       window.__devpilotGameLoadError = null;
       await withTimeout(window.loadBuildGame(), 'Carregamento principal do jogo');
@@ -136,11 +145,13 @@
       if (!hasShell()) throw new Error('A interface principal do jogo não foi renderizada');
 
       window.__devpilotGameCoreReady = true;
-      window.__devpilotGameBootProfile = 'unified-v80';
+      window.__devpilotGameBootProfile = 'server-orchestrated-v81';
       document.dispatchEvent(new CustomEvent('devpilot:game:core-ready'));
       startEnhancements();
     } catch (error) {
-      window.__devpilotGameLoadError = error instanceof Error ? error : new Error(String(error || 'Falha no jogo'));
+      window.__devpilotGameLoadError = error instanceof Error
+        ? error
+        : new Error(String(error || 'Falha no jogo'));
       console.error('[DevPilot Game]', error);
       showBootError(window.__devpilotGameLoadError);
     }
