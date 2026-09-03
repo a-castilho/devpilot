@@ -69,8 +69,14 @@
       // Delegate immediately once. If the same task remains failed for a long time,
       // re-check canonical recovery at most once every 30s, never every render/poll.
       if (!lastRecoveryCheck || now - lastRecoveryCheck >= RECOVERY_RECHECK_MS) {
-        recoveryChecks.set(key, now);
-        await engine.retry();
+        try {
+          await engine.retry();
+          recoveryChecks.set(key, now);
+        } catch (error) {
+          // A transient request failure must be retryable on the next bounded cycle.
+          recoveryChecks.delete(key);
+          throw error;
+        }
         const afterRetry = engine.snapshot?.();
         if (!afterRetry?.failed || String(afterRetry.taskId || '') !== String(state.taskId || '')) {
           return;
@@ -82,6 +88,8 @@
       if (remote && normalize(remote.status) !== normalize(state.taskStatus)) {
         await window.loadBuildGame?.();
       }
+
+      if (recoveryChecks.size > 64) recoveryChecks.delete(recoveryChecks.keys().next().value);
     } catch (error) {
       console.error('[DevPilot Game Flow Keeper]', error);
     } finally {
