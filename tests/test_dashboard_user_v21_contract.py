@@ -16,6 +16,17 @@ def test_dashboard_user_v21_contract():
     assert "dashboard-user-v21.js" in viewport
     assert 'loadDashboardUserV21' in viewport
 
+    # O painel operacional deve usar uma única população para todos os números.
+    # A API /overview continua válida para projetos, mas totais históricos de
+    # tarefas não podem ser misturados com o recorte recente da /ui/tasks.
+    assert 'function recentSnapshot()' in runtime
+    assert 'state.tasks.slice(0, 20)' in runtime
+    assert "completed: count(['completed', 'done'])" in runtime
+    assert "failed: count(['failed', 'error', 'blocked'])" in runtime
+    assert 'Os números históricos não são misturados com este painel.' in runtime
+    assert 'O painel não soma falhas antigas ou conclusões históricas' in runtime
+    assert 'overview.completed' not in runtime
+
 
 if __name__ == '__main__':
     test_dashboard_user_v21_contract()
