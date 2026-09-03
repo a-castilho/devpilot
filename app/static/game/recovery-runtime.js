@@ -8,13 +8,17 @@
   const inFlight = new Map();
   const recoveryStates = new Map();
 
-  const request = async (taskId, action = '') => {
+  const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+  const canUseCanonicalRecovery = state => ['failed', 'blocked'].includes(normalize(state?.taskStatus));
+
+  const request = async (taskId, action = '', payload = null) => {
     if (typeof window.api !== 'function' || !taskId) throw new Error('Recuperação indisponível.');
     const suffix = action ? `/recovery/${action}` : '/recovery';
     return window.api(`/tasks/${encodeURIComponent(taskId)}${suffix}`, {
       method: action ? 'POST' : 'GET',
       timeoutMs: 12000,
       retry: false,
+      ...(payload ? {body: JSON.stringify(payload)} : {}),
     });
   };
 
@@ -31,6 +35,13 @@
     let recovery = await request(taskId).catch(() => null);
     if (escalate && (!recovery || recovery.state === 'ready_to_recover')) {
       recovery = await request(taskId, 'escalate');
+    }
+
+    // A successful repair can occasionally finish before the worker's original-task requeue is
+    // observed. The backend exposes this exact safe condition; resume it instead of reporting a
+    // false terminal recovery_exhausted state.
+    if (recovery?.can_resume_original) {
+      recovery = await request(taskId, 'resume');
     }
     return publish(taskId, recovery);
   };
@@ -60,7 +71,9 @@
 
     engine.retry = async () => {
       const state = engine.snapshot?.();
-      if (!state?.failed || !state?.currentPhaseId) return originalRetry();
+      // Canceled tasks are recreated by the original controller; failed/blocked tasks use the
+      // canonical backend repair flow so no duplicate phase/gate is manufactured by the browser.
+      if (!state?.currentPhaseId || !canUseCanonicalRecovery(state)) return originalRetry();
 
       const key = `${state.missionId}:${state.currentPhaseId}:${state.taskId}:${state.verifier ? 'gate' : 'phase'}`;
       if (inFlight.has(key)) return inFlight.get(key);
