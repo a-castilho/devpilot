@@ -1,14 +1,14 @@
-/* DevPilot game v82 — make the orchestrator runtime the source of truth for task state. */
+/* DevPilot game v88 — orchestrator state sync with bounded cache. */
 (() => {
   'use strict';
 
-  if (window.__devpilotGameRuntimeStateSyncV82Ready) return;
-  window.__devpilotGameRuntimeStateSyncV82Ready = true;
+  if (window.__devpilotGameRuntimeStateSyncV88Ready) return;
+  window.__devpilotGameRuntimeStateSyncV88Ready = true;
 
   const originalApi = window.api;
   if (typeof originalApi !== 'function') return;
 
-  const STOPPED = new Set(['paused', 'pause_requested', 'canceled', 'cancel_requested', 'archived']);
+  const RUNTIME_CACHE_MS = 15000;
   let runtimeCache = {at: 0, states: {}};
   let runtimeInFlight = null;
 
@@ -19,7 +19,7 @@
   };
 
   const loadRuntime = async () => {
-    if (now() - runtimeCache.at < 1200) return runtimeCache.states;
+    if (now() - runtimeCache.at < RUNTIME_CACHE_MS) return runtimeCache.states;
     if (runtimeInFlight) return runtimeInFlight;
     runtimeInFlight = Promise.resolve(originalApi('/tasks/orchestrator/runtime', {
       timeoutMs: 5000,
@@ -64,11 +64,9 @@
 
   window.api = async (path, options = {}) => {
     if (!taskListRequest(path, options)) return originalApi(path, options);
-    const [rows, states] = await Promise.all([
-      originalApi(path, options),
-      loadRuntime(),
-    ]);
+    const rows = await originalApi(path, options);
     if (!Array.isArray(rows)) return rows;
+    const states = await loadRuntime();
     return rows.map(task => effectiveTask(task, states));
   };
 
