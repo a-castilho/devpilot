@@ -24,6 +24,8 @@ def test_failure_surface_reports_exact_position_reason_and_outcome():
     assert "data-game-recovery-reason" in source
     assert "data-game-recovery-code" in source
     assert "data-game-recovery-state" in source
+    assert "recoverableFailure" in source
+    assert "['failed', 'blocked']" in source
     assert "failure?.message" in source
     assert "failure?.code" in source
     for state in ("awaiting_intervention", "intervention_required", "recovery_exhausted"):
@@ -37,10 +39,13 @@ def test_recovery_has_one_backend_owner_and_bounded_observer():
     assert "Backend/worker is the only recovery owner" in recovery
     assert "__devpilotGameRecoveryForTask" in recovery
     assert "__devpilotGameRefreshRecovery" in recovery
+    assert "can_resume_original" in recovery
+    assert "request(taskId, 'resume')" in recovery
     assert "agent_recovery is deliberately not polled here" in recovery
     assert "RECOVERY_RECHECK_MS = 30000" in keeper
     assert "FAILED_POLL_MS = 8000" in keeper
     assert "TERMINAL_RECOVERY_STATES" in keeper
+    assert "OBSERVED_FAILURE_STATUSES" in keeper
     assert "shouldWatchFailure" in keeper
     assert "shouldKeepMoving" not in keeper
 
