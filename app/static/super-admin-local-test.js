@@ -1,88 +1,107 @@
 (() => {
   'use strict';
 
+  if (window.__devpilotSuperAdminDiagnosticsV2) return;
+  window.__devpilotSuperAdminDiagnosticsV2 = true;
+
   const ROLE = 'SUPER_ADMIN';
-  const MANUAL_KEY = 'devpilot-super-admin-local-test-manual';
-  let snapshot = null;
-  let mounted = false;
-
   const isSuperAdmin = () => String((typeof state !== 'undefined' && state.currentUser?.role) || '').toUpperCase() === ROLE;
-  const escapeHtml = value => String(value ?? '')
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;');
-
-  const safeUrl = value => {
-    try {
-      const url = new URL(String(value || ''));
-      return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
-    } catch (_) {
-      return '';
-    }
-  };
-
-  const readManual = () => {
-    try {
-      const value = JSON.parse(localStorage.getItem(MANUAL_KEY) || '{}');
-      return value && typeof value === 'object' ? value : {};
-    } catch (_) {
-      return {};
-    }
-  };
-
-  const saveManual = value => localStorage.setItem(MANUAL_KEY, JSON.stringify(value));
+  const esc = value => String(value ?? '')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;').replaceAll("'", '&#039;');
 
   function ensureStyles() {
-    if (document.getElementById('super-admin-local-test-style')) return;
+    if (document.getElementById('super-admin-diagnostics-v2-style')) return;
     const style = document.createElement('style');
-    style.id = 'super-admin-local-test-style';
+    style.id = 'super-admin-diagnostics-v2-style';
     style.textContent = `
-      .local-test-shell{display:grid;gap:16px}
-      .local-test-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center;padding:18px;border:1px solid var(--border,#26354a);border-radius:18px;background:linear-gradient(135deg,rgba(26,71,92,.32),rgba(9,22,38,.76))}
-      .local-test-hero h2{margin:4px 0 8px}.local-test-hero p{margin:0;color:var(--muted,#9eacc2)}
-      .local-test-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(260px,.9fr);gap:16px}
-      .local-test-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-      .local-test-metric{padding:13px;border:1px solid var(--border,#26354a);border-radius:14px}.local-test-metric strong{display:block;margin-top:4px;font-size:1.15rem;overflow-wrap:anywhere}
-      .local-test-checks{display:grid;gap:9px}.local-test-check{display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:start;padding:11px;border:1px solid var(--border,#26354a);border-radius:12px}
-      .local-test-check i{display:grid;place-items:center;width:25px;height:25px;border-radius:999px;font-style:normal;font-weight:900;background:rgba(255,255,255,.06)}
-      .local-test-check.ok i{color:#72efc5}.local-test-check.fail i{color:#ffc56e}.local-test-check small{display:block;margin-top:3px;color:var(--muted,#9eacc2)}
-      .local-test-url{display:grid;gap:8px}.local-test-url code{display:block;padding:11px;border:1px solid var(--border,#26354a);border-radius:12px;overflow-wrap:anywhere}
-      .local-test-actions{display:flex;gap:8px;flex-wrap:wrap}.local-test-actions>*{min-height:40px}
-      .local-test-manual{display:grid;gap:9px}.local-test-manual label{display:flex;gap:9px;align-items:flex-start;padding:10px;border:1px solid var(--border,#26354a);border-radius:11px}.local-test-manual input{margin-top:3px}
-      @media(max-width:800px){.local-test-hero,.local-test-grid{grid-template-columns:1fr}.local-test-hero .primary{width:100%}.local-test-summary{grid-template-columns:1fr}.local-test-actions>*{width:100%}}
+      .repair-shell{display:grid;gap:16px}.repair-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:center;padding:20px;border:1px solid rgba(58,209,196,.24);border-radius:20px;background:linear-gradient(135deg,rgba(12,45,65,.95),rgba(5,18,31,.98))}.repair-hero h2{margin:4px 0 8px;font-size:clamp(1.55rem,4vw,2.35rem)}.repair-hero p{margin:0;color:#9db0c1;max-width:760px;line-height:1.55}.repair-main{min-height:56px;padding:12px 20px;border:0;border-radius:13px;background:linear-gradient(135deg,#52ead7,#43bdf5);color:#03131c;font-weight:950;cursor:pointer}.repair-main:disabled{opacity:.55;cursor:wait}.repair-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.repair-metric{padding:14px;border:1px solid #213a50;border-radius:14px;background:#071827}.repair-metric small{display:block;color:#7890a4;font-weight:800}.repair-metric strong{display:block;margin-top:5px;color:#fff;font-size:1.2rem}.repair-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr);gap:14px}.repair-checks,.repair-actions{display:grid;gap:9px}.repair-check{display:grid;grid-template-columns:28px minmax(0,1fr);gap:10px;padding:12px;border:1px solid #21384d;border-radius:12px;background:#081827}.repair-check i{display:grid;place-items:center;width:26px;height:26px;border-radius:999px;font-style:normal;font-weight:950;background:#ffffff0b}.repair-check.ok i{color:#59e7c1}.repair-check.fail i{color:#ff6f7f}.repair-check small{display:block;margin-top:3px;color:#8195a8}.repair-action{width:100%;min-height:52px;padding:11px;border:1px solid #28506c;border-radius:12px;background:#0a2134;color:#eaf4fb;font-weight:900;text-align:left;cursor:pointer}.repair-action span{display:block;margin-top:3px;color:#88a0b4;font-size:.78rem;font-weight:600}.repair-log{max-height:280px;overflow:auto;margin:0;padding:12px;border-radius:12px;background:#04111d;color:#9eb4c6;font-size:.78rem;line-height:1.45;white-space:pre-wrap;overflow-wrap:anywhere}.repair-status{padding:11px 13px;border-radius:12px;background:#0b2434;color:#acd0d8}.repair-status.success{border:1px solid rgba(71,225,181,.32);color:#8ff0cf}.repair-status.fail{border:1px solid rgba(255,101,120,.34);color:#ffc1c9}.local-test-compact{display:flex;gap:8px;flex-wrap:wrap}.local-test-compact button{min-height:42px}
+      @media(max-width:850px){.repair-hero,.repair-grid{grid-template-columns:1fr}.repair-main{width:100%}.repair-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media(max-width:520px){.repair-metrics{grid-template-columns:1fr}.repair-hero{padding:16px}.repair-grid{gap:10px}}
     `;
     document.head.appendChild(style);
   }
 
-  function removePanel() {
-    document.querySelector('[data-local-test-nav]')?.remove();
-    document.getElementById('super-admin-local-test-view')?.remove();
-    mounted = false;
-  }
-
-  function openView(button, section) {
-    if (!isSuperAdmin()) {
-      if (typeof toast === 'function') toast('Acesso exclusivo do Super Admin');
-      return;
-    }
+  function openView(button, section, title) {
+    if (!isSuperAdmin()) return window.toast?.('Acesso exclusivo do Super Admin');
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
-    const title = document.getElementById('page-title');
-    if (title) title.textContent = 'Teste local/mobile';
-    void loadContext();
+    const heading = document.getElementById('page-title');
+    if (heading) heading.textContent = title;
+  }
+
+  function renderRepair(data = {}) {
+    const queue = data.queue || {};
+    const metrics = document.getElementById('repair-metrics');
+    const checks = document.getElementById('repair-checks');
+    const log = document.getElementById('repair-log');
+    const status = document.getElementById('repair-status');
+    if (!metrics || !checks || !log || !status) return;
+
+    metrics.innerHTML = `
+      <div class="repair-metric"><small>NA FILA</small><strong>${Number(queue.queued || 0)}</strong></div>
+      <div class="repair-metric"><small>EXECUTANDO</small><strong>${Number(queue.running || 0)}</strong></div>
+      <div class="repair-metric"><small>COM FALHA</small><strong>${Number(queue.failed || 0)}</strong></div>
+      <div class="repair-metric"><small>ÚLTIMO RUN</small><strong>${esc(data.latest_run?.status || '—')}</strong></div>`;
+
+    const items = Array.isArray(data.checks) ? data.checks : [];
+    checks.innerHTML = items.map(item => `
+      <div class="repair-check ${item.ok ? 'ok' : 'fail'}"><i>${item.ok ? '✓' : '!'}</i><div><strong>${esc(item.label)}</strong><small>${esc(item.detail || '')}</small></div></div>
+    `).join('') || '<div class="empty">Sem diagnóstico disponível.</div>';
+
+    const repair = data.latest_repair || {};
+    log.textContent = String(repair.detail || 'Nenhum reparo executado ainda.');
+    const repairStatus = String(repair.status || 'ready').toLowerCase();
+    status.className = `repair-status ${repairStatus === 'completed' ? 'success' : repairStatus === 'failed' ? 'fail' : ''}`;
+    status.textContent = repairStatus === 'completed' ? 'Último reparo concluído' : repairStatus === 'failed' ? 'Último reparo falhou' : repairStatus === 'pending' || repairStatus === 'running' ? 'Reparo em andamento' : 'Pronto para analisar';
+  }
+
+  async function loadRepair() {
+    if (!isSuperAdmin()) return;
+    try { renderRepair(await api('/admin/pipeline-repair')); }
+    catch (error) { window.toast?.(error?.message || 'Falha ao carregar diagnóstico da esteira.'); }
+  }
+
+  async function runRepair() {
+    if (!isSuperAdmin()) return;
+    const button = document.getElementById('pipeline-repair-run');
+    if (button) { button.disabled = true; button.textContent = 'Executando reparo…'; }
+    try {
+      const accepted = await api('/admin/pipeline-repair/run', {method:'POST'});
+      window.toast?.(`Reparo enviado: ${accepted.action_id || 'fila do host'}`);
+      await loadRepair();
+      let attempts = 0;
+      const poll = window.setInterval(async () => {
+        attempts += 1;
+        try {
+          const data = await api('/admin/pipeline-repair');
+          renderRepair(data);
+          const value = String(data.latest_repair?.status || '').toLowerCase();
+          if (['completed','failed'].includes(value) || attempts >= 20) {
+            window.clearInterval(poll);
+            if (button?.isConnected) { button.disabled = false; button.textContent = '▶ Executar reparo completo'; }
+          }
+        } catch (_) {}
+      }, 3000);
+    } catch (error) {
+      window.toast?.(error?.message || 'Falha ao solicitar reparo.');
+      if (button?.isConnected) { button.disabled = false; button.textContent = '▶ Executar reparo completo'; }
+    }
+  }
+
+  async function runLocalTest() {
+    const button = document.getElementById('local-test-compact-run');
+    if (button) { button.disabled = true; button.textContent = 'Testando…'; }
+    try {
+      const result = await api('/admin/local-test/run', {method:'POST'});
+      window.toast?.(result.ok ? `Teste local aprovado ${result.passed}/${result.total}` : `Teste local com atenção ${result.passed}/${result.total}`);
+    } catch (error) { window.toast?.(error?.message || 'Falha no teste local.'); }
+    finally { if (button?.isConnected) { button.disabled = false; button.textContent = 'Executar teste local/mobile'; } }
   }
 
   function ensurePanel() {
-    if (!isSuperAdmin()) {
-      if (mounted) removePanel();
-      return;
-    }
-    if (document.getElementById('super-admin-local-test-view')) {
-      mounted = true;
-      return;
-    }
+    if (!isSuperAdmin()) return;
+    if (document.getElementById('pipeline-repair-view')) return;
     const nav = document.querySelector('.sidebar nav');
     const main = document.querySelector('main');
     if (!nav || !main) return;
@@ -91,143 +110,40 @@
     const button = document.createElement('button');
     button.className = 'nav';
     button.type = 'button';
-    button.dataset.view = 'super-admin-local-test';
-    button.dataset.localTestNav = '1';
-    button.textContent = 'Teste local/mobile';
-    nav.insertBefore(button, nav.querySelector('[data-view="cloud-admin"]') || nav.querySelector('[data-view="reports"]') || null);
+    button.dataset.pipelineRepairNav = '1';
+    button.textContent = '🛠 Reparo & Diagnóstico';
+    nav.appendChild(button);
 
     const section = document.createElement('section');
     section.className = 'view';
-    section.id = 'super-admin-local-test-view';
+    section.id = 'pipeline-repair-view';
     section.innerHTML = `
-      <div class="local-test-shell">
-        <div class="local-test-hero">
-          <div>
-            <span class="eyebrow">SUPER ADMIN · DIAGNÓSTICO AUTORIZADO</span>
-            <h2>Teste local e mobile do DevPilot</h2>
-            <p>Executa somente verificações pré-definidas do próprio DevPilot. Não aceita comandos shell, hosts arbitrários ou credenciais.</p>
-          </div>
-          <button class="primary" type="button" id="local-test-run">Executar teste agora</button>
+      <div class="repair-shell">
+        <section class="repair-hero">
+          <div><span class="eyebrow">SUPER ADMIN · OPERAÇÃO CONTROLADA</span><h2>Reparo da Esteira</h2><p>Analisa fila, execuções e saúde do worker. O reparo é uma ação pré-definida: recria somente o worker, reconecta à rede Compose e valida DNS e PostgreSQL sem aceitar comandos livres.</p></div>
+          <button class="repair-main" type="button" id="pipeline-repair-run">▶ Executar reparo completo</button>
+        </section>
+        <div id="repair-metrics" class="repair-metrics"></div>
+        <div class="repair-grid">
+          <article class="panel"><div class="panel-title"><div><span class="eyebrow">DIAGNÓSTICO</span><h3>Verificações</h3></div><button class="ghost" id="pipeline-repair-refresh" type="button">Atualizar análise</button></div><div id="repair-status" class="repair-status">Carregando…</div><div id="repair-checks" class="repair-checks" style="margin-top:12px"></div></article>
+          <article class="panel"><div class="panel-title"><div><span class="eyebrow">RESULTADO TÉCNICO</span><h3>Último reparo</h3></div></div><pre id="repair-log" class="repair-log">Carregando…</pre><div class="repair-actions" style="margin-top:10px"><button class="repair-action" type="button" id="local-test-compact-run">Executar teste local/mobile<span>Valida API, assets e acesso pela rede local.</span></button></div></article>
         </div>
-        <div id="local-test-summary" class="local-test-summary"></div>
-        <div class="local-test-grid">
-          <article class="panel">
-            <div class="panel-title"><div><span class="eyebrow">AUTOMÁTICO</span><h3>Verificações do sistema</h3></div><span class="status" id="local-test-status">AGUARDANDO</span></div>
-            <div id="local-test-checks" class="local-test-checks"><div class="empty">Abra este painel e execute o teste.</div></div>
-          </article>
-          <article class="panel">
-            <div class="panel-title"><div><span class="eyebrow">CELULAR</span><h3>URL e validação visual</h3></div></div>
-            <div id="local-test-url" class="local-test-url"></div>
-            <div style="margin-top:14px"><strong>Checklist manual</strong><div id="local-test-manual" class="local-test-manual" style="margin-top:9px"></div></div>
-          </article>
-        </div>
-      </div>
-    `;
-    const anchor = document.getElementById('cloud-admin-view') || document.getElementById('reports-view');
-    (anchor?.parentNode || main).insertBefore(section, anchor || null);
-    button.addEventListener('click', () => openView(button, section));
-    section.querySelector('#local-test-run').addEventListener('click', runTest);
-    mounted = true;
-  }
-
-  function render(data = {}) {
-    snapshot = data;
-    const summary = document.getElementById('local-test-summary');
-    const checks = document.getElementById('local-test-checks');
-    const status = document.getElementById('local-test-status');
-    const urlBox = document.getElementById('local-test-url');
-    const manual = document.getElementById('local-test-manual');
-    if (!summary || !checks || !status || !urlBox || !manual) return;
-
-    const passed = Number.isFinite(Number(data.passed)) ? Number(data.passed) : null;
-    const total = Number.isFinite(Number(data.total)) ? Number(data.total) : null;
-    summary.innerHTML = `
-      <div class="local-test-metric"><span class="eyebrow">PERFIL</span><strong>${escapeHtml(data.role || 'SUPER_ADMIN')}</strong><small>autorização exigida no backend</small></div>
-      <div class="local-test-metric"><span class="eyebrow">LINUX IP</span><strong>${escapeHtml(data.linux_ip || '—')}</strong><small>interface local detectada</small></div>
-      <div class="local-test-metric"><span class="eyebrow">RESULTADO</span><strong>${passed === null ? '—' : `${passed}/${total}`}</strong><small>verificações automáticas</small></div>
-    `;
-
-    const items = Array.isArray(data.checks) ? data.checks : [];
-    checks.innerHTML = items.length ? items.map(item => `
-      <div class="local-test-check ${item.ok ? 'ok' : 'fail'}">
-        <i>${item.ok ? '✓' : '!'}</i>
-        <div><strong>${escapeHtml(item.label)}</strong><small>${escapeHtml(item.detail || '')}</small></div>
-      </div>
-    `).join('') : '<div class="empty">Clique em “Executar teste agora” para rodar o diagnóstico.</div>';
-    status.textContent = items.length ? (data.ok ? 'APROVADO' : 'ATENÇÃO') : 'PRONTO';
-
-    const mobileUrl = safeUrl(data.mobile_url);
-    urlBox.innerHTML = mobileUrl ? `
-      <code>${escapeHtml(mobileUrl)}</code>
-      <div class="local-test-actions">
-        <a class="primary" href="${escapeHtml(mobileUrl)}" target="_blank" rel="noopener noreferrer">Abrir no celular ↗</a>
-        <button class="ghost" type="button" id="local-test-copy">Copiar URL</button>
-      </div>
-    ` : '<div class="empty">URL da rede local ainda não disponível.</div>';
-    document.getElementById('local-test-copy')?.addEventListener('click', async () => {
-      try {
-        await navigator.clipboard.writeText(mobileUrl);
-        if (typeof toast === 'function') toast('URL local copiada.');
-      } catch (_) {
-        if (typeof toast === 'function') toast('Não foi possível copiar a URL automaticamente.');
-      }
-    });
-
-    const manualState = readManual();
-    const checklist = Array.isArray(data.manual_checklist) ? data.manual_checklist : [];
-    manual.innerHTML = checklist.map((label, index) => `
-      <label><input type="checkbox" data-local-manual="${index}" ${manualState[index] ? 'checked' : ''}><span>${escapeHtml(label)}</span></label>
-    `).join('') || '<div class="empty">Checklist indisponível.</div>';
-    manual.querySelectorAll('[data-local-manual]').forEach(input => {
-      input.addEventListener('change', () => {
-        const value = readManual();
-        value[input.dataset.localManual] = input.checked;
-        saveManual(value);
-      });
-    });
-  }
-
-  async function loadContext() {
-    if (!isSuperAdmin()) return;
-    try {
-      render(await api('/admin/local-test'));
-    } catch (error) {
-      if (typeof toast === 'function') toast(error?.message || 'Não foi possível carregar o teste local.');
-    }
-  }
-
-  async function runTest() {
-    if (!isSuperAdmin()) return;
-    const button = document.getElementById('local-test-run');
-    if (button) {
-      button.disabled = true;
-      button.textContent = 'Testando…';
-    }
-    try {
-      const result = await api('/admin/local-test/run', {method: 'POST'});
-      render(result);
-      if (typeof toast === 'function') toast(result.ok ? 'Teste local concluído.' : 'Teste concluído com pontos de atenção.');
-    } catch (error) {
-      if (typeof toast === 'function') toast(error?.message || 'Falha ao executar o teste local.');
-    } finally {
-      if (button?.isConnected) {
-        button.disabled = false;
-        button.textContent = 'Executar teste agora';
-      }
-    }
+      </div>`;
+    main.appendChild(section);
+    button.addEventListener('click', () => { openView(button, section, 'Reparo & Diagnóstico'); void loadRepair(); });
+    section.querySelector('#pipeline-repair-run')?.addEventListener('click', runRepair);
+    section.querySelector('#pipeline-repair-refresh')?.addEventListener('click', loadRepair);
+    section.querySelector('#local-test-compact-run')?.addEventListener('click', runLocalTest);
   }
 
   const boot = () => {
     ensurePanel();
-    window.setTimeout(ensurePanel, 600);
-    window.setTimeout(ensurePanel, 1600);
-    const root = document.body;
-    if (root && !root.dataset.localTestObserved) {
-      root.dataset.localTestObserved = '1';
-      new MutationObserver(ensurePanel).observe(root, {childList: true, subtree: true});
-    }
+    window.setTimeout(ensurePanel, 700);
+    window.setTimeout(ensurePanel, 1800);
+    document.addEventListener('devpilot:page-ready', ensurePanel);
+    document.addEventListener('devpilot:feature-ready', ensurePanel);
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once: true});
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, {once:true});
   else boot();
 })();
