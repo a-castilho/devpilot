@@ -1,9 +1,8 @@
-/* DevPilot game v92 — canonical recovery with safe terminal retry. */
+/* DevPilot game v97 — canonical recovery; only explicit retry escalates repair. */
 (() => {
   'use strict';
-  if (window.__devpilotGameRecoveryV92Ready) return;
-  window.__devpilotGameRecoveryV92Ready = true;
-  window.__devpilotGameRecoveryV91Ready = true;
+  if (window.__devpilotGameRecoveryV97Ready) return;
+  window.__devpilotGameRecoveryV97Ready = true;
 
   const patched = new WeakSet();
   const inFlight = new Map();
@@ -40,7 +39,7 @@
     && !recovery?.recovery_task?.requires_approval
   );
 
-  const readCanonicalRecovery = async (taskId, {escalate = true} = {}) => {
+  const readCanonicalRecovery = async (taskId, {escalate = false} = {}) => {
     let recovery = await request(taskId).catch(() => null);
     if (escalate && (
       !recovery
@@ -50,7 +49,7 @@
       recovery = await request(taskId, 'escalate');
     }
 
-    if (recovery?.can_resume_original) {
+    if (escalate && recovery?.can_resume_original) {
       recovery = await request(taskId, 'resume');
     }
     return publish(taskId, recovery);
@@ -96,11 +95,12 @@
   };
 
   window.__devpilotGameRecoveryForTask = taskId => recoveryStates.get(String(taskId || '').trim()) || null;
-  window.__devpilotGameRefreshRecovery = async taskId => {
+  window.__devpilotGameReadRecovery = async taskId => {
     const key = String(taskId || '').trim();
     if (!key) return null;
-    return readCanonicalRecovery(key, {escalate: true});
+    return readCanonicalRecovery(key, {escalate: false});
   };
+  window.__devpilotGameRefreshRecovery = window.__devpilotGameReadRecovery;
 
   document.addEventListener('devpilot:game:core-ready', patch);
   document.addEventListener('devpilot:game:rendered', patch);
