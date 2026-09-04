@@ -1,8 +1,8 @@
-/* DevPilot game v91 — one bounded failure observer; backend owns repair and retest. */
+/* DevPilot game v97 — bounded observer; failed repairs start only from user action. */
 (() => {
   'use strict';
-  if (window.__devpilotGameFlowKeeperV91Ready) return;
-  window.__devpilotGameFlowKeeperV91Ready = true;
+  if (window.__devpilotGameFlowKeeperV97Ready) return;
+  window.__devpilotGameFlowKeeperV97Ready = true;
 
   const FIRST_FAILURE_DELAY_MS = 250;
   const FAILED_POLL_MS = 8000;
@@ -67,8 +67,8 @@
     const state = engine?.snapshot?.();
     if (!engine || !shouldWatchFailure(state)) return arm();
 
-    // Cancellation is not a recoverable execution failure. The original controller safely
-    // recreates the same phase/gate; recovery-runtime intentionally falls back to originalRetry.
+    // Cancelamento é diferente de falha: recriar a mesma etapa continua sendo
+    // automático porque foi o próprio usuário que encerrou a execução anterior.
     if (isCanceled(state)) {
       busy = true;
       const key = failureKey(state);
@@ -77,8 +77,6 @@
         await engine.retry();
         await engine.refresh?.();
       } catch (error) {
-        // Keep the timestamp: an unavailable API must not turn the 250ms first-attempt path
-        // into a request storm. The observer retries on the normal bounded cadence.
         recoveryChecks.set(key, Date.now());
         console.error('[DevPilot Game Flow Keeper]', error);
       } finally {
@@ -97,20 +95,17 @@
       const now = Date.now();
       const lastRecoveryCheck = recoveryChecks.get(key) || 0;
 
-      // Delegate the failure immediately once. Afterwards only re-read/escalate canonical
-      // recovery every 30s. This prevents request storms and duplicate repair authority.
+      // Falha/blocked: somente leia o diagnóstico. Não chame engine.retry()
+      // aqui. O único gatilho de correção é o clique em "Corrigir e continuar".
       if (!lastRecoveryCheck || now - lastRecoveryCheck >= RECOVERY_RECHECK_MS) {
         recoveryChecks.set(key, now);
-        await engine.retry();
-
+        await window.__devpilotGameReadRecovery?.(state.taskId);
         const recovery = recoveryFor(state);
         if (isTerminalRecovery(recovery)) return;
-        const afterRetry = engine.snapshot?.();
-        if (!shouldWatchFailure(afterRetry) || String(afterRetry.taskId || '') !== String(state.taskId || '')) return;
       }
 
-      // Observe the same original task while the worker repairs/retests it. A status change
-      // reloads the controller, which then advances through the normal seven-stage pipeline.
+      // Observe mudanças produzidas depois do clique do usuário ou de uma
+      // intervenção externa. O keeper nunca promove ready_to_recover para queued.
       const tasks = await fetchTasks(state);
       const remote = missionTask(tasks, state);
       if (remote && normalize(remote.status) !== normalize(state.taskStatus)) {
