@@ -435,11 +435,36 @@
     const intentEpoch = navigationEpoch;
     restorePendingPlaceholders();
 
+    // No celular, o roteador opcional pode ainda estar carregando quando o
+    // usuário toca em Projetos. Nesse intervalo nunca chamamos showView(), pois
+    // o showView nativo dispara loadProjects() com o payload pesado de 50 itens.
+    const mobileProjectsFallback = (
+      viewName === 'projects' &&
+      window.matchMedia?.('(max-width: 900px)')?.matches === true &&
+      typeof window.devpilotNavigate !== 'function'
+    );
+
     // A troca de tela pertence ao caminho crítico do clique. Recursos opcionais
     // são hidratados depois e nunca podem bloquear a navegação principal.
     let navigated = false;
+    let deferredMobileProjectsLoad = false;
     if (typeof window.devpilotNavigate === 'function') {
       navigated = window.devpilotNavigate(viewName, {source, immediate:true});
+    } else if (mobileProjectsFallback) {
+      document.querySelectorAll('.view').forEach(view => {
+        const active = view.id === 'projects-view';
+        view.classList.toggle('active', active);
+        view.hidden = !active;
+        view.setAttribute('aria-hidden', active ? 'false' : 'true');
+      });
+      document.querySelectorAll('.sidebar nav .nav[data-view]').forEach(nav => {
+        nav.classList.toggle('active', String(nav.dataset.view || '') === 'projects');
+      });
+      const title = document.querySelector('#page-title');
+      if (title) title.textContent = 'Projetos';
+      document.documentElement.dataset.devpilotView = 'projects';
+      navigated = true;
+      deferredMobileProjectsLoad = true;
     } else if (typeof showView === 'function') {
       showView(viewName);
       navigated = true;
@@ -450,6 +475,12 @@
       void loadFeature(feature, {intentEpoch}).then(ready => {
         if (intentEpoch !== navigationEpoch) return;
         if (!ready) window.toast?.('Tela aberta com alguns recursos opcionais indisponíveis.');
+        if (deferredMobileProjectsLoad && typeof window.loadProjects === 'function') {
+          void Promise.resolve(window.loadProjects()).catch(error => {
+            console.error('[DevPilot] Falha ao carregar Projetos em modo leve', error);
+            window.toast?.('Não foi possível carregar os projetos.');
+          });
+        }
       }).catch(error => {
         if (intentEpoch !== navigationEpoch) return;
         console.error(`[DevPilot] Falha ao hidratar ${viewName}`, error);
