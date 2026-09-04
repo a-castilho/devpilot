@@ -73,6 +73,7 @@ services:
       DEVPILOT_DATA_DIR: /data
       DEVPILOT_REPOSITORIES_DIR: /data/repositories
       DEVPILOT_HOST_ACTIONS_DIR: /runtime/host-actions
+      DEVPILOT_WORKER_RECOVER_RUNNING_ON_START: "true"
     volumes:
       - devpilot_data:/data
       - ./runtime/host-actions:/runtime/host-actions
