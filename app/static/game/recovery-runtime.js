@@ -1,12 +1,13 @@
-/* DevPilot game v91 — canonical recovery with explicit outcome state for the UI. */
+/* DevPilot game v92 — canonical recovery with safe terminal retry. */
 (() => {
   'use strict';
-  if (window.__devpilotGameRecoveryV91Ready) return;
-  window.__devpilotGameRecoveryV91Ready = true;
+  if (window.__devpilotGameRecoveryV92Ready) return;
+  window.__devpilotGameRecoveryV92Ready = true;
 
   const patched = new WeakSet();
   const inFlight = new Map();
   const recoveryStates = new Map();
+  const RETRYABLE_TERMINAL_STATES = new Set(['intervention_required', 'recovery_exhausted']);
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const canUseCanonicalRecovery = state => ['failed', 'blocked'].includes(normalize(state?.taskStatus));
@@ -31,15 +32,23 @@
     return recovery;
   };
 
+  const safeTerminalRetry = recovery => Boolean(
+    recovery
+    && RETRYABLE_TERMINAL_STATES.has(String(recovery.state || ''))
+    && !recovery?.failure?.requires_authorization
+    && !recovery?.recovery_task?.requires_approval
+  );
+
   const readCanonicalRecovery = async (taskId, {escalate = true} = {}) => {
     let recovery = await request(taskId).catch(() => null);
-    if (escalate && (!recovery || recovery.state === 'ready_to_recover')) {
+    if (escalate && (
+      !recovery
+      || recovery.state === 'ready_to_recover'
+      || safeTerminalRetry(recovery)
+    )) {
       recovery = await request(taskId, 'escalate');
     }
 
-    // A successful repair can occasionally finish before the worker's original-task requeue is
-    // observed. The backend exposes this exact safe condition; resume it instead of reporting a
-    // false terminal recovery_exhausted state.
     if (recovery?.can_resume_original) {
       recovery = await request(taskId, 'resume');
     }
@@ -51,16 +60,10 @@
     if (!taskId) throw new Error('Execução com falha sem identificador.');
 
     const recovery = await readCanonicalRecovery(taskId, {escalate: true});
-
-    // Backend/worker is the only recovery owner. Never manufacture [Jogo] Correção or replacement tasks here.
-    // The same failed task is repaired, requeued and retested by the canonical backend flow.
     if (recovery?.state === 'resolved' || recovery?.state === 'retesting') {
       await window.loadBuildGame?.();
       engine.schedule?.();
     }
-
-    // agent_recovery is deliberately not polled here. flow-keeper owns the single bounded
-    // observation loop. Manual/terminal states remain visible until the user resolves them.
     return engine.snapshot?.() || state;
   };
 
@@ -71,8 +74,6 @@
 
     engine.retry = async () => {
       const state = engine.snapshot?.();
-      // Canceled tasks are recreated by the original controller; failed/blocked tasks use the
-      // canonical backend repair flow so no duplicate phase/gate is manufactured by the browser.
       if (!state?.currentPhaseId || !canUseCanonicalRecovery(state)) return originalRetry();
 
       const key = `${state.missionId}:${state.currentPhaseId}:${state.taskId}:${state.verifier ? 'gate' : 'phase'}`;
@@ -97,7 +98,7 @@
   window.__devpilotGameRefreshRecovery = async taskId => {
     const key = String(taskId || '').trim();
     if (!key) return null;
-    return readCanonicalRecovery(key, {escalate: false});
+    return readCanonicalRecovery(key, {escalate: true});
   };
 
   document.addEventListener('devpilot:game:core-ready', patch);
