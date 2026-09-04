@@ -44,6 +44,11 @@ class AutoRecoveryService:
 
     MAX_ATTEMPTS = 3
 
+    _EXECUTOR_RUNTIME = (
+        "reading additional input from stdin",
+        "failed to read prompt from stdin",
+        "no prompt provided via stdin",
+    )
     _GITHUB_AUTH = (
         "write access to repository not granted", "requested url returned error: 401",
         "requested url returned error: 403", "authentication failed", "could not read username",
@@ -61,6 +66,7 @@ class AutoRecoveryService:
 
     def classify(self, error_text: str) -> str:
         text = str(error_text or "").casefold()
+        if any(pattern in text for pattern in self._EXECUTOR_RUNTIME): return "executor_runtime"
         if any(pattern in text for pattern in self._GITHUB_AUTH): return "github_auth"
         if any(pattern in text for pattern in self._NETWORK): return "git_network"
         if any(pattern in text for pattern in self._REPOSITORY_STATE): return "repository_state"
@@ -72,6 +78,28 @@ class AutoRecoveryService:
     def recover(self, project: Project, task: Task, error_text: str, execution_attempt: int) -> RecoveryDecision:
         category = self.classify(error_text)
         detected = {"state": "detected", "attempt": execution_attempt, "category": category, "message": self._safe_error(error_text)}
+        if category == "executor_runtime":
+            return RecoveryDecision(
+                category="executor_runtime",
+                status="platform_repair_required",
+                message=(
+                    "O Codex não executou o prompt porque o runner DevPilot deixou uma leitura de stdin "
+                    "aberta em ambiente não interativo. Não há correção a aplicar no projeto."
+                ),
+                retry=False,
+                requires_authorization=False,
+                strategy="retry_original_after_runner_fix",
+                steps=[
+                    detected,
+                    {
+                        "state": "platform_fault",
+                        "attempt": execution_attempt,
+                        "message": (
+                            "Interromper autocorreção do projeto; corrigir o runner e retestar a tarefa original."
+                        ),
+                    },
+                ],
+            )
         if category == "github_auth":
             decision = self._recover_github_access(project, execution_attempt); decision.steps.insert(0, detected); return decision
         if category == "git_network" and execution_attempt < self.MAX_ATTEMPTS:
@@ -117,6 +145,13 @@ class AutoRecoveryService:
             summary = f"Intervenção autorizada necessária: {decision.message}"
             next_step = "Conclua somente a autorização indicada pelo diagnóstico; depois o DevPilot retomará o fluxo automaticamente."
             impact = "A tarefa foi interrompida porque o diagnóstico comprovou uma dependência de autorização ou permissão."
+        elif decision.category == "executor_runtime":
+            summary = f"Falha do runner DevPilot: {decision.message}"
+            next_step = (
+                "Reteste exatamente a tarefa original no runner corrigido. Não crie uma missão de recuperação "
+                "do projeto para esta falha."
+            )
+            impact = "O prompt não chegou a ser executado; o código do projeto não é a causa desta interrupção."
         elif decision.category == "unknown":
             summary = f"Diagnóstico necessário: {decision.message}"
             next_step = "Analise o erro técnico preservado abaixo. Só solicite intervenção humana se o diagnóstico comprovar uma dependência externa."
