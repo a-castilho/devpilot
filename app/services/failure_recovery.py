@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 
@@ -53,10 +54,99 @@ def _safe_original_prompt(task: Task, limit: int = 20_000) -> str:
     return text if len(text) <= limit else f"{text[:limit].rstrip()}\n\n[conteúdo original truncado pelo fluxo de recuperação]"
 
 
+def _run_payload(run: Run | None) -> dict:
+    if not run or not run.logs:
+        return {}
+    try:
+        value = json.loads(run.logs)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _detected_cause(payload: dict) -> str:
+    context = payload.get("failure_context") if isinstance(payload, dict) else None
+    if isinstance(context, dict):
+        cause = str(context.get("cause") or "").strip()
+        if cause:
+            return cause[:2400]
+
+    healing = payload.get("self_healing") if isinstance(payload, dict) else None
+    steps = healing.get("steps") if isinstance(healing, dict) else None
+    if isinstance(steps, list):
+        for step in reversed(steps):
+            if not isinstance(step, dict) or str(step.get("state") or "") != "detected":
+                continue
+            cause = str(step.get("message") or "").strip()
+            if cause:
+                return cause[:2400]
+
+    raw = str(payload.get("stderr") or "").strip() if isinstance(payload, dict) else ""
+    return raw[:2400]
+
+
+def _recommended_action(category: str, cause: str, requires_authorization: bool) -> str:
+    if category == "github_auth":
+        return "Revalidar a credencial GitHub vinculada ao projeto, confirmar acesso ao repositório e repetir esta mesma etapa."
+    if category == "codex_auth":
+        return "Autenticar o Codex no worker e repetir esta mesma etapa sem alterar o objetivo da rodada."
+    if category == "git_network":
+        return "Restabelecer a conectividade com o repositório e repetir esta mesma etapa."
+    if category == "repository_state":
+        return "Reparar ou recriar com segurança o checkout local e repetir esta mesma etapa."
+    if category == "filesystem_permission":
+        return "Corrigir somente a permissão necessária no ambiente de execução e repetir esta mesma etapa."
+    if category == "database":
+        return "Restabelecer o banco do DevPilot, validar a integridade e repetir esta mesma etapa."
+    if requires_authorization:
+        return "Resolver somente a autorização indicada pelo diagnóstico e repetir esta mesma etapa."
+    if cause:
+        return f"Corrigir a causa técnica registrada ({cause[:700]}) e repetir exatamente esta etapa."
+    return "Corrigir a causa técnica registrada e repetir exatamente esta etapa."
+
+
+def enrich_failure_from_run(run: Run | None, failure: dict | None) -> dict:
+    result = dict(failure or {})
+    payload = _run_payload(run)
+    cause = _detected_cause(payload)
+    context = payload.get("failure_context") if isinstance(payload, dict) else None
+
+    category = str(result.get("category") or "unknown")
+    if category == "unknown" and isinstance(context, dict):
+        contextual_category = str(context.get("category") or "").strip()
+        if contextual_category:
+            category = contextual_category
+
+    requires_authorization = bool(result.get("requires_authorization", False))
+    generic_message = str(result.get("message") or "").strip()
+    technical_message = cause or str(result.get("technical_message") or "").strip() or generic_message
+    message = generic_message
+    if category == "unknown" and technical_message:
+        message = technical_message
+    if not message:
+        message = technical_message or "Falha sem mensagem detalhada."
+
+    result.update({
+        "category": category or "unknown",
+        "code": str(result.get("code") or "EXECUTION_FAILED"),
+        "message": message[:2400],
+        "technical_message": technical_message[:2400],
+        "requires_authorization": requires_authorization,
+        "recommended_action": _recommended_action(category, technical_message, requires_authorization)[:2400],
+    })
+    return result
+
+
 def recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
+    failure = enrich_failure_from_run(run, failure)
     category = str(failure.get("category") or "unknown")
     code = str(failure.get("code") or "EXECUTION_FAILED")
     message = str(failure.get("message") or "Falha sem mensagem detalhada.")
+    technical_message = str(failure.get("technical_message") or message)
+    recommended_action = str(
+        failure.get("recommended_action")
+        or "Corrigir a causa técnica registrada e repetir exatamente esta etapa."
+    )
     authorization = bool(failure.get("requires_authorization"))
     run_id = run.id if run else ""
     return (
@@ -69,10 +159,13 @@ def recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
         "2. Use a falha abaixo como evidência inicial, mas confirme a causa raiz no ambiente atual.\n"
         "3. Preserve código estável, dados e credenciais. Não force permissões, não apague dados e não contorne autorizações.\n"
         "4. Se a causa depender de credencial, autenticação, permissão ou decisão humana ainda ausente, NÃO improvise. Pare e descreva exatamente a intervenção necessária.\n"
-        "5. Quando houver correção segura, implemente-a, execute testes relevantes, build/lint quando aplicável e um smoke test do fluxo que falhou.\n"
-        "6. Registre evidências objetivas do que mudou e por que a causa raiz foi removida.\n"
-        "7. Só conclua com sucesso se o ambiente estiver apto a retestar a execução original. O worker do DevPilot recolocará automaticamente a execução original na fila para provar a correção.\n\n"
-        f"FALHA DE ORIGEM\nCategoria: {category}\nCódigo: {code}\nMensagem: {message}\nExige autorização externa: {'sim' if authorization else 'não'}\n\n"
+        "5. Execute especificamente a CORREÇÃO PROPOSTA abaixo; se a evidência real mostrar outra causa, registre a divergência antes de ajustar a estratégia.\n"
+        "6. Quando houver correção segura, implemente-a, execute testes relevantes, build/lint quando aplicável e um smoke test do fluxo que falhou.\n"
+        "7. Registre evidências objetivas do que mudou e por que a causa raiz foi removida.\n"
+        "8. Só conclua com sucesso se o ambiente estiver apto a retestar a execução original. O worker do DevPilot recolocará automaticamente a execução original na fila para provar a correção.\n\n"
+        f"FALHA DE ORIGEM\nCategoria: {category}\nCódigo: {code}\nMensagem: {message}\n"
+        f"Causa técnica: {technical_message}\nExige autorização externa: {'sim' if authorization else 'não'}\n\n"
+        f"CORREÇÃO PROPOSTA\n{recommended_action}\n\n"
         f"OBJETIVO ORIGINAL\nTítulo: {original_task.title}\n{_safe_original_prompt(original_task)}"
     )[:100_000]
 
@@ -110,6 +203,7 @@ def _reactivate_failed_automatic_recovery(
     if recovery.requires_approval or bool(failure.get("requires_authorization")):
         return False
 
+    failure = enrich_failure_from_run(latest_run_for_task(db, original_task.id), failure)
     now = datetime.now(timezone.utc)
     recovery.status = TaskStatus.queued
     recovery.requires_approval = False
@@ -118,9 +212,10 @@ def _reactivate_failed_automatic_recovery(
     recovery.prompt = (
         f"{str(recovery.prompt or '').rstrip()}\n\n"
         f"[failure-safe-retry:{now.isoformat()}]\n"
-        "NOVA TENTATIVA SEGURA SOLICITADA\n"
-        "A recuperação anterior falhou sem evidência de credencial, permissão ou decisão humana pendente. "
-        "Reavalie a causa técnica no estado atual, implemente somente uma correção verificável e reteste a tarefa original."
+        "NOVA TENTATIVA SEGURA SOLICITADA PELO USUÁRIO\n"
+        f"Causa exibida: {failure.get('technical_message') or failure.get('message')}.\n"
+        f"Correção exibida: {failure.get('recommended_action')}.\n"
+        "Reavalie a causa técnica no estado atual, execute a correção acima de forma verificável e reteste a tarefa original."
     )[:100_000]
     record(
         db,
@@ -134,6 +229,7 @@ def _reactivate_failed_automatic_recovery(
             "original_task_id": original_task.id,
             "failure_category": failure.get("category", "unknown"),
             "failure_code": failure.get("code", "EXECUTION_FAILED"),
+            "recommended_action": failure.get("recommended_action", ""),
         },
     )
     db.flush()
@@ -151,20 +247,24 @@ def ensure_failure_recovery_task(
     if is_failure_recovery_task(original_task) or original_task.status not in {TaskStatus.failed, TaskStatus.blocked}:
         return None
 
+    failure = enrich_failure_from_run(run, failure)
     existing = find_failure_recovery_task(db, original_task)
     if existing:
-        if _activate_automatic_recovery(db, existing):
+        # O worker apenas prepara o diagnóstico. A correção automática só entra
+        # na fila quando o usuário aciona explicitamente "Corrigir e continuar".
+        if actor == "owner" and _activate_automatic_recovery(db, existing):
             record(
                 db,
                 workspace_id=original_task.workspace_id,
                 project_id=original_task.project_id,
                 task_id=existing.id,
                 actor=actor,
-                action="failure_recovery.automatic_gate_repaired",
+                action="failure_recovery.user_started",
                 outcome="queued",
                 details={
                     "original_task_id": original_task.id,
-                    "reason": "awaiting_approval_without_required_authorization",
+                    "reason": "explicit_fix_and_continue",
+                    "recommended_action": failure.get("recommended_action", ""),
                 },
             )
             db.flush()
@@ -186,11 +286,13 @@ def ensure_failure_recovery_task(
         title=f"Recuperação · {original_task.title}"[:240],
         prompt=recovery_prompt(original_task, run, failure),
         source="failure-recovery",
-        status=TaskStatus.awaiting_approval if requires_authorization else TaskStatus.queued,
+        # Mesmo quando a correção é segura, ela fica preparada e fora da fila.
+        # O clique do usuário é o gatilho explícito para enfileirar a correção.
+        status=TaskStatus.awaiting_approval,
         priority=min(100, max(85, int(original_task.priority or 50) + 20)),
         branch_name=original_task.branch_name or "",
         requires_approval=requires_authorization,
-        approved_at=None if requires_authorization else datetime.now(timezone.utc),
+        approved_at=None,
     )
     db.add(recovery)
     db.flush()
@@ -200,15 +302,16 @@ def ensure_failure_recovery_task(
         project_id=original_task.project_id,
         task_id=recovery.id,
         actor=actor,
-        action="failure_recovery.created",
-        outcome=recovery.status.value,
+        action="failure_recovery.prepared",
+        outcome="awaiting_user_action" if not requires_authorization else "awaiting_approval",
         details={
             "original_task_id": original_task.id,
             "original_run_id": run.id if run else None,
             "failure_category": failure.get("category", "unknown"),
             "failure_code": failure.get("code", "EXECUTION_FAILED"),
             "requires_authorization": requires_authorization,
-            "automatic": actor == "worker",
+            "recommended_action": failure.get("recommended_action", ""),
+            "automatic": False,
         },
     )
     return recovery
