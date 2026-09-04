@@ -107,6 +107,18 @@ def _payload(db: Session, original: Task) -> dict:
         },
     )
     state = _recovery_state(original, recovery)
+
+    # Recuperações antigas podem já ter terminado em failed antes do contrato V97.
+    # Se não há evidência de autorização/credencial pendente, exponha novamente o
+    # botão de correção em vez de transformar um erro técnico seguro em bloqueio manual.
+    if (
+        state in {"intervention_required", "recovery_exhausted"}
+        and recovery
+        and not recovery.requires_approval
+        and not bool(recovery_failure.get("requires_authorization"))
+    ):
+        state = "ready_to_recover"
+
     manual = state in {
         "awaiting_intervention",
         "intervention_required",
