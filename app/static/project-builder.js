@@ -110,6 +110,13 @@
           <button class="primary" id="project-builder-submit" type="submit">Criar projeto</button>
         </div>
       </section>
+
+      <!-- Compatibilidade temporária: o loader legado ainda usa este host como
+           sinal de readiness. Mantê-lo oculto evita falso negativo sem reativar
+           o grid antigo nem seus listeners. -->
+      <div id="project-builder-groups" hidden aria-hidden="true">
+        <span data-simple-builder-ready="1"></span>
+      </div>
     </div>`;
 
   form.querySelectorAll('input, textarea, select, button').forEach(control => {
