@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import time
 from dataclasses import dataclass
 
 import httpx
@@ -9,6 +10,8 @@ from app.services.organizations import normalize_github_repository
 
 
 MAX_REPOSITORY_NAME_ATTEMPTS = 20
+TRANSIENT_GITHUB_STATUSES = {429, 500, 502, 503, 504}
+TRANSIENT_RETRY_DELAYS = (0.35, 0.8, 1.6)
 
 
 @dataclass(frozen=True)
@@ -56,11 +59,9 @@ def _response_payload(response) -> dict:
 def _validation_messages(response) -> list[str]:
     payload = _response_payload(response)
     messages: list[str] = []
-
     root_message = payload.get("message")
     if isinstance(root_message, str) and root_message.strip():
         messages.append(root_message.strip())
-
     errors = payload.get("errors")
     if isinstance(errors, list):
         for item in errors:
@@ -72,14 +73,12 @@ def _validation_messages(response) -> list[str]:
             message = item.get("message")
             if isinstance(message, str) and message.strip():
                 messages.append(message.strip())
-
     return messages
 
 
 def _is_repository_name_collision(response) -> bool:
     if response.status_code != 422:
         return False
-
     payload = _response_payload(response)
     errors = payload.get("errors")
     if isinstance(errors, list):
@@ -90,7 +89,6 @@ def _is_repository_name_collision(response) -> bool:
             code = str(item.get("code") or "").strip().lower()
             if field == "name" and code in {"already_exists", "already_taken"}:
                 return True
-
     text = " ".join(_validation_messages(response)).lower()
     collision_markers = (
         "name already exists",
@@ -108,8 +106,32 @@ def _validation_detail(response) -> str:
     for message in messages:
         if message not in unique:
             unique.append(message)
-    detail = " | ".join(unique).strip()
-    return detail[:600]
+    return " | ".join(unique).strip()[:600]
+
+
+def _request_with_retry(client: httpx.Client, method: str, url: str, **kwargs):
+    """Retry only GitHub transport/server transients; never retry auth/validation failures."""
+    last_error: httpx.RequestError | None = None
+    response = None
+    attempts = len(TRANSIENT_RETRY_DELAYS) + 1
+    for attempt in range(attempts):
+        try:
+            response = client.request(method, url, **kwargs)
+            last_error = None
+        except httpx.RequestError as error:
+            last_error = error
+            response = None
+        transient_response = response is not None and response.status_code in TRANSIENT_GITHUB_STATUSES
+        if not last_error and not transient_response:
+            return response
+        if attempt < len(TRANSIENT_RETRY_DELAYS):
+            time.sleep(TRANSIENT_RETRY_DELAYS[attempt])
+    if response is not None:
+        return response
+    raise GitHubProvisioningError(
+        f"GitHub temporariamente indisponível durante {method.upper()} ({last_error}).",
+        502,
+    ) from last_error
 
 
 def _translate_starter_error(status_code: int, *, operation: str) -> None:
@@ -186,7 +208,6 @@ def health():
 def api_status():
     return health()
 '''
-
     frontend = f'''<!doctype html>
 <html lang="pt-BR">
 <head>
@@ -228,7 +249,6 @@ def api_status():
 </body>
 </html>
 '''
-
     vercel = '''{
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
@@ -240,7 +260,6 @@ def api_status():
   ]
 }
 '''
-
     return {
         ".devpilot-product.json": '{"managed_by":"devpilot","purpose":"client-product","version":1}\n',
         "backend/main.py": backend,
@@ -259,6 +278,25 @@ def api_status():
     }
 
 
+def _degraded_starter_result(
+    *,
+    branch: str,
+    created: list[str],
+    existing: list[str],
+    status_code: int,
+    operation: str,
+    path: str,
+) -> dict:
+    return {
+        "status": "degraded",
+        "branch": branch,
+        "created": created,
+        "existing": existing,
+        "pending": [path],
+        "error": f"Starter pendente: falha temporária ao {operation} {path} no GitHub (HTTP {status_code}).",
+    }
+
+
 def bootstrap_repository(
     organization_login: str,
     repository_name: str,
@@ -268,23 +306,37 @@ def bootstrap_repository(
     description: str = "",
     branch: str = "main",
 ) -> dict:
+    """Best-effort starter bootstrap.
+
+    A confirmed DevPilot repository is usable by the execution pipeline even when
+    GitHub's Contents API is temporarily returning 5xx/429. In that case we keep
+    the repository linked and report the starter as degraded instead of losing
+    repository_url and entering an endless reprovision loop.
+    """
     _ensure_token(access_token)
     created: list[str] = []
     existing: list[str] = []
-    with httpx.Client(
-        timeout=30.0,
-        follow_redirects=True,
-        headers=_headers(access_token),
-    ) as client:
+    with httpx.Client(timeout=30.0, follow_redirects=True, headers=_headers(access_token)) as client:
         for path, content in starter_files(project_name, description).items():
             url = f"https://api.github.com/repos/{organization_login}/{repository_name}/contents/{path}"
-            check = client.get(url, params={"ref": branch})
+            check = _request_with_retry(client, "GET", url, params={"ref": branch})
             if check.status_code == 200:
                 existing.append(path)
                 continue
+            if check.status_code in TRANSIENT_GITHUB_STATUSES:
+                return _degraded_starter_result(
+                    branch=branch,
+                    created=created,
+                    existing=existing,
+                    status_code=check.status_code,
+                    operation="verificar",
+                    path=path,
+                )
             if check.status_code != 404:
                 _translate_starter_error(check.status_code, operation="verificar")
-            response = client.put(
+            response = _request_with_retry(
+                client,
+                "PUT",
                 url,
                 json={
                     "message": f"chore: preparar produto inicial ({path})",
@@ -292,10 +344,26 @@ def bootstrap_repository(
                     "branch": branch,
                 },
             )
+            if response.status_code in TRANSIENT_GITHUB_STATUSES:
+                return _degraded_starter_result(
+                    branch=branch,
+                    created=created,
+                    existing=existing,
+                    status_code=response.status_code,
+                    operation="gravar",
+                    path=path,
+                )
             if response.status_code not in {200, 201}:
                 _translate_starter_error(response.status_code, operation="gravar")
             created.append(path)
-    return {"status": "ready", "branch": branch, "created": created, "existing": existing}
+    return {
+        "status": "ready",
+        "branch": branch,
+        "created": created,
+        "existing": existing,
+        "pending": [],
+        "error": "",
+    }
 
 
 def _resume_managed_repository(
@@ -303,18 +371,34 @@ def _resume_managed_repository(
     repository_name: str,
     access_token: str,
 ) -> dict | None:
-    with httpx.Client(
-        timeout=30.0,
-        follow_redirects=True,
-        headers=_headers(access_token),
-    ) as client:
-        repo_response = client.get(
-            f"https://api.github.com/repos/{organization_login}/{repository_name}"
+    """Adopt only a repository whose DevPilot marker can be positively confirmed."""
+    with httpx.Client(timeout=30.0, follow_redirects=True, headers=_headers(access_token)) as client:
+        repo_response = _request_with_retry(
+            client, "GET", f"https://api.github.com/repos/{organization_login}/{repository_name}"
         )
-        marker_response = client.get(
-            f"https://api.github.com/repos/{organization_login}/{repository_name}/contents/.devpilot-product.json"
+        if repo_response.status_code == 404:
+            return None
+        if repo_response.status_code in TRANSIENT_GITHUB_STATUSES:
+            raise GitHubProvisioningError(
+                f"GitHub temporariamente indisponível ao localizar o repositório (HTTP {repo_response.status_code}).",
+                502,
+            )
+        if repo_response.status_code != 200:
+            _translate_creation_error(repo_response)
+            return None
+        marker_response = _request_with_retry(
+            client,
+            "GET",
+            f"https://api.github.com/repos/{organization_login}/{repository_name}/contents/.devpilot-product.json",
         )
-    if repo_response.status_code != 200 or marker_response.status_code != 200:
+    if marker_response.status_code == 404:
+        return None
+    if marker_response.status_code in TRANSIENT_GITHUB_STATUSES:
+        raise GitHubProvisioningError(
+            f"GitHub temporariamente indisponível ao confirmar o marcador DevPilot (HTTP {marker_response.status_code}).",
+            502,
+        )
+    if marker_response.status_code != 200:
         return None
     try:
         return normalize_github_repository(repo_response.json())
@@ -356,13 +440,21 @@ def _translate_creation_error(response) -> None:
         )
 
 
+def _remote_with_starter(remote: dict, starter: dict) -> dict:
+    result = dict(remote)
+    result["starter_provision_state"] = str(starter.get("status") or "ready")
+    result["starter_provision_error"] = str(starter.get("error") or "")
+    result["starter_pending"] = list(starter.get("pending") or [])
+    return result
+
+
 def create_github_repository(
     organization_login: str,
     repository_name: str,
     description: str,
     access_token: str,
 ) -> dict:
-    """Create a private deployable repository, resolving name collisions automatically."""
+    """Create or adopt a private DevPilot repository without losing it on transient starter failures."""
     _ensure_token(access_token)
 
     for attempt in range(1, MAX_REPOSITORY_NAME_ATTEMPTS + 1):
@@ -373,12 +465,10 @@ def create_github_repository(
             "private": True,
             "auto_init": True,
         }
-        with httpx.Client(
-            timeout=30.0,
-            follow_redirects=True,
-            headers=_headers(access_token),
-        ) as client:
-            response = client.post(
+        with httpx.Client(timeout=30.0, follow_redirects=True, headers=_headers(access_token)) as client:
+            response = _request_with_retry(
+                client,
+                "POST",
                 f"https://api.github.com/orgs/{organization_login}/repos",
                 json=payload,
             )
@@ -386,11 +476,9 @@ def create_github_repository(
         _translate_creation_error(response)
 
         if response.status_code == 422:
-            resumed = _resume_managed_repository(
-                organization_login, candidate, access_token
-            )
+            resumed = _resume_managed_repository(organization_login, candidate, access_token)
             if resumed:
-                bootstrap_repository(
+                starter = bootstrap_repository(
                     organization_login,
                     candidate,
                     access_token,
@@ -398,7 +486,7 @@ def create_github_repository(
                     description=description,
                     branch=resumed["default_branch"],
                 )
-                return resumed
+                return _remote_with_starter(resumed, starter)
             continue
 
         try:
@@ -408,7 +496,7 @@ def create_github_repository(
                 "GitHub retornou uma resposta inválida ao criar o repositório."
             ) from error
 
-        bootstrap_repository(
+        starter = bootstrap_repository(
             organization_login,
             candidate,
             access_token,
@@ -416,7 +504,7 @@ def create_github_repository(
             description=description,
             branch=remote["default_branch"],
         )
-        return remote
+        return _remote_with_starter(remote, starter)
 
     raise GitHubProvisioningError(
         "Não foi possível reservar um nome de repositório para o projeto.",
