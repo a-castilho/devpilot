@@ -17,7 +17,8 @@ def check() -> None:
     assert "def _invalidate_obsolete_platform_recoveries()" in WORKER_ENTRY
     assert 'action="failure_recovery.platform_obsoleted"' in WORKER_ENTRY
     assert 'state="canceled"' in WORKER_ENTRY
-    assert WORKER_ENTRY.index("_invalidate_obsolete_platform_recoveries()") < WORKER_ENTRY.index("_recover_orphaned_running_tasks()", WORKER_ENTRY.index("def main()"))
+    main_body = WORKER_ENTRY.split("def main() -> None:", 1)[1]
+    assert main_body.index("_invalidate_obsolete_platform_recoveries()") < main_body.index("_recover_orphaned_running_tasks()")
 
     assert "EXECUTOR_STDIN_BLOCKED" in ROUTES
     assert '"action": "requeue_original"' in ROUTES
