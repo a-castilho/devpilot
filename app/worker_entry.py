@@ -22,6 +22,24 @@ def _startup_recovery_enabled() -> bool:
     }
 
 
+def _detach_worker_stdin() -> None:
+    """Make the singleton worker fully non-interactive at the OS file-descriptor level.
+
+    Codex `exec` treats a non-TTY stdin as optional additional prompt input. If a
+    supervisor leaves fd 0 as an open pipe, Codex waits for EOF and can hang at
+    "Reading additional input from stdin...". Replacing fd 0 with /dev/null makes
+    every ordinary child process inherit an immediate EOF. Multimodal execution
+    remains supported because its wrapper creates its own stdin pipe explicitly.
+    """
+    devnull_fd = os.open(os.devnull, os.O_RDONLY)
+    if devnull_fd == 0:
+        return
+    try:
+        os.dup2(devnull_fd, 0)
+    finally:
+        os.close(devnull_fd)
+
+
 def _recover_orphaned_running_tasks() -> int:
     """Requeue tasks left as running by the previous singleton worker instance.
 
@@ -86,6 +104,9 @@ def _recover_orphaned_running_tasks() -> int:
 
 
 def main() -> None:
+    _detach_worker_stdin()
+    print("[worker] stdin detached: /dev/null", flush=True)
+
     try:
         runtime = worker_runtime_paths()
     except WorkerRuntimeError as error:
