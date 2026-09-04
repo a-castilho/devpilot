@@ -500,11 +500,8 @@
       if (!admin) {
         const createRadio = form.querySelector('input[name="repository_mode"][value="create"]');
         const connectRadio = form.querySelector('input[name="repository_mode"][value="connect"]');
-        if (createRadio) {
-          createRadio.disabled = false;
-          createRadio.checked = true;
-        }
-        if (connectRadio) connectRadio.checked = false;
+        if (createRadio) createRadio.disabled = true;
+        if (connectRadio) connectRadio.checked = true;
       }
 
       hydrateBuilderOrganizations(admin);

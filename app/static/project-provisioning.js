@@ -218,8 +218,12 @@
     form.dataset.mobilePerformanceGuard = '1';
     injectStyles();
 
+    // O project-builder gera mais de uma centena de cards. Escondemos o host antes
+    // da montagem para que o Chromium mobile não faça layout/paint do grid inteiro.
     groupsHost.style.setProperty('display', 'none', 'important');
 
+    // No mobile o resumo completo e o preview do AGENTS.md não precisam ser
+    // recalculados a cada tecla. O AGENTS.md definitivo é gerado no submit.
     const summary = form.querySelector('#project-builder-summary');
     if (summary) {
       summary.removeAttribute('id');
@@ -380,7 +384,7 @@
         if (admin && create && organization) organizationSelect.value = organization.id;
         organizationSelect.disabled = create;
       }
-      if (submit) submit.textContent = 'Criar projeto';
+      if (submit) submit.textContent = admin && !create ? 'Criar projeto' : 'Criar projeto';
     }
 
     toggle?.addEventListener('change', syncProvisionMode);
@@ -420,11 +424,10 @@
       };
 
       try {
-        let createdProject = null;
         if (create) {
-          createdProject = await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
+          const project = await api('/projects/provision', {method: 'POST', body: JSON.stringify(common)});
           notifyProjectCreated(
-            createdProject,
+            project,
             common.name,
             admin
               ? `Repositório privado a-castilho/${common.slug} criado e conectado`
@@ -434,7 +437,7 @@
           const normalized = normalizeRepositoryInput(f.get('repository_url'));
           if (!normalized.ok) throw new Error(normalized.error);
           if (repositoryInput) repositoryInput.value = normalized.value;
-          createdProject = await api('/projects', {method: 'POST', body: JSON.stringify({
+          await api('/projects', {method: 'POST', body: JSON.stringify({
             ...common,
             repository_url: normalized.value,
             organization_id: f.get('organization_id') || null,
@@ -442,16 +445,9 @@
           })});
           toast('Projeto conectado');
         }
-        form.closest('dialog')?.close?.();
+        form.closest('dialog').close();
         form.reset();
-        if (createdProject && typeof state !== 'undefined' && Array.isArray(state.projects)) {
-          state.projects = [createdProject, ...state.projects.filter(item => item.id !== createdProject.id)];
-          if (typeof renderProjects === 'function') renderProjects();
-          if (typeof fillProjects === 'function') fillProjects();
-        }
-        if (typeof showView === 'function') showView('projects');
-        if (typeof loadProjects === 'function') void loadProjects();
-        if (typeof loadDashboard === 'function') void loadDashboard();
+        await load();
       } catch (error) {
         toast(projectCreateErrorMessage(error));
       }
@@ -508,8 +504,8 @@
         submit.disabled = true;
         submit.setAttribute('aria-busy', 'true');
       }
-      setSubmitProgress('2/3 Salvando projeto', true);
-      progressTimer = setInterval(() => setSubmitProgress('2/3 Salvando projeto', true), 1000);
+      setSubmitProgress('2/3 Git + projeto', true);
+      progressTimer = setInterval(() => setSubmitProgress('2/3 Git + projeto', true), 1000);
     };
     const resetSubmitProgress = () => {
       stopProgressTimer();
@@ -648,21 +644,13 @@
           },
         })});
         stopProgressTimer();
-        setSubmitProgress('3/3 Concluindo');
+        setSubmitProgress('3/3 Atualizando projetos');
         notifyProjectCreated(project, name, `Projeto ${name} criado automaticamente`);
-
-        if (typeof state !== 'undefined' && Array.isArray(state.projects)) {
-          state.projects = [project, ...state.projects.filter(item => item.id !== project.id)];
-          if (typeof renderProjects === 'function') renderProjects();
-          if (typeof fillProjects === 'function') fillProjects();
-        }
-
-        setSubmitProgress('Concluído ✓');
-        if (typeof showView === 'function') showView('projects');
-
         form.reset();
-        if (typeof loadProjects === 'function') void loadProjects();
-        if (typeof loadDashboard === 'function') void loadDashboard();
+        form.querySelector('[data-builder-preset="saas-balanced"]')?.click();
+        await load();
+        setSubmitProgress('Concluído ✓');
+        showView('projects');
       } catch (error) {
         showFeedback(projectCreateErrorMessage(error));
       } finally {
