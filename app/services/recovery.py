@@ -86,9 +86,28 @@ class AutoRecoveryService:
             return RecoveryDecision(category, "needs_authorization", "Permissão do sistema operacional bloqueou a execução. O DevPilot não alterou permissões automaticamente.", False, True, "request_filesystem_authorization", [detected])
         if category == "database":
             return RecoveryDecision(category, "needs_attention", "Falha de banco detectada. A correção automática foi interrompida para evitar operações inseguras sobre dados.", False, False, "database_safety_stop", [detected])
+        if execution_attempt < self.MAX_ATTEMPTS:
+            delay = min(2, max(1, execution_attempt))
+            time.sleep(delay)
+            return RecoveryDecision(
+                category="unknown",
+                status="retrying",
+                message="A causa ainda não foi classificada, mas não há evidência de credencial, permissão ou decisão humana. O DevPilot fará uma nova tentativa controlada antes de interromper a etapa.",
+                retry=True,
+                requires_authorization=False,
+                strategy="bounded_unknown_retry",
+                steps=[
+                    detected,
+                    {
+                        "state": "repairing",
+                        "attempt": execution_attempt,
+                        "message": f"Nova tentativa controlada agendada após {delay}s para confirmar se a falha é transitória.",
+                    },
+                ],
+            )
         return RecoveryDecision(
             category="unknown", status="diagnosis_required",
-            message="Não foi possível identificar automaticamente a causa da falha. O erro original foi preservado para diagnóstico; nenhuma autorização será solicitada sem evidência de credencial ou permissão.",
+            message="Não foi possível identificar automaticamente a causa da falha após as tentativas controladas. O erro original foi preservado para diagnóstico; nenhuma autorização será solicitada sem evidência de credencial ou permissão.",
             retry=False, requires_authorization=False, strategy="diagnose_original_error", steps=[detected],
         )
 
