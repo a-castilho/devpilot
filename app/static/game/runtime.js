@@ -3,6 +3,8 @@
 
 const GAME_PROJECT_KEY = 'devpilot-build-game-project';
 const GAME_PIPELINE_MARKER = '[DEVPILOT_BUILD_GAME_PIPELINE_V2]';
+const REPOSITORY_READY_WAIT_MS = 30000;
+const REPOSITORY_READY_POLL_MS = 1200;
 
 const state = {
   token: localStorage.getItem('devpilot-token') || '',
@@ -14,6 +16,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const esc = value => String(value ?? '').replace(/[&<>'\"]/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '\"': '&quot;',
 }[char]));
+const sleep = milliseconds => new Promise(resolve => window.setTimeout(resolve, milliseconds));
 
 function toast(message) {
   const element = $('#toast');
@@ -111,7 +114,7 @@ async function requestJson(path, options = {}, attempt = 0) {
     if (timeoutId) window.clearTimeout(timeoutId);
 
     if (method === 'GET' && options.retry !== false && attempt === 0 && navigator.onLine !== false) {
-      await new Promise(resolve => window.setTimeout(resolve, 250));
+      await sleep(250);
       return requestJson(path, options, attempt + 1);
     }
 
@@ -131,7 +134,7 @@ async function requestJson(path, options = {}, attempt = 0) {
 
   if (!response.ok) {
     if (method === 'GET' && options.retry !== false && response.status >= 500 && attempt === 0) {
-      await new Promise(resolve => window.setTimeout(resolve, 250));
+      await sleep(250);
       return requestJson(path, options, attempt + 1);
     }
     throw new Error(errorDetail(data, response.status));
@@ -140,12 +143,56 @@ async function requestJson(path, options = {}, attempt = 0) {
   return data;
 }
 
+function taskProjectId(path, options = {}) {
+  if (String(path || '') !== '/tasks') return '';
+  if (String(options.method || 'GET').toUpperCase() !== 'POST') return '';
+  if (!options.body || options.body instanceof FormData) return '';
+  try {
+    const payload = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
+    return String(payload?.project_id || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
+function repositoryReady(project) {
+  return Boolean(String(project?.repository_url || '').trim());
+}
+
+async function waitForRepositoryReady(projectId) {
+  const id = String(projectId || '').trim();
+  if (!id) return null;
+
+  const cached = state.projects.find(project => String(project?.id) === id);
+  if (repositoryReady(cached)) return cached;
+
+  const deadline = Date.now() + REPOSITORY_READY_WAIT_MS;
+  while (Date.now() < deadline) {
+    const rows = await requestJson(
+      `/ui/projects?limit=50&include_project_id=${encodeURIComponent(id)}`,
+      {timeoutMs: 5000, retry: false},
+    );
+    const projects = Array.isArray(rows) ? rows : [];
+    state.projects = projects;
+    const project = projects.find(item => String(item?.id) === id);
+    if (repositoryReady(project)) return project;
+    await sleep(REPOSITORY_READY_POLL_MS);
+  }
+
+  throw new Error(
+    'O repositório deste projeto ainda não está pronto. Nenhuma execução foi criada para evitar uma falha Git. Aguarde o provisionamento terminar e toque em Jogar agora novamente.'
+  );
+}
+
 async function api(path, options = {}) {
   state.token = String(localStorage.getItem('devpilot-token') || state.token || '');
   if (!state.token) {
     document.getElementById('auth-modal')?.showModal?.();
     throw new Error('Autenticação necessária');
   }
+
+  const projectId = taskProjectId(path, options);
+  if (projectId) await waitForRepositoryReady(projectId);
 
   const route = standaloneRoute(path, options);
   const requestOptions = route.kind === 'default'
