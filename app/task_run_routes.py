@@ -30,9 +30,15 @@ _FAILURE_CODES = {
     "filesystem_permission": "FILESYSTEM_PERMISSION_DENIED",
     "database": "DATABASE_UNAVAILABLE",
     "repository_state": "REPOSITORY_STATE_INVALID",
+    "executor_runtime": "EXECUTOR_STDIN_BLOCKED",
     "unknown": "EXECUTION_FAILED",
 }
 
+_EXECUTOR_RUNTIME_PATTERNS = (
+    "reading additional input from stdin",
+    "failed to read prompt from stdin",
+    "no prompt provided via stdin",
+)
 _GITHUB_AUTH_PATTERNS = (
     "requested url returned error: 401",
     "requested url returned error: 403",
@@ -127,6 +133,8 @@ def _matches(text: str, patterns: tuple[str, ...]) -> bool:
 
 def classify_failure_text(value: str) -> str:
     text = str(value or "")
+    if _matches(text, _EXECUTOR_RUNTIME_PATTERNS):
+        return "executor_runtime"
     if _matches(text, _GITHUB_AUTH_PATTERNS):
         return "github_auth"
     if _matches(text, _GIT_NETWORK_PATTERNS):
@@ -144,6 +152,10 @@ def classify_failure_text(value: str) -> str:
 
 def _friendly_failure_message(category: str, fallback: str = "") -> str:
     messages = {
+        "executor_runtime": (
+            "O runner do DevPilot bloqueou antes de executar o prompt porque o Codex tentou ler entrada "
+            "adicional pelo stdin em ambiente não interativo. O projeto não é a causa desta falha."
+        ),
         "github_auth": (
             "Credencial GitHub sem acesso ao repositório. Revalide a integração da organização "
             "e permita leitura do repositório antes de executar novamente."
@@ -181,14 +193,26 @@ def failure_details(run: Run | None) -> dict:
     if isinstance(payload, dict):
         healing = payload.get("self_healing")
         if isinstance(healing, dict):
-            category = str(healing.get("category") or "unknown")
-            message = _last_nonempty_line(healing.get("message", ""))
+            stored_category = str(healing.get("category") or "unknown")
+            stored_message = _last_nonempty_line(healing.get("message", ""))
+            raw_error = str(payload.get("stderr") or payload.get("raw") or "")
+            detected_category = classify_failure_text(
+                "\n".join(part for part in (raw_error, stored_message) if part)
+            )
+            category = detected_category if detected_category != "unknown" else stored_category
+            message = (
+                _friendly_failure_message(category, stored_message)
+                if category != "unknown"
+                else stored_message
+            )
             if message:
                 return {
                     "category": category,
                     "code": _FAILURE_CODES.get(category, _FAILURE_CODES["unknown"]),
                     "message": message,
-                    "requires_authorization": bool(healing.get("requires_authorization", False)),
+                    "requires_authorization": bool(healing.get("requires_authorization", False))
+                    if category != "executor_runtime"
+                    else False,
                 }
 
         raw_error = str(payload.get("stderr") or payload.get("raw") or "")
