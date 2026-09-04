@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ from app.project_provisioning_routes import (
     repository_provision_state,
 )
 from app.security import require_access
+from app.services.audit import record
 from app.services.failure_recovery import (
     apply_user_guidance,
     enrich_failure_from_run,
@@ -27,6 +29,12 @@ from app.task_run_routes import failure_details, sanitize_payload
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
+
+_STDIN_FAILURE_MARKERS = (
+    "reading additional input from stdin",
+    "failed to read prompt from stdin",
+    "no prompt provided via stdin",
+)
 
 
 class RecoveryGuidance(BaseModel):
@@ -116,6 +124,43 @@ def _authorization_error(value: str) -> bool:
     )
 
 
+def _platform_failure(failure: dict | None) -> dict:
+    """Reclassify known DevPilot runner faults even for historical failed runs.
+
+    Older runs persisted the Codex non-TTY stdin hang as ``unknown`` and therefore
+    generated a project-repair task. That repair can never fix the real cause because
+    the defect lives in the DevPilot worker process. Keep the original technical
+    evidence, but expose the actual platform category and the exact safe action.
+    """
+    result = dict(failure or {})
+    technical = str(
+        result.get("technical_message")
+        or result.get("message")
+        or ""
+    ).strip()
+    normalized = technical.casefold()
+    if not any(marker in normalized for marker in _STDIN_FAILURE_MARKERS):
+        return result
+
+    result.update(
+        {
+            "category": "executor_runtime",
+            "code": "EXECUTOR_STDIN_BLOCKED",
+            "message": (
+                "O runner do DevPilot iniciou o Codex em ambiente não interativo e o CLI aguardou "
+                "entrada adicional pelo stdin antes de executar o prompt."
+            ),
+            "technical_message": technical[:2400],
+            "requires_authorization": False,
+            "recommended_action": (
+                "Reexecutar exatamente esta tarefa no runner DevPilot corrigido, com stdin não interativo "
+                "isolado/encerrado. Não alterar o projeto e não criar uma tarefa de reparo do repositório."
+            ),
+        }
+    )
+    return result
+
+
 def _repository_failure(project: Project, fallback: dict) -> tuple[dict, dict, str, bool]:
     provision = repository_provision_state(project)
     provider_error = str(provision.get("error") or "").strip()
@@ -188,23 +233,69 @@ def _repository_payload(db: Session, original: Task, project: Project, original_
     }
 
 
+def _platform_payload(original: Task, original_run: Run | None, failure: dict) -> dict:
+    original_status = _status_value(original.status)
+    if original_status == TaskStatus.completed.value:
+        state = "resolved"
+    elif original_status in {
+        TaskStatus.queued.value,
+        TaskStatus.planning.value,
+        TaskStatus.running.value,
+        TaskStatus.review.value,
+    }:
+        state = "retesting"
+    else:
+        state = "ready_to_recover"
+
+    return {
+        "task_id": original.id,
+        "task_title": original.title,
+        "task_status": original_status,
+        "state": state,
+        "manual_intervention_required": False,
+        "can_resume_original": False,
+        "failure": failure,
+        "self_healing": _healing_payload(original_run),
+        "original_run": {
+            "id": original_run.id if original_run else None,
+            "attempt": original_run.attempt if original_run else 0,
+            "status": original_run.status if original_run else None,
+        },
+        # Falha interna do runner: uma recovery task de projeto é conceitualmente
+        # errada e pode falhar pelo mesmo executor. O clique reenfileira a origem.
+        "recovery_task": None,
+        "platform_recovery": {
+            "kind": "executor_runtime",
+            "action": "requeue_original",
+            "explicit_user_trigger": True,
+        },
+    }
+
+
 def _payload(db: Session, original: Task) -> dict:
     original_run = latest_run_for_task(db, original.id)
     project = db.get(Project, original.project_id)
     if project and not str(project.repository_url or "").strip():
         return _repository_payload(db, original, project, original_run)
 
-    original_failure = enrich_failure_from_run(original_run, failure_details(original_run))
+    original_failure = _platform_failure(
+        enrich_failure_from_run(original_run, failure_details(original_run))
+    )
+    if original_failure.get("category") == "executor_runtime":
+        return _platform_payload(original, original_run, original_failure)
+
     recovery = find_failure_recovery_task(db, original)
     recovery_run = latest_run_for_task(db, recovery.id) if recovery else None
-    recovery_failure = enrich_failure_from_run(
-        recovery_run,
-        failure_details(recovery_run) if recovery_run else {
-            "category": "",
-            "code": "",
-            "message": "",
-            "requires_authorization": False,
-        },
+    recovery_failure = _platform_failure(
+        enrich_failure_from_run(
+            recovery_run,
+            failure_details(recovery_run) if recovery_run else {
+                "category": "",
+                "code": "",
+                "message": "",
+                "requires_authorization": False,
+            },
+        )
     )
     state = _recovery_state(original, recovery)
 
@@ -257,6 +348,28 @@ def _payload(db: Session, original: Task) -> dict:
     }
 
 
+def _requeue_platform_failure(db: Session, original: Task, run: Run | None, failure: dict) -> None:
+    previous_status = _status_value(original.status)
+    original.status = TaskStatus.queued
+    original.updated_at = datetime.now(timezone.utc)
+    record(
+        db,
+        workspace_id=original.workspace_id,
+        project_id=original.project_id,
+        task_id=original.id,
+        actor="owner",
+        action="failure_recovery.platform_runner_requeued",
+        outcome="queued",
+        details={
+            "previous_status": previous_status,
+            "run_id": run.id if run else None,
+            "failure_code": failure.get("code"),
+            "failure_category": failure.get("category"),
+            "reason": "explicit_fix_and_continue_after_runner_fix",
+        },
+    )
+
+
 @router.get("/tasks/{task_id}/recovery")
 def recovery_status(task_id: str, db: Session = Depends(get_db)):
     return _payload(db, _task(db, task_id))
@@ -289,7 +402,12 @@ def escalate_recovery(
         return _payload(db, original)
 
     run = latest_run_for_task(db, original.id)
-    failure = enrich_failure_from_run(run, failure_details(run))
+    failure = _platform_failure(enrich_failure_from_run(run, failure_details(run)))
+    if failure.get("category") == "executor_runtime":
+        _requeue_platform_failure(db, original, run, failure)
+        db.commit()
+        return _payload(db, original)
+
     recovery = ensure_failure_recovery_task(
         db,
         original_task=original,
