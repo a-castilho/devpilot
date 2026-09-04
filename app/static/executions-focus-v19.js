@@ -1,8 +1,8 @@
 (() => {
   'use strict';
 
-  if (window.__devpilotExecutionsFocusV19) return;
-  window.__devpilotExecutionsFocusV19 = true;
+  if (window.__devpilotExecutionsFocusV20) return;
+  window.__devpilotExecutionsFocusV20 = true;
 
   let pending = null;
   let focusTimer = 0;
@@ -16,12 +16,12 @@
   }
 
   function injectStyles() {
-    if (qs('#devpilot-executions-focus-v19-style')) return;
+    if (qs('#devpilot-executions-focus-v20-style')) return;
 
     const style = document.createElement('style');
-    style.id = 'devpilot-executions-focus-v19-style';
+    style.id = 'devpilot-executions-focus-v20-style';
     style.textContent = `
-      #tasks-view .dp-execution-focus-v19 {
+      #tasks-view .dp-execution-focus-v20 {
         position: relative;
         z-index: 2;
         border-color: rgba(72, 229, 211, .58) !important;
@@ -36,7 +36,7 @@
           transform .28s ease;
       }
 
-      #tasks-view .dp-execution-focus-v19::after {
+      #tasks-view .dp-execution-focus-v20::after {
         content: '';
         pointer-events: none;
         position: absolute;
@@ -46,11 +46,11 @@
         opacity: 1;
       }
 
-      #tasks-view .dp-execution-focus-v19-pulse {
-        animation: dpExecutionFocusV19 1.45s ease-out 1;
+      #tasks-view .dp-execution-focus-v20-pulse {
+        animation: dpExecutionFocusV20 1.45s ease-out 1;
       }
 
-      @keyframes dpExecutionFocusV19 {
+      @keyframes dpExecutionFocusV20 {
         0% {
           box-shadow:
             0 0 0 1px rgba(72, 229, 211, .34),
@@ -72,8 +72,8 @@
       }
 
       @media (prefers-reduced-motion: reduce) {
-        #tasks-view .dp-execution-focus-v19,
-        #tasks-view .dp-execution-focus-v19-pulse {
+        #tasks-view .dp-execution-focus-v20,
+        #tasks-view .dp-execution-focus-v20-pulse {
           animation: none !important;
           transition: none !important;
         }
@@ -164,10 +164,10 @@
   }
 
   function clearPrevious() {
-    document.querySelectorAll('.dp-execution-focus-v19').forEach(element => {
+    document.querySelectorAll('.dp-execution-focus-v20').forEach(element => {
       element.classList.remove(
-        'dp-execution-focus-v19',
-        'dp-execution-focus-v19-pulse'
+        'dp-execution-focus-v20',
+        'dp-execution-focus-v20-pulse'
       );
     });
 
@@ -189,14 +189,14 @@
 
     window.setTimeout(() => {
       target.classList.add(
-        'dp-execution-focus-v19',
-        'dp-execution-focus-v19-pulse'
+        'dp-execution-focus-v20',
+        'dp-execution-focus-v20-pulse'
       );
 
       removeTimer = window.setTimeout(() => {
         target.classList.remove(
-          'dp-execution-focus-v19',
-          'dp-execution-focus-v19-pulse'
+          'dp-execution-focus-v20',
+          'dp-execution-focus-v20-pulse'
         );
       }, reduceMotion ? 1500 : 3200);
     }, reduceMotion ? 0 : 180);
@@ -211,14 +211,11 @@
 
     const view = qs('#tasks-view');
     if (!view?.classList.contains('active')) {
-      if (attempt < 30) {
-        focusTimer = window.setTimeout(() => tryFocus(attempt + 1), 80);
-      }
+      if (attempt < 30) focusTimer = window.setTimeout(() => tryFocus(attempt + 1), 80);
       return;
     }
 
     const target = targetFor(pending);
-
     if (!target && attempt < 30) {
       focusTimer = window.setTimeout(() => tryFocus(attempt + 1), 80);
       return;
@@ -226,10 +223,7 @@
 
     const request = pending;
     pending = null;
-
-    if (!focusTarget(target)) {
-      pending = request;
-    }
+    if (!focusTarget(target)) pending = request;
   }
 
   function requestFocus(options = {}) {
@@ -243,6 +237,39 @@
     return true;
   }
 
+  function detailRowFor(view, id) {
+    const escaped = escapeSelector(id);
+    return (
+      qs(`[data-task-details-row="${escaped}"]`, view) ||
+      qs(`.task-inline-details[data-task-instructions="${escaped}"]`, view)
+    );
+  }
+
+  function detailButtons(view, id) {
+    return [...view.querySelectorAll('.tasks-v9-details[data-id], .task-instructions-load[data-id]')]
+      .filter(button => String(button.dataset.id || '') === String(id));
+  }
+
+  function forceDetailState(view, id, open) {
+    const row = detailRowFor(view, id);
+    if (!row) return;
+
+    row.hidden = !open;
+    row.setAttribute('aria-hidden', open ? 'false' : 'true');
+    row.dataset.dpDetailsActive = open ? '1' : '0';
+    row.dataset.dpV13Open = open ? '1' : '0';
+    row.style.setProperty('display', open ? 'block' : 'none', 'important');
+
+    detailButtons(view, id).forEach(button => {
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+      button.classList.toggle('dp-details-open', open);
+      button.classList.toggle('dp-v13-open', open);
+      if (button.classList.contains('tasks-v9-details')) {
+        button.textContent = open ? 'Ocultar' : 'Detalhes';
+      }
+    });
+  }
+
   function syncDetailsStateAfterClick(event) {
     const button = event.target.closest?.(
       '#tasks-view .tasks-v9-details[data-id], #tasks-view .task-instructions-load[data-id]'
@@ -253,25 +280,31 @@
     const view = qs('#tasks-view');
     if (!id || !view) return;
 
-    const escaped = escapeSelector(id);
-    const row =
-      qs(`[data-task-details-row="${escaped}"]`, view) ||
-      qs(`.task-inline-details[data-task-instructions="${escaped}"]`, view);
+    const row = detailRowFor(view, id);
     if (!row) return;
 
-    // O onclick do renderer já executou quando o evento chega ao bubble do
-    // document. Espelhar o estado visual em aria/data evita que o reconciliador
-    // V41 interprete aria-hidden antigo como "fechado" e recolha o painel logo
-    // após o clique.
+    // O renderer já alterou hidden/display no alvo. A partir deste ponto esta ponte
+    // transforma esse estado em contrato explícito para o reconciliador V41.
     const open = !row.hidden && row.style.getPropertyValue('display') !== 'none';
-    row.setAttribute('aria-hidden', open ? 'false' : 'true');
-    row.dataset.dpDetailsActive = open ? '1' : '0';
-    row.dataset.dpV13Open = open ? '1' : '0';
-    button.setAttribute('aria-expanded', open ? 'true' : 'false');
 
-    if (button.classList.contains('tasks-v9-details')) {
-      button.textContent = open ? 'Ocultar' : 'Detalhes';
+    if (open) {
+      view.querySelectorAll('[data-task-details-row], .task-inline-details[data-task-instructions]')
+        .forEach(other => {
+          const otherId = String(other.dataset.taskDetailsRow || other.dataset.taskInstructions || '');
+          if (otherId && otherId !== id) forceDetailState(view, otherId, false);
+        });
     }
+
+    forceDetailState(view, id, open);
+
+    // MutationObserver/ResizeObserver antigos podem reconciliar no frame seguinte.
+    // Reafirmar somente o estado escolhido pelo clique elimina o abre-fecha sem criar polling.
+    [0, 32, 120].forEach(delay => {
+      window.setTimeout(() => {
+        if (!button.isConnected || !row.isConnected) return;
+        forceDetailState(view, id, open);
+      }, delay);
+    });
   }
 
   window.devpilotFocusExecution = requestFocus;
@@ -290,8 +323,8 @@
     });
   }, true);
 
-  // Bubble phase de propósito: precisa rodar depois do onclick que abre/fecha o
-  // detalhe e antes dos timers de reconciliação agendados em capture phase.
+  // Bubble phase: roda depois do onclick do renderer e materializa o estado final
+  // com hidden + aria + data + display!important, removendo a corrida com V41.
   document.addEventListener('click', syncDetailsStateAfterClick, false);
 
   document.addEventListener('devpilot:view-changed', () => {
@@ -303,6 +336,6 @@
   });
 
   injectStyles();
-  document.documentElement.dataset.devpilotExecutionFocus = 'v19';
-  console.info('[DevPilot] Execution Focus V19 ativo');
+  document.documentElement.dataset.devpilotExecutionFocus = 'v20';
+  console.info('[DevPilot] Execution Focus V20 ativo');
 })();
