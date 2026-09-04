@@ -1,16 +1,25 @@
 import os
+import re
 import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
 
 from app.db import SessionLocal
-from app.models import Task, TaskStatus
+from app.models import Run, Task, TaskStatus
 from app.rag.worker import process_one_rag_job
 from app.services.audit import record
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.services.task_orchestrator import TASK_RUNTIME, ensure_orchestrator_schema
 from app.worker import process_one
+
+
+_FAILURE_ORIGIN_RE = re.compile(r"\[failure-origin-task:([^\]]+)\]", re.IGNORECASE)
+_STDIN_PLATFORM_FAILURE_MARKERS = (
+    "reading additional input from stdin",
+    "failed to read prompt from stdin",
+    "no prompt provided via stdin",
+)
 
 
 def _startup_recovery_enabled() -> bool:
@@ -38,6 +47,104 @@ def _detach_worker_stdin() -> None:
         os.dup2(devnull_fd, 0)
     finally:
         os.close(devnull_fd)
+
+
+def _origin_task_id(recovery: Task) -> str:
+    match = _FAILURE_ORIGIN_RE.search(str(recovery.prompt or ""))
+    return match.group(1).strip() if match else ""
+
+
+def _latest_run(db, task_id: str) -> Run | None:
+    return db.scalar(
+        select(Run)
+        .where(Run.task_id == task_id)
+        .order_by(Run.started_at.desc(), Run.attempt.desc())
+        .limit(1)
+    )
+
+
+def _is_stdin_platform_failure(run: Run | None) -> bool:
+    if not run:
+        return False
+    evidence = f"{run.summary or ''}\n{run.logs or ''}".casefold()
+    return any(marker in evidence for marker in _STDIN_PLATFORM_FAILURE_MARKERS)
+
+
+def _invalidate_obsolete_platform_recoveries() -> int:
+    """Cancel recovery missions that were created for a DevPilot runner defect.
+
+    Historical runs created before V103 persisted the Codex stdin hang as
+    ``unknown`` and could therefore create a normal project recovery task. That
+    task is invalid: changing the client repository cannot repair the DevPilot
+    process stdin. On singleton-worker startup we retire those missions before
+    orphan-lease recovery can accidentally put them back into the queue.
+    """
+    ensure_orchestrator_schema()
+    obsolete = 0
+    now = datetime.now(timezone.utc)
+    active_statuses = {
+        TaskStatus.queued,
+        TaskStatus.planning,
+        TaskStatus.running,
+        TaskStatus.review,
+        TaskStatus.awaiting_approval,
+    }
+
+    with SessionLocal() as db:
+        recoveries = db.scalars(
+            select(Task).where(
+                Task.source == "failure-recovery",
+                Task.status.in_(tuple(active_statuses)),
+            )
+        ).all()
+
+        for recovery in recoveries:
+            origin_id = _origin_task_id(recovery)
+            if not origin_id or not _is_stdin_platform_failure(_latest_run(db, origin_id)):
+                continue
+
+            previous = recovery.status
+            recovery.status = TaskStatus.failed
+            recovery.updated_at = now
+            db.execute(
+                update(TASK_RUNTIME)
+                .where(TASK_RUNTIME.c.task_id == recovery.id)
+                .values(
+                    state="canceled",
+                    version=TASK_RUNTIME.c.version + 1,
+                    claim_owner="",
+                    lease_expires_at=None,
+                    last_action="platform_recovery_obsoleted",
+                    last_message=(
+                        "Recovery cancelada: a causa pertence ao runner DevPilot (stdin), "
+                        "não ao repositório do projeto. A tarefa original deve ser retestada."
+                    ),
+                    updated_at=now,
+                )
+            )
+            record(
+                db,
+                workspace_id=recovery.workspace_id,
+                project_id=recovery.project_id,
+                task_id=recovery.id,
+                actor="worker:startup",
+                action="failure_recovery.platform_obsoleted",
+                outcome="canceled",
+                details={
+                    "origin_task_id": origin_id,
+                    "previous_status": (
+                        previous.value if isinstance(previous, TaskStatus) else str(previous)
+                    ),
+                    "failure_code": "EXECUTOR_STDIN_BLOCKED",
+                    "reason": "runner_failure_cannot_be_repaired_by_project_agent",
+                },
+            )
+            obsolete += 1
+
+        if obsolete:
+            db.commit()
+
+    return obsolete
 
 
 def _recover_orphaned_running_tasks() -> int:
@@ -119,6 +226,16 @@ def main() -> None:
         flush=True,
     )
 
+    obsolete = _invalidate_obsolete_platform_recoveries()
+    if obsolete:
+        print(
+            f"[worker] canceled {obsolete} obsolete project recovery task(s) for platform stdin failures",
+            flush=True,
+        )
+
+    # This intentionally runs after platform-recovery invalidation. Otherwise a
+    # stale recovery that happened to be running at container shutdown would be
+    # resurrected as queued before we can retire it.
     recovered = _recover_orphaned_running_tasks()
     if recovered:
         print(
