@@ -3,13 +3,16 @@
 
 const GAME_PROJECT_KEY = 'devpilot-build-game-project';
 const GAME_PIPELINE_MARKER = '[DEVPILOT_BUILD_GAME_PIPELINE_V2]';
-const REPOSITORY_READY_WAIT_MS = 30000;
+const REPOSITORY_GATE_MARKER = '[DEVPILOT_REPOSITORY_GATE_V99]';
+const REPOSITORY_READY_WAIT_MS = 120000;
 const REPOSITORY_READY_POLL_MS = 1200;
 
 const state = {
   token: localStorage.getItem('devpilot-token') || '',
   projects: [],
 };
+
+const repositoryReleaseInFlight = new Map();
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -72,17 +75,23 @@ function standaloneRoute(path, options = {}) {
   return {path: raw, kind: 'default'};
 }
 
-function normalizeGameTasks(rows) {
-  if (!Array.isArray(rows)) return [];
-  return rows.map(row => {
-    const prompt = String(row?.prompt || '');
-    return {
-      ...row,
-      prompt: prompt.includes(GAME_PIPELINE_MARKER)
-        ? prompt
-        : `${prompt}${prompt ? '\n' : ''}${GAME_PIPELINE_MARKER}`,
-    };
-  });
+function normalizeStatus(value) {
+  return String(value || '').trim().toLowerCase().replaceAll(' ', '_');
+}
+
+function repositoryReady(project) {
+  return Boolean(String(project?.repository_url || '').trim());
+}
+
+function cachedProject(projectId) {
+  const id = String(projectId || '').trim();
+  return state.projects.find(project => String(project?.id) === id) || null;
+}
+
+function repositoryGatedTask(row) {
+  const prompt = String(row?.prompt || '');
+  return prompt.includes(REPOSITORY_GATE_MARKER)
+    && normalizeStatus(row?.status) === 'awaiting_approval';
 }
 
 async function requestJson(path, options = {}, attempt = 0) {
@@ -143,45 +152,133 @@ async function requestJson(path, options = {}, attempt = 0) {
   return data;
 }
 
-function taskProjectId(path, options = {}) {
-  if (String(path || '') !== '/tasks') return '';
-  if (String(options.method || 'GET').toUpperCase() !== 'POST') return '';
-  if (!options.body || options.body instanceof FormData) return '';
+function taskPayload(path, options = {}) {
+  if (String(path || '') !== '/tasks') return null;
+  if (String(options.method || 'GET').toUpperCase() !== 'POST') return null;
+  if (!options.body || options.body instanceof FormData) return null;
   try {
-    const payload = typeof options.body === 'string' ? JSON.parse(options.body) : options.body;
-    return String(payload?.project_id || '').trim();
+    return typeof options.body === 'string' ? JSON.parse(options.body) : {...options.body};
   } catch (_) {
-    return '';
+    return null;
   }
 }
 
-function repositoryReady(project) {
-  return Boolean(String(project?.repository_url || '').trim());
+function repositoryGateRequest(path, options = {}) {
+  const payload = taskPayload(path, options);
+  const projectId = String(payload?.project_id || '').trim();
+  if (!payload || !projectId || repositoryReady(cachedProject(projectId))) {
+    return {projectId, staged: false, options};
+  }
+
+  const prompt = String(payload.prompt || '').trim();
+  const stagedPrompt = prompt.includes(REPOSITORY_GATE_MARKER)
+    ? prompt
+    : `${prompt}${prompt ? '\n' : ''}${REPOSITORY_GATE_MARKER}`;
+
+  return {
+    projectId,
+    staged: true,
+    options: {
+      ...options,
+      body: JSON.stringify({
+        ...payload,
+        prompt: stagedPrompt,
+        requires_approval: true,
+      }),
+    },
+  };
 }
 
-async function waitForRepositoryReady(projectId) {
+async function refreshProject(projectId) {
   const id = String(projectId || '').trim();
-  if (!id) return null;
-
-  const cached = state.projects.find(project => String(project?.id) === id);
-  if (repositoryReady(cached)) return cached;
-
-  const deadline = Date.now() + REPOSITORY_READY_WAIT_MS;
-  while (Date.now() < deadline) {
-    const rows = await requestJson(
-      `/ui/projects?limit=50&include_project_id=${encodeURIComponent(id)}`,
-      {timeoutMs: 5000, retry: false},
-    );
-    const projects = Array.isArray(rows) ? rows : [];
-    state.projects = projects;
-    const project = projects.find(item => String(item?.id) === id);
-    if (repositoryReady(project)) return project;
-    await sleep(REPOSITORY_READY_POLL_MS);
-  }
-
-  throw new Error(
-    'O repositório deste projeto ainda não está pronto. Nenhuma execução foi criada para evitar uma falha Git. Aguarde o provisionamento terminar e toque em Jogar agora novamente.'
+  const rows = await requestJson(
+    `/ui/projects?limit=50&include_project_id=${encodeURIComponent(id)}`,
+    {timeoutMs: 5000, retry: false},
   );
+  const projects = Array.isArray(rows) ? rows : [];
+  state.projects = projects;
+  return projects.find(item => String(item?.id) === id) || null;
+}
+
+async function releaseRepositoryGatedTask(task, projectId) {
+  const taskId = String(task?.id || '').trim();
+  const id = String(projectId || task?.project_id || '').trim();
+  if (!taskId || !id) return null;
+  if (!repositoryGatedTask(task)) return task;
+  if (repositoryReleaseInFlight.has(taskId)) return repositoryReleaseInFlight.get(taskId);
+
+  const promise = (async () => {
+    try {
+      await requestJson(`/projects/${encodeURIComponent(id)}/repository/retry`, {
+        method: 'POST',
+        timeoutMs: 10000,
+        retry: false,
+      }).catch(() => null);
+
+      const deadline = Date.now() + REPOSITORY_READY_WAIT_MS;
+      while (Date.now() < deadline) {
+        const provision = await requestJson(
+          `/projects/${encodeURIComponent(id)}/repository/provisioning`,
+          {timeoutMs: 5000, retry: false},
+        ).catch(() => null);
+
+        if (String(provision?.repository_url || '').trim()) {
+          await refreshProject(id).catch(() => null);
+          try {
+            await requestJson(`/tasks/${encodeURIComponent(taskId)}/approve`, {
+              method: 'POST',
+              timeoutMs: 10000,
+              retry: false,
+            });
+          } catch (error) {
+            if (!String(error?.message || '').includes('not awaiting approval')) throw error;
+          }
+
+          toast('Execução criada. Repositório pronto; Planejamento liberado para o worker.');
+          document.dispatchEvent(new CustomEvent('devpilot:game:repository-ready', {
+            detail: {projectId: id, taskId},
+          }));
+          if (typeof window.loadBuildGame === 'function') {
+            await window.loadBuildGame().catch(() => null);
+          }
+          return true;
+        }
+
+        if (String(provision?.state || '') === 'failed' && String(provision?.error || '').trim()) {
+          throw new Error(`A execução foi criada, mas o repositório não ficou pronto: ${String(provision.error).trim()}`);
+        }
+        await sleep(REPOSITORY_READY_POLL_MS);
+      }
+
+      throw new Error('A execução foi criada e está aguardando o repositório. O provisionamento ainda não terminou.');
+    } catch (error) {
+      toast(error?.message || 'A execução foi criada, mas o repositório ainda não está pronto.');
+      console.error('[DevPilot Repository Gate]', error);
+      return false;
+    } finally {
+      repositoryReleaseInFlight.delete(taskId);
+    }
+  })();
+
+  repositoryReleaseInFlight.set(taskId, promise);
+  return promise;
+}
+
+function normalizeGameTasks(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map(row => {
+    const prompt = String(row?.prompt || '');
+    if (repositoryGatedTask(row)) {
+      void releaseRepositoryGatedTask(row, row?.project_id);
+    }
+    return {
+      ...row,
+      status: repositoryGatedTask(row) ? 'queued' : row?.status,
+      prompt: prompt.includes(GAME_PIPELINE_MARKER)
+        ? prompt
+        : `${prompt}${prompt ? '\n' : ''}${GAME_PIPELINE_MARKER}`,
+    };
+  });
 }
 
 async function api(path, options = {}) {
@@ -191,14 +288,16 @@ async function api(path, options = {}) {
     throw new Error('Autenticação necessária');
   }
 
-  const projectId = taskProjectId(path, options);
-  if (projectId) await waitForRepositoryReady(projectId);
-
-  const route = standaloneRoute(path, options);
+  const gate = repositoryGateRequest(path, options);
+  const route = standaloneRoute(path, gate.options);
   const requestOptions = route.kind === 'default'
-    ? options
-    : {...options, timeoutMs: Number(options.timeoutMs || 5000), retry: false};
+    ? gate.options
+    : {...gate.options, timeoutMs: Number(gate.options.timeoutMs || 5000), retry: false};
   const data = await requestJson(route.path, requestOptions);
+
+  if (gate.staged && data?.id) {
+    void releaseRepositoryGatedTask(data, gate.projectId);
+  }
 
   if (route.kind === 'game-tasks') return normalizeGameTasks(data);
   return data;
