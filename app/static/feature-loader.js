@@ -475,11 +475,19 @@
       void loadFeature(feature, {intentEpoch}).then(ready => {
         if (intentEpoch !== navigationEpoch) return;
         if (!ready) window.toast?.('Tela aberta com alguns recursos opcionais indisponíveis.');
-        if (deferredMobileProjectsLoad && typeof window.loadProjects === 'function') {
+        const guardedMobileProjectsLoad = (
+          deferredMobileProjectsLoad &&
+          typeof window.loadProjects === 'function' &&
+          Boolean(window.loadProjects.__devpilotProjectsOriginal)
+        );
+        if (guardedMobileProjectsLoad) {
           void Promise.resolve(window.loadProjects()).catch(error => {
             console.error('[DevPilot] Falha ao carregar Projetos em modo leve', error);
             window.toast?.('Não foi possível carregar os projetos.');
           });
+        } else if (deferredMobileProjectsLoad) {
+          console.error('[DevPilot] Guard mobile de Projetos indisponível; carga pesada bloqueada');
+          window.toast?.('Modo leve de Projetos indisponível. Tente novamente.');
         }
       }).catch(error => {
         if (intentEpoch !== navigationEpoch) return;
