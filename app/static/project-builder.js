@@ -32,6 +32,10 @@
     other: 'Outro',
   };
 
+  const canConnectRepository = () => String(
+    (typeof state !== 'undefined' && state.currentUser?.role) || '',
+  ).toUpperCase() === 'SUPER_ADMIN';
+
   function notify(message, type = 'info') {
     if (typeof window.toast === 'function') return window.toast(message, type);
     console[type === 'error' ? 'error' : 'info'](`[DevPilot] ${message}`);
@@ -98,9 +102,9 @@
         </label>
 
         <label class="simple-project-field simple-project-wide">
-          <span>Repositório GitHub</span>
-          <input name="repository_url" type="text" autocomplete="off" maxlength="500" placeholder="organizacao/repositorio" required>
-          <small>Ex.: a-castilho/site-pessoal</small>
+          <span>Repositório GitHub <small>(opcional)</small></span>
+          <input name="repository_url" type="text" autocomplete="off" maxlength="500" placeholder="organizacao/repositorio">
+          <small>Deixe vazio para cadastrar agora e o DevPilot preparar o repositório em segundo plano.</small>
         </label>
 
         <div class="simple-project-message" id="simple-project-message" role="status" aria-live="polite"></div>
@@ -125,6 +129,11 @@
     control.style.pointerEvents = 'auto';
     control.style.opacity = '1';
   });
+
+  const repositoryInput = form.elements.namedItem('repository_url');
+  if (repositoryInput && !canConnectRepository()) {
+    repositoryInput.closest('label')?.remove();
+  }
 
   if (!document.getElementById('devpilot-simple-project-builder-style')) {
     const style = document.createElement('style');
@@ -179,24 +188,51 @@
     submit.disabled = true;
     submit.textContent = 'Criando…';
 
-    try {
-      await request('/projects', {
-        method: 'POST',
-        body: JSON.stringify({
-          name,
-          slug,
-          description,
-          repository_url: repositoryUrl,
-          organization_id: null,
-          default_branch: 'main',
-          agents_md: agentsMd,
-          codex_config: {simple_setup: true, project_type: projectType, model: 'gpt-5.4'},
-        }),
+    const payload = {
+      name,
+      slug,
+      description,
+      agents_md: agentsMd,
+      codex_config: {simple_setup: true, project_type: projectType, model: 'gpt-5.4'},
+    };
+    const endpoint = repositoryUrl ? '/projects' : '/projects/provision';
+    if (repositoryUrl && !canConnectRepository()) {
+      setMessage('Somente o Super Admin pode conectar um repositório existente.', true);
+      submit.disabled = false;
+      submit.textContent = 'Criar projeto';
+      return;
+    }
+    if (repositoryUrl) {
+      Object.assign(payload, {
+        repository_url: repositoryUrl,
+        organization_id: null,
+        default_branch: 'main',
       });
-      if (typeof window.loadProjects === 'function') await Promise.resolve(window.loadProjects()).catch(() => null);
-      notify(`Projeto ${name} criado.`);
+    }
+
+    try {
+      const project = await request(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+
+      if (typeof state !== 'undefined' && Array.isArray(state.projects)
+          && project?.id && !state.projects.some(item => String(item.id) === String(project.id))) {
+        state.projects.unshift(project);
+        if (typeof window.renderProjects === 'function') window.renderProjects();
+      }
+
+      const pending = !String(project?.repository_url || '').trim();
+      notify(pending
+        ? `Projeto ${name} criado. O repositório está sendo preparado.`
+        : `Projeto ${name} criado.`);
       form.reset();
       goProjects();
+      if (typeof window.loadProjects === 'function') {
+        void Promise.resolve(window.loadProjects()).catch(error => {
+          console.warn('[DevPilot] Atualização da lista de projetos ficou pendente', error);
+        });
+      }
     } catch (error) {
       const message = String(error?.message || 'Não foi possível criar o projeto.');
       setMessage(message, true);
