@@ -16,6 +16,12 @@
 
   document.querySelector('#project-builder-sticky-action')?.remove();
 
+  const GAME_PROJECT_KEY = 'devpilot-build-game-project';
+  const GAME_MISSION_KEY = 'devpilot-build-game-mission';
+  const GAME_DRAFT_PROJECT_KEY = 'devpilot-game-v74-project';
+  const GAME_DRAFT_GOAL_KEY = 'devpilot-game-v74-goal';
+  const GAME_URL = '/game/index.html';
+
   const slugify = value => String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -47,6 +53,25 @@
       return;
     }
     document.querySelector('[data-view="projects"], .nav[data-view="projects"]')?.click?.();
+  }
+
+  function handoffToFirstExecution(project) {
+    const id = String(project?.id || '').trim();
+    if (!id) {
+      goProjects();
+      return false;
+    }
+
+    // Projeto não é execução. A primeira Task só deve existir depois que o
+    // usuário definir a Entrega e tocar em "Jogar agora". Este handoff elimina
+    // o beco sem saída pós-cadastro sem fabricar uma execução sem objetivo.
+    localStorage.setItem(GAME_PROJECT_KEY, id);
+    localStorage.setItem(GAME_DRAFT_PROJECT_KEY, id);
+    localStorage.removeItem(GAME_MISSION_KEY);
+    localStorage.removeItem(GAME_DRAFT_GOAL_KEY);
+
+    window.location.assign(GAME_URL);
+    return true;
   }
 
   async function request(path, options = {}) {
@@ -224,15 +249,17 @@
 
       const pending = !String(project?.repository_url || '').trim();
       notify(pending
-        ? `Projeto ${name} criado. O repositório está sendo preparado.`
-        : `Projeto ${name} criado.`);
+        ? `Projeto ${name} criado. Defina a entrega enquanto o repositório é preparado.`
+        : `Projeto ${name} criado. Defina agora a primeira entrega.`);
       form.reset();
-      goProjects();
+
       if (typeof window.loadProjects === 'function') {
         void Promise.resolve(window.loadProjects()).catch(error => {
           console.warn('[DevPilot] Atualização da lista de projetos ficou pendente', error);
         });
       }
+
+      handoffToFirstExecution(project);
     } catch (error) {
       const message = String(error?.message || 'Não foi possível criar o projeto.');
       setMessage(message, true);
