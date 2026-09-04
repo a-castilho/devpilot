@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -9,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import Organization, Project, ProviderCredential, Repository, Workspace
+from app.models import Organization, Project, ProviderCredential, Repository, Task, TaskStatus, Workspace
 from app.security import Principal, Role, require_access, require_super_admin, session_principal
 from app.services.audit import record
 from app.services.github_provisioning import GitHubProvisioningError, create_github_repository
@@ -127,6 +128,47 @@ def project_config(project: Project) -> dict:
     return {}
 
 
+def repository_provision_state(project: Project) -> dict:
+    config = project_config(project)
+    repository_url = str(project.repository_url or "").strip()
+    state = str(config.get("repository_provision_state") or ("ready" if repository_url else "pending"))
+    return {
+        "state": state,
+        "pending": bool(config.get("repository_pending", not bool(repository_url))),
+        "error": str(config.get("repository_provision_error") or "").strip(),
+        "repository_url": repository_url,
+        "default_branch": str(project.default_branch or "main"),
+    }
+
+
+def queue_repository_repair(db: Session, project: Project, *, actor: str, task_id: str | None = None) -> dict:
+    """Mark a missing repository for an explicit reprovision attempt.
+
+    This does not run GitHub I/O inside the request. The caller schedules the
+    background repair after the transaction commits.
+    """
+    if str(project.repository_url or "").strip():
+        return repository_provision_state(project)
+    config = project_config(project)
+    config["repository_pending"] = True
+    config["repository_mode"] = "deferred"
+    config["repository_provision_state"] = "queued"
+    config["repository_provision_error"] = ""
+    project.codex_config = json.dumps(config)
+    record(
+        db,
+        workspace_id=project.workspace_id,
+        project_id=project.id,
+        task_id=task_id,
+        actor=actor,
+        action="project.repository_repair_queued",
+        outcome="queued",
+        details={"task_id": task_id, "repository_name": project.slug},
+    )
+    db.flush()
+    return repository_provision_state(project)
+
+
 def persist_deferred_project(
     db: Session,
     *,
@@ -147,6 +189,7 @@ def persist_deferred_project(
     config["repository_provision_state"] = (
         "queued" if source == "automatic_provision_queued" else "pending"
     )
+    config["repository_provision_error"] = ""
 
     item = Project(
         workspace_id=ws.id,
@@ -207,10 +250,12 @@ def provision_repository_in_background(
                 access_token,
             )
         except Exception as error:  # external provider failure must never unwind the registration response
+            error_text = str(error.detail) if isinstance(error, HTTPException) else str(error)
             config = project_config(project)
             config["repository_pending"] = True
             config["repository_mode"] = "deferred"
             config["repository_provision_state"] = "failed"
+            config["repository_provision_error"] = error_text[:2000]
             project.codex_config = json.dumps(config)
             record(
                 db,
@@ -222,7 +267,7 @@ def provision_repository_in_background(
                 details={
                     "organization_id": organization.id if organization else None,
                     "repository_name": project.slug,
-                    "error": str(error.detail) if isinstance(error, HTTPException) else str(error),
+                    "error": error_text,
                     "background": True,
                 },
             )
@@ -241,6 +286,7 @@ def provision_repository_in_background(
         config["repository_pending"] = False
         config["repository_mode"] = "automatic"
         config["repository_provision_state"] = "ready"
+        config["repository_provision_error"] = ""
         project.codex_config = json.dumps(config)
 
         repository = db.scalar(select(Repository).where(Repository.project_id == project.id))
@@ -276,6 +322,92 @@ def provision_repository_in_background(
             },
         )
         db.commit()
+
+
+def provision_repository_and_resume_task(
+    project_id: str,
+    workspace_id: str,
+    task_id: str,
+    actor: str,
+) -> None:
+    """Repair the missing repository first, then retry the exact failed task.
+
+    A recovery task cannot repair an empty repository URL because the recovery
+    agent itself needs a checkout. This wrapper therefore performs provider
+    provisioning outside the agent and only requeues the original task after a
+    concrete clone URL exists.
+    """
+    provision_repository_in_background(project_id, workspace_id, actor)
+    with SessionLocal() as db:
+        project = db.scalar(
+            select(Project).where(Project.id == project_id, Project.workspace_id == workspace_id)
+        )
+        task = db.scalar(
+            select(Task).where(Task.id == task_id, Task.workspace_id == workspace_id)
+        )
+        if not project or not task:
+            return
+        provision = repository_provision_state(project)
+        if not provision["repository_url"]:
+            record(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                task_id=task.id,
+                actor=actor,
+                action="project.repository_repair",
+                outcome="failed",
+                details={"error": provision["error"], "state": provision["state"]},
+            )
+            db.commit()
+            return
+        if task.status in {TaskStatus.failed, TaskStatus.blocked}:
+            previous_status = task.status.value if isinstance(task.status, TaskStatus) else str(task.status)
+            task.status = TaskStatus.queued
+            task.updated_at = datetime.now(timezone.utc)
+            record(
+                db,
+                workspace_id=workspace_id,
+                project_id=project.id,
+                task_id=task.id,
+                actor=actor,
+                action="project.repository_repair_resumed_task",
+                outcome="queued",
+                details={
+                    "previous_status": previous_status,
+                    "repository_url_ready": True,
+                    "default_branch": project.default_branch,
+                },
+            )
+            db.commit()
+
+
+@router.get("/projects/{project_id}/repository/provisioning")
+def project_repository_provisioning(project_id: str, db: Session = Depends(get_db)):
+    ws = workspace(db)
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == ws.id))
+    if not project:
+        raise HTTPException(404, "Project not found")
+    return repository_provision_state(project)
+
+
+@router.post("/projects/{project_id}/repository/retry", status_code=202)
+def retry_project_repository(
+    project_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    actor: str = Depends(require_access),
+):
+    ws = workspace(db)
+    project = db.scalar(select(Project).where(Project.id == project_id, Project.workspace_id == ws.id))
+    if not project:
+        raise HTTPException(404, "Project not found")
+    if str(project.repository_url or "").strip():
+        return repository_provision_state(project)
+    queue_repository_repair(db, project, actor=actor)
+    db.commit()
+    background_tasks.add_task(provision_repository_in_background, project.id, ws.id, actor)
+    return repository_provision_state(project)
 
 
 @router.post("/projects/deferred", status_code=201)
