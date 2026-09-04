@@ -56,10 +56,6 @@
     const boost3 = value.boost.toFixed(3);
     const boost2 = value.boost.toFixed(2);
 
-    // No mobile a barra de endereço do Chromium altera apenas a altura do
-    // visualViewport durante o scroll. Altura não participa do contrato visual
-    // do DevPilot; reescrever classes/CSS vars nesse gesto força style/layout
-    // em toda a página e era perceptível no cadastro de projeto.
     const mobile = width <= 900;
     const signature = mobile
       ? [width, mode, value.zoomedOut, value.compact, boost3].join('|')
@@ -78,9 +74,6 @@
     setClass('dp-vp-wide', value.width > 1280 && !value.compact);
     setStyle('--dp-ui-boost', boost3);
     setStyle('--dp-viewport-width', `${width}px`);
-
-    // Mantém a variável por compatibilidade, mas em mobile ela só é atualizada
-    // quando a assinatura estrutural muda (largura/orientação), nunca no scroll.
     setStyle('--dp-viewport-height', `${height}px`);
     setData('dpViewport', mode);
     setData('dpZoom', value.zoomedOut ? 'out' : 'normal');
@@ -95,8 +88,6 @@
 
   function scheduleViewportResize() {
     const width = Math.round(Number(window.visualViewport?.width || window.innerWidth || 0));
-    // Chrome/Brave mobile dispara resize quando a barra do navegador aparece ou
-    // some. Se a largura não mudou, isso é chrome do navegador, não layout.
     if (width > 0 && width <= 900 && lastObservedWidth > 0 && Math.abs(width - lastObservedWidth) < 2) return;
     schedule();
   }
@@ -131,25 +122,46 @@
       view.classList.toggle('active', active);
       view.hidden = !active;
       view.setAttribute('aria-hidden', active ? 'false' : 'true');
+      view.classList.remove('dp-page-leaving', 'dp-page-entering');
     });
     const title = document.querySelector('#page-title');
     if (title && viewName === 'new-project') title.textContent = 'Novo projeto';
+    if (viewName === 'new-project') document.title = 'DevPilot — Novo projeto';
+    root.dataset.devpilotView = viewName;
+    root.classList.remove('dp-page-switching');
   }
 
   function openProjectBuilderSafe() {
-    if (typeof window.devpilotNavigate === 'function') {
-      void window.devpilotNavigate('new-project', {source:'primary-action-safe-open', immediate:true});
-    } else if (typeof window.showView === 'function') {
-      window.showView('new-project');
-    } else {
-      showViewFallback('new-project');
-    }
+    // Caminho crítico de Novo projeto: não chama showView() nem devpilotNavigate().
+    // Ambos podem acionar loaders/renderizadores legados antes do primeiro paint.
+    showViewFallback('new-project');
+    window.scrollTo({top:0, left:0, behavior:'auto'});
 
-    window.requestAnimationFrame(() => window.scrollTo({top:0, left:0, behavior:'auto'}));
-    if (typeof window.__devpilotLoadFeature === 'function') {
-      void Promise.resolve(window.__devpilotLoadFeature('projectBuilder'))
-        .catch(error => console.warn('[DevPilot] Project Builder carregou parcialmente', error));
-    }
+    window.requestAnimationFrame(() => {
+      try {
+        const nextHash = '#/new-project';
+        if (location.hash !== nextHash) history.pushState({devpilotView:'new-project'}, '', nextHash);
+      } catch (_) {}
+
+      document.dispatchEvent(new CustomEvent('devpilot:view-changed', {
+        detail:{view:'new-project', source:'primary-action-direct-open'},
+      }));
+
+      window.requestAnimationFrame(() => {
+        if (typeof window.__devpilotLoadFeature === 'function') {
+          void Promise.resolve(window.__devpilotLoadFeature('projectBuilder'))
+            .then(ready => {
+              document.dispatchEvent(new CustomEvent('devpilot:page-ready', {
+                detail:{view:'new-project', source:'primary-action-direct-open', resourcesReady:Boolean(ready)},
+              }));
+            })
+            .catch(error => {
+              console.warn('[DevPilot] Project Builder carregou parcialmente', error);
+              window.toast?.('Cadastro aberto; alguns recursos auxiliares não carregaram.');
+            });
+        }
+      });
+    });
   }
 
   function openTaskModalSafe(trigger) {
@@ -184,8 +196,8 @@
   }
 
   function installPrimaryActionSafeOpen() {
-    if (window.__devpilotPrimaryActionSafeOpenV29) return;
-    window.__devpilotPrimaryActionSafeOpenV29 = true;
+    if (window.__devpilotPrimaryActionSafeOpenV30) return;
+    window.__devpilotPrimaryActionSafeOpenV30 = true;
 
     window.addEventListener('click', event => {
       const target = event.target instanceof Element ? event.target : null;
@@ -211,8 +223,6 @@
   apply();
   installPrimaryActionSafeOpen();
 
-  // Regra V38: scroll do visualViewport nunca deve recalcular layout global.
-  // resize de mobile só é relevante quando há mudança de largura/orientação.
   window.addEventListener('resize', scheduleViewportResize, {passive:true});
   window.addEventListener('orientationchange', scheduleOrientationChange, {passive:true});
   window.visualViewport?.addEventListener('resize', scheduleViewportResize, {passive:true});
@@ -220,5 +230,5 @@
   document.addEventListener('devpilot:dashboard-revealed', schedule);
   document.addEventListener('devpilot:feature-ready', schedule);
 
-  console.info('[DevPilot] Viewport Adaptive V38 sem reflow durante scroll mobile');
+  console.info('[DevPilot] Viewport Adaptive V30 com abertura direta de Novo projeto');
 })();
