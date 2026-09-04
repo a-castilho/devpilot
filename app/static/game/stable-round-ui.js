@@ -1,11 +1,11 @@
-/* DevPilot game v91 — stable round surface with repair outcome and exact failure position. */
+/* DevPilot game v97 — diagnosis first, explicit fix-and-continue trigger. */
 (() => {
   'use strict';
 
-  if (window.__devpilotStableRoundUiV91Ready) return;
-  window.__devpilotStableRoundUiV91Ready = true;
+  if (window.__devpilotStableRoundUiV97Ready) return;
+  window.__devpilotStableRoundUiV97Ready = true;
 
-  const ROOT_ID = 'devpilot-game-stable-round-v91';
+  const ROOT_ID = 'devpilot-game-stable-round-v97';
   const TERMINAL_RECOVERY_STATES = new Set([
     'awaiting_intervention',
     'intervention_required',
@@ -36,29 +36,30 @@
 
   const recoveryStateText = recovery => {
     const map = {
-      ready_to_recover: 'Falha detectada; preparando correção automática',
-      agent_recovery: 'Correção automática em execução',
+      ready_to_recover: 'Diagnóstico pronto; aguardando você iniciar a correção',
+      agent_recovery: 'Correção em execução',
       retesting: 'Correção aplicada; retestando a mesma etapa',
       resolved: 'Falha corrigida',
       awaiting_intervention: 'Aguardando intervenção necessária',
       intervention_required: 'Intervenção necessária para continuar',
-      recovery_exhausted: 'Correção automática não resolveu a falha',
+      recovery_exhausted: 'A correção executada não resolveu a falha',
     };
-    return map[String(recovery?.state || '')] || 'Diagnóstico da falha em andamento';
+    return map[String(recovery?.state || '')] || 'Carregando diagnóstico da falha';
   };
 
   const statusText = (state, recovery) => {
     if (state.done) return 'Rodada concluída e pronta para entrega.';
     if (recoverableFailure(state)) {
       const recoveryState = String(recovery?.state || '');
-      if (recoveryState === 'agent_recovery') return 'Corrigindo a causa da falha automaticamente…';
+      if (recoveryState === 'ready_to_recover') {
+        return 'Falha diagnosticada. Confira o motivo e a correção proposta; depois clique em Corrigir e continuar.';
+      }
+      if (recoveryState === 'agent_recovery') return 'Executando a correção que você autorizou nesta tela…';
       if (recoveryState === 'retesting') return 'Correção aplicada. Retestando esta mesma etapa…';
       if (recoveryState === 'resolved') return 'Falha corrigida. Retomando a rodada…';
-      if (isTerminalRecovery(recovery)) return 'A correção automática parou com diagnóstico. Veja o motivo e a posição abaixo.';
-      if (normalize(state.taskStatus) === 'blocked') return 'A execução foi bloqueada. Diagnosticando a causa para retomar esta mesma etapa…';
-      return state.verifier
-        ? 'A validação falhou. Enviando o mesmo gate para recuperação segura…'
-        : 'A execução falhou. Enviando a mesma etapa para recuperação segura…';
+      if (isTerminalRecovery(recovery)) return 'A correção precisa de uma condição externa. Veja o motivo e a posição abaixo.';
+      if (normalize(state.taskStatus) === 'blocked') return 'A execução foi bloqueada. Carregando o diagnóstico antes de qualquer correção…';
+      return 'A execução falhou. Carregando o motivo real e a correção proposta…';
     }
     if (canceledExecution(state)) return 'A execução anterior foi encerrada. Recriando esta mesma etapa automaticamente…';
     if (state.awaitingGate) return 'Execução concluída. Validando a entrega da etapa…';
@@ -77,16 +78,24 @@
   const diagnosticHtml = (state, recovery) => {
     if (!recoverableFailure(state)) return '';
     const failure = recovery?.failure || recovery?.recovery_task?.failure || null;
-    const reason = failure?.message
-      || recovery?.recovery_task?.failure?.message
-      || 'Falha registrada. O DevPilot está consultando o diagnóstico do backend.';
-    const code = failure?.code || recovery?.recovery_task?.failure?.code || 'EXECUTION_FAILED';
-    const category = failure?.category || recovery?.recovery_task?.failure?.category || 'unknown';
+    const recoveryFailure = recovery?.recovery_task?.failure || null;
+    const reason = failure?.technical_message
+      || failure?.message
+      || recoveryFailure?.technical_message
+      || recoveryFailure?.message
+      || 'Falha registrada. O DevPilot está carregando o erro técnico preservado.';
+    const summary = failure?.message || recoveryFailure?.message || '';
+    const correction = failure?.recommended_action
+      || recoveryFailure?.recommended_action
+      || 'Corrigir a causa técnica registrada e repetir exatamente esta etapa.';
+    const code = failure?.code || recoveryFailure?.code || 'EXECUTION_FAILED';
+    const category = failure?.category || recoveryFailure?.category || 'unknown';
     const phaseName = state.currentPhaseName || `Etapa ${state.currentPhaseId || '?'}`;
     const position = `${state.verifier ? 'Gate da etapa' : 'Etapa'} ${state.currentPhaseId || '?'} · ${phaseName}`;
     const attempt = recovery?.original_run?.attempt;
     const recoveryTask = recovery?.recovery_task;
     const manual = Boolean(recovery?.manual_intervention_required || isTerminalRecovery(recovery));
+    const showSummary = summary && summary !== reason;
 
     return `
       <section data-game-recovery-diagnostic role="status" style="margin-top:10px;padding:11px 12px;border:1px solid rgba(255,92,113,.52);border-radius:10px;background:rgba(88,13,27,.34);display:grid;gap:7px">
@@ -94,8 +103,10 @@
         <div style="display:grid;grid-template-columns:minmax(90px,.35fr) 1fr;gap:5px 10px;font-size:11px">
           <span style="opacity:.72">Posição</span><b data-game-recovery-position>${esc(position)}${attempt ? ` · tentativa ${esc(attempt)}` : ''}</b>
           <span style="opacity:.72">Motivo</span><span data-game-recovery-reason>${esc(reason)}</span>
+          ${showSummary ? `<span style="opacity:.72">Diagnóstico</span><span data-game-recovery-summary>${esc(summary)}</span>` : ''}
           <span style="opacity:.72">Código</span><code data-game-recovery-code>${esc(code)} · ${esc(category)}</code>
-          <span style="opacity:.72">Correção</span><span data-game-recovery-state>${esc(recoveryStateText(recovery))}</span>
+          <span style="opacity:.72">Correção proposta</span><strong data-game-recovery-correction>${esc(correction)}</strong>
+          <span style="opacity:.72">Estado</span><span data-game-recovery-state>${esc(recoveryStateText(recovery))}</span>
           ${recoveryTask?.status ? `<span style="opacity:.72">Tarefa de reparo</span><span>${esc(recoveryTask.status)}${recoveryTask.id ? ` · ${esc(recoveryTask.id)}` : ''}</span>` : ''}
         </div>
         ${manual ? '<p data-game-recovery-manual style="margin:1px 0 0;font-size:11px"><strong>O DevPilot não vai inventar credencial, permissão ou decisão humana.</strong> Corrija a condição externa indicada acima e use “Atualizar diagnóstico”.</p>' : ''}
@@ -126,10 +137,14 @@
     recovery?.failure?.category,
     recovery?.failure?.code,
     recovery?.failure?.message,
+    recovery?.failure?.technical_message,
+    recovery?.failure?.recommended_action,
     recovery?.original_run?.attempt,
     recovery?.recovery_task?.id,
     recovery?.recovery_task?.status,
     recovery?.recovery_task?.failure?.message,
+    recovery?.recovery_task?.failure?.technical_message,
+    recovery?.recovery_task?.failure?.recommended_action,
   ]);
 
   const ensureRoot = () => {
@@ -177,8 +192,11 @@
     root.querySelector('[data-stable-retry]')?.addEventListener('click', async event => {
       const button = event.currentTarget;
       button.disabled = true;
-      button.textContent = recoverableFailure(state) ? 'Corrigindo automaticamente…' : 'Recriando etapa…';
+      button.textContent = recoverableFailure(state) ? 'Aplicando a correção proposta…' : 'Recriando etapa…';
       try {
+        // engine.retry chama o recovery canônico. Para falhas diagnosticadas,
+        // o backend promove a tarefa preparada de awaiting_approval para queued
+        // somente neste clique e usa a mesma recommended_action exibida acima.
         await engine.retry?.();
       } catch (error) {
         console.error('[DevPilot Stable UI Retry]', error);
