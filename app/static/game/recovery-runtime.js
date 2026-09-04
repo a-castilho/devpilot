@@ -3,6 +3,7 @@
   'use strict';
   if (window.__devpilotGameRecoveryV92Ready) return;
   window.__devpilotGameRecoveryV92Ready = true;
+  window.__devpilotGameRecoveryV91Ready = true;
 
   const patched = new WeakSet();
   const inFlight = new Map();
