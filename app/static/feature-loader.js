@@ -42,11 +42,10 @@
       'provider-ollama.js',
     ],
 
-    // Cadastro: somente o runtime essencial entra no caminho crítico.
-    // Perfil automático é carregado em idle apenas em máquinas folgadas e
-    // o runtime de cards mobile não pertence à tela de cadastro.
+    // O cadastro simples deve ter um único dono de eventos. O runtime legado de
+    // provisionamento continua disponível na tela de projetos, mas não entra no
+    // clique de Novo projeto e não pode interceptar o submit do builder simples.
     projectBuilder: [
-      'project-provisioning.js',
       'project-builder.js',
     ],
 
@@ -433,22 +432,32 @@
   async function navigateDirect(viewName, source = 'link') {
     if (!viewName) return false;
     navigationEpoch += 1;
+    const intentEpoch = navigationEpoch;
     restorePendingPlaceholders();
+
+    // A troca de tela pertence ao caminho crítico do clique. Recursos opcionais
+    // são hidratados depois e nunca podem bloquear a navegação principal.
+    let navigated = false;
+    if (typeof window.devpilotNavigate === 'function') {
+      navigated = window.devpilotNavigate(viewName, {source, immediate:true});
+    } else if (typeof showView === 'function') {
+      showView(viewName);
+      navigated = true;
+    }
 
     const feature = VIEW_FEATURES[viewName];
     if (feature) {
-      const ready = await loadFeature(feature);
-      if (!ready) window.toast?.('Tela aberta com alguns recursos opcionais indisponíveis.');
+      void loadFeature(feature, {intentEpoch}).then(ready => {
+        if (intentEpoch !== navigationEpoch) return;
+        if (!ready) window.toast?.('Tela aberta com alguns recursos opcionais indisponíveis.');
+      }).catch(error => {
+        if (intentEpoch !== navigationEpoch) return;
+        console.error(`[DevPilot] Falha ao hidratar ${viewName}`, error);
+        window.toast?.('Tela aberta; recursos opcionais serão tentados novamente depois.');
+      });
     }
 
-    if (typeof window.devpilotNavigate === 'function') {
-      return window.devpilotNavigate(viewName, {source, immediate:true});
-    }
-    if (typeof showView === 'function') {
-      showView(viewName);
-      return true;
-    }
-    return false;
+    return navigated;
   }
 
   function openTaskDirect(trigger) {
@@ -509,8 +518,8 @@
       const feature = featureState.get('projectBuilder') || {};
       const failures = Array.isArray(feature.failures) ? feature.failures : [];
       const form = document.querySelector('#project-builder-form');
-      const groups = document.querySelector('#project-builder-groups');
-      if (!form || !groups || !groups.children.length || failures.includes('project-builder.js')) {
+      const builderReady = form?.dataset.simpleBuilderReady === '1';
+      if (!builderReady || failures.includes('project-builder.js')) {
         throw new Error('Não foi possível carregar o cadastro de projeto.');
       }
       if (!ready) window.toast?.('Cadastro aberto; algum recurso auxiliar ficou indisponível.');
