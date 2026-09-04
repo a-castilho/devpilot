@@ -12,6 +12,7 @@ from app.models import Run, Task, TaskStatus, Workspace
 from app.security import require_access
 from app.services.failure_recovery import (
     apply_user_guidance,
+    enrich_failure_from_run,
     ensure_failure_recovery_task,
     find_failure_recovery_task,
     latest_run_for_task,
@@ -73,7 +74,7 @@ def _recovery_state(original: Task, recovery: Task | None) -> str:
 
     recovery_status = _status_value(recovery.status)
     if recovery_status == TaskStatus.awaiting_approval.value:
-        return "awaiting_intervention"
+        return "awaiting_intervention" if recovery.requires_approval else "ready_to_recover"
     if recovery_status in {
         TaskStatus.queued.value,
         TaskStatus.planning.value,
@@ -93,15 +94,18 @@ def _recovery_state(original: Task, recovery: Task | None) -> str:
 
 def _payload(db: Session, original: Task) -> dict:
     original_run = latest_run_for_task(db, original.id)
-    original_failure = failure_details(original_run)
+    original_failure = enrich_failure_from_run(original_run, failure_details(original_run))
     recovery = find_failure_recovery_task(db, original)
     recovery_run = latest_run_for_task(db, recovery.id) if recovery else None
-    recovery_failure = failure_details(recovery_run) if recovery_run else {
-        "category": "",
-        "code": "",
-        "message": "",
-        "requires_authorization": False,
-    }
+    recovery_failure = enrich_failure_from_run(
+        recovery_run,
+        failure_details(recovery_run) if recovery_run else {
+            "category": "",
+            "code": "",
+            "message": "",
+            "requires_authorization": False,
+        },
+    )
     state = _recovery_state(original, recovery)
     manual = state in {
         "awaiting_intervention",
@@ -152,7 +156,7 @@ def escalate_recovery(task_id: str, db: Session = Depends(get_db)):
     if original.status not in {TaskStatus.failed, TaskStatus.blocked}:
         raise HTTPException(409, "Only failed or blocked tasks can enter recovery")
     run = latest_run_for_task(db, original.id)
-    failure = failure_details(run)
+    failure = enrich_failure_from_run(run, failure_details(run))
     recovery = ensure_failure_recovery_task(
         db,
         original_task=original,
@@ -180,7 +184,7 @@ def intervene_recovery(
             db,
             original_task=original,
             run=run,
-            failure=failure_details(run),
+            failure=enrich_failure_from_run(run, failure_details(run)),
             actor="owner",
         )
         if not recovery:
