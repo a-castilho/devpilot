@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Run, Task, TaskStatus, Workspace
+from app.models import Project, Run, Task, TaskStatus, Workspace
+from app.project_provisioning_routes import (
+    provision_repository_and_resume_task,
+    queue_repository_repair,
+    repository_provision_state,
+)
 from app.security import require_access
 from app.services.failure_recovery import (
     apply_user_guidance,
@@ -92,8 +97,103 @@ def _recovery_state(original: Task, recovery: Task | None) -> str:
     return "ready_to_recover"
 
 
+def _authorization_error(value: str) -> bool:
+    text = str(value or "").casefold()
+    return any(
+        marker in text
+        for marker in (
+            "credencial",
+            "credential",
+            "token",
+            "unauthorized",
+            "forbidden",
+            "401",
+            "403",
+            "permission",
+            "permissão",
+            "autoriz",
+        )
+    )
+
+
+def _repository_failure(project: Project, fallback: dict) -> tuple[dict, dict, str, bool]:
+    provision = repository_provision_state(project)
+    provider_error = str(provision.get("error") or "").strip()
+    fallback_reason = str(
+        fallback.get("technical_message")
+        or fallback.get("message")
+        or ""
+    ).strip()
+    technical = provider_error or fallback_reason or (
+        "O projeto ainda não possui repository_url. A execução não pode abrir um checkout Git válido."
+    )
+    requires_authorization = _authorization_error(provider_error)
+
+    if provider_error and requires_authorization:
+        correction = (
+            "Corrigir a credencial/autorização GitHub indicada pelo diagnóstico e reprovisionar o "
+            "repositório do projeto. A etapa original só será retomada depois que repository_url existir."
+        )
+    elif provision.get("state") in {"queued", "pending"}:
+        correction = (
+            "Concluir o provisionamento do repositório GitHub e retomar automaticamente esta mesma "
+            "etapa quando repository_url estiver preenchido."
+        )
+    else:
+        correction = (
+            "Reprovisionar o repositório GitHub do projeto e, somente após obter um clone_url válido, "
+            "reenfileirar exatamente esta etapa."
+        )
+
+    failure = {
+        "category": "repository_not_ready",
+        "code": "REPOSITORY_NOT_READY",
+        "message": technical[:2400],
+        "technical_message": technical[:2400],
+        "requires_authorization": requires_authorization,
+        "recommended_action": correction[:2400],
+    }
+
+    state_value = str(provision.get("state") or "pending")
+    if state_value in {"queued", "pending"}:
+        state = "agent_recovery"
+    elif requires_authorization:
+        state = "awaiting_intervention"
+    else:
+        state = "ready_to_recover"
+    return failure, provision, state, requires_authorization
+
+
+def _repository_payload(db: Session, original: Task, project: Project, original_run: Run | None) -> dict:
+    fallback = enrich_failure_from_run(original_run, failure_details(original_run))
+    failure, provision, state, manual = _repository_failure(project, fallback)
+    return {
+        "task_id": original.id,
+        "task_title": original.title,
+        "task_status": _status_value(original.status),
+        "state": state,
+        "manual_intervention_required": manual,
+        "can_resume_original": False,
+        "failure": failure,
+        "self_healing": _healing_payload(original_run),
+        "original_run": {
+            "id": original_run.id if original_run else None,
+            "attempt": original_run.attempt if original_run else 0,
+            "status": original_run.status if original_run else None,
+        },
+        # Uma recovery task antiga que também falhou por falta de checkout não é
+        # autoridade de reparo para esta causa. O reparo correto é o provisionamento.
+        "recovery_task": None,
+        "repository_provisioning": provision,
+    }
+
+
 def _payload(db: Session, original: Task) -> dict:
     original_run = latest_run_for_task(db, original.id)
+    project = db.get(Project, original.project_id)
+    if project and not str(project.repository_url or "").strip():
+        return _repository_payload(db, original, project, original_run)
+
     original_failure = enrich_failure_from_run(original_run, failure_details(original_run))
     recovery = find_failure_recovery_task(db, original)
     recovery_run = latest_run_for_task(db, recovery.id) if recovery else None
@@ -163,10 +263,31 @@ def recovery_status(task_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/tasks/{task_id}/recovery/escalate")
-def escalate_recovery(task_id: str, db: Session = Depends(get_db)):
+def escalate_recovery(
+    task_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     original = _task(db, task_id)
     if original.status not in {TaskStatus.failed, TaskStatus.blocked}:
         raise HTTPException(409, "Only failed or blocked tasks can enter recovery")
+
+    project = db.get(Project, original.project_id)
+    if project and not str(project.repository_url or "").strip():
+        current = _repository_payload(db, original, project, latest_run_for_task(db, original.id))
+        if current["failure"].get("requires_authorization"):
+            return current
+        queue_repository_repair(db, project, actor="owner", task_id=original.id)
+        db.commit()
+        background_tasks.add_task(
+            provision_repository_and_resume_task,
+            project.id,
+            original.workspace_id,
+            original.id,
+            "owner",
+        )
+        return _payload(db, original)
+
     run = latest_run_for_task(db, original.id)
     failure = enrich_failure_from_run(run, failure_details(run))
     recovery = ensure_failure_recovery_task(
