@@ -35,6 +35,7 @@ def test_safe_recovery_is_staged_until_user_clicks_fix_and_continue():
     service = RECOVERY_SERVICE.read_text(encoding="utf-8")
     routes = RECOVERY_ROUTES.read_text(encoding="utf-8")
     recovery = RECOVERY.read_text(encoding="utf-8")
+    keeper = KEEPER.read_text(encoding="utf-8")
 
     assert "def enrich_failure_from_run" in service
     assert 'status=TaskStatus.awaiting_approval' in service
@@ -46,7 +47,16 @@ def test_safe_recovery_is_staged_until_user_clicks_fix_and_continue():
 
     assert 'return "awaiting_intervention" if recovery.requires_approval else "ready_to_recover"' in routes
     assert "enrich_failure_from_run(original_run, failure_details(original_run))" in routes
+
+    assert "__devpilotGameReadRecovery" in recovery
+    assert "readCanonicalRecovery(key, {escalate: false})" in recovery
+    assert "readCanonicalRecovery(taskId, {escalate: true})" in recovery
     assert "request(taskId, 'escalate')" in recovery
+
+    failed_observer = keeper.split("const existingRecovery = recoveryFor(state);", 1)[1]
+    assert "await window.__devpilotGameReadRecovery?.(state.taskId)" in failed_observer
+    assert "await engine.retry()" not in failed_observer
+    assert "O único gatilho de correção é o clique" in keeper
 
 
 def test_internal_recovery_task_never_becomes_game_phase():
