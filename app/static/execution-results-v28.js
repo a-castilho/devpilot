@@ -98,8 +98,6 @@
     const apiFailure = textValue(run?.failure?.message);
     const latestFailure = textValue(latest?.failure_reason);
 
-    // O worker grava uma resposta contextual por tarefa. Ela é a resposta principal.
-    // Erro bruto e autocorreção continuam disponíveis nos detalhes técnicos.
     if (clientReport && !isGenericRecoveryText(clientReport)) return clientReport;
     if (output && !isGenericRecoveryText(output)) return output;
     if (summary && !isGenericRecoveryText(summary)) return summary;
@@ -149,6 +147,85 @@
     return resultText(run, latest) || flattenLogs(run?.logs);
   }
 
+  const REPORT_HEADINGS = Object.freeze({
+    'resumo para o cliente': 'summary',
+    'resumo': 'summary',
+    'o que encontramos': 'findings',
+    'diagnóstico': 'diagnosis',
+    'diagnostico': 'diagnosis',
+    'evidências': 'evidence',
+    'evidencias': 'evidence',
+    'impacto': 'impact',
+    'recomendações': 'recommendations',
+    'recomendacoes': 'recommendations',
+    'próximo passo': 'nextStep',
+    'proximo passo': 'nextStep',
+    'resposta produzida pelo agente antes da interrupção': 'agentOutput',
+  });
+
+  function normalizeHeading(value) {
+    return String(value || '')
+      .trim()
+      .replace(/[:：]+$/, '')
+      .toLocaleLowerCase('pt-BR');
+  }
+
+  function parseClientReport(text) {
+    const sections = {};
+    let current = '';
+    const loose = [];
+
+    String(text || '').split(/\r?\n/).forEach(raw => {
+      const line = raw.trim();
+      if (!line) return;
+      const heading = REPORT_HEADINGS[normalizeHeading(line)];
+      if (heading) {
+        current = heading;
+        if (!sections[current]) sections[current] = [];
+        return;
+      }
+      if (current) sections[current].push(line);
+      else loose.push(line);
+    });
+
+    const normalized = {};
+    Object.entries(sections).forEach(([key, lines]) => {
+      normalized[key] = lines.join('\n').trim();
+    });
+    normalized.loose = loose.join('\n').trim();
+    normalized.structured = Object.keys(sections).length > 0;
+    return normalized;
+  }
+
+  function extractCause(run, latest, report) {
+    const logs = logsObject(run);
+    const explicit = textValue(logs?.failure_context?.cause);
+    if (explicit && !isGenericRecoveryText(explicit)) return explicit;
+
+    const failure = textValue(run?.failure?.message) || textValue(latest?.failure_reason);
+    if (failure && !isGenericRecoveryText(failure)) return failure;
+
+    const source = [report?.findings, report?.diagnosis, report?.summary].filter(Boolean).join('\n');
+    const match = source.match(/(?:causa\s+(?:registrada|encontrada)|diagn[oó]stico)\s*:\s*(.+)$/im);
+    if (match?.[1] && !isGenericRecoveryText(match[1])) return match[1].trim();
+    return '';
+  }
+
+  function coherentNextStep(report, cause, failed) {
+    const next = textValue(report?.nextStep);
+    if (!next) return '';
+    if (!failed || cause) return next;
+    if (/corrigir\s+(?:a\s+)?causa|causa\s+registrada/i.test(next)) {
+      return 'Identificar a causa técnica nos detalhes da execução antes de corrigir ou reenfileirar esta etapa.';
+    }
+    return next;
+  }
+
+  function sectionHtml(label, value, className = '') {
+    if (!value) return '';
+    return `<article class="dp-v28-section ${className}"><small>${esc(label)}</small><p>${esc(value)}</p></article>`;
+  }
+
   function recommendations(text) {
     const found = [];
     String(text || '').split(/\r?\n/).forEach(raw => {
@@ -173,16 +250,18 @@
     const status = String(run?.status || latest?.run_status || latest?.task_status || '').toLowerCase();
     const text = resultText(run, latest);
     const technical = technicalText(run, latest);
-    const recs = recommendations(text);
+    const report = parseClientReport(text);
+    const recs = recommendations(report.recommendations || text);
     const failed = status === 'failed' || String(latest?.task_status || '').toLowerCase() === 'failed';
+    const cause = extractCause(run, latest, report);
+    const nextStep = coherentNextStep(report, cause, failed);
 
     let main;
     if (failed) {
-      const message = failureText(run, latest);
       main = `
         <article class="dp-v28-result-state danger">
           <span>!</span>
-          <div><strong>Execução não concluída</strong><p>${esc(message)}</p></div>
+          <div><strong>${cause ? 'Falha diagnosticada' : 'Falha sem causa determinada'}</strong><p>${esc(cause || 'A execução foi interrompida, mas ainda não há uma causa técnica específica registrada. Não trate a etapa como corrigível até o diagnóstico ser identificado.')}</p></div>
         </article>`;
     } else if (text) {
       main = `
@@ -204,10 +283,26 @@
         </article>`;
     }
 
+    let semanticHtml = '';
+    if (report.structured) {
+      semanticHtml = [
+        sectionHtml('RESUMO', report.summary),
+        sectionHtml('DIAGNÓSTICO', report.diagnosis || (failed ? cause : '')),
+        sectionHtml('O QUE FOI ENCONTRADO', report.findings),
+        sectionHtml('EVIDÊNCIAS', report.evidence),
+        sectionHtml('IMPACTO', report.impact),
+        sectionHtml('PRÓXIMO PASSO', nextStep, 'next-step'),
+      ].filter(Boolean).join('');
+    } else if (text && !failed) {
+      semanticHtml = sectionHtml('RESPOSTA', text);
+    }
+
     const recHtml = recs.length
-      ? `<div class="dp-v28-recs">${recs.map(item => `
-          <article><b>${esc(item.priority)}</b><span>${esc(item.title)}</span></article>`).join('')}</div>`
-      : '';
+      ? `<section class="dp-v28-recommendations"><small>RECOMENDAÇÕES</small><div class="dp-v28-recs">${recs.map(item => `
+          <article><b>${esc(item.priority)}</b><span>${esc(item.title)}</span></article>`).join('')}</div></section>`
+      : report.recommendations
+        ? sectionHtml('RECOMENDAÇÕES', report.recommendations)
+        : '';
 
     const technicalHtml = technical
       ? `<details class="dp-v28-output">
@@ -224,11 +319,11 @@
     return `
       <section class="dp-v28-result" data-execution-result-for="${esc(taskId)}" data-run-id="${esc(latest?.run_id || '')}">
         <header>
-          <div><small>RESULTADO DA EXECUÇÃO</small><h3>O que esta execução respondeu</h3></div>
+          <div><small>RESULTADO DA EXECUÇÃO</small><h3>Diagnóstico e resultado</h3></div>
           <span class="dp-v28-run">${esc(run?.status || latest?.run_status || 'sem run')}</span>
         </header>
         ${main}
-        ${recHtml}
+        <div class="dp-v28-semantic">${semanticHtml}${recHtml}</div>
         ${technicalHtml}
         ${links ? `<footer>${links}</footer>` : ''}
       </section>`;
@@ -242,10 +337,11 @@
       .dp-v28-result{display:grid;gap:12px;width:100%;box-sizing:border-box;padding:14px;border:1px solid rgba(53,229,209,.28);border-radius:14px;background:linear-gradient(145deg,rgba(3,28,31,.95),rgba(5,15,26,.98))}
       .dp-v28-result>header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.dp-v28-result>header small{display:block;color:#58dfcb;font-size:9px;font-weight:900;letter-spacing:.1em}.dp-v28-result>header h3{margin:4px 0 0;font-size:22px;line-height:1.1}.dp-v28-run{padding:5px 8px;border-radius:999px;background:rgba(53,229,209,.08);color:#78e4d4;font-size:10px;font-weight:850;text-transform:uppercase}
       .dp-v28-result-state{display:grid;grid-template-columns:42px minmax(0,1fr);gap:10px;padding:11px;border:1px solid rgba(255,255,255,.07);border-radius:11px;background:rgba(2,11,19,.72)}.dp-v28-result-state>span{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:rgba(53,229,209,.1);color:#70e4d3;font-weight:900}.dp-v28-result-state.danger>span{background:rgba(255,100,100,.12);color:#ff9292}.dp-v28-result-state strong{display:block;font-size:14px}.dp-v28-result-state p{margin:4px 0 0;color:#9fb2bc;font-size:12px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
+      .dp-v28-semantic{display:grid;gap:8px}.dp-v28-section,.dp-v28-recommendations{display:grid;gap:5px;padding:11px;border:1px solid rgba(255,255,255,.06);border-radius:10px;background:rgba(2,11,19,.42)}.dp-v28-section small,.dp-v28-recommendations>small{color:#718998;font-size:9px;font-weight:900;letter-spacing:.08em}.dp-v28-section p{margin:0;color:#b9c8cf;font-size:13px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}.dp-v28-section.next-step{border-color:rgba(53,229,209,.18);background:rgba(53,229,209,.035)}
       .dp-v28-recs{display:grid;gap:7px}.dp-v28-recs article{display:grid;grid-template-columns:42px minmax(0,1fr);gap:9px;align-items:start;padding:10px;border-radius:10px;background:rgba(255,255,255,.025)}.dp-v28-recs b{display:grid;place-items:center;min-height:30px;border-radius:8px;background:rgba(53,229,209,.08);color:#6fe2d1;font-size:11px}.dp-v28-recs span{font-size:13px;line-height:1.45}
       .dp-v28-output{border-top:1px solid rgba(255,255,255,.07);padding-top:9px}.dp-v28-output summary{cursor:pointer;color:#8fa6b1;font-size:11px;font-weight:800}.dp-v28-output pre{max-height:360px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0 0;padding:11px;border-radius:9px;background:#06111b;color:#b8c8cf;font-size:12px;line-height:1.55}
       .dp-v28-result footer{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.dp-v28-result footer span{display:grid;gap:2px}.dp-v28-result footer small{color:#718998;font-size:9px}.dp-v28-result footer code{font-size:10px}.dp-v28-result footer a{color:#70e4d3;font-size:11px;font-weight:800}
-      @media(max-width:900px){.dp-v28-result{padding:12px}.dp-v28-result>header h3{font-size:20px}.dp-v28-output pre{max-height:420px;font-size:13px}.dp-v28-result-state p,.dp-v28-recs span{font-size:13px}}
+      @media(max-width:900px){.dp-v28-result{padding:12px}.dp-v28-result>header h3{font-size:20px}.dp-v28-output pre{max-height:420px;font-size:13px}.dp-v28-result-state p,.dp-v28-recs span,.dp-v28-section p{font-size:13px}}
     `;
     document.head.appendChild(style);
   }
@@ -302,5 +398,5 @@
   });
 
   injectStyle();
-  console.info('[DevPilot] Execution Results V28 ativo · resposta contextual por run');
+  console.info('[DevPilot] Execution Results V28 ativo · diagnóstico coerente por run');
 })();
