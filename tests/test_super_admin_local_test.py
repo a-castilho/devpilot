@@ -73,7 +73,7 @@ def test_frontend_is_lazy_wired_and_has_no_shell_command_input():
     assert "admin: [" in loader
     assert "/assets/super-admin-local-test.js" not in main
     assert "Acesso exclusivo do Super Admin" in frontend
-    assert "Executar teste agora" in frontend
+    assert "Executar teste local/mobile" in frontend
     assert "subprocess" not in backend
     assert "shell=True" not in backend
     assert "manage_local_test = require_roles(Role.SUPER_ADMIN)" in backend
