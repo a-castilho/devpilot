@@ -31,8 +31,11 @@ def test_worker_uses_atomic_claim_and_real_process_control():
     orchestrator = open("app/services/task_orchestrator.py", encoding="utf-8").read()
 
     assert "claim_next_task" in source
-    assert ".returning(Task.id)" in orchestrator
+    assert ".returning(Task.id)" not in orchestrator
+    assert "candidate_id = db.scalar(" in orchestrator
+    assert "Task.id == candidate_id" in orchestrator
     assert "Task.status == TaskStatus.queued" in orchestrator
+    assert "int(result.rowcount or 0) != 1" in orchestrator
     assert "start_new_session=True" in orchestrator
     assert "os.killpg" in orchestrator
     assert "pause_requested" in orchestrator
