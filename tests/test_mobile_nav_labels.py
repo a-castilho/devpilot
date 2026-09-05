@@ -14,7 +14,7 @@ def test_mobile_route_has_readable_fallback_labels():
 
 def test_simple_mobile_menu_keeps_explicit_labels():
     js = MENU.read_text(encoding="utf-8")
-    for label in ("Início", "Projetos", "Tarefas", "Menu"):
+    for label in ("Início", "Projetos", "Execuções", "Jogo", "Menu"):
         assert f"<small>{label}</small>" in js
     assert "body.mobile-route .mobile-simple-item > small" in js
-    assert "display: block !important" in js
+    assert "display:block!important" in js
