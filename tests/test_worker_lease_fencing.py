@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from app import worker
 from app.db import Base
 from app.models import Project, Run, Task, TaskStatus, Workspace
 from app.services import task_orchestrator as orchestrator
@@ -121,8 +122,6 @@ def test_stale_worker_detects_replacement_owner_before_control_poll(isolated_run
     assert task_id not in orchestrator._PROCESS_CLAIMS
     assert task_id in orchestrator._LOST_PROCESS_CLAIMS
 
-    # The stale worker must stay fenced after its in-memory owner token is removed;
-    # process_one calls requested_control again after execution failures.
     with pytest.raises(orchestrator.LostTaskClaim):
         orchestrator.requested_control(task_id)
 
@@ -168,8 +167,6 @@ def test_final_transition_repeats_fence_predicate_after_precheck(isolated_runtim
         assert task is not None
         old_owner = str(getattr(task, "_devpilot_claim_owner"))
 
-        # Simulate the exact race from review: the precheck already succeeded, then
-        # another worker takes ownership before the final runtime UPDATE.
         monkeypatch.setattr(orchestrator, "require_task_claim", lambda _db, _task: old_owner)
         db.execute(
             update(orchestrator.TASK_RUNTIME)
@@ -235,3 +232,26 @@ def test_terminal_transition_is_compare_and_set_fenced():
     assert "TASK_RUNTIME.c.claim_owner == claim_owner" in source
     assert "TASK_RUNTIME.c.lease_expires_at >= point" in source
     assert "int(result.rowcount or 0) != 1" in source
+
+
+def test_worker_main_survives_lost_claim_without_retrying_stale_task(monkeypatch):
+    calls = {"process": 0}
+
+    class StopLoop(RuntimeError):
+        pass
+
+    monkeypatch.setattr(worker, "worker_runtime_paths", lambda: {"python": "/usr/bin/python3"})
+
+    def fake_process_one():
+        calls["process"] += 1
+        if calls["process"] == 1:
+            raise orchestrator.LostTaskClaim("ownership replaced")
+        return False
+
+    monkeypatch.setattr(worker, "process_one", fake_process_one)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: (_ for _ in ()).throw(StopLoop()))
+
+    with pytest.raises(StopLoop):
+        worker.main()
+
+    assert calls["process"] == 2
