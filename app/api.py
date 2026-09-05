@@ -40,18 +40,14 @@ from app.services.intent import interpret_voice
 from app.services.organizations import fetch_github_repositories, project_slug
 from app.services.policy import evaluate_task, normalize_repository_url
 from app.services.vault import Vault
+from app.services.workspace_scope import workspace_for_authenticated_session
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
 
 
 def workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        item = Workspace(name="DevPilot", slug="default")
-        db.add(item)
-        db.flush()
-    return item
+    return workspace_for_authenticated_session(db)
 
 
 def project_or_404(db: Session, workspace_id: str, project_id: str) -> Project:
