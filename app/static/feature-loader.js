@@ -133,6 +133,10 @@
     admin: [
       'super-admin-voice.js',
       'super-admin-task-panel.js',
+      // RAG is a first-class Super Admin destination. Load it before slower
+      // diagnostics so explicit navigation is not blocked by unrelated modules.
+      'rag-admin-ui.js',
+      'rag-jobs-ui.js',
       'token-usage.js',
       'token-usage-mobile-fix.js',
       'deploy-admin.js',
@@ -145,8 +149,6 @@
       'linux-beginner-coach.js',
       'career-linkedin.js',
       'mission-control.js',
-      'rag-admin-ui.js',
-      'rag-jobs-ui.js',
     ],
 
     audit: [
