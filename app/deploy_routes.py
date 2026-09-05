@@ -14,12 +14,15 @@ from app.db import get_db
 from app.models import Project
 from app.security import Principal, Role, require_roles
 from app.services.audit import record
-from app.services.host_actions import queue_host_action
 
 
 router = APIRouter(prefix="/api/admin/deployments", tags=["admin-deployments"])
 manage_deployments = require_roles(Role.SUPER_ADMIN)
 _CONFIG_KEY = "manual_deploy"
+_LEGACY_DEPLOY_DISABLED = (
+    "Deploy manual por comando foi desativado por segurança. "
+    "Use um fluxo de deploy estruturado por provedor/CI ou uma ação de host nomeada."
+)
 
 
 class ManualDeployConfig(BaseModel):
@@ -27,10 +30,9 @@ class ManualDeployConfig(BaseModel):
     environment: str = Field(default="homolog", min_length=1, max_length=40)
     branch: str = Field(default="main", min_length=1, max_length=120)
     workdir: str = Field(default="", min_length=1, max_length=500)
-    command: str = Field(default="", min_length=1, max_length=4000)
     timeout_seconds: int = Field(default=900, ge=30, le=3600)
 
-    @field_validator("environment", "branch", "workdir", "command")
+    @field_validator("environment", "branch", "workdir")
     @classmethod
     def clean_text(cls, value: str) -> str:
         value = value.strip()
@@ -69,7 +71,6 @@ def _deploy_config(project: Project) -> dict[str, Any]:
             "environment": "homolog",
             "branch": project.default_branch or "main",
             "workdir": "",
-            "command": "",
             "timeout_seconds": 900,
         }
     return {
@@ -77,7 +78,6 @@ def _deploy_config(project: Project) -> dict[str, Any]:
         "environment": str(raw.get("environment") or "homolog"),
         "branch": str(raw.get("branch") or project.default_branch or "main"),
         "workdir": str(raw.get("workdir") or ""),
-        "command": str(raw.get("command") or ""),
         "timeout_seconds": int(raw.get("timeout_seconds") or 900),
     }
 
@@ -148,6 +148,8 @@ def list_manual_deployments(
             "repository_url": project.repository_url,
             "default_branch": project.default_branch,
             "config": _deploy_config(project),
+            "manual_execution_available": False,
+            "manual_execution_reason": _LEGACY_DEPLOY_DISABLED,
             "last_run": _recent_project_action(project.id),
         }
         for project in projects
@@ -178,6 +180,7 @@ def save_manual_deployment(
             "workdir": payload.workdir,
             "enabled": payload.enabled,
             "timeout_seconds": payload.timeout_seconds,
+            "shell_command_supported": False,
         },
     )
     db.commit()
@@ -185,6 +188,8 @@ def save_manual_deployment(
         "project_id": project.id,
         "project_name": project.name,
         "config": payload.model_dump(),
+        "manual_execution_available": False,
+        "manual_execution_reason": _LEGACY_DEPLOY_DISABLED,
     }
 
 
@@ -203,38 +208,22 @@ def run_manual_deployment(
     if not config.enabled:
         raise HTTPException(status_code=409, detail="Deploy manual está desativado para este projeto")
 
-    request = queue_host_action(
-        "manual_deploy",
-        actor=principal.actor,
-        project_id=project.id,
-        workspace_id=project.workspace_id,
-        project_name=project.name,
-        environment=config.environment,
-        branch=config.branch,
-        workdir=config.workdir,
-        command=config.command,
-        timeout_seconds=config.timeout_seconds,
-    )
     record(
         db,
         workspace_id=project.workspace_id,
         project_id=project.id,
         actor=principal.actor,
-        action="deployment.manual_queued",
+        action="deployment.manual_blocked",
+        outcome="blocked",
         details={
-            "host_action_id": request["id"],
+            "reason": "legacy_shell_command_disabled",
             "environment": config.environment,
             "branch": config.branch,
             "workdir": config.workdir,
         },
     )
     db.commit()
-    return {
-        "project_id": project.id,
-        "project_name": project.name,
-        "host_action": request,
-        "message": "Deploy manual enviado para execução no host.",
-    }
+    raise HTTPException(status_code=409, detail=_LEGACY_DEPLOY_DISABLED)
 
 
 @router.get("/actions/{action_id}")
