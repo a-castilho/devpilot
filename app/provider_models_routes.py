@@ -9,8 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ProviderCredential, Workspace
-from app.security import require_access
+from app.models import ProviderCredential
+from app.security import Principal, require_access, session_principal
 from app.services.audit import record
 from app.services.provider_models import (
     REFERENCE_CATALOG_DATE,
@@ -22,6 +22,7 @@ from app.services.provider_models import (
     reference_provider_models,
 )
 from app.services.vault import Vault
+from app.services.workspace_scope import workspace_for_principal
 
 router = APIRouter(prefix="/api/providers", dependencies=[Depends(require_access)])
 
@@ -44,15 +45,6 @@ class ProviderEnabledRequest(BaseModel):
 
 class ProviderModelsUpdateRequest(BaseModel):
     models: list[str] = Field(min_length=1, max_length=500)
-
-
-def workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        item = Workspace(name="DevPilot", slug="default")
-        db.add(item)
-        db.flush()
-    return item
 
 
 def stored_models(item: ProviderCredential | None) -> list[str]:
@@ -101,8 +93,11 @@ def decrypt_credential(item: ProviderCredential) -> str:
 
 
 @router.get("/model-catalog")
-def model_catalog(db: Session = Depends(get_db)):
-    ws = workspace(db)
+def model_catalog(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
+):
+    ws = workspace_for_principal(db, principal)
     items = db.scalars(
         select(ProviderCredential)
         .where(
@@ -147,9 +142,13 @@ def model_catalog(db: Session = Depends(get_db)):
 
 
 @router.post("/model-catalog/refresh")
-def refresh_model_catalog(db: Session = Depends(get_db), actor: str = Depends(require_access)):
+def refresh_model_catalog(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
+    actor: str = Depends(require_access),
+):
     """Refresh available catalogs without overwriting the user's selected model set."""
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     items = db.scalars(
         select(ProviderCredential)
         .where(
@@ -210,9 +209,10 @@ def refresh_model_catalog(db: Session = Depends(get_db), actor: str = Depends(re
 def discover_models(
     payload: ProviderDiscoveryRequest,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     try:
         models = discover_provider_models(payload.provider, payload.api_key)
     except ProviderModelDiscoveryError as error:
@@ -252,9 +252,10 @@ def discover_models(
 def connect_provider(
     payload: ProviderConnectRequest,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     provider = payload.provider.strip().lower()
     models = normalize_model_ids(payload.models)
     if provider in SUPPORTED_MODEL_PROVIDERS:
@@ -303,9 +304,13 @@ def connect_provider(
 
 
 @router.get("/{connection_id}/models")
-def connection_models(connection_id: str, db: Session = Depends(get_db)):
+def connection_models(
+    connection_id: str,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
+):
     """Return selected models plus safe available options; credentials never leave the server."""
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     item = credential(db, ws.id, connection_id)
     selected = stored_models(item)
 
@@ -346,9 +351,10 @@ def update_connection_models(
     connection_id: str,
     payload: ProviderModelsUpdateRequest,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     item = credential(db, ws.id, connection_id)
     models = normalize_model_ids(payload.models)
     if not models:
@@ -407,9 +413,10 @@ def set_provider_enabled(
     connection_id: str,
     payload: ProviderEnabledRequest,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     item = credential(db, ws.id, connection_id)
     item.enabled = payload.enabled
     record(
@@ -427,9 +434,10 @@ def set_provider_enabled(
 def delete_provider(
     connection_id: str,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_access),
 ):
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     item = credential(db, ws.id, connection_id)
     record(
         db,
