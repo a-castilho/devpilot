@@ -8,12 +8,15 @@ CSS = ROOT / "app" / "static" / "mobile-accordion-menu.css"
 INDEX = ROOT / "app" / "static" / "index.html"
 
 
-def test_response_manager_is_loaded_with_mobile_shell():
+def test_response_manager_stays_standalone_from_mobile_shell():
     html = INDEX.read_text(encoding="utf-8")
     loader = LOADER_JS.read_text(encoding="utf-8")
+    responses = RESPONSES_JS.read_text(encoding="utf-8")
     assert "mobile-accordion-menu.js" in html
     assert "mobile-accordion-menu.css" in html
-    assert "/assets/response-manager.js" in loader
+    assert "/assets/response-manager.js" not in loader
+    assert "document.createElement('script')" not in loader
+    assert "window.DevPilotResponses" in responses
 
 
 def test_response_manager_exposes_status_types_and_form_feedback():
