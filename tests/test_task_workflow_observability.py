@@ -8,9 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_task_workflow_observability_is_lazy_loaded_with_tasks():
     loader = (ROOT / "app/static/feature-loader.js").read_text()
+    tasks_bundle = loader.split("tasks: [", 1)[1].split("tasksAnalytics:", 1)[0]
 
-    assert "task-workflow-observability.js" in loader
-    assert "tasks: ['task-analytics.js'" in loader
+    assert "'task-workflow-observability.js'" in tasks_bundle
+    assert "tasksAnalytics: ['task-analytics.js']" in loader
 
 
 def test_task_workflow_observability_reuses_protected_runner_health():
