@@ -16,6 +16,11 @@
 
   document.querySelector('#project-builder-sticky-action')?.remove();
 
+  const GAME_PROJECT_KEY = 'devpilot-build-game-project';
+  const GAME_MISSION_KEY = 'devpilot-build-game-mission';
+  const GAME_DRAFT_PROJECT_KEY = 'devpilot-game-v74-project';
+  const GAME_DRAFT_GOAL_KEY = 'devpilot-game-v74-goal';
+
   const slugify = value => String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -43,6 +48,17 @@
       return;
     }
     document.querySelector('[data-view="projects"], .nav[data-view="projects"]')?.click?.();
+  }
+
+  function prepareGame(project, description) {
+    const projectId = String(project?.id || '').trim();
+    if (!projectId) return;
+    const goal = String(description || '').trim();
+    localStorage.setItem(GAME_PROJECT_KEY, projectId);
+    localStorage.setItem(GAME_DRAFT_PROJECT_KEY, projectId);
+    localStorage.removeItem(GAME_MISSION_KEY);
+    if (goal) localStorage.setItem(GAME_DRAFT_GOAL_KEY, goal);
+    else localStorage.removeItem(GAME_DRAFT_GOAL_KEY);
   }
 
   async function request(path, options = {}) {
@@ -180,7 +196,7 @@
     submit.textContent = 'Criando…';
 
     try {
-      await request('/projects', {
+      const created = await request('/projects', {
         method: 'POST',
         body: JSON.stringify({
           name,
@@ -193,8 +209,9 @@
           codex_config: {simple_setup: true, project_type: projectType, model: 'gpt-5.4'},
         }),
       });
+      prepareGame(created, description);
       if (typeof window.loadProjects === 'function') await Promise.resolve(window.loadProjects()).catch(() => null);
-      notify(`Projeto ${name} criado.`);
+      notify(`Projeto ${name} criado e pronto para iniciar a esteira.`);
       form.reset();
       goProjects();
     } catch (error) {
