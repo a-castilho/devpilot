@@ -147,6 +147,7 @@ def persist_deferred_project(
     config["repository_provision_state"] = (
         "queued" if source == "automatic_provision_queued" else "pending"
     )
+    config.pop("repository_provision_error", None)
 
     item = Project(
         workspace_id=ws.id,
@@ -196,6 +197,13 @@ def provision_repository_in_background(
         if not project or str(project.repository_url or "").strip():
             return
 
+        config = project_config(project)
+        config["repository_pending"] = True
+        config["repository_provision_state"] = "provisioning"
+        config.pop("repository_provision_error", None)
+        project.codex_config = json.dumps(config)
+        db.commit()
+
         organization: Organization | None = None
         try:
             organization = authorized_organization(db, workspace_id)
@@ -207,10 +215,12 @@ def provision_repository_in_background(
                 access_token,
             )
         except Exception as error:  # external provider failure must never unwind the registration response
+            message = str(error.detail) if isinstance(error, HTTPException) else str(error)
             config = project_config(project)
             config["repository_pending"] = True
             config["repository_mode"] = "deferred"
             config["repository_provision_state"] = "failed"
+            config["repository_provision_error"] = message[:2000]
             project.codex_config = json.dumps(config)
             record(
                 db,
@@ -222,7 +232,7 @@ def provision_repository_in_background(
                 details={
                     "organization_id": organization.id if organization else None,
                     "repository_name": project.slug,
-                    "error": str(error.detail) if isinstance(error, HTTPException) else str(error),
+                    "error": message,
                     "background": True,
                 },
             )
@@ -241,6 +251,7 @@ def provision_repository_in_background(
         config["repository_pending"] = False
         config["repository_mode"] = "automatic"
         config["repository_provision_state"] = "ready"
+        config.pop("repository_provision_error", None)
         project.codex_config = json.dumps(config)
 
         repository = db.scalar(select(Repository).where(Repository.project_id == project.id))
