@@ -31,6 +31,7 @@
     "app/services/rag_*.py",
     "app/services/alternating_flow.py",
     "app/services/executor.py",
+    "app/services/recovery.py",
     "app/services/git_reader.py",
     "app/services/github_*.py",
     "app/services/ollama_git_context.py",
@@ -72,6 +73,7 @@
         "app/embedded_worker.py",
         "app/services/alternating_flow.py",
         "app/services/executor.py",
+        "app/services/recovery.py",
         "app/static/task-*.js",
         "app/static/tasks-*.js"
       ],
@@ -79,7 +81,8 @@
         "tests/test_alternating_task_flow.py",
         "tests/test_embedded_worker.py",
         "tests/test_task_*.py",
-        "tests/test_tasks_*.py"
+        "tests/test_tasks_*.py",
+        "tests/test_git_credential_boundary.py"
       ],
       "browser_tests": [
         "tests/test_critical_flows_browser_e2e.py"
@@ -147,6 +150,8 @@
       "source": [
         "app/*github*.py",
         "app/*git*.py",
+        "app/services/executor.py",
+        "app/services/recovery.py",
         "app/services/git_reader.py",
         "app/services/github_*.py",
         "app/services/ollama_git_context.py",
@@ -155,6 +160,7 @@
       ],
       "tests": [
         "tests/test_git_reader.py",
+        "tests/test_git_credential_boundary.py",
         "tests/test_github_provisioning.py",
         "tests/test_ollama_git_context.py"
       ],
