@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -8,8 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Run, Task, TaskStatus, Workspace
+from app.models import Project, Run, Task, TaskStatus, Workspace
+from app.project_provisioning_routes import provision_repository_in_background
 from app.security import require_access
+from app.services.audit import record
 from app.services.failure_recovery import (
     apply_user_guidance,
     ensure_failure_recovery_task,
@@ -117,6 +120,7 @@ def _payload(db: Session, original: Task) -> dict:
     )
     return {
         "task_id": original.id,
+        "project_id": original.project_id,
         "task_title": original.title,
         "task_status": _status_value(original.status),
         "state": state,
@@ -141,6 +145,57 @@ def _payload(db: Session, original: Task) -> dict:
     }
 
 
+def _recover_repository_dependency(db: Session, original: Task, failure: dict) -> bool:
+    code = str(failure.get("code") or "").strip().upper()
+    if code != "REPOSITORY_NOT_READY" or not original.project_id:
+        return False
+
+    project = db.scalar(
+        select(Project).where(
+            Project.id == original.project_id,
+            Project.workspace_id == original.workspace_id,
+        )
+    )
+    if not project:
+        return False
+
+    if not str(project.repository_url or "").strip():
+        provision_repository_in_background(
+            project.id,
+            project.workspace_id,
+            "owner",
+        )
+        db.expire_all()
+        project = db.scalar(
+            select(Project).where(
+                Project.id == original.project_id,
+                Project.workspace_id == original.workspace_id,
+            )
+        )
+
+    if not project or not str(project.repository_url or "").strip():
+        return False
+
+    original.status = TaskStatus.queued
+    original.updated_at = datetime.now(timezone.utc)
+    record(
+        db,
+        workspace_id=original.workspace_id,
+        project_id=original.project_id,
+        task_id=original.id,
+        actor="owner",
+        action="failure_recovery.repository_reprovisioned",
+        outcome="queued",
+        details={
+            "repository_url": project.repository_url,
+            "failure_code": code,
+            "proof_required": True,
+        },
+    )
+    db.flush()
+    return True
+
+
 @router.get("/tasks/{task_id}/recovery")
 def recovery_status(task_id: str, db: Session = Depends(get_db)):
     return _payload(db, _task(db, task_id))
@@ -153,6 +208,11 @@ def escalate_recovery(task_id: str, db: Session = Depends(get_db)):
         raise HTTPException(409, "Only failed or blocked tasks can enter recovery")
     run = latest_run_for_task(db, original.id)
     failure = failure_details(run)
+
+    if _recover_repository_dependency(db, original, failure):
+        db.commit()
+        return _payload(db, original)
+
     recovery = ensure_failure_recovery_task(
         db,
         original_task=original,
