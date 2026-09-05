@@ -3,10 +3,13 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 import pytest
 
+from app import deploy_routes
 from app.config import get_settings
 from app.deploy_routes import ManualDeployConfig
 from app.services.host_actions import queue_host_action
@@ -106,6 +109,39 @@ def test_legacy_command_field_is_rejected_by_manual_deploy_config():
                 "command": "docker compose up -d --build app",
             }
         )
+
+
+def test_retired_manual_deploy_endpoint_audits_every_attempt(monkeypatch):
+    project = SimpleNamespace(
+        id="project-1",
+        workspace_id="workspace-1",
+        default_branch="main",
+        codex_config="{}",
+    )
+    principal = SimpleNamespace(workspace_id="workspace-1", actor="user:super-admin")
+    recorded = []
+
+    class FakeDb:
+        commits = 0
+
+        def commit(self):
+            self.commits += 1
+
+    db = FakeDb()
+    monkeypatch.setattr(deploy_routes, "_project", lambda *_args, **_kwargs: project)
+    monkeypatch.setattr(deploy_routes, "record", lambda _db, **event: recorded.append(event))
+
+    with pytest.raises(HTTPException) as blocked:
+        deploy_routes.run_manual_deployment("project-1", db=db, principal=principal)
+
+    assert blocked.value.status_code == 409
+    assert db.commits == 1
+    assert len(recorded) == 1
+    assert recorded[0]["action"] == "deployment.manual_blocked"
+    assert recorded[0]["outcome"] == "blocked"
+    assert recorded[0]["details"]["reason"] == "legacy_shell_command_disabled"
+    assert recorded[0]["details"]["enabled"] is False
+    assert recorded[0]["details"]["workdir_configured"] is False
 
 
 def test_host_runner_has_no_free_form_shell_deploy_path():
