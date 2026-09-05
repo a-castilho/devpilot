@@ -45,7 +45,7 @@
     section.innerHTML = `
       <div class="section-head">
         <div>
-          <p>Configure e execute deploys manuais por projeto. A execução é enviada para a fila auditável do host.</p>
+          <p>Configurações legadas de deploy por projeto. Execução no host só pode ocorrer por ações nomeadas e fluxos estruturados.</p>
         </div>
         <button class="ghost" type="button" id="deploy-admin-refresh">Atualizar status</button>
       </div>
@@ -75,21 +75,18 @@
             <label>Diretório de trabalho
               <input name="workdir" placeholder="devpilot ou /home/usuario/Documents/devpilot" required>
             </label>
-            <label>Comando de deploy
-              <textarea name="command" rows="6" placeholder="git pull --ff-only origin main && docker compose up -d --build app" required></textarea>
-            </label>
-            <label class="check"><input name="enabled" type="checkbox"> Habilitar deploy manual para este projeto</label>
+            <label class="check"><input name="enabled" type="checkbox"> Manter configuração de deploy registrada para este projeto</label>
             <div class="deploy-admin-note">
-              <strong>Segurança operacional</strong>
-              <p class="hint">O comando é executado pelo runner local, dentro da raiz permitida por <code>DEVPILOT_DEPLOY_ROOT</code> (padrão: <code>~/Documents</code>). A API apenas enfileira a execução.</p>
+              <strong>Execução por shell desativada</strong>
+              <p class="hint" id="deploy-admin-security-note">Comandos livres não atravessam mais a fronteira container → host. Use deploy estruturado por provedor/CI ou ações de host nomeadas e auditáveis.</p>
             </div>
             <div class="deploy-admin-actions">
               <button class="primary" type="submit" id="deploy-admin-save">Salvar configuração</button>
-              <button class="ghost" type="button" id="deploy-admin-run">Executar deploy</button>
+              <button class="ghost" type="button" id="deploy-admin-run" disabled>Execução indisponível</button>
             </div>
           </form>
           <div style="margin-top:16px">
-            <span class="eyebrow">ÚLTIMA EXECUÇÃO</span>
+            <span class="eyebrow">ÚLTIMA EXECUÇÃO LEGADA</span>
             <div id="deploy-admin-status" class="deploy-admin-status">Nenhum deploy selecionado.</div>
           </div>
         </article>
@@ -123,10 +120,11 @@
     target.innerHTML = deployState.items.map(item => {
       const cfg = item.config || {};
       const last = item.last_run;
+      const execution = item.manual_execution_available === false ? 'execução bloqueada' : (cfg.enabled ? 'habilitado' : 'desativado');
       return `
         <button class="deploy-admin-project ${item.project_id === deployState.selectedId ? 'active' : ''}" type="button" data-project-id="${esc(item.project_id)}">
           <strong>${esc(item.project_name)}</strong>
-          <small>${esc(cfg.environment || 'homolog')} · ${cfg.enabled ? 'habilitado' : 'desativado'}</small>
+          <small>${esc(cfg.environment || 'homolog')} · ${esc(execution)}</small>
           <small>${last ? `${esc(last.status || 'queued')} · ${new Date(last.created_at).toLocaleString('pt-BR')}` : 'sem execução'}</small>
         </button>`;
     }).join('') || '<div class="empty">Nenhum projeto disponível.</div>';
@@ -145,14 +143,22 @@
     const form = document.getElementById('deploy-admin-form');
     if (!item || !form) return;
     const cfg = item.config || {};
+    const unavailable = item.manual_execution_available === false;
     document.getElementById('deploy-admin-title').textContent = item.project_name;
-    document.getElementById('deploy-admin-badge').textContent = cfg.enabled ? 'HABILITADO' : 'DESATIVADO';
+    document.getElementById('deploy-admin-badge').textContent = unavailable ? 'BLOQUEADO' : (cfg.enabled ? 'HABILITADO' : 'DESATIVADO');
     form.elements.environment.value = cfg.environment || 'homolog';
     form.elements.branch.value = cfg.branch || item.default_branch || 'main';
     form.elements.workdir.value = cfg.workdir || '';
-    form.elements.command.value = cfg.command || '';
     form.elements.timeout_seconds.value = Number(cfg.timeout_seconds || 900);
     form.elements.enabled.checked = Boolean(cfg.enabled);
+    const runButton = document.getElementById('deploy-admin-run');
+    if (runButton) {
+      runButton.disabled = unavailable || !cfg.enabled;
+      runButton.textContent = unavailable ? 'Execução indisponível' : 'Executar deploy';
+      runButton.title = unavailable ? String(item.manual_execution_reason || '') : '';
+    }
+    const note = document.getElementById('deploy-admin-security-note');
+    if (note && item.manual_execution_reason) note.textContent = item.manual_execution_reason;
     renderStatus(item.last_run);
   }
 
@@ -200,7 +206,6 @@
       environment: form.elements.environment.value,
       branch: form.elements.branch.value.trim(),
       workdir: form.elements.workdir.value.trim(),
-      command: form.elements.command.value.trim(),
       timeout_seconds: Number(form.elements.timeout_seconds.value || 900),
     };
     try {
@@ -218,6 +223,9 @@
   async function runDeployment() {
     const item = currentItem();
     if (!item) return toast('Selecione um projeto');
+    if (item.manual_execution_available === false) {
+      return toast(item.manual_execution_reason || 'Execução manual desativada por segurança');
+    }
     if (!item.config?.enabled) return toast('Habilite e salve o deploy manual antes de executar');
     const button = document.getElementById('deploy-admin-run');
     const original = button.textContent;
