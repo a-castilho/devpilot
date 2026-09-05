@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.models import Project, Run, Task, TaskStatus, Workspace
-from app.project_provisioning_routes import provision_repository_in_background
+from app.project_provisioning_routes import project_config, provision_repository_in_background
 from app.security import require_access
 from app.services.audit import record
 from app.services.failure_recovery import (
@@ -94,9 +94,45 @@ def _recovery_state(original: Task, recovery: Task | None) -> str:
     return "ready_to_recover"
 
 
+def _latest_repository_failure(db: Session, original: Task) -> dict | None:
+    if not original.project_id:
+        return None
+    project = db.scalar(
+        select(Project).where(
+            Project.id == original.project_id,
+            Project.workspace_id == original.workspace_id,
+        )
+    )
+    if not project or str(project.repository_url or "").strip():
+        return None
+    config = project_config(project)
+    state = str(config.get("repository_provision_state") or "").strip().lower()
+    error = str(config.get("repository_provision_error") or "").strip()
+    if state != "failed" or not error:
+        return None
+    return {
+        "category": "repository_not_ready",
+        "code": "REPOSITORY_NOT_READY",
+        "message": error,
+        "requires_authorization": any(
+            marker in error.casefold()
+            for marker in (
+                "credencial",
+                "credential",
+                "permission",
+                "permissão",
+                "forbidden",
+                "unauthorized",
+                "401",
+                "403",
+            )
+        ),
+    }
+
+
 def _payload(db: Session, original: Task) -> dict:
     original_run = latest_run_for_task(db, original.id)
-    original_failure = failure_details(original_run)
+    original_failure = _latest_repository_failure(db, original) or failure_details(original_run)
     recovery = find_failure_recovery_task(db, original)
     recovery_run = latest_run_for_task(db, recovery.id) if recovery else None
     recovery_failure = failure_details(recovery_run) if recovery_run else {
@@ -207,7 +243,7 @@ def escalate_recovery(task_id: str, db: Session = Depends(get_db)):
     if original.status not in {TaskStatus.failed, TaskStatus.blocked}:
         raise HTTPException(409, "Only failed or blocked tasks can enter recovery")
     run = latest_run_for_task(db, original.id)
-    failure = failure_details(run)
+    failure = _latest_repository_failure(db, original) or failure_details(run)
 
     if _recover_repository_dependency(db, original, failure):
         db.commit()
