@@ -5,13 +5,18 @@ from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app import api as core_api
+from app import product_delivery_routes as delivery
 from app.db import Base
 from app.frontend_ui_routes import project_summaries, task_detail
-from app.models import Project, ProviderCredential, Task, TaskStatus, Workspace
+from app.models import Project, ProviderCredential, Task, TaskStatus, User, Workspace
 from app.project_provisioning_routes import ProjectProvisionCreate, provision_project
 from app.provider_models_routes import connection_models, model_catalog
 from app.security import Principal, Role
-from app.services.workspace_scope import workspace_for_principal
+from app.services.workspace_scope import (
+    workspace_for_authenticated_session,
+    workspace_for_principal,
+)
 from app.workflow_observability_routes import task_workflow_evidence
 
 
@@ -38,6 +43,20 @@ def _workspaces(db: Session) -> tuple[Workspace, Workspace]:
     return default, customer
 
 
+def _install_authenticated_user(db: Session, workspace: Workspace) -> User:
+    user = User(
+        workspace_id=workspace.id,
+        email=f"user-{workspace.slug}@example.com",
+        password_hash="not-used-in-isolation-test",
+        role=Role.OWNER.value,
+        active=True,
+    )
+    db.add(user)
+    db.commit()
+    db.info["principal_user_id"] = user.id
+    return user
+
+
 def test_workspace_resolver_uses_principal_id_instead_of_default_slug():
     db = _session()
     default, customer = _workspaces(db)
@@ -47,6 +66,28 @@ def test_workspace_resolver_uses_principal_id_instead_of_default_slug():
     assert resolved.id == customer.id
     assert resolved.id != default.id
     assert resolved.slug == "cliente-b"
+
+
+def test_authenticated_session_resolver_uses_user_workspace_and_caches_it():
+    db = _session()
+    default, customer = _workspaces(db)
+    _install_authenticated_user(db, customer)
+
+    resolved = workspace_for_authenticated_session(db)
+
+    assert resolved.id == customer.id
+    assert resolved.id != default.id
+    assert db.info["principal_workspace_id"] == customer.id
+
+
+def test_authenticated_session_resolver_without_principal_context_fails_closed():
+    db = _session()
+    _workspaces(db)
+
+    with pytest.raises(HTTPException) as error:
+        workspace_for_authenticated_session(db)
+
+    assert error.value.status_code == 401
 
 
 def test_project_provisioning_persists_in_non_default_principal_workspace():
@@ -161,6 +202,31 @@ def test_lightweight_project_list_only_returns_principal_workspace():
     assert foreign.id not in {item["id"] for item in payload}
 
 
+def test_core_api_project_list_uses_authenticated_session_workspace():
+    db = _session()
+    default, customer = _workspaces(db)
+    _install_authenticated_user(db, customer)
+    foreign = Project(
+        workspace_id=default.id,
+        name="Projeto Default Core",
+        slug="projeto-default-core",
+        repository_url="https://github.com/example/projeto-default-core.git",
+    )
+    own = Project(
+        workspace_id=customer.id,
+        name="Projeto Customer Core",
+        slug="projeto-customer-core",
+        repository_url="https://github.com/example/projeto-customer-core.git",
+    )
+    db.add_all([foreign, own])
+    db.commit()
+
+    payload = core_api.list_projects(db=db)
+
+    assert [item.id for item in payload] == [own.id]
+    assert foreign.id not in {item.id for item in payload}
+
+
 def test_task_detail_from_another_workspace_is_hidden():
     db = _session()
     default, customer = _workspaces(db)
@@ -219,6 +285,27 @@ def test_workflow_evidence_from_another_workspace_is_hidden_before_provider_look
 
     assert error.value.status_code == 404
     assert error.value.detail == "Task not found"
+
+
+def test_delivery_project_lookup_hides_other_workspace_project():
+    db = _session()
+    default, customer = _workspaces(db)
+    _install_authenticated_user(db, customer)
+    foreign = Project(
+        workspace_id=default.id,
+        name="Entrega Default",
+        slug="entrega-default",
+        repository_url="https://github.com/example/entrega-default.git",
+    )
+    db.add(foreign)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        delivery.project_or_404(db, foreign.id)
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Projeto não encontrado."
+    assert db.scalar(select(Project).where(Project.id == foreign.id)) is not None
 
 
 def test_missing_principal_workspace_fails_closed():
