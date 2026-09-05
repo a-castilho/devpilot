@@ -15,7 +15,9 @@ def test_successful_login_hands_off_without_reload():
     assert "installLogout()" in handoff_block
     assert "revealDashboard()" in handoff_block
     assert "completeAuth(true)" in handoff_block
-    assert "sessionStorage" not in submit_block
+    assert "sessionStorage.setItem(TOKEN_KEY" not in submit_block
+    assert "sessionStorage.getItem(TOKEN_KEY" not in submit_block
+    assert "sessionStorage.removeItem(AUTH_MESSAGE_KEY)" in submit_block
     assert "location.reload()" not in submit_block
 
 
