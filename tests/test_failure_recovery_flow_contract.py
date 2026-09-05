@@ -58,6 +58,16 @@ def test_backend_exposes_full_recovery_state_machine_without_schema_migration():
     assert "mapped_column" not in SERVICE
 
 
+def test_repository_not_ready_reprovisions_and_requeues_original_task():
+    assert 'code != "REPOSITORY_NOT_READY"' in ROUTES
+    assert "provision_repository_in_background(" in ROUTES
+    assert "if not str(project.repository_url or \"\").strip():" in ROUTES
+    assert "original.status = TaskStatus.queued" in ROUTES
+    assert 'action="failure_recovery.repository_reprovisioned"' in ROUTES
+    assert "if _recover_repository_dependency(db, original, failure):" in ROUTES
+    assert '"project_id": original.project_id' in ROUTES
+
+
 def test_agent_recovery_is_idempotent_and_never_recursively_spawns_itself():
     assert 'Task.source == "failure-recovery"' in SERVICE
     assert "if is_failure_recovery_task(original_task):" in SERVICE
