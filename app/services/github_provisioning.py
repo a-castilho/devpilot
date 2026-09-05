@@ -9,6 +9,7 @@ from app.services.organizations import normalize_github_repository
 
 
 MAX_REPOSITORY_NAME_ATTEMPTS = 20
+MAX_GITHUB_DESCRIPTION_LENGTH = 350
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,12 @@ def _repository_candidate(repository_name: str, attempt: int) -> str:
         return repository_name
     suffix = f"-{attempt}"
     return f"{repository_name[:100 - len(suffix)].rstrip('-')}{suffix}"
+
+
+def _github_repository_description(value: str) -> str:
+    """Normalize product prose to GitHub's repository-description contract."""
+    clean = " ".join(str(value or "").split())
+    return clean[:MAX_GITHUB_DESCRIPTION_LENGTH].rstrip()
 
 
 def _response_payload(response) -> dict:
@@ -364,12 +371,13 @@ def create_github_repository(
 ) -> dict:
     """Create a private deployable repository, resolving name collisions automatically."""
     _ensure_token(access_token)
+    github_description = _github_repository_description(description)
 
     for attempt in range(1, MAX_REPOSITORY_NAME_ATTEMPTS + 1):
         candidate = _repository_candidate(repository_name, attempt)
         payload = {
             "name": candidate,
-            "description": description,
+            "description": github_description,
             "private": True,
             "auto_init": True,
         }
