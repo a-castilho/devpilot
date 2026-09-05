@@ -5,6 +5,7 @@ ENGINE = ROOT / "app/static/build-game.js"
 SUBPHASES = ROOT / "app/static/build-game-subphases.js"
 FINAL_SUMMARY = ROOT / "app/static/game/final-delivery-summary.js"
 PROJECT_BUILDER = ROOT / "app/static/project-builder.js"
+DELIVERY_UI = ROOT / "app/static/product-delivery-ui.js"
 LINUX_ROUTES = ROOT / "app/linux_routes.py"
 LINUX_UI = ROOT / "app/static/linux-game-access.js"
 
@@ -72,3 +73,14 @@ def test_new_project_bootstraps_standard_cloud_environment() -> None:
     assert "/delivery/auto`" in source
     assert "const infrastructure = await provisionInfrastructure(created)" in source
     assert "Provisionamento Neon + Render + Vercel iniciado automaticamente." in source
+
+
+def test_project_card_exposes_public_delivery_url() -> None:
+    source = text(DELIVERY_UI)
+
+    assert "const url = String(delivery?.url || '').trim()" in source
+    assert "product-delivery-public-url" in source
+    assert "Abrir ambiente publicado" in source
+    assert "🌐 ${esc(url)} ↗" in source
+    assert "Array.from({length:7}" in source
+    assert "Array.from({length:6}" not in source
