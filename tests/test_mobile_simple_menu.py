@@ -7,18 +7,18 @@ RESPONSE_JS = Path("app/static/response-manager.js")
 INDEX = Path("app/static/index.html")
 
 
-def test_mobile_simple_menu_keeps_four_primary_actions():
+def test_mobile_simple_menu_keeps_five_primary_actions():
     js = MENU_JS.read_text(encoding="utf-8")
 
     assert "mobile-simple-nav" in js
     assert 'data-simple-target="overview"' in js
     assert 'data-simple-target="projects"' in js
     assert 'data-simple-target="tasks"' in js
+    assert "data-simple-game" in js
     assert "data-simple-menu-open" in js
-    assert "<small>Início</small>" in js
-    assert "<small>Projetos</small>" in js
-    assert "<small>Tarefas</small>" in js
-    assert "<small>Menu</small>" in js
+    for label in ("Início", "Projetos", "Execuções", "Jogo", "Menu"):
+        assert f"<small>{label}</small>" in js
+    assert "grid-template-columns:repeat(5" in js
 
 
 def test_mobile_menu_reuses_authoritative_navigation_and_permissions():
@@ -28,19 +28,21 @@ def test_mobile_menu_reuses_authoritative_navigation_and_permissions():
     assert "item.hidden" in js
     assert "nav-super-admin-forbidden" in js
     assert "item.click()" in js
-    assert "new MutationObserver(sync)" in js
+    assert "MutationObserver" not in js
+    assert "devpilot:view-changed" in js
+    assert "devpilot:feature-ready" in js
 
 
-def test_mobile_menu_bootstraps_after_dom_and_waits_for_sidebar():
+def test_mobile_menu_bootstraps_after_dom_without_polling_sidebar():
     js = MENU_JS.read_text(encoding="utf-8")
 
     assert "function mountMobileMenu()" in js
-    assert "function bootstrapMobileMenu()" in js
     assert "document.readyState === 'loading'" in js
     assert "DOMContentLoaded" in js
-    assert "waitObserver.observe(document.documentElement" in js
     assert "if (!sidebar || !sourceNav) return false" in js
-    assert "if (document.querySelector('.mobile-simple-nav')) return true" in js
+    assert "if (existingRoot)" in js
+    assert "bootstrapMobileMenu" not in js
+    assert "waitObserver" not in js
 
 
 def test_mobile_menu_is_simple_not_favorites_search_or_nested_accordion():
@@ -64,6 +66,7 @@ def test_mobile_menu_supports_keyboard_close_and_accessibility():
     assert "aria-expanded" in js
     assert "event.key === 'Escape'" in js
     assert "aria-label=\"Fechar menu\"" in js
+    assert "aria-current" in js
 
 
 def test_mobile_css_respects_safe_area_and_touch_targets():
@@ -74,16 +77,16 @@ def test_mobile_css_respects_safe_area_and_touch_targets():
     assert "env(safe-area-inset-right)" in css
     assert "env(safe-area-inset-top)" in css
     assert "touch-action:manipulation" in css
-    assert "grid-template-columns:repeat(4,minmax(0,1fr))" in css
     assert "body.mobile-simple-open{overflow:hidden!important}" in css
 
 
-def test_response_manager_is_loaded_once_from_mobile_runtime():
+def test_response_manager_remains_standalone_from_mobile_menu():
     js = MENU_JS.read_text(encoding="utf-8")
     responses = RESPONSE_JS.read_text(encoding="utf-8")
 
-    assert "/assets/response-manager.js?v=20260825-1" in js
-    assert "data-response-manager" in js
+    assert "response-manager.js" not in js
+    assert "data-response-manager" not in js
+    assert "document.createElement('script')" not in js
     assert "window.DevPilotResponses" in responses
     assert "aria-live" in responses
     assert "data-type=\"loading\"" in responses
