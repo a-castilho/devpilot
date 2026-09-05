@@ -26,9 +26,10 @@ def test_task_analytics_uses_rendered_rows_when_state_is_empty_or_divergent():
     assert "return stateTasks.length ? stateTasks : tableTasks" in script
 
 
-def test_task_analytics_refreshes_when_rendered_table_changes():
+def test_task_analytics_refreshes_from_explicit_task_render_event_without_observer():
     script = read("app/static/task-analytics.js")
 
-    assert "new MutationObserver" in script
-    assert "window.renderTaskAnalytics()" in script
-    assert "analyticsObserved" in script
+    assert "devpilot:tasks-rendered" in script
+    assert "scheduleAnalytics" in script
+    assert "window.renderTaskAnalytics?.()" in script
+    assert "MutationObserver" not in script
