@@ -15,6 +15,7 @@ from app.models import Project, ProviderCredential, Repository, Workspace
 from app.security import Principal, Role, require_access, require_roles, require_super_admin
 from app.services.audit import record
 from app.services.vault import Vault
+from app.services.workspace_scope import workspace_for_authenticated_session
 
 
 NEON_API = "https://console.neon.tech/api/v2"
@@ -35,12 +36,7 @@ def operator(principal: Principal = Depends(require_roles(Role.OWNER, Role.ADMIN
 
 
 def workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        item = Workspace(name="DevPilot", slug="default")
-        db.add(item)
-        db.flush()
-    return item
+    return workspace_for_authenticated_session(db)
 
 
 def project_or_404(db: Session, project_id: str) -> Project:
