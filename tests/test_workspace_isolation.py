@@ -6,11 +6,13 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from app.db import Base
-from app.models import Project, ProviderCredential, Workspace
+from app.frontend_ui_routes import project_summaries, task_detail
+from app.models import Project, ProviderCredential, Task, TaskStatus, Workspace
 from app.project_provisioning_routes import ProjectProvisionCreate, provision_project
 from app.provider_models_routes import connection_models, model_catalog
 from app.security import Principal, Role
 from app.services.workspace_scope import workspace_for_principal
+from app.workflow_observability_routes import task_workflow_evidence
 
 
 def _session() -> Session:
@@ -128,6 +130,95 @@ def test_provider_connection_from_another_workspace_is_hidden():
 
     assert error.value.status_code == 404
     assert error.value.detail == "Conexão de IA não encontrada"
+
+
+def test_lightweight_project_list_only_returns_principal_workspace():
+    db = _session()
+    default, customer = _workspaces(db)
+    foreign = Project(
+        workspace_id=default.id,
+        name="Projeto Default",
+        slug="projeto-default",
+        repository_url="https://github.com/example/projeto-default.git",
+    )
+    own = Project(
+        workspace_id=customer.id,
+        name="Projeto Cliente",
+        slug="projeto-cliente",
+        repository_url="https://github.com/example/projeto-cliente.git",
+    )
+    db.add_all([foreign, own])
+    db.commit()
+
+    payload = project_summaries(
+        limit=50,
+        include_project_id=None,
+        db=db,
+        principal=_principal(customer.id),
+    )
+
+    assert [item["id"] for item in payload] == [own.id]
+    assert foreign.id not in {item["id"] for item in payload}
+
+
+def test_task_detail_from_another_workspace_is_hidden():
+    db = _session()
+    default, customer = _workspaces(db)
+    project = Project(
+        workspace_id=default.id,
+        name="Projeto Default",
+        slug="projeto-default",
+        repository_url="https://github.com/example/projeto-default.git",
+    )
+    db.add(project)
+    db.flush()
+    task = Task(
+        workspace_id=default.id,
+        project_id=project.id,
+        title="Tarefa privada",
+        prompt="conteúdo privado",
+        status=TaskStatus.completed,
+    )
+    db.add(task)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        task_detail(task.id, db=db, principal=_principal(customer.id))
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Task not found"
+
+
+def test_workflow_evidence_from_another_workspace_is_hidden_before_provider_lookup():
+    db = _session()
+    default, customer = _workspaces(db)
+    project = Project(
+        workspace_id=default.id,
+        name="Projeto Default",
+        slug="projeto-default",
+        repository_url="https://github.com/example/projeto-default.git",
+    )
+    db.add(project)
+    db.flush()
+    task = Task(
+        workspace_id=default.id,
+        project_id=project.id,
+        title="Tarefa workflow privada",
+        prompt="teste",
+        status=TaskStatus.completed,
+    )
+    db.add(task)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        task_workflow_evidence(
+            task.id,
+            db=db,
+            principal=_principal(customer.id),
+        )
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Task not found"
 
 
 def test_missing_principal_workspace_fails_closed():
