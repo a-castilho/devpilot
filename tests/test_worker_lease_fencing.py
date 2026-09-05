@@ -99,6 +99,28 @@ def test_claim_uses_unique_fencing_token_and_heartbeat_extends_lease(isolated_ru
         assert row["claim_owner"] == claim_owner
 
 
+def test_claim_is_portable_and_second_session_cannot_take_same_task(isolated_runtime):
+    _engine, SessionFactory, task_id = isolated_runtime
+    source = inspect.getsource(orchestrator.claim_next_task)
+    assert ".returning(" not in source
+    assert "int(result.rowcount or 0) != 1" in source
+
+    with SessionFactory() as first:
+        claimed = orchestrator.claim_next_task(first, owner="worker:first")
+        assert claimed is not None
+        assert claimed.id == task_id
+
+    with SessionFactory() as second:
+        assert orchestrator.claim_next_task(second, owner="worker:second") is None
+
+    with SessionFactory() as verify:
+        task = verify.get(Task, task_id)
+        row = _runtime_row(verify, task_id)
+        assert task is not None
+        assert task.status == TaskStatus.running
+        assert str(row["claim_owner"]).startswith("worker:first:")
+
+
 def test_stale_worker_detects_replacement_owner_before_control_poll(isolated_runtime):
     _engine, SessionFactory, task_id = isolated_runtime
     with SessionFactory() as db:

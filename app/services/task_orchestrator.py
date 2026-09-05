@@ -489,7 +489,7 @@ def _recover_expired_claims(db: Session) -> None:
 
 
 def claim_next_task(db: Session, owner: str) -> Task | None:
-    """Acquire one queued task with compare-and-set semantics across concurrent workers."""
+    """Acquire one queued task with portable compare-and-set semantics across workers."""
     ensure_orchestrator_schema()
     _recover_expired_claims(db)
     for _ in range(8):
@@ -499,22 +499,23 @@ def claim_next_task(db: Session, owner: str) -> Task | None:
                 TASK_RUNTIME.c.state.in_(tuple(STOP_STATES)),
             )
         )
-        candidate = (
+        task_id = db.scalar(
             select(Task.id)
             .where(Task.status == TaskStatus.queued, ~stopped)
             .order_by(Task.priority.desc(), Task.created_at, Task.id)
             .limit(1)
-            .scalar_subquery()
-        )
-        task_id = db.scalar(
-            update(Task)
-            .where(Task.id == candidate, Task.status == TaskStatus.queued)
-            .values(status=TaskStatus.running)
-            .returning(Task.id)
         )
         if not task_id:
             db.rollback()
             return None
+        result = db.execute(
+            update(Task)
+            .where(Task.id == task_id, Task.status == TaskStatus.queued)
+            .values(status=TaskStatus.running)
+        )
+        if int(result.rowcount or 0) != 1:
+            db.rollback()
+            continue
         task = db.get(Task, task_id)
         if task is None:
             db.rollback()
