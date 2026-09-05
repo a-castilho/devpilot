@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+from pydantic import ValidationError
 import pytest
 
 from app.config import get_settings
@@ -93,18 +94,18 @@ def test_legacy_manual_deploy_file_is_rejected_without_running_command(tmp_path)
     assert payload["detail"] == "action_not_allowed: manual_deploy"
 
 
-def test_legacy_command_field_is_not_persisted_by_manual_deploy_config():
-    config = ManualDeployConfig.model_validate(
-        {
-            "enabled": True,
-            "environment": "homolog",
-            "branch": "main",
-            "workdir": "devpilot",
-            "timeout_seconds": 900,
-            "command": "docker compose up -d --build app",
-        }
-    )
-    assert "command" not in config.model_dump()
+def test_legacy_command_field_is_rejected_by_manual_deploy_config():
+    with pytest.raises(ValidationError, match="command"):
+        ManualDeployConfig.model_validate(
+            {
+                "enabled": True,
+                "environment": "homolog",
+                "branch": "main",
+                "workdir": "devpilot",
+                "timeout_seconds": 900,
+                "command": "docker compose up -d --build app",
+            }
+        )
 
 
 def test_host_runner_has_no_free_form_shell_deploy_path():
