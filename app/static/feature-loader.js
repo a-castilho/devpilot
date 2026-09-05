@@ -72,6 +72,7 @@
      */
     tasks: [
       'tasks-operational-ui.js',
+      'task-workflow-observability.js',
       'project-delete-ui.js',
       'task-recovery-flow.js',
       'tasks-recovery-layout-v41.js',
