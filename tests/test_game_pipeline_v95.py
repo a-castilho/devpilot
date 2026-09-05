@@ -59,4 +59,16 @@ def test_new_project_is_ready_for_a_fresh_game_round() -> None:
     assert "localStorage.setItem(GAME_DRAFT_PROJECT_KEY, projectId)" in source
     assert "localStorage.removeItem(GAME_MISSION_KEY)" in source
     assert "localStorage.setItem(GAME_DRAFT_GOAL_KEY, goal)" in source
-    assert "criado e pronto para iniciar a esteira" in source
+
+
+def test_new_project_bootstraps_standard_cloud_environment() -> None:
+    source = text(PROJECT_BUILDER)
+
+    assert "const INFRASTRUCTURE_PROVIDERS = ['neon', 'render', 'vercel']" in source
+    assert "auto_provision: true" in source
+    assert "environment: 'homolog'" in source
+    assert "providers: [...INFRASTRUCTURE_PROVIDERS]" in source
+    assert "async function provisionInfrastructure(project)" in source
+    assert "/delivery/auto`" in source
+    assert "const infrastructure = await provisionInfrastructure(created)" in source
+    assert "Provisionamento Neon + Render + Vercel iniciado automaticamente." in source
