@@ -8,16 +8,20 @@ import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 
 from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Organization, Project, ProviderCredential, Task
+from app.services.policy import normalize_repository_url
+from app.services.repository_paths import repository_path as isolated_repository_path
 from app.services.vault import Vault
 
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
+GITHUB_HOST = "github.com"
 READ_ONLY_MODE_MARKER = "[DEVPILOT_MODE=analysis-read-only]"
 CLIENT_REPORT_INSTRUCTIONS = (
     "IMPORTANT FINAL RESPONSE FORMAT. Your final answer is shown directly to a non-technical client. "
@@ -67,7 +71,12 @@ _SECRET_PATTERNS = (
 
 
 def repository_path(project: Project) -> Path:
-    return get_settings().repositories_dir / SAFE_NAME.sub("-", project.slug)
+    return isolated_repository_path(project)
+
+
+def validated_repository_url(project: Project) -> str:
+    """Re-validate persisted repository data before any network-capable Git command."""
+    return normalize_repository_url(str(project.repository_url or ""))
 
 
 def run(
@@ -95,20 +104,30 @@ def github_basic_authorization(access_token: str) -> str:
     return f"Authorization: Basic {encoded}"
 
 
-def git_environment(project: Project) -> dict[str, str]:
+def git_environment(project: Project, repository_url: str | None = None) -> dict[str, str]:
     environment = {"GIT_TERMINAL_PROMPT": "0"}
-    if not project.organization_id:
+    safe_repository_url = repository_url or validated_repository_url(project)
+    repository_host = str(urlparse(safe_repository_url).hostname or "").lower()
+
+    # Organization credentials managed by this service are GitHub.com PATs. Never
+    # attach one to another operator-allowed Git host or to a malformed legacy URL.
+    if repository_host != GITHUB_HOST or not project.organization_id:
         return environment
 
     with SessionLocal() as db:
         organization = db.scalar(
-            select(Organization).where(Organization.id == project.organization_id)
+            select(Organization).where(
+                Organization.id == project.organization_id,
+                Organization.workspace_id == project.workspace_id,
+                Organization.provider == "github",
+            )
         )
         if not organization or not organization.credential_id:
             return environment
         credential = db.scalar(
             select(ProviderCredential).where(
                 ProviderCredential.id == organization.credential_id,
+                ProviderCredential.workspace_id == project.workspace_id,
                 ProviderCredential.provider == "github",
                 ProviderCredential.enabled.is_(True),
             )
@@ -123,7 +142,7 @@ def git_environment(project: Project) -> dict[str, str]:
     environment.update(
         {
             "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_KEY_0": "http.https://github.com/.extraHeader",
             "GIT_CONFIG_VALUE_0": github_basic_authorization(access_token),
         }
     )
@@ -131,15 +150,30 @@ def git_environment(project: Project) -> dict[str, str]:
 
 
 def ensure_repository(project: Project) -> Path:
+    repository_url = validated_repository_url(project)
     path = repository_path(project)
-    git_env = git_environment(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    git_env = git_environment(project, repository_url)
     if not path.exists():
         result = run(
-            ["git", "clone", "--filter=blob:none", project.repository_url, str(path)],
+            ["git", "clone", "--filter=blob:none", repository_url, str(path)],
             env_overrides=git_env,
         )
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or "Unable to clone repository")
+
+    # A checkout is tenant/project-isolated. Never rewrite its remote implicitly:
+    # validate the current origin and fail closed if local state diverged from DB.
+    remote = run(["git", "remote", "get-url", "origin"], cwd=path)
+    if remote.returncode:
+        raise RuntimeError(remote.stderr.strip() or "Unable to read repository origin")
+    try:
+        current_origin = normalize_repository_url(remote.stdout.strip())
+    except ValueError as error:
+        raise RuntimeError("Repository origin is outside the allowed Git policy") from error
+    if current_origin != repository_url:
+        raise RuntimeError("Repository origin does not match the persisted repository URL")
+
     result = run(["git", "fetch", "--prune", "origin"], cwd=path, env_overrides=git_env)
     if result.returncode:
         raise RuntimeError(result.stderr.strip() or "Unable to fetch repository")
