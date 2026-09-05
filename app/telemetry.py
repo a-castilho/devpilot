@@ -13,8 +13,9 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from app.db import Base, get_db
-from app.models import Workspace, uid
+from app.models import uid
 from app.security import require_access
+from app.services.workspace_scope import workspace_for_authenticated_session
 
 
 router = APIRouter(prefix="/api/telemetry", dependencies=[Depends(require_access)])
@@ -76,13 +77,8 @@ def aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
 
-def default_workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        item = Workspace(name="DevPilot", slug="default")
-        db.add(item)
-        db.flush()
-    return item
+def _workspace(db: Session):
+    return workspace_for_authenticated_session(db)
 
 
 def redact_command(command: str) -> str:
@@ -363,7 +359,7 @@ def session_view(db: Session, item: TelemetrySession) -> dict[str, Any]:
 
 @router.post("/sessions")
 def create_session(payload: SessionCreate, db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     if expire_sessions(db, ws.id):
         db.flush()
     if active_session(db, ws.id):
@@ -386,7 +382,7 @@ def create_session(payload: SessionCreate, db: Session = Depends(get_db)):
 
 @router.get("/sessions/active")
 def get_active_session(db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     changed = expire_sessions(db, ws.id)
     item = active_session(db, ws.id)
     if changed:
@@ -396,7 +392,7 @@ def get_active_session(db: Session = Depends(get_db)):
 
 @router.get("/sessions")
 def list_sessions(limit: int = Query(default=20, ge=1, le=100), db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     if expire_sessions(db, ws.id):
         db.commit()
     items = db.scalars(
@@ -410,7 +406,7 @@ def list_sessions(limit: int = Query(default=20, ge=1, le=100), db: Session = De
 
 @router.get("/sessions/{session_id}")
 def get_session(session_id: str, db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     item = session_or_404(db, ws.id, session_id)
     if item.status == "recording" and aware(item.ends_at) <= now_utc():
         item.status = "completed"
@@ -421,7 +417,7 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
 
 @router.post("/sessions/{session_id}/events")
 def ingest_browser_events(session_id: str, payload: BrowserEventBatch, db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     item = session_or_404(db, ws.id, session_id)
     if item.status != "recording" or aware(item.ends_at) <= now_utc():
         if item.status == "recording":
@@ -449,7 +445,7 @@ def ingest_browser_events(session_id: str, payload: BrowserEventBatch, db: Sessi
 
 @router.post("/terminal/command")
 def ingest_terminal_command(payload: TerminalCommandIn, db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     changed = expire_sessions(db, ws.id)
     item = active_session(db, ws.id)
     if changed:
@@ -484,7 +480,7 @@ def ingest_terminal_command(payload: TerminalCommandIn, db: Session = Depends(ge
 
 @router.post("/sessions/{session_id}/stop")
 def stop_session(session_id: str, db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     item = session_or_404(db, ws.id, session_id)
     if item.status == "recording":
         item.status = "completed"
@@ -495,7 +491,7 @@ def stop_session(session_id: str, db: Session = Depends(get_db)):
 
 @router.post("/sessions/{session_id}/analyze")
 def analyze_session(session_id: str, db: Session = Depends(get_db)):
-    ws = default_workspace(db)
+    ws = _workspace(db)
     item = session_or_404(db, ws.id, session_id)
     rows = db.scalars(
         select(TelemetryEvent)
