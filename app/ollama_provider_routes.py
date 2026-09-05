@@ -9,11 +9,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ProviderCredential, Workspace
+from app.models import ProviderCredential
 from app.security import require_access
 from app.services.audit import record
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
 from app.services.vault import Vault
+from app.services.workspace_scope import workspace_for_authenticated_session
 
 
 router = APIRouter(prefix="/api/ollama-provider", dependencies=[Depends(require_access)])
@@ -25,14 +26,8 @@ class OllamaConnectRequest(BaseModel):
     models: list[str] = Field(default_factory=list, max_length=50)
 
 
-def _workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if item:
-        return item
-    item = Workspace(name="DevPilot", slug="default")
-    db.add(item)
-    db.flush()
-    return item
+def _workspace(db: Session):
+    return workspace_for_authenticated_session(db)
 
 
 def _normalize_models(values: list[str]) -> list[str]:

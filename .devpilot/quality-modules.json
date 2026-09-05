@@ -44,6 +44,10 @@
     "app/host_action_routes.py",
     "app/workflow_observability_routes.py",
     "app/frontend_ui_routes.py",
+    "app/voice_conversation_routes.py",
+    "app/voice_speech_routes.py",
+    "app/ollama_provider_routes.py",
+    "app/failure_recovery_routes.py",
     "app/static/*game*.js",
     "app/static/game/**",
     "app/static/super-admin*.js",
@@ -84,10 +88,17 @@
         "app/provider_models_routes.py",
         "app/host_action_routes.py",
         "app/workflow_observability_routes.py",
-        "app/frontend_ui_routes.py"
+        "app/frontend_ui_routes.py",
+        "app/voice_conversation_routes.py",
+        "app/voice_speech_routes.py",
+        "app/ollama_provider_routes.py",
+        "app/task_run_routes.py",
+        "app/failure_recovery_routes.py"
       ],
       "tests": [
         "tests/test_workspace_isolation.py",
+        "tests/test_workspace_isolation_integrations.py",
+        "tests/test_workspace_isolation_task_runtime.py",
         "tests/test_project_delete.py",
         "tests/test_task_delete.py"
       ],

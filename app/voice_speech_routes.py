@@ -12,12 +12,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ProviderCredential, Workspace
+from app.models import ProviderCredential
 from app.security import require_access
 from app.services.ai_costs import budget_block_reason, record_unpriced_cost
 from app.services.audit import record
 from app.services.token_usage import user_id_from_actor
 from app.services.vault import Vault
+from app.services.workspace_scope import workspace_for_authenticated_session
 
 
 router = APIRouter(prefix="/api")
@@ -57,14 +58,8 @@ class LocalSpeechRequest(BaseModel):
     voice: str = Field(default="human", max_length=32)
 
 
-def _workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if item:
-        return item
-    item = Workspace(name="DevPilot", slug="default")
-    db.add(item)
-    db.flush()
-    return item
+def _workspace(db: Session):
+    return workspace_for_authenticated_session(db)
 
 
 def _decrypt_secret(item: ProviderCredential) -> str:
@@ -280,9 +275,6 @@ async def create_speech(
                 statuses.append(502)
                 continue
 
-            # The speech endpoint returns binary audio without token usage metadata.
-            # Record it in the same financial ledger as an explicitly unpriced event,
-            # rather than hiding the external spend or fabricating token counts.
             cost = record_unpriced_cost(
                 db,
                 workspace_id=ws.id,
