@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,8 @@ _LEGACY_DEPLOY_DISABLED = (
 
 
 class ManualDeployConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     enabled: bool = False
     environment: str = Field(default="homolog", min_length=1, max_length=40)
     branch: str = Field(default="main", min_length=1, max_length=120)
