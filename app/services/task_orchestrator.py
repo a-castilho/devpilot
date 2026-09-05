@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import time
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Callable
@@ -54,11 +55,25 @@ TASK_LEARNING = Table(
 
 TERMINAL_STATES = {"completed", "failed", "blocked", "canceled", "archived"}
 STOP_STATES = {"paused", "pause_requested", "canceled", "cancel_requested", "archived"}
+CLAIMED_STATES = {"running", "pause_requested", "cancel_requested"}
 LEASE_SECONDS = 7200
+LEASE_RENEW_INTERVAL_SECONDS = 60
+_PROCESS_CLAIMS: dict[str, str] = {}
+_PROCESS_CLAIM_RENEWED_AT: dict[str, float] = {}
+
+
+class LostTaskClaim(RuntimeError):
+    """Raised when a worker no longer owns the task lease it previously claimed."""
 
 
 def now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _aware(value: datetime | None) -> datetime | None:
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=timezone.utc)
 
 
 def ensure_orchestrator_schema() -> None:
@@ -107,6 +122,72 @@ def _set_runtime(
         db.execute(update(TASK_RUNTIME).where(TASK_RUNTIME.c.task_id == task.id).values(**values))
     else:
         db.execute(insert(TASK_RUNTIME).values(task_id=task.id, **values))
+
+
+def _task_claim_token(task: Task) -> str:
+    return str(getattr(task, "_devpilot_claim_owner", "") or _PROCESS_CLAIMS.get(task.id, ""))
+
+
+def _remember_process_claim(task: Task, claim_owner: str) -> None:
+    setattr(task, "_devpilot_claim_owner", claim_owner)
+    _PROCESS_CLAIMS[task.id] = claim_owner
+    _PROCESS_CLAIM_RENEWED_AT[task.id] = time.monotonic()
+
+
+def _forget_process_claim(task_id: str, claim_owner: str = "") -> None:
+    current = _PROCESS_CLAIMS.get(task_id, "")
+    if claim_owner and current and current != claim_owner:
+        return
+    _PROCESS_CLAIMS.pop(task_id, None)
+    _PROCESS_CLAIM_RENEWED_AT.pop(task_id, None)
+
+
+def _runtime_claim_current(runtime, claim_owner: str, point: datetime | None = None) -> bool:
+    if not runtime or not claim_owner:
+        return False
+    lease = _aware(runtime["lease_expires_at"])
+    return (
+        str(runtime["state"]) in CLAIMED_STATES
+        and str(runtime["claim_owner"] or "") == claim_owner
+        and lease is not None
+        and lease >= (point or now())
+    )
+
+
+def claim_is_current(db: Session, task_id: str, claim_owner: str) -> bool:
+    runtime = _runtime(db, task_id)
+    return _runtime_claim_current(runtime, claim_owner)
+
+
+def renew_task_claim(db: Session, task_id: str, claim_owner: str) -> bool:
+    """Extend only an unexpired lease still owned by the same fencing token."""
+    point = now()
+    result = db.execute(
+        update(TASK_RUNTIME)
+        .where(
+            TASK_RUNTIME.c.task_id == task_id,
+            TASK_RUNTIME.c.state.in_(tuple(CLAIMED_STATES)),
+            TASK_RUNTIME.c.claim_owner == claim_owner,
+            TASK_RUNTIME.c.lease_expires_at.is_not(None),
+            TASK_RUNTIME.c.lease_expires_at >= point,
+        )
+        .values(
+            lease_expires_at=point + timedelta(seconds=LEASE_SECONDS),
+            updated_at=point,
+        )
+    )
+    return int(result.rowcount or 0) == 1
+
+
+def require_task_claim(db: Session, task: Task) -> str:
+    """Fail closed when the current process lost a previously acquired task claim."""
+    claim_owner = _task_claim_token(task)
+    if not claim_owner:
+        return ""
+    if claim_is_current(db, task.id, claim_owner):
+        return claim_owner
+    _forget_process_claim(task.id, claim_owner)
+    raise LostTaskClaim(f"Task claim lost before mutation: {task.id}")
 
 
 def _learn(
@@ -307,21 +388,56 @@ class TaskOrchestrator:
 
 
 def _recover_expired_claims(db: Session) -> None:
+    """Recover only the expired runtime row that was actually observed."""
     ensure_orchestrator_schema()
+    cutoff = now()
     expired = db.execute(
-        select(TASK_RUNTIME.c.task_id).where(
+        select(TASK_RUNTIME.c.task_id, TASK_RUNTIME.c.claim_owner).where(
             TASK_RUNTIME.c.state == "running",
             TASK_RUNTIME.c.lease_expires_at.is_not(None),
-            TASK_RUNTIME.c.lease_expires_at < now(),
+            TASK_RUNTIME.c.lease_expires_at < cutoff,
         )
-    ).scalars().all()
-    for task_id in expired:
+    ).mappings().all()
+    recovered = False
+    for row in expired:
+        task_id = str(row["task_id"])
+        claim_owner = str(row["claim_owner"] or "")
+        result = db.execute(
+            update(TASK_RUNTIME)
+            .where(
+                TASK_RUNTIME.c.task_id == task_id,
+                TASK_RUNTIME.c.state == "running",
+                TASK_RUNTIME.c.claim_owner == claim_owner,
+                TASK_RUNTIME.c.lease_expires_at.is_not(None),
+                TASK_RUNTIME.c.lease_expires_at < cutoff,
+            )
+            .values(
+                state="queued",
+                version=TASK_RUNTIME.c.version + 1,
+                claim_owner="",
+                lease_expires_at=None,
+                last_action="lease_recovered",
+                last_message="Lease expirado recuperado; tarefa devolvida à fila.",
+                updated_at=cutoff,
+            )
+        )
+        if int(result.rowcount or 0) != 1:
+            continue
         task = db.get(Task, task_id)
         if task and task.status == TaskStatus.running:
             task.status = TaskStatus.queued
-            _set_runtime(db, task, "queued", "lease_recovered", "Lease expirado recuperado; tarefa devolvida à fila.", owner="", lease=None)
-            record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.orchestrator.lease_recovered", outcome="success", details={})
-    if expired:
+            record(
+                db,
+                workspace_id=task.workspace_id,
+                project_id=task.project_id,
+                task_id=task.id,
+                actor="worker",
+                action="task.orchestrator.lease_recovered",
+                outcome="success",
+                details={"expired_claim_owner": claim_owner},
+            )
+        recovered = True
+    if recovered:
         db.commit()
 
 
@@ -363,10 +479,21 @@ def claim_next_task(db: Session, owner: str) -> Task | None:
             record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor=owner, action="task.orchestrator.gate", outcome="blocked", details={"reasons": decision.reasons})
             db.commit()
             continue
+        claim_owner = f"{owner}:{uuid.uuid4().hex}"
         lease = now() + timedelta(seconds=LEASE_SECONDS)
-        _set_runtime(db, task, "running", "claim", "Worker adquiriu posse atômica da tarefa.", owner=owner, lease=lease)
-        record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor=owner, action="task.orchestrator.claimed", outcome="success", details={"atomic": True, "lease_seconds": LEASE_SECONDS})
+        _set_runtime(db, task, "running", "claim", "Worker adquiriu posse atômica da tarefa.", owner=claim_owner, lease=lease)
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor=owner,
+            action="task.orchestrator.claimed",
+            outcome="success",
+            details={"atomic": True, "lease_seconds": LEASE_SECONDS, "fenced": True},
+        )
         db.commit()
+        _remember_process_claim(task, claim_owner)
         return task
     return None
 
@@ -374,10 +501,24 @@ def claim_next_task(db: Session, owner: str) -> Task | None:
 def requested_control(task_id: str) -> str:
     with SessionLocal() as db:
         row = _runtime(db, task_id)
+        claim_owner = _PROCESS_CLAIMS.get(task_id, "")
+        if claim_owner:
+            if not _runtime_claim_current(row, claim_owner):
+                _forget_process_claim(task_id, claim_owner)
+                raise LostTaskClaim(f"Task claim lost while executing: {task_id}")
+            last_renewed = _PROCESS_CLAIM_RENEWED_AT.get(task_id, 0.0)
+            if time.monotonic() - last_renewed >= LEASE_RENEW_INTERVAL_SECONDS:
+                if not renew_task_claim(db, task_id, claim_owner):
+                    db.rollback()
+                    _forget_process_claim(task_id, claim_owner)
+                    raise LostTaskClaim(f"Task claim could not be renewed: {task_id}")
+                db.commit()
+                _PROCESS_CLAIM_RENEWED_AT[task_id] = time.monotonic()
         return str(row["state"]) if row else ""
 
 
 def mark_worker_controlled(db: Session, task: Task, requested: str, message: str) -> None:
+    claim_owner = require_task_claim(db, task)
     target = "paused" if requested == "pause_requested" else "canceled"
     task.status = TaskStatus.queued if target == "paused" else TaskStatus.failed
     _set_runtime(db, task, target, "worker_control", message, auto=False, owner="", lease=None)
@@ -393,6 +534,8 @@ def mark_worker_controlled(db: Session, task: Task, requested: str, message: str
         {"requested": requested},
     )
     record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action=f"task.orchestrator.{target}", outcome="success", details={"cooperative": True})
+    if claim_owner:
+        _forget_process_claim(task.id, claim_owner)
 
 
 def _grant_quest_reward(db: Session, task: Task, run: Run) -> None:
@@ -430,6 +573,7 @@ def _grant_quest_reward(db: Session, task: Task, run: Run) -> None:
 
 
 def mark_worker_finished(db: Session, task: Task, run: Run) -> None:
+    claim_owner = require_task_claim(db, task)
     state = "completed" if run.status == "success" else ("blocked" if task.status == TaskStatus.blocked else "failed")
     _set_runtime(db, task, state, "worker_finished", str(run.summary or ""), owner="", lease=None)
     _learn(
@@ -445,21 +589,41 @@ def mark_worker_finished(db: Session, task: Task, run: Run) -> None:
     )
     if state == "completed":
         _grant_quest_reward(db, task, run)
+    if claim_owner:
+        _forget_process_claim(task.id, claim_owner)
 
 
 @contextmanager
 def controlled_executor_run(task: Task, original_run: Callable):
-    """Yield a subprocess runner that can terminate the active Codex process group."""
+    """Yield a subprocess runner that cooperatively stops on control or lost lease."""
     def controlled(args, cwd=None, timeout=900, env_overrides=None):
         if not args or os.path.basename(str(args[0])) != "codex":
-            return original_run(args, cwd=cwd, timeout=timeout, env_overrides=env_overrides)
+            requested_control(task.id)
+            result = original_run(args, cwd=cwd, timeout=timeout, env_overrides=env_overrides)
+            requested_control(task.id)
+            return result
         environment = os.environ.copy()
         if env_overrides:
             environment.update(env_overrides)
         process = subprocess.Popen(args, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, start_new_session=True)
         started = time.monotonic()
         while process.poll() is None:
-            control = requested_control(task.id)
+            try:
+                control = requested_control(task.id)
+            except LostTaskClaim:
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                try:
+                    process.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(process.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    process.communicate()
+                raise
             if control in {"pause_requested", "cancel_requested"}:
                 try:
                     os.killpg(process.pid, signal.SIGTERM)
@@ -483,6 +647,7 @@ def controlled_executor_run(task: Task, original_run: Callable):
                 raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
             time.sleep(0.4)
         stdout, stderr = process.communicate()
+        requested_control(task.id)
         return subprocess.CompletedProcess(args, int(process.returncode or 0), stdout or "", stderr or "")
 
     yield controlled
