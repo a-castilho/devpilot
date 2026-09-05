@@ -113,7 +113,7 @@
     const goal = promptValue(goalTask, 'OBJETIVO') || 'Nenhuma partida da esteira encontrada para este projeto.';
     const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
     const url = String(delivery?.url || '').trim();
-    const phases = Array.from({length:6}, (_, index) => {
+    const phases = Array.from({length:7}, (_, index) => {
       const phase = index + 1;
       const phaseTasks = missionTasks.filter(task => phaseFromTask(task) === phase);
       const implementation = phaseTasks.find(task => !isVerifier(task));
@@ -149,8 +149,10 @@
   function deliveryMarkup(project, delivery) {
     const currentStatus = normalize(delivery?.status || 'pending');
     const checks = Array.isArray(delivery?.checks) ? delivery.checks : [];
+    const url = String(delivery?.url || '').trim();
     return `
       <div class="product-delivery-status product-delivery-${esc(currentStatus)}"><strong>${esc(statusLabel(currentStatus))}</strong>${checks.map(check => `<span>${check.ok ? '✅' : '⏳'} ${esc(checkLabel(check.name || check.provider))}</span>`).join('')}${delivery?.last_error ? `<div class="product-delivery-error">${esc(delivery.last_error)}</div>` : ''}</div>
+      ${url ? `<a class="product-delivery-public-url" href="${esc(url)}" target="_blank" rel="noopener noreferrer" title="Abrir ambiente publicado">🌐 ${esc(url)} ↗</a>` : ''}
       <button type="button" class="product-delivery-history-action" data-delivery-history="${esc(project.id)}">📦 Ver entrega</button>
       ${canOperate() ? `<button type="button" class="link product-delivery-action" data-delivery-action="${esc(project.id)}">${currentStatus === 'ready' ? 'Abrir produto' : ['failed','blocked'].includes(currentStatus) ? 'Tentar novamente' : ['deploying','provisioning'].includes(currentStatus) ? 'Verificar publicação' : 'Publicar produto'}</button>` : ''}`;
   }
@@ -331,6 +333,7 @@
       .projects-new-project-sticky{position:sticky;top:8px;z-index:40;display:flex;justify-content:flex-end;pointer-events:none;margin:0 0 10px}.projects-new-project-sticky-button{pointer-events:auto;box-shadow:0 8px 24px rgba(0,0,0,.28)}
       .product-delivery-box{margin-top:10px;padding-top:10px;border-top:1px solid rgba(127,127,127,.22);display:flex!important;gap:8px;align-items:center;flex-wrap:wrap;visibility:visible!important;opacity:1!important;overflow:visible!important}
       .product-delivery-status{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:12px;width:100%}.product-delivery-error{width:100%;opacity:.85}.product-delivery-failed strong{color:#ff6b6b}.product-delivery-ready strong{color:#72efc5}
+      .product-delivery-public-url{display:block;width:100%;padding:9px 11px;border:1px solid rgba(114,239,197,.26);border-radius:9px;background:rgba(114,239,197,.06);color:#8be9fd;text-decoration:none;font-size:12px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
       .product-delivery-history-action{display:inline-flex!important;align-items:center;justify-content:center;min-height:30px;padding:6px 10px;border:1px solid rgba(139,233,253,.45);border-radius:8px;background:rgba(139,233,253,.08);color:#8be9fd;font-weight:800;cursor:pointer}.product-delivery-action{margin-left:auto}
       #${MODAL_ID}{width:min(760px,94vw);max-height:88vh;padding:0;border:1px solid rgba(139,233,253,.24);border-radius:16px;background:#08121f;color:inherit}#${MODAL_ID}::backdrop{background:rgba(0,0,0,.72)}
       .project-delivery-history-shell{display:grid;gap:14px;padding:18px;max-height:88vh;overflow:auto}.project-delivery-history-head{display:flex;justify-content:space-between;gap:12px}.project-delivery-history-head h3{margin:4px 0 0}.project-delivery-history-status,.project-delivery-history-phase{padding:10px 12px;border:1px solid rgba(255,255,255,.09);border-radius:12px;background:rgba(255,255,255,.025)}.project-delivery-history-phase strong{display:block;margin-bottom:4px}.project-delivery-history-grid{display:grid;gap:8px}.project-delivery-history-ok{color:#72efc5}.project-delivery-history-pending{color:#ffc56e}.project-delivery-history-error{color:#ff8f8f;white-space:pre-wrap;overflow-wrap:anywhere}.project-delivery-history-url{padding:10px 12px;border:1px solid rgba(114,239,197,.24);border-radius:10px;color:#8be9fd;overflow-wrap:anywhere}.project-delivery-history-actions{display:flex;gap:8px;flex-wrap:wrap}.project-delivery-history-actions a{text-decoration:none}
