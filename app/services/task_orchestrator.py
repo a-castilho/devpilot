@@ -402,6 +402,9 @@ def _recover_expired_claims(db: Session) -> None:
     for row in expired:
         task_id = str(row["task_id"])
         claim_owner = str(row["claim_owner"] or "")
+        task = db.get(Task, task_id)
+        if not task or task.status != TaskStatus.running:
+            continue
         result = db.execute(
             update(TASK_RUNTIME)
             .where(
@@ -423,19 +426,17 @@ def _recover_expired_claims(db: Session) -> None:
         )
         if int(result.rowcount or 0) != 1:
             continue
-        task = db.get(Task, task_id)
-        if task and task.status == TaskStatus.running:
-            task.status = TaskStatus.queued
-            record(
-                db,
-                workspace_id=task.workspace_id,
-                project_id=task.project_id,
-                task_id=task.id,
-                actor="worker",
-                action="task.orchestrator.lease_recovered",
-                outcome="success",
-                details={"expired_claim_owner": claim_owner},
-            )
+        task.status = TaskStatus.queued
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor="worker",
+            action="task.orchestrator.lease_recovered",
+            outcome="success",
+            details={"expired_claim_owner": claim_owner},
+        )
         recovered = True
     if recovered:
         db.commit()
@@ -479,7 +480,7 @@ def claim_next_task(db: Session, owner: str) -> Task | None:
             record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor=owner, action="task.orchestrator.gate", outcome="blocked", details={"reasons": decision.reasons})
             db.commit()
             continue
-        claim_owner = f"{owner}:{uuid.uuid4().hex}"
+        claim_owner = f"{str(owner)[:120]}:{uuid.uuid4().hex}"
         lease = now() + timedelta(seconds=LEASE_SECONDS)
         _set_runtime(db, task, "running", "claim", "Worker adquiriu posse atômica da tarefa.", owner=claim_owner, lease=lease)
         record(
