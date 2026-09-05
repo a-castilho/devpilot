@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import unicodedata
 from dataclasses import dataclass
 
 import httpx
@@ -9,6 +10,7 @@ from app.services.organizations import normalize_github_repository
 
 
 MAX_REPOSITORY_NAME_ATTEMPTS = 20
+MAX_REPOSITORY_DESCRIPTION_LENGTH = 350
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,16 @@ def _repository_candidate(repository_name: str, attempt: int) -> str:
         return repository_name
     suffix = f"-{attempt}"
     return f"{repository_name[:100 - len(suffix)].rstrip('-')}{suffix}"
+
+
+def sanitize_repository_description(value: str) -> str:
+    """Normalize repository metadata to the constraints enforced by GitHub."""
+    normalized = "".join(
+        " " if unicodedata.category(character) == "Cc" else character
+        for character in str(value or "")
+    )
+    normalized = " ".join(normalized.split())
+    return normalized[:MAX_REPOSITORY_DESCRIPTION_LENGTH].rstrip()
 
 
 def _response_payload(response) -> dict:
@@ -100,6 +112,30 @@ def _is_repository_name_collision(response) -> bool:
         "repository already exists",
     )
     return any(marker in text for marker in collision_markers)
+
+
+def _is_repository_description_validation(response) -> bool:
+    if response.status_code != 422:
+        return False
+
+    payload = _response_payload(response)
+    errors = payload.get("errors")
+    if isinstance(errors, list):
+        for item in errors:
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field") or "").strip().lower()
+            if field == "description":
+                return True
+
+    text = " ".join(_validation_messages(response)).casefold()
+    markers = (
+        "description control characters are not allowed",
+        "description cannot be more than",
+        "description is too long",
+        "description is invalid",
+    )
+    return any(marker in text for marker in markers)
 
 
 def _validation_detail(response) -> str:
@@ -344,6 +380,13 @@ def _translate_creation_error(response) -> None:
             return
         detail = _validation_detail(response)
         detail_text = f" Detalhe: {detail}." if detail else ""
+        if _is_repository_description_validation(response):
+            raise GitHubProvisioningError(
+                "O GitHub recusou o campo de descrição do repositório mesmo após a normalização "
+                f"automática.{detail_text} O problema está nos metadados enviados, não em credencial "
+                "ou permissão da organização.",
+                422,
+            )
         raise GitHubProvisioningError(
             "O GitHub recusou a criação do repositório por uma regra de validação da organização "
             f"a-castilho.{detail_text} Verifique políticas de criação de repositórios, propriedades "
@@ -364,12 +407,13 @@ def create_github_repository(
 ) -> dict:
     """Create a private deployable repository, resolving name collisions automatically."""
     _ensure_token(access_token)
+    repository_description = sanitize_repository_description(description)
 
     for attempt in range(1, MAX_REPOSITORY_NAME_ATTEMPTS + 1):
         candidate = _repository_candidate(repository_name, attempt)
         payload = {
             "name": candidate,
-            "description": description,
+            "description": repository_description,
             "private": True,
             "auto_init": True,
         }
