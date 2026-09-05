@@ -96,9 +96,11 @@ def test_login_game_start_exit_reopen_stays_responsive_without_duplicate_executi
                 page.wait_for_url(f"{e2e_server}/", timeout=10_000)
                 page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
                 page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
-                page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
+                # The standalone section is a layout host. Its rendered child is the
+                # user-facing readiness contract and remains observable across reentry.
+                page.wait_for_selector("#build-game-view .build-game-shell", state="visible", timeout=15_000)
                 page.wait_for_function(
-                    "() => document.querySelector('#build-game-view')?.textContent?.trim().length > 0",
+                    "() => document.querySelector('#build-game-view .build-game-shell')?.textContent?.trim().length > 0",
                     timeout=15_000,
                 )
 
