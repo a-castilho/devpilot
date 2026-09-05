@@ -280,11 +280,7 @@
         console.warn('[DevPilot] Perfil automático do cadastro ficou indisponível', error);
       });
     };
-    if (typeof window.requestIdleCallback === 'function') {
-      window.requestIdleCallback(run, {timeout: 1800});
-    } else {
-      window.setTimeout(run, 240);
-    }
+    window.setTimeout(run, 240);
   }
 
   async function loadFeature(feature, options = {}) {
@@ -322,7 +318,6 @@
       document.dispatchEvent(new CustomEvent('devpilot:feature-ready', {
         detail:{feature, failures, cancelled, durationMs:Math.round(performance.now() - featureStarted)},
       }));
-      if (feature === 'projectBuilder' && !cancelled) scheduleProjectBuilderEnhancements();
       return !cancelled && failures.length === 0;
     })();
 
