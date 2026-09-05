@@ -9,6 +9,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 
+DELIVERY_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 
 
@@ -36,7 +37,7 @@ def _resolve_public_addresses(
             type=socket.SOCK_STREAM,
             proto=socket.IPPROTO_TCP,
         )
-    except (OSError, socket.gaierror) as error:
+    except OSError as error:
         raise UnsafeProbeUrl("delivery_probe_dns_unavailable") from error
 
     if not addresses:
@@ -89,7 +90,7 @@ def _validate_public_https_url(
 def probe_public_https_url(
     url: str,
     *,
-    allowed_suffixes: tuple[str, ...],
+    allowed_suffixes: tuple[str, ...] = DELIVERY_PUBLIC_SUFFIXES,
     timeout_seconds: float,
     accept: str = "text/html,application/json;q=0.9,*/*;q=0.8",
     max_redirects: int = 3,
