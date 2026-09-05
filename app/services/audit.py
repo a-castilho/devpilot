@@ -2,19 +2,31 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+from pathlib import Path
 from typing import Any, Iterable
 
+from sqlalchemy import event as sqlalchemy_event
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.linux_agent.audit import verify_attestation
-from app.models import AuditEvent, Project, Task
+from app.models import AuditEvent, Project, Task, Workspace
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - DevPilot runtime targets Linux.
+    fcntl = None
 
 
 LINUX_AUDIT_KEY = "_linux_audit"
 _SCOPE_DISABLED_OPTION = "devpilot_account_scope_disabled"
+_AUDIT_CHAIN_HEADS_INFO = "_devpilot_audit_chain_heads"
+_SQLITE_AUDIT_LOCKS_INFO = "_devpilot_sqlite_audit_locks"
+_SQLITE_PROCESS_LOCKS: dict[tuple[str, str], threading.Lock] = {}
+_SQLITE_PROCESS_LOCKS_GUARD = threading.Lock()
 
 
 def _serialize(details: dict[str, Any]) -> str:
@@ -123,6 +135,133 @@ def _event_owner_user_id(
     return None
 
 
+def _workspace_lock_statement(workspace_id: str):
+    return select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+
+
+def _audit_head_statement(workspace_id: str):
+    return (
+        select(AuditEvent.event_hash)
+        .where(AuditEvent.workspace_id == workspace_id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+    )
+
+
+def _sqlite_database_path(db: Session) -> Path | None:
+    bind = db.get_bind()
+    database = getattr(bind.url, "database", None)
+    if not database or database == ":memory:":
+        return None
+    return Path(str(database)).expanduser().resolve()
+
+
+def _sqlite_process_lock(db: Session, workspace_id: str) -> threading.Lock:
+    key = (str(db.get_bind().url), workspace_id)
+    with _SQLITE_PROCESS_LOCKS_GUARD:
+        lock = _SQLITE_PROCESS_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _SQLITE_PROCESS_LOCKS[key] = lock
+    return lock
+
+
+def _acquire_sqlite_audit_lock(db: Session, workspace_id: str) -> None:
+    locks = db.info.setdefault(_SQLITE_AUDIT_LOCKS_INFO, {})
+    if workspace_id in locks:
+        return
+
+    process_lock = _sqlite_process_lock(db, workspace_id)
+    process_lock.acquire()
+    lock_file = None
+    try:
+        database_path = _sqlite_database_path(db)
+        if database_path is not None and fcntl is not None:
+            database_path.parent.mkdir(parents=True, exist_ok=True)
+            suffix = hashlib.sha256(workspace_id.encode()).hexdigest()[:24]
+            lock_path = database_path.parent / f".{database_path.name}.audit-{suffix}.lock"
+            lock_file = lock_path.open("a+b")
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        locks[workspace_id] = {
+            "process_lock": process_lock,
+            "lock_file": lock_file,
+        }
+    except Exception:
+        if lock_file is not None:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            finally:
+                lock_file.close()
+        process_lock.release()
+        raise
+
+
+def _release_sqlite_audit_locks(session: Session) -> None:
+    locks = session.info.pop(_SQLITE_AUDIT_LOCKS_INFO, {})
+    for state in locks.values():
+        lock_file = state.get("lock_file")
+        process_lock = state.get("process_lock")
+        if lock_file is not None:
+            try:
+                if fcntl is not None:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+            finally:
+                lock_file.close()
+        if process_lock is not None:
+            process_lock.release()
+
+
+def _previous_hash_for_workspace(db: Session, workspace_id: str) -> str:
+    heads = db.info.setdefault(_AUDIT_CHAIN_HEADS_INFO, {})
+    cached = heads.get(workspace_id)
+    if cached is not None:
+        return str(cached)
+
+    bind = db.get_bind()
+    if bind.dialect.name == "sqlite":
+        _acquire_sqlite_audit_lock(db, workspace_id)
+        database_path = _sqlite_database_path(db)
+        if database_path is not None:
+            # Read through a separate connection so a request transaction that began
+            # before the audit lock was acquired does not reuse a stale SQLite snapshot.
+            with bind.connect() as connection:
+                previous_hash = connection.execute(
+                    _audit_head_statement(workspace_id)
+                ).scalar_one_or_none()
+        else:
+            previous_hash = db.scalar(
+                _audit_head_statement(workspace_id).execution_options(
+                    **{_SCOPE_DISABLED_OPTION: True}
+                )
+            )
+    else:
+        # Serialize writers on the existing workspace row. PostgreSQL keeps this lock
+        # until commit/rollback, so the following head read observes the prior writer.
+        db.scalar(
+            _workspace_lock_statement(workspace_id).execution_options(
+                **{_SCOPE_DISABLED_OPTION: True}
+            )
+        )
+        previous_hash = db.scalar(
+            _audit_head_statement(workspace_id).execution_options(
+                **{_SCOPE_DISABLED_OPTION: True}
+            )
+        )
+
+    value = str(previous_hash or "")
+    heads[workspace_id] = value
+    return value
+
+
+@sqlalchemy_event.listens_for(Session, "after_transaction_end")
+def _clear_audit_chain_transaction_state(session: Session, transaction) -> None:
+    if transaction.parent is not None:
+        return
+    session.info.pop(_AUDIT_CHAIN_HEADS_INFO, None)
+    _release_sqlite_audit_locks(session)
+
+
 def record(
     db: Session,
     *,
@@ -138,17 +277,9 @@ def record(
     if principal_actor and actor in {"owner", "voice-owner"}:
         actor = str(principal_actor)
 
-    # The hash chain is workspace-global even though normal account reads are scoped.
-    # Always resolve the previous event without row-level filtering so every user's
-    # event remains part of one tamper-evident chain visible to SUPER_ADMIN.
-    previous = db.scalar(
-        select(AuditEvent)
-        .where(AuditEvent.workspace_id == workspace_id)
-        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
-        .limit(1)
-        .execution_options(**{_SCOPE_DISABLED_OPTION: True})
-    )
-    previous_hash = previous.event_hash if previous else ""
+    # The chain is workspace-global. Serialize the head read and keep the lock until
+    # the caller commits or rolls back so concurrent transactions cannot fork it.
+    previous_hash = _previous_hash_for_workspace(db, workspace_id)
     owner_user_id = _event_owner_user_id(
         db,
         project_id=project_id,
@@ -209,6 +340,7 @@ def record(
         event_hash=event_hash,
     )
     db.add(event)
+    db.info.setdefault(_AUDIT_CHAIN_HEADS_INFO, {})[workspace_id] = event_hash
     return event
 
 
