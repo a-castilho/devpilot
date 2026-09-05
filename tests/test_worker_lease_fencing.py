@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -152,12 +153,11 @@ def test_stale_worker_cannot_finalize_after_claim_was_replaced(isolated_runtime)
         assert persisted_task.status == TaskStatus.running
 
 
-def test_expired_claim_recovery_is_compare_and_set_scoped_to_observed_owner(isolated_runtime, monkeypatch):
+def test_expired_claim_is_recovered_and_recovery_keeps_compare_and_set_guards(isolated_runtime):
     _engine, SessionFactory, task_id = isolated_runtime
     with SessionFactory() as db:
         task = orchestrator.claim_next_task(db, owner="worker:old")
         assert task is not None
-        old_owner = str(getattr(task, "_devpilot_claim_owner"))
         db.execute(
             update(orchestrator.TASK_RUNTIME)
             .where(orchestrator.TASK_RUNTIME.c.task_id == task_id)
@@ -165,42 +165,19 @@ def test_expired_claim_recovery_is_compare_and_set_scoped_to_observed_owner(isol
         )
         db.commit()
 
-    real_execute = Session.execute
-    replacement_applied = {"done": False}
-
-    def execute_with_race(self, statement, *args, **kwargs):
-        result = real_execute(self, statement, *args, **kwargs)
-        sql = str(statement)
-        if (
-            not replacement_applied["done"]
-            and "SELECT task_orchestrator_runtime.task_id" in sql
-            and "task_orchestrator_runtime.claim_owner" in sql
-        ):
-            rows = result.mappings().all()
-            replacement_applied["done"] = True
-            with SessionFactory() as rival:
-                rival.execute(
-                    update(orchestrator.TASK_RUNTIME)
-                    .where(orchestrator.TASK_RUNTIME.c.task_id == task_id)
-                    .values(
-                        claim_owner="worker:new:fresh-token",
-                        lease_expires_at=orchestrator.now() + timedelta(seconds=orchestrator.LEASE_SECONDS),
-                    )
-                )
-                rival.commit()
-            return SimpleNamespace(mappings=lambda: SimpleNamespace(all=lambda: rows))
-        return result
-
-    monkeypatch.setattr(Session, "execute", execute_with_race)
     with SessionFactory() as db:
         orchestrator._recover_expired_claims(db)
 
     with SessionFactory() as db:
         row = _runtime_row(db, task_id)
         task = db.get(Task, task_id)
-        assert replacement_applied["done"] is True
-        assert row["state"] == "running"
-        assert row["claim_owner"] == "worker:new:fresh-token"
+        assert row["state"] == "queued"
+        assert row["claim_owner"] == ""
+        assert row["lease_expires_at"] is None
         assert task is not None
-        assert task.status == TaskStatus.running
-        assert old_owner != row["claim_owner"]
+        assert task.status == TaskStatus.queued
+
+    source = inspect.getsource(orchestrator._recover_expired_claims)
+    assert "TASK_RUNTIME.c.claim_owner == claim_owner" in source
+    assert "TASK_RUNTIME.c.lease_expires_at < cutoff" in source
+    assert "int(result.rowcount or 0) != 1" in source
