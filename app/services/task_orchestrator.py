@@ -60,6 +60,7 @@ LEASE_SECONDS = 7200
 LEASE_RENEW_INTERVAL_SECONDS = 60
 _PROCESS_CLAIMS: dict[str, str] = {}
 _PROCESS_CLAIM_RENEWED_AT: dict[str, float] = {}
+_LOST_PROCESS_CLAIMS: set[str] = set()
 
 
 class LostTaskClaim(RuntimeError):
@@ -132,14 +133,17 @@ def _remember_process_claim(task: Task, claim_owner: str) -> None:
     setattr(task, "_devpilot_claim_owner", claim_owner)
     _PROCESS_CLAIMS[task.id] = claim_owner
     _PROCESS_CLAIM_RENEWED_AT[task.id] = time.monotonic()
+    _LOST_PROCESS_CLAIMS.discard(task.id)
 
 
-def _forget_process_claim(task_id: str, claim_owner: str = "") -> None:
+def _forget_process_claim(task_id: str, claim_owner: str = "", *, lost: bool = False) -> None:
     current = _PROCESS_CLAIMS.get(task_id, "")
     if claim_owner and current and current != claim_owner:
         return
     _PROCESS_CLAIMS.pop(task_id, None)
     _PROCESS_CLAIM_RENEWED_AT.pop(task_id, None)
+    if lost:
+        _LOST_PROCESS_CLAIMS.add(task_id)
 
 
 def _runtime_claim_current(runtime, claim_owner: str, point: datetime | None = None) -> bool:
@@ -181,13 +185,55 @@ def renew_task_claim(db: Session, task_id: str, claim_owner: str) -> bool:
 
 def require_task_claim(db: Session, task: Task) -> str:
     """Fail closed when the current process lost a previously acquired task claim."""
+    if task.id in _LOST_PROCESS_CLAIMS:
+        raise LostTaskClaim(f"Task claim was already lost: {task.id}")
     claim_owner = _task_claim_token(task)
     if not claim_owner:
         return ""
     if claim_is_current(db, task.id, claim_owner):
         return claim_owner
-    _forget_process_claim(task.id, claim_owner)
+    _forget_process_claim(task.id, claim_owner, lost=True)
     raise LostTaskClaim(f"Task claim lost before mutation: {task.id}")
+
+
+def _transition_claimed_runtime(
+    db: Session,
+    task: Task,
+    claim_owner: str,
+    *,
+    expected_states: tuple[str, ...],
+    state: str,
+    action: str,
+    message: str,
+    auto: bool | None = None,
+) -> None:
+    """Atomically fence a claimed task while publishing its terminal/control transition."""
+    point = now()
+    values = {
+        "state": state,
+        "version": TASK_RUNTIME.c.version + 1,
+        "claim_owner": "",
+        "lease_expires_at": None,
+        "last_action": action,
+        "last_message": str(message or "")[:4000],
+        "updated_at": point,
+    }
+    if auto is not None:
+        values["auto_advance"] = bool(auto)
+    result = db.execute(
+        update(TASK_RUNTIME)
+        .where(
+            TASK_RUNTIME.c.task_id == task.id,
+            TASK_RUNTIME.c.state.in_(expected_states),
+            TASK_RUNTIME.c.claim_owner == claim_owner,
+            TASK_RUNTIME.c.lease_expires_at.is_not(None),
+            TASK_RUNTIME.c.lease_expires_at >= point,
+        )
+        .values(**values)
+    )
+    if int(result.rowcount or 0) != 1:
+        _forget_process_claim(task.id, claim_owner, lost=True)
+        raise LostTaskClaim(f"Task claim lost during final transition: {task.id}")
 
 
 def _learn(
@@ -500,18 +546,20 @@ def claim_next_task(db: Session, owner: str) -> Task | None:
 
 
 def requested_control(task_id: str) -> str:
+    if task_id in _LOST_PROCESS_CLAIMS:
+        raise LostTaskClaim(f"Task claim was already lost while executing: {task_id}")
     with SessionLocal() as db:
         row = _runtime(db, task_id)
         claim_owner = _PROCESS_CLAIMS.get(task_id, "")
         if claim_owner:
             if not _runtime_claim_current(row, claim_owner):
-                _forget_process_claim(task_id, claim_owner)
+                _forget_process_claim(task_id, claim_owner, lost=True)
                 raise LostTaskClaim(f"Task claim lost while executing: {task_id}")
             last_renewed = _PROCESS_CLAIM_RENEWED_AT.get(task_id, 0.0)
             if time.monotonic() - last_renewed >= LEASE_RENEW_INTERVAL_SECONDS:
                 if not renew_task_claim(db, task_id, claim_owner):
                     db.rollback()
-                    _forget_process_claim(task_id, claim_owner)
+                    _forget_process_claim(task_id, claim_owner, lost=True)
                     raise LostTaskClaim(f"Task claim could not be renewed: {task_id}")
                 db.commit()
                 _PROCESS_CLAIM_RENEWED_AT[task_id] = time.monotonic()
@@ -521,8 +569,20 @@ def requested_control(task_id: str) -> str:
 def mark_worker_controlled(db: Session, task: Task, requested: str, message: str) -> None:
     claim_owner = require_task_claim(db, task)
     target = "paused" if requested == "pause_requested" else "canceled"
+    if claim_owner:
+        _transition_claimed_runtime(
+            db,
+            task,
+            claim_owner,
+            expected_states=(requested,),
+            state=target,
+            action="worker_control",
+            message=message,
+            auto=False,
+        )
+    else:
+        _set_runtime(db, task, target, "worker_control", message, auto=False, owner="", lease=None)
     task.status = TaskStatus.queued if target == "paused" else TaskStatus.failed
-    _set_runtime(db, task, target, "worker_control", message, auto=False, owner="", lease=None)
     _learn(
         db,
         task,
@@ -576,7 +636,18 @@ def _grant_quest_reward(db: Session, task: Task, run: Run) -> None:
 def mark_worker_finished(db: Session, task: Task, run: Run) -> None:
     claim_owner = require_task_claim(db, task)
     state = "completed" if run.status == "success" else ("blocked" if task.status == TaskStatus.blocked else "failed")
-    _set_runtime(db, task, state, "worker_finished", str(run.summary or ""), owner="", lease=None)
+    if claim_owner:
+        _transition_claimed_runtime(
+            db,
+            task,
+            claim_owner,
+            expected_states=("running",),
+            state=state,
+            action="worker_finished",
+            message=str(run.summary or ""),
+        )
+    else:
+        _set_runtime(db, task, state, "worker_finished", str(run.summary or ""), owner="", lease=None)
     _learn(
         db,
         task,
