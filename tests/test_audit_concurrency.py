@@ -43,6 +43,7 @@ def test_sqlite_concurrent_writer_waits_for_prior_audit_transaction(tmp_path, mo
         action="concurrent.first",
         details={"order": 1},
     )
+    first_hash = first.event_hash
 
     started = threading.Event()
     record_returned = threading.Event()
@@ -90,7 +91,7 @@ def test_sqlite_concurrent_writer_waits_for_prior_audit_transaction(tmp_path, mo
             .order_by(AuditEvent.created_at, AuditEvent.id)
         ).all()
         assert len(events) == 2
-        assert events[0].event_hash == first.event_hash
+        assert events[0].event_hash == first_hash
         assert events[1].previous_hash == events[0].event_hash
         verification = audit_service.verify_chain(events)
         assert verification["valid"] is True
