@@ -4,12 +4,22 @@ from sqlalchemy.orm import Session
 from app.db import Base
 from app.frontend_ui_routes import task_detail
 from app.models import Project, Task, TaskStatus, Workspace
+from app.security import Principal, Role
 
 
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
+
+
+def _principal(workspace_id: str) -> Principal:
+    return Principal(
+        user_id="test-user",
+        workspace_id=workspace_id,
+        email="test@example.com",
+        role=Role.OWNER,
+    )
 
 
 def test_task_detail_always_returns_project_name_and_hides_game_runtime_markers():
@@ -44,7 +54,7 @@ def test_task_detail_always_returns_project_name_and_hides_game_runtime_markers(
     db.add(task)
     db.commit()
 
-    detail = task_detail(task.id, db=db)
+    detail = task_detail(task.id, db=db, principal=_principal(workspace.id))
 
     assert detail["project_id"] == project.id
     assert detail["project_name"] == "Tela Viva"
@@ -82,7 +92,7 @@ def test_normal_dashboard_task_uses_human_source_label():
     db.add(task)
     db.commit()
 
-    detail = task_detail(task.id, db=db)
+    detail = task_detail(task.id, db=db, principal=_principal(workspace.id))
 
     assert detail["project_name"] == "Regulaai"
     assert detail["source"] == "DevPilot"
