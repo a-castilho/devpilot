@@ -9,12 +9,14 @@ from pathlib import Path
 
 
 ROOT = Path(os.environ.get("DEVPILOT_ROOT", Path.home() / "Documents" / "devpilot")).resolve()
-DEPLOY_ROOT = Path(os.environ.get("DEVPILOT_DEPLOY_ROOT", Path.home() / "Documents")).expanduser().resolve()
 QUEUE_ROOT = Path(os.environ.get("DEVPILOT_HOST_ACTIONS_DIR", ROOT / "runtime" / "host-actions")).resolve()
 PENDING = QUEUE_ROOT / "pending"
 PROCESSED = QUEUE_ROOT / "processed"
 FAILED = QUEUE_ROOT / "failed"
-ALLOWED = {"update_local", "manual_deploy", "pipeline_repair"}
+
+# Only named, repository-owned operations may cross the container -> host boundary.
+# manual_deploy was intentionally removed because it accepted a free-form shell command.
+ALLOWED = {"update_local", "pipeline_repair"}
 
 
 def now() -> str:
@@ -33,63 +35,13 @@ def finish(source: Path, destination_dir: Path, payload: dict, *, status: str, d
     source.unlink(missing_ok=True)
 
 
-def _deploy_workdir(value: str) -> Path:
-    raw = Path(value).expanduser()
-    candidate = raw if raw.is_absolute() else DEPLOY_ROOT / raw
-    resolved = candidate.resolve()
-    try:
-        resolved.relative_to(DEPLOY_ROOT)
-    except ValueError as error:
-        raise ValueError(f"workdir fora da raiz permitida: {DEPLOY_ROOT}") from error
-    if not resolved.is_dir():
-        raise ValueError(f"workdir inexistente: {resolved}")
-    return resolved
-
-
-def run_manual_deploy(payload: dict) -> tuple[int, str]:
-    command = str(payload.get("command") or "").strip()
-    if not command:
-        return 2, "deploy_command_missing"
-    try:
-        workdir = _deploy_workdir(str(payload.get("workdir") or ""))
-    except ValueError as error:
-        return 2, str(error)
-    try:
-        timeout = int(payload.get("timeout_seconds") or 900)
-    except (TypeError, ValueError):
-        timeout = 900
-    timeout = min(max(timeout, 30), 3600)
-    env = {
-        **os.environ,
-        "DEVPILOT_ROOT": str(ROOT),
-        "DEVPILOT_DEPLOY_ROOT": str(DEPLOY_ROOT),
-        "DEVPILOT_DEPLOY_PROJECT_ID": str(payload.get("project_id") or ""),
-        "DEVPILOT_DEPLOY_PROJECT": str(payload.get("project_name") or ""),
-        "DEVPILOT_DEPLOY_ENV": str(payload.get("environment") or ""),
-        "DEVPILOT_DEPLOY_BRANCH": str(payload.get("branch") or ""),
-    }
-    try:
-        result = subprocess.run(
-            ["bash", "-lc", command],
-            cwd=workdir,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=timeout,
-            env=env,
-        )
-    except subprocess.TimeoutExpired as error:
-        stdout = error.stdout.decode() if isinstance(error.stdout, bytes) else (error.stdout or "")
-        stderr = error.stderr.decode() if isinstance(error.stderr, bytes) else (error.stderr or "")
-        detail = "\n".join(part for part in (str(stdout).strip(), str(stderr).strip()) if part)
-        return 124, f"deploy_timeout_after_{timeout}s\n{detail}".strip()
-    detail = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
-    return result.returncode, detail or f"exit_code={result.returncode}"
-
-
 def run_script(name: str) -> tuple[int, str]:
+    script = (ROOT / "tools" / name).resolve()
+    tools_root = (ROOT / "tools").resolve()
+    if tools_root not in script.parents or not script.is_file():
+        return 2, "host_action_script_invalid"
     result = subprocess.run(
-        ["bash", str(ROOT / "tools" / name)],
+        ["bash", str(script)],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -117,8 +69,6 @@ def process(request_file: Path) -> None:
 
     if action == "update_local":
         returncode, detail = run_script("devpilot_local_update.sh")
-    elif action == "manual_deploy":
-        returncode, detail = run_manual_deploy(payload)
     elif action == "pipeline_repair":
         returncode, detail = run_script("devpilot_pipeline_repair.sh")
     else:
