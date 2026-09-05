@@ -30,6 +30,7 @@
     "app/rag/**",
     "app/services/rag_*.py",
     "app/services/alternating_flow.py",
+    "app/services/audit.py",
     "app/services/executor.py",
     "app/services/git_reader.py",
     "app/services/github_*.py",
@@ -63,6 +64,19 @@
         "tests/test_critical_flows_browser_e2e.py"
       ],
       "browser_required": true
+    },
+    {
+      "name": "audit",
+      "source": [
+        "app/services/audit.py",
+        "app/audit_routes.py"
+      ],
+      "tests": [
+        "tests/test_audit.py",
+        "tests/test_audit_concurrency.py",
+        "tests/test_linux_user_audit.py"
+      ],
+      "browser_tests": []
     },
     {
       "name": "tasks_worker",
