@@ -1,5 +1,8 @@
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -45,6 +48,49 @@ def test_manual_deploy_is_rejected_before_queue_write(tmp_path, monkeypatch):
         assert not (tmp_path / "pending").exists()
     finally:
         get_settings.cache_clear()
+
+
+def test_legacy_manual_deploy_file_is_rejected_without_running_command(tmp_path):
+    queue_root = tmp_path / "host-actions"
+    pending = queue_root / "pending"
+    pending.mkdir(parents=True)
+    marker = tmp_path / "command-executed"
+    request_file = pending / "legacy-manual-deploy.json"
+    request_file.write_text(
+        json.dumps(
+            {
+                "id": "legacy-manual-deploy",
+                "action": "manual_deploy",
+                "actor": "user:admin",
+                "command": f"touch {marker}",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    environment = {
+        **os.environ,
+        "DEVPILOT_ROOT": str(ROOT),
+        "DEVPILOT_HOST_ACTIONS_DIR": str(queue_root),
+    }
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "devpilot_host_action_runner.py")],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0
+    assert not marker.exists()
+    assert not request_file.exists()
+    failed = queue_root / "failed" / request_file.name
+    assert failed.is_file()
+    payload = json.loads(failed.read_text(encoding="utf-8"))
+    assert payload["status"] == "failed"
+    assert payload["detail"] == "action_not_allowed: manual_deploy"
 
 
 def test_legacy_command_field_is_not_persisted_by_manual_deploy_config():
