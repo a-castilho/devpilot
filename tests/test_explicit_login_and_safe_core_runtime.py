@@ -26,17 +26,20 @@ def test_fresh_login_hands_off_without_page_reload():
     assert "devpilot:login-complete" in login_block
     assert "location.reload()" not in login_block
     assert "completeAuth(true)" in auth
-    assert "sessionStorage.getItem" not in auth
-    assert "sessionStorage.setItem" not in auth
+    # The access token stays in localStorage. sessionStorage is allowed only for
+    # transient UI messages and must never become a second credential store.
+    assert "sessionStorage.getItem(TOKEN_KEY" not in auth
+    assert "sessionStorage.setItem(TOKEN_KEY" not in auth
+    assert "sessionStorage.removeItem(AUTH_MESSAGE_KEY)" in login_block
 
 
 def test_login_disables_backdrop_compositor_until_core_is_ready():
     auth = read("app/static/auth-ui.js")
 
     assert "devpilot-auth-pending" in auth
-    assert "backdrop-filter: none !important" in auth
-    assert "-webkit-backdrop-filter: none !important" in auth
-    assert "visibility: hidden !important" in auth
+    assert "backdrop-filter:none !important" in auth
+    assert "-webkit-backdrop-filter:none !important" in auth
+    assert "visibility:hidden !important" in auth
     assert "document.addEventListener('devpilot:authenticated-core-ready', finish" in auth
     assert "revealDashboard()" in auth
     assert "devpilot:dashboard-revealed" in auth
@@ -80,11 +83,12 @@ def test_large_project_and_task_text_is_excluded_from_summary_routes():
 
     project_summary = routes.split('@router.get("/projects")', 1)[1].split('@router.get("/tasks")', 1)[0]
     task_summary = routes.split('@router.get("/tasks")', 1)[1].split('@router.get("/tasks/{task_id}")', 1)[0]
+    task_detail = routes.split('@router.get("/tasks/{task_id}")', 1)[1].split('@router.get("/game-tasks")', 1)[0]
 
     assert "Project.agents_md" not in project_summary
     assert "Project.codex_config" not in project_summary
     assert "Task.prompt" not in task_summary
-    assert '"prompt": item.prompt' in routes
+    assert '"prompt": _task_display_prompt(item.prompt)' in task_detail
 
 
 def test_mobile_navigation_has_no_attribute_mutation_observer_loop():

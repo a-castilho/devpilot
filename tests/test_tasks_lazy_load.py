@@ -27,11 +27,12 @@ def test_task_history_is_owned_by_core_app_and_uses_lightweight_summary_endpoint
 def test_large_prompt_is_loaded_only_for_one_explicit_task():
     app = read("app/static/app.js")
     routes = read("app/frontend_ui_routes.py")
+    detail = routes.split('@router.get("/tasks/{task_id}")', 1)[1].split('@router.get("/game-tasks")', 1)[0]
 
     assert "loadTaskInstructions" in app
     assert "api(`/ui/tasks/${encodeURIComponent(taskId)}`)" in app
     assert '@router.get("/tasks/{task_id}")' in routes
-    assert '"prompt": item.prompt' in routes
+    assert '"prompt": _task_display_prompt(item.prompt)' in detail
 
 
 def test_task_pagination_does_not_reintroduce_legacy_bulk_endpoint():

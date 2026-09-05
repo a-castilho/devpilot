@@ -57,21 +57,12 @@ def test_super_admin_can_open_rag_and_read_health_without_external_calls(e2e_ser
         try:
             _login(page, e2e_server)
 
-            # RAG belongs to the lazy Super Admin bundle. This proves the browser can
-            # activate the module through the same navigation path used by the product.
+            # RAG belongs to the lazy Super Admin bundle. Assert the observable
+            # destination instead of the implementation detail of a script tag.
             admin_placeholder = page.locator('[data-devpilot-feature-placeholder="admin"]')
             admin_placeholder.wait_for(state="visible", timeout=10_000)
             admin_placeholder.click()
-            page.wait_for_selector(
-                'script[src*="rag-admin-ui.js"]',
-                state="attached",
-                timeout=15_000,
-            )
-            page.wait_for_function(
-                "() => document.querySelector('script[src*=\"rag-admin-ui.js\"]')?.dataset.devpilotFeatureLoadState === 'loaded'",
-                timeout=15_000,
-            )
-            page.wait_for_function("() => Boolean(document.getElementById('rag-admin-view'))", timeout=15_000)
+            page.wait_for_selector("#rag-admin-view", state="attached", timeout=15_000)
 
             rag_nav = page.locator('.nav[data-view="rag-admin"]')
             rag_nav.wait_for(state="visible", timeout=10_000)

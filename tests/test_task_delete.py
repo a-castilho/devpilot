@@ -107,7 +107,7 @@ def test_delete_missing_task_returns_404():
     assert error.value.detail == "Task not found"
 
 
-def test_task_delete_ui_contract_includes_refresh_and_no_global_observer():
+def test_task_delete_ui_contract_includes_refresh_and_only_scoped_project_observer():
     source = Path("app/static/project-delete-ui.js").read_text(encoding="utf-8")
 
     assert "`/api/tasks/${encodeURIComponent(task.id)}`" in source
@@ -115,4 +115,8 @@ def test_task_delete_ui_contract_includes_refresh_and_no_global_observer():
     assert "detailsRow?.remove();" in source
     assert "row.remove();" in source
     assert "window.loadAllTasks(true)" in source
-    assert "MutationObserver" not in source
+    assert "projectsObserver = new MutationObserver" in source
+    assert "projectsObserver.observe(target, {childList:true, subtree:true})" in source
+    assert "const target = document.getElementById('projects-list')" in source
+    assert "observe(document.body" not in source
+    assert "observe(document.documentElement" not in source
