@@ -12,20 +12,24 @@ def test_mobile_bottom_navigation_has_direct_game_entry():
     assert "window.location.assign('/game/index.html')" in MENU
 
 
-def test_mobile_shell_loads_game_ships_runtime_directly():
-    assert "mobile-game-ships-stable.js" in MENU
-    assert "ensureGameShipsRuntime()" in MENU
+def test_mobile_shell_does_not_hidden_load_game_ships_runtime():
+    assert "mobile-game-ships-stable.js" not in MENU
+    assert "ensureGameShipsRuntime" not in MENU
+    assert "document.createElement('script')" not in MENU
 
 
-def test_project_cards_get_visible_spaceships_even_after_initial_render():
+def test_project_cards_runtime_uses_scoped_projects_observer():
     assert "project-game-ship-stable" in RUNTIME
-    assert "MutationObserver(scheduleSync)" in RUNTIME
+    assert "projectsObserver = new MutationObserver" in RUNTIME
+    assert "projectsObserver.observe(host" in RUNTIME
+    assert "document.documentElement" not in RUNTIME
     assert "decorateCards()" in RUNTIME
     assert "[data-project-task]" in RUNTIME
 
 
-def test_project_cards_get_direct_game_button():
-    assert "dataProjectGameStable" in RUNTIME
+def test_project_cards_runtime_keeps_direct_game_button_contract():
+    assert "button.dataset.projectGameStable = id" in RUNTIME
+    assert "[data-project-game-stable]" in RUNTIME
     assert "🎮 Jogar" in RUNTIME
     assert "devpilot-build-game-project" in RUNTIME
     assert "window.location.assign(GAME_URL)" in RUNTIME
