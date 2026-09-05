@@ -9,9 +9,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Run, Task, TaskStatus, Workspace
+from app.models import Run, Task, TaskStatus
 from app.security import require_access
 from app.services.audit import record
+from app.services.workspace_scope import workspace_for_authenticated_session
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
@@ -82,10 +83,7 @@ class ResolicitationRequest(BaseModel):
 
 
 def _workspace_id(db: Session) -> str:
-    workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
-    if not workspace_id:
-        raise HTTPException(404, "Workspace not found")
-    return workspace_id
+    return workspace_for_authenticated_session(db).id
 
 
 def sanitize_text(value: str) -> str:
