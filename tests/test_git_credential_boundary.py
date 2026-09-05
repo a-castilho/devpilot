@@ -5,11 +5,11 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 from app.db import Base
 from app.models import Organization, ProviderCredential, Workspace
-from app.services import executor, recovery
+from app.services import executor, recovery, repository_paths
 
 
 class FakeVault:
@@ -82,13 +82,48 @@ def credential_store(tmp_path, monkeypatch):
         engine.dispose()
 
 
-def project(*, workspace_id: str, organization_id: str | None, repository_url: str = "https://github.com/example/repo.git"):
+def project(
+    *,
+    workspace_id: str,
+    organization_id: str | None,
+    repository_url: str = "https://github.com/example/repo.git",
+    project_id: str = "project-1",
+    slug: str = "repo",
+):
     return SimpleNamespace(
+        id=project_id,
         workspace_id=workspace_id,
         organization_id=organization_id,
         repository_url=repository_url,
-        slug="repo",
+        slug=slug,
     )
+
+
+def test_repository_path_isolates_same_slug_between_workspaces(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        repository_paths,
+        "get_settings",
+        lambda: SimpleNamespace(repositories_dir=tmp_path),
+    )
+    first = project(
+        workspace_id="workspace-a",
+        organization_id=None,
+        project_id="project-a",
+        slug="same-slug",
+    )
+    second = project(
+        workspace_id="workspace-b",
+        organization_id=None,
+        project_id="project-b",
+        slug="same-slug",
+    )
+
+    first_path = repository_paths.repository_path(first)
+    second_path = repository_paths.repository_path(second)
+
+    assert first_path != second_path
+    assert first_path == tmp_path / "workspace-a" / "project-a"
+    assert second_path == tmp_path / "workspace-b" / "project-b"
 
 
 def test_executor_does_not_resolve_organization_from_another_workspace(credential_store):
@@ -132,9 +167,9 @@ def test_executor_never_attaches_github_pat_to_another_allowed_git_host(credenti
     assert environment == {"GIT_TERMINAL_PROMPT": "0"}
 
 
-def test_existing_checkout_origin_is_reset_before_authenticated_fetch(tmp_path, monkeypatch):
-    checkout = tmp_path / "repo"
-    checkout.mkdir()
+def test_existing_checkout_validates_origin_without_rewriting_it(tmp_path, monkeypatch):
+    checkout = tmp_path / "workspace-1" / "project-1"
+    checkout.mkdir(parents=True)
     item = project(workspace_id="workspace-1", organization_id=None)
     calls: list[tuple[list[str], object, object]] = []
     safe_url = "https://github.com/example/repo.git"
@@ -146,13 +181,40 @@ def test_existing_checkout_origin_is_reset_before_authenticated_fetch(tmp_path, 
 
     def fake_run(args, cwd=None, timeout=900, env_overrides=None):
         calls.append((list(args), cwd, env_overrides))
-        return subprocess.CompletedProcess(args, 0, "", "")
+        stdout = safe_url + "\n" if list(args[:4]) == ["git", "remote", "get-url", "origin"] else ""
+        return subprocess.CompletedProcess(args, 0, stdout, "")
 
     monkeypatch.setattr(executor, "run", fake_run)
 
     assert executor.ensure_repository(item) == checkout
-    assert calls[0] == (["git", "remote", "set-url", "origin", safe_url], checkout, None)
+    assert calls[0] == (["git", "remote", "get-url", "origin"], checkout, None)
     assert calls[1] == (["git", "fetch", "--prune", "origin"], checkout, auth_environment)
+    assert all("set-url" not in args for args, _cwd, _env in calls)
+
+
+def test_existing_checkout_with_drifted_origin_fails_before_fetch(tmp_path, monkeypatch):
+    checkout = tmp_path / "workspace-1" / "project-1"
+    checkout.mkdir(parents=True)
+    item = project(workspace_id="workspace-1", organization_id=None)
+    safe_url = "https://github.com/example/repo.git"
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(executor, "validated_repository_url", lambda _project: safe_url)
+    monkeypatch.setattr(executor, "repository_path", lambda _project: checkout)
+    monkeypatch.setattr(executor, "git_environment", lambda _project, _url=None: {"GIT_TERMINAL_PROMPT": "0"})
+
+    def fake_run(args, cwd=None, timeout=900, env_overrides=None):
+        calls.append(list(args))
+        if list(args[:4]) == ["git", "remote", "get-url", "origin"]:
+            return subprocess.CompletedProcess(args, 0, "https://github.com/other/repo.git\n", "")
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(executor, "run", fake_run)
+
+    with pytest.raises(RuntimeError, match="does not match"):
+        executor.ensure_repository(item)
+
+    assert calls == [["git", "remote", "get-url", "origin"]]
 
 
 def test_recovery_ls_remote_scopes_header_and_uses_normalized_url(monkeypatch):
