@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Run, Task, TaskStatus, Workspace
+from app.models import Run, Task, TaskStatus
 from app.security import require_access
 from app.services.failure_recovery import (
     apply_user_guidance,
@@ -17,6 +17,7 @@ from app.services.failure_recovery import (
     latest_run_for_task,
     resume_original_after_recovery,
 )
+from app.services.workspace_scope import workspace_for_authenticated_session
 from app.task_run_routes import failure_details, sanitize_payload
 
 
@@ -28,10 +29,7 @@ class RecoveryGuidance(BaseModel):
 
 
 def _workspace_id(db: Session) -> str:
-    workspace_id = db.scalar(select(Workspace.id).where(Workspace.slug == "default"))
-    if not workspace_id:
-        raise HTTPException(404, "Workspace not found")
-    return workspace_id
+    return workspace_for_authenticated_session(db).id
 
 
 def _task(db: Session, task_id: str) -> Task:
