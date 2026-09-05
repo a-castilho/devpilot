@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Organization, Project, ProviderCredential, Task
 from app.services.policy import normalize_repository_url
+from app.services.repository_paths import repository_path as isolated_repository_path
 from app.services.vault import Vault
 
 
@@ -70,7 +71,7 @@ _SECRET_PATTERNS = (
 
 
 def repository_path(project: Project) -> Path:
-    return get_settings().repositories_dir / SAFE_NAME.sub("-", project.slug)
+    return isolated_repository_path(project)
 
 
 def validated_repository_url(project: Project) -> str:
@@ -151,6 +152,7 @@ def git_environment(project: Project, repository_url: str | None = None) -> dict
 def ensure_repository(project: Project) -> Path:
     repository_url = validated_repository_url(project)
     path = repository_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
     git_env = git_environment(project, repository_url)
     if not path.exists():
         result = run(
@@ -160,11 +162,17 @@ def ensure_repository(project: Project) -> Path:
         if result.returncode:
             raise RuntimeError(result.stderr.strip() or "Unable to clone repository")
 
-    # A pre-existing checkout can have its local origin changed independently from
-    # the database. Restore it without credentials before any network-capable fetch.
-    remote = run(["git", "remote", "set-url", "origin", repository_url], cwd=path)
+    # A checkout is tenant/project-isolated. Never rewrite its remote implicitly:
+    # validate the current origin and fail closed if local state diverged from DB.
+    remote = run(["git", "remote", "get-url", "origin"], cwd=path)
     if remote.returncode:
-        raise RuntimeError(remote.stderr.strip() or "Unable to validate repository origin")
+        raise RuntimeError(remote.stderr.strip() or "Unable to read repository origin")
+    try:
+        current_origin = normalize_repository_url(remote.stdout.strip())
+    except ValueError as error:
+        raise RuntimeError("Repository origin is outside the allowed Git policy") from error
+    if current_origin != repository_url:
+        raise RuntimeError("Repository origin does not match the persisted repository URL")
 
     result = run(["git", "fetch", "--prune", "origin"], cwd=path, env_overrides=git_env)
     if result.returncode:
