@@ -5,9 +5,14 @@ import tempfile
 from pathlib import Path
 
 from app.config import get_settings
+from app.db import SessionLocal
 from app.models import Project, Task
+from app.project_provisioning_routes import provision_repository_in_background
 from app.services import executor as executor_service
 from app.services.task_flow import execution_branch, is_analysis_action_task, is_verification_analysis
+
+
+REPOSITORY_NOT_READY = "REPOSITORY_NOT_READY"
 
 
 def _disabled_result(mode: str) -> dict:
@@ -23,6 +28,61 @@ def _disabled_result(mode: str) -> dict:
             "Próximo passo\nHabilite a execução e tente novamente a tarefa bloqueada."
         ),
     }
+
+
+def _repository_not_ready_result() -> dict:
+    message = (
+        "O repositório do projeto ainda não está pronto. O DevPilot interrompeu a etapa antes de iniciar "
+        "Git ou Codex e tentará novamente somente depois que repository_url existir."
+    )
+    return {
+        "mode": "repository-preflight",
+        "exit_code": 78,
+        "summary": message,
+        "stderr": f"{REPOSITORY_NOT_READY}: repository_url is empty",
+        "client_report": (
+            "Resumo para o cliente\n"
+            "A etapa não foi iniciada porque o repositório do projeto ainda não está disponível.\n\n"
+            "O que encontramos\nrepository_url continua vazio após a tentativa automática de provisionamento.\n\n"
+            "Impacto\nNenhum comando Git, Codex ou alteração de código foi executado com um repositório inválido.\n\n"
+            "Recomendações\nConcluir o provisionamento GitHub do próprio projeto e manter a mesma tarefa para reteste.\n\n"
+            "Próximo passo\nAtualize o diagnóstico; o DevPilot retomará a mesma etapa quando o repositório estiver pronto."
+        ),
+        "self_healing": {
+            "status": "needs_attention",
+            "category": "repository_not_ready",
+            "requires_authorization": False,
+            "strategy": "repository_provision_preflight",
+            "message": message,
+            "steps": [
+                {
+                    "state": "detected",
+                    "category": "repository_not_ready",
+                    "message": f"{REPOSITORY_NOT_READY}: repository_url is empty",
+                }
+            ],
+        },
+    }
+
+
+def _ensure_project_repository(project: Project) -> bool:
+    if str(project.repository_url or "").strip():
+        return True
+
+    provision_repository_in_background(
+        project.id,
+        project.workspace_id,
+        "worker",
+    )
+
+    with SessionLocal() as db:
+        refreshed = db.get(Project, project.id)
+        if not refreshed or not str(refreshed.repository_url or "").strip():
+            return False
+        project.repository_url = refreshed.repository_url
+        project.default_branch = refreshed.default_branch
+        project.organization_id = refreshed.organization_id
+    return True
 
 
 def _execute_action(project: Project, task: Task) -> dict:
@@ -181,7 +241,9 @@ def _execute_verification(project: Project, task: Task) -> dict:
 
 
 def execute_task(project: Project, task: Task) -> dict:
-    """Execute the alternating flow without allowing analysis text to change the next task mode."""
+    """Execute only after the project has a persisted repository URL."""
+    if not _ensure_project_repository(project):
+        return _repository_not_ready_result()
     if is_verification_analysis(task):
         return _execute_verification(project, task)
     if is_analysis_action_task(task):
