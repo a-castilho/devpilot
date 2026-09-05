@@ -14,6 +14,7 @@ from app.security import Principal, Role, require_access, require_super_admin, s
 from app.services.audit import record
 from app.services.github_provisioning import GitHubProvisioningError, create_github_repository
 from app.services.vault import Vault
+from app.services.workspace_scope import workspace_for_principal
 
 
 AUTHORIZED_ORGANIZATION = "a-castilho"
@@ -38,15 +39,6 @@ class ProjectDeferredCreate(BaseModel):
     codex_config: dict = Field(default_factory=dict)
     organization_id: str | None = None
     default_branch: str = Field(default="main", pattern=r"^[A-Za-z0-9._/-]+$")
-
-
-def workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        item = Workspace(name="DevPilot", slug="default")
-        db.add(item)
-        db.flush()
-    return item
 
 
 def authorized_organization(db: Session, workspace_id: str) -> Organization:
@@ -282,10 +274,11 @@ def provision_repository_in_background(
 def create_project_without_repository(
     payload: ProjectDeferredCreate,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_super_admin),
 ):
     """Super Admin escape hatch: create now and connect a Git repository later."""
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
     )
@@ -317,7 +310,7 @@ def provision_project(
     actor: str = Depends(require_access),
 ):
     """Persist first and provision Git only after the HTTP response is ready."""
-    ws = workspace(db)
+    ws = workspace_for_principal(db, principal)
     existing = db.scalar(
         select(Project).where(Project.workspace_id == ws.id, Project.slug == payload.slug)
     )
