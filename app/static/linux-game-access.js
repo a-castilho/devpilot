@@ -100,7 +100,7 @@
     const unlocked = Boolean(bonus.unlocked);
     const eligible = Boolean(bonus.eligible);
     const earned = Number(bonus.earned_xp || 0);
-    const required = Math.max(1, Number(bonus.required_xp || 360));
+    const required = Math.max(1, Number(bonus.required_xp || 420));
     const percent = Math.max(0, Math.min(100, Math.round(earned / required * 100)));
     card.className = `linux-game-access ${unlocked ? 'unlocked' : ''}`;
 
@@ -122,7 +122,7 @@
       </div>
       ${eligible ? `<div class="linux-game-meter" aria-label="${percent}% do bônus"><i style="width:${percent}%"></i></div>` : ''}
       <div class="linux-game-meta">
-        <span>${eligible ? 'Desbloqueio: fases 1, 2 e 3 concluídas · 360 XP' : 'VIEWER não recebe shell executável.'}</span>
+        <span>${eligible ? 'Desbloqueio: fases 1, 2 e 3 concluídas · 420 XP' : 'VIEWER não recebe shell executável.'}</span>
         ${eligible ? '<button type="button" class="primary" data-linux-game-open>Ir para o Jogo</button>' : ''}
       </div>`;
     card.querySelector('[data-linux-game-open]')?.addEventListener('click', openGame);
