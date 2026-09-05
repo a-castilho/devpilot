@@ -35,6 +35,13 @@
     "app/services/github_*.py",
     "app/services/ollama_git_context.py",
     "app/services/linux_*.py",
+    "app/services/workspace_scope.py",
+    "app/project_delete_routes.py",
+    "app/project_provisioning_routes.py",
+    "app/provider_models_routes.py",
+    "app/host_action_routes.py",
+    "app/workflow_observability_routes.py",
+    "app/frontend_ui_routes.py",
     "app/static/*game*.js",
     "app/static/game/**",
     "app/static/super-admin*.js",
@@ -63,6 +70,24 @@
         "tests/test_critical_flows_browser_e2e.py"
       ],
       "browser_required": true
+    },
+    {
+      "name": "workspace_isolation",
+      "source": [
+        "app/services/workspace_scope.py",
+        "app/project_delete_routes.py",
+        "app/project_provisioning_routes.py",
+        "app/provider_models_routes.py",
+        "app/host_action_routes.py",
+        "app/workflow_observability_routes.py",
+        "app/frontend_ui_routes.py"
+      ],
+      "tests": [
+        "tests/test_workspace_isolation.py",
+        "tests/test_project_delete.py",
+        "tests/test_task_delete.py"
+      ],
+      "browser_tests": []
     },
     {
       "name": "tasks_worker",
