@@ -33,6 +33,7 @@ from app.services.task_flow import (
 )
 from app.services.task_images import enable_executor_image_support
 from app.services.task_orchestrator import (
+    LostTaskClaim,
     claim_next_task,
     controlled_executor_run,
     mark_worker_controlled,
@@ -505,7 +506,15 @@ def main() -> None:
         raise SystemExit(78) from error
     print("[worker] runtime OK: " + ", ".join(f"{tool}={path}" for tool, path in runtime.items()), flush=True)
     while True:
-        if not process_one():
+        try:
+            processed = process_one()
+        except LostTaskClaim as error:
+            # Another worker owns this task now. The Session context inside
+            # process_one has already rolled back/closed; keep this worker alive
+            # without publishing a stale failure or entering auto-recovery.
+            print(f"[worker] claim lost; stale execution abandoned: {error}", flush=True)
+            continue
+        if not processed:
             time.sleep(2)
 
 
