@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def principal(role: Role) -> Principal:
-    return Principal(user_id="u1", workspace_id="w1", role=role, actor="user:u1")
+    return Principal(user_id="u1", workspace_id="w1", email="u1@example.com", role=role)
 
 
 def test_pipeline_repair_is_super_admin_only():
