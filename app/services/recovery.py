@@ -11,14 +11,13 @@ from urllib.parse import urlparse
 
 from sqlalchemy import select
 
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Organization, Project, ProviderCredential, Task
 from app.services.policy import normalize_repository_url
+from app.services.repository_paths import repository_path
 from app.services.vault import Vault
 
 
-SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
 GITHUB_HOST = "github.com"
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)[^\s\"']+"),
@@ -182,7 +181,7 @@ class AutoRecoveryService:
         return subprocess.run(["git","ls-remote",safe_repository_url,"HEAD"], text=True, capture_output=True, timeout=45, check=False, env=env)
 
     def _quarantine_invalid_repository(self, project: Project) -> bool:
-        path = get_settings().repositories_dir / SAFE_NAME.sub("-", project.slug)
+        path = repository_path(project)
         if not path.exists() or (path / ".git").exists(): return False
         try: path.rename(self._available_recovery_path(path)); return True
         except OSError: return False
