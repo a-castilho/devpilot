@@ -6,6 +6,7 @@ from app.services.failure_recovery import RECOVERY_MARKER, recovery_prompt
 
 ROOT = Path(__file__).resolve().parents[1]
 ROUTES = (ROOT / "app/failure_recovery_routes.py").read_text(encoding="utf-8")
+PROVISIONING = (ROOT / "app/project_provisioning_routes.py").read_text(encoding="utf-8")
 SERVICE = (ROOT / "app/services/failure_recovery.py").read_text(encoding="utf-8")
 UI = (ROOT / "app/static/task-recovery-flow.js").read_text(encoding="utf-8")
 LOADER = (ROOT / "app/static/feature-loader.js").read_text(encoding="utf-8")
@@ -66,6 +67,17 @@ def test_repository_not_ready_reprovisions_and_requeues_original_task():
     assert 'action="failure_recovery.repository_reprovisioned"' in ROUTES
     assert "if _recover_repository_dependency(db, original, failure):" in ROUTES
     assert '"project_id": original.project_id' in ROUTES
+
+
+def test_repository_recovery_surfaces_latest_provisioning_failure():
+    assert 'config["repository_provision_state"] = "failed"' in PROVISIONING
+    assert 'config["repository_provision_error"] = message[:2000]' in PROVISIONING
+    assert 'config.pop("repository_provision_error", None)' in PROVISIONING
+    assert "def _latest_repository_failure" in ROUTES
+    assert 'config.get("repository_provision_error")' in ROUTES
+    assert '"code": "REPOSITORY_NOT_READY"' in ROUTES
+    assert "_latest_repository_failure(db, original) or failure_details(original_run)" in ROUTES
+    assert "failure = _latest_repository_failure(db, original) or failure_details(run)" in ROUTES
 
 
 def test_agent_recovery_is_idempotent_and_never_recursively_spawns_itself():
