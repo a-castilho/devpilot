@@ -9,7 +9,10 @@ from uuid import uuid4
 from app.config import get_settings
 
 
-ALLOWED_HOST_ACTIONS = {"update_local", "manual_deploy"}
+# Host actions are intentionally closed over a small set of named operations.
+# Never accept free-form commands here: the host runner executes outside the
+# application container and must remain a strict privilege boundary.
+ALLOWED_HOST_ACTIONS = {"update_local"}
 
 
 def queue_host_action(action: str, *, actor: str, transcript: str = "", **data) -> dict:
