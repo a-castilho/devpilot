@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+from fastapi import HTTPException
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,7 @@ from app.models import (
 )
 from app.project_delete_routes import delete_project, delete_task
 from app.quest_models import QuestMission
+from app.security import Principal, Role
 
 
 def sqlite_engine():
@@ -35,6 +38,15 @@ def sqlite_engine():
 
     Base.metadata.create_all(engine)
     return engine
+
+
+def principal(workspace_id: str) -> Principal:
+    return Principal(
+        user_id="super-admin-1",
+        workspace_id=workspace_id,
+        email="super-admin@example.com",
+        role=Role.SUPER_ADMIN,
+    )
 
 
 def base_project(db: Session):
@@ -137,7 +149,12 @@ def test_delete_project_removes_all_internal_dependents_and_preserves_repository
         cost_id = cost.id
         snapshot_id = snapshot.id
 
-        response = delete_project(project_id, db=db, actor="user:super-admin")
+        response = delete_project(
+            project_id,
+            db=db,
+            principal=principal(workspace.id),
+            actor="user:super-admin",
+        )
 
         assert response.status_code == 204
         assert db.get(Project, project_id) is None
@@ -161,6 +178,39 @@ def test_delete_project_removes_all_internal_dependents_and_preserves_repository
         assert audit is not None
         assert audit.project_id == project_id
         assert audit.actor == "user:super-admin"
+
+    engine.dispose()
+
+
+def test_delete_project_from_another_workspace_is_hidden_and_preserved():
+    engine = sqlite_engine()
+
+    with Session(engine) as db:
+        own_workspace = Workspace(name="Cliente A", slug="cliente-a")
+        other_workspace = Workspace(name="Cliente B", slug="cliente-b")
+        db.add_all([own_workspace, other_workspace])
+        db.flush()
+        other_project = Project(
+            workspace_id=other_workspace.id,
+            name="Projeto B",
+            slug="projeto-b",
+            repository_url="https://github.com/example/projeto-b.git",
+        )
+        db.add(other_project)
+        db.commit()
+        project_id = other_project.id
+
+        with pytest.raises(HTTPException) as error:
+            delete_project(
+                project_id,
+                db=db,
+                principal=principal(own_workspace.id),
+                actor="user:super-admin",
+            )
+
+        assert error.value.status_code == 404
+        assert error.value.detail == "Project not found"
+        assert db.get(Project, project_id) is not None
 
     engine.dispose()
 
@@ -192,7 +242,12 @@ def test_delete_task_removes_quest_mission_before_task():
 
         task_id = task.id
         mission_id = mission.id
-        response = delete_task(task_id, db=db, actor="user:super-admin")
+        response = delete_task(
+            task_id,
+            db=db,
+            principal=principal(workspace.id),
+            actor="user:super-admin",
+        )
 
         assert response.status_code == 204
         assert db.get(Task, task_id) is None
