@@ -52,7 +52,7 @@
 
   const phaseRows = tasks => {
     const rows = [];
-    for (let phase = 1; phase <= 6; phase += 1) {
+    for (let phase = 1; phase <= 7; phase += 1) {
       const phaseTasks = tasks.filter(task => phaseFromTask(task) === phase);
       const implementation = phaseTasks.find(task => !isVerifier(task));
       const verifier = phaseTasks.find(task => isVerifier(task));
