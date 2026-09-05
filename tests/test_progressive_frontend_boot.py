@@ -46,7 +46,8 @@ def test_auth_requires_explicit_resume_before_runtime():
     assert "renderResumeSession(token)" in source
     assert "async function validateToken(token)" in source
     assert "fetchWithTimeout('/api/auth/me'" in source
-    assert "Authorization: `Bearer ${token}`" in source
+    assert "Authorization" in source
+    assert "Bearer ${token}" in source
     assert "completeAuth(true)" in source
 
 

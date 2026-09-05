@@ -13,13 +13,15 @@ def test_auth_status_has_timeout_guard():
 
 def test_auth_boot_never_waits_forever_on_blank_screen():
     js = AUTH_JS.read_text(encoding="utf-8")
-    assert "Nunca deixe o mobile em uma tela preta" in js
-    assert "root.classList.contains('devpilot-auth-pending')" in js
+    assert "installCompositorSafeMode()" in js
+    assert "root.classList.add('devpilot-auth-pending')" in js
+    assert "renderPublicHome" in js
+    assert 'id="public-login"' in js
     assert "renderResumeSession(token)" in js
-    assert "renderLoginForm('Não foi possível consultar o status do servidor.')" in js
+    assert "renderLoginForm" in js
 
 
 def test_saved_session_validation_is_bounded():
     js = AUTH_JS.read_text(encoding="utf-8")
     assert "fetchWithTimeout('/api/auth/me'" in js
-    assert "O servidor demorou para responder" in js
+    assert "AbortController" in js

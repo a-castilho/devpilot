@@ -23,6 +23,11 @@ E2E_PASSWORD = "DevPilot-E2E-Password-2026"
 
 def _login(page, base_url: str) -> None:
     page.goto(base_url, wait_until="domcontentloaded", timeout=20_000)
+    page.wait_for_selector("#auth-modal", timeout=10_000)
+    if page.locator("#auth-email").count() == 0:
+        page.locator("#public-login").wait_for(state="visible", timeout=10_000)
+        page.locator("#public-login").click()
+    page.locator("#auth-email").wait_for(state="visible", timeout=10_000)
     page.locator("#auth-email").fill(E2E_EMAIL)
     page.locator("#auth-password").fill(E2E_PASSWORD)
     page.locator("#auth-submit").click()
