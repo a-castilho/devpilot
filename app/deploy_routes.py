@@ -202,14 +202,7 @@ def run_manual_deployment(
     principal: Principal = Depends(manage_deployments),
 ):
     project = _project(db, principal, project_id)
-    raw = _deploy_config(project)
-    try:
-        config = ManualDeployConfig.model_validate(raw)
-    except ValueError as error:
-        raise HTTPException(status_code=422, detail="Configuração de deploy incompleta") from error
-    if not config.enabled:
-        raise HTTPException(status_code=409, detail="Deploy manual está desativado para este projeto")
-
+    config = _deploy_config(project)
     record(
         db,
         workspace_id=project.workspace_id,
@@ -219,9 +212,10 @@ def run_manual_deployment(
         outcome="blocked",
         details={
             "reason": "legacy_shell_command_disabled",
-            "environment": config.environment,
-            "branch": config.branch,
-            "workdir": config.workdir,
+            "enabled": bool(config.get("enabled", False)),
+            "environment": str(config.get("environment") or ""),
+            "branch": str(config.get("branch") or ""),
+            "workdir_configured": bool(str(config.get("workdir") or "").strip()),
         },
     )
     db.commit()
