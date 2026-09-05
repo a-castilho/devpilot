@@ -13,10 +13,10 @@ from app import product_delivery_routes as delivery
 from app.delivery_cloud_bridge import install_delivery_cloud_bridge
 from app.models import AuditEvent, Project
 from app.services.audit import record
+from app.services.safe_http_probe import DELIVERY_PUBLIC_SUFFIXES, probe_public_https_url
 
 
 _RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning"}
-_ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GENERIC_DELIVERY_ERROR = "Não foi possível concluir esta etapa. Tente novamente."
 _ORIGINAL_RUN_DELIVERY = delivery.run_delivery
@@ -28,10 +28,20 @@ def _safe_public_url(value: object) -> str:
         return ""
     try:
         parsed = urlparse(candidate)
+        port = parsed.port
     except ValueError:
         return ""
     host = (parsed.hostname or "").lower()
-    if parsed.scheme != "https" or not host.endswith(_ALLOWED_PUBLIC_SUFFIXES):
+    if parsed.scheme != "https":
+        return ""
+    if parsed.username is not None or parsed.password is not None:
+        return ""
+    if port not in (None, 443):
+        return ""
+    if not host or host.endswith(".") or not any(
+        host.endswith(suffix) and len(host) > len(suffix)
+        for suffix in DELIVERY_PUBLIC_SUFFIXES
+    ):
         return ""
     return candidate
 
@@ -149,15 +159,7 @@ def _trusted_state_url(db: Session, project: Project, state: dict) -> str:
 
 
 def _probe_public_url(url: str) -> tuple[bool, int]:
-    try:
-        with httpx.Client(timeout=7.0, follow_redirects=True) as client:
-            response = client.get(
-                url,
-                headers={"Accept": "text/html,application/json;q=0.9,*/*;q=0.8"},
-            )
-    except httpx.HTTPError:
-        return False, 0
-    return 200 <= response.status_code < 400, response.status_code
+    return probe_public_https_url(url, timeout_seconds=7.0)
 
 
 def _recover_public_url(db: Session, project: Project, actor: str, state: dict) -> dict:
