@@ -1,0 +1,40 @@
+name: Focused auth production fail-fast
+
+on:
+  push:
+    branches:
+      - security/auth-production-fail-fast
+
+permissions:
+  contents: read
+
+concurrency:
+  group: focused-auth-production-fail-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  auth-config:
+    name: Auth production configuration
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Validate quality manifest
+        run: python -m json.tool .devpilot/quality-modules.json >/dev/null
+      - name: Compile changed Python
+        run: python -m compileall -q app/config.py tests/test_auth_production_fail_fast.py
+      - name: Run focused security tests
+        run: >-
+          python -m pytest -q --tb=short
+          tests/test_auth_production_fail_fast.py
+          tests/test_auth.py
+          tests/test_render_homolog_deployment.py
