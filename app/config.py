@@ -101,7 +101,7 @@ class Settings(BaseSettings):
         return self.env.strip().lower() not in _LOCAL_ENVIRONMENTS
 
     def validate_auth_runtime(self) -> None:
-        """Reject predictable authentication secrets before a deployed web app starts."""
+        """Reject predictable authentication secrets before a deployed process starts."""
         if not self.deployed_environment:
             return
 
@@ -129,5 +129,6 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
+    settings.validate_auth_runtime()
     settings.prepare()
     return settings
