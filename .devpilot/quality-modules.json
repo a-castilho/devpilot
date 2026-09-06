@@ -46,6 +46,7 @@
     {
       "name": "auth",
       "source": [
+        "app/config.py",
         "app/*auth*.py",
         "app/security*.py",
         "app/static/auth-ui.js",
@@ -53,6 +54,7 @@
       ],
       "tests": [
         "tests/test_auth.py",
+        "tests/test_auth_production_fail_fast.py",
         "tests/test_account_isolation.py",
         "tests/test_authenticated_minimal_boot.py",
         "tests/test_explicit_login_and_safe_core_runtime.py",
