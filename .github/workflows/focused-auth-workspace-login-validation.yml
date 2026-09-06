@@ -32,9 +32,13 @@ jobs:
         run: python -m json.tool .devpilot/quality-modules.json >/dev/null
       - name: Compile changed auth files
         run: python -m compileall -q app/auth_routes.py tests/test_auth_workspace_login_isolation.py
-      - name: Run focused auth tests
+      - name: Run auth module Python matrix
         run: >-
           python -m pytest -q --tb=short
-          tests/test_auth_workspace_login_isolation.py
           tests/test_auth.py
+          tests/test_auth_workspace_login_isolation.py
           tests/test_account_isolation.py
+          tests/test_authenticated_minimal_boot.py
+          tests/test_explicit_login_and_safe_core_runtime.py
+          tests/test_login_fresh_boot.py
+          tests/test_mobile_auth_blank_screen_guard.py
