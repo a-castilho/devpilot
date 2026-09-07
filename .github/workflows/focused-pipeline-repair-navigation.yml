@@ -1,0 +1,32 @@
+name: Focused pipeline repair navigation
+
+on:
+  push:
+    branches:
+      - fix/pipeline-repair-navigation
+
+permissions:
+  contents: read
+
+jobs:
+  repair-navigation:
+    name: Pipeline repair navigation
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: JavaScript syntax
+        run: node --check app/static/super-admin-local-test.js
+      - name: Focused tests
+        run: python -m pytest -q --tb=short tests/test_super_admin_pipeline_repair.py
+      - name: Navigation contract
+        run: python tests/test_page_navigation_v26_contract.py
