@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 import pytest
@@ -126,7 +127,7 @@ def test_delete_unclaimed_queued_task_is_fenced_then_removed_with_runtime_cleanu
         .order_by(AuditEvent.created_at.desc())
     )
     assert event is not None
-    assert '"status": "queued"' in event.details
+    assert json.loads(event.details)["status"] == "queued"
 
 
 def test_delete_queued_task_with_active_worker_claim_is_rejected():
@@ -186,7 +187,8 @@ def test_task_delete_ui_contract_includes_refresh_and_no_global_observer():
     assert "detailsRow?.remove();" in source
     assert "row.remove();" in source
     assert "window.loadAllTasks(true)" in source
-    assert "MutationObserver" not in source
+    assert "projectsObserver.observe(target, {childList:true, subtree:true})" in source
+    assert "projectsObserver.observe(document.body" not in source
 
 
 def test_task_action_cards_offer_super_admin_delete_for_queued_and_terminal_tasks():
