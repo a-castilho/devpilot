@@ -41,3 +41,13 @@ def test_super_admin_ui_exposes_repair_button_and_api():
     assert 'prefix="/api/admin/pipeline-repair"' in routes
     assert "require_roles(Role.SUPER_ADMIN)" in routes
     assert "router.include_router(pipeline_repair_router)" in local_routes
+
+
+def test_repair_view_uses_spa_navigation_and_leaves_mission_control():
+    source = (ROOT / "app" / "static" / "super-admin-local-test.js").read_text(encoding="utf-8")
+    assert "document.body.classList.remove('mission-control-mode')" in source
+    assert "localStorage.setItem('devpilot-workspace-mode', 'professional')" in source
+    assert "window.devpilotNavigate('pipeline-repair'" in source
+    assert "history: false" in source
+    assert "view.hidden = !active" in source
+    assert "root.dataset.devpilotView = 'pipeline-repair'" in source
