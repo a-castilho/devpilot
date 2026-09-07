@@ -6,6 +6,13 @@
 
   const TASK_STYLE_ID = 'devpilot-task-development-v2';
   const TASK_STYLE_HREF = '/assets/task-development-v2.css?v=20260829-1';
+  const DELETABLE_TASK_STATUSES = new Set([
+    'queued',
+    'awaiting_approval',
+    'completed',
+    'failed',
+    'blocked',
+  ]);
 
   function ensureStylesheet() {
     if (document.getElementById(TASK_STYLE_ID)) return;
@@ -53,6 +60,17 @@
     button.dataset.taskOrchestratorAction = action;
     button.dataset.taskId = taskId;
     button.textContent = label;
+    return button;
+  }
+
+  function deleteButton(task) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'link delete-task';
+    button.dataset.taskDelete = String(task.id);
+    button.dataset.taskTitle = String(task.title || 'esta tarefa');
+    button.textContent = 'Excluir';
+    button.setAttribute('aria-label', `Excluir tarefa ${task.title || ''}`.trim());
     return button;
   }
 
@@ -200,6 +218,38 @@
     }
   }
 
+  async function deleteTask(button) {
+    const taskId = String(button.dataset.taskDelete || '').trim();
+    const taskTitle = String(button.dataset.taskTitle || 'esta tarefa');
+    if (!taskId) return;
+
+    const confirmed = window.confirm(
+      `Excluir a tarefa “${taskTitle}”?\n\n` +
+      'As execuções vinculadas a ela também serão removidas. Esta ação não pode ser desfeita.'
+    );
+    if (!confirmed) return;
+
+    const original = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Excluindo…';
+    try {
+      await api(`/tasks/${encodeURIComponent(taskId)}`, {method: 'DELETE'});
+      const row = button.closest('tr.task-main-row');
+      detailsRowFor(row)?.remove();
+      row?.remove();
+      if (typeof state !== 'undefined' && Array.isArray(state.tasks)) {
+        state.tasks = state.tasks.filter(task => String(task.id) !== taskId);
+      }
+      toast(`Tarefa “${taskTitle}” excluída`);
+      if (typeof window.loadDashboard === 'function') await window.loadDashboard();
+      if (typeof window.loadAllTasks === 'function') await window.loadAllTasks(true);
+    } catch (error) {
+      toast(error?.message || 'Falha ao excluir a tarefa');
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+
   async function generateDocumentation(button) {
     const taskId = button.dataset.taskDocumentation;
     if (!taskId) return;
@@ -254,6 +304,14 @@
         actions.appendChild(documentation);
         actions.appendChild(actionButton('Arquivar', 'archive', task.id));
       }
+
+      const canDelete =
+        DELETABLE_TASK_STATUSES.has(statusValue) &&
+        typeof isSuperAdmin === 'function' &&
+        isSuperAdmin();
+      if (canDelete && !actions.querySelector('.delete-task')) {
+        actions.appendChild(deleteButton(task));
+      }
     });
   }
 
@@ -292,6 +350,11 @@
   };
 
   tableBody.addEventListener('click', event => {
+    const deletion = event.target.closest?.('[data-task-delete]');
+    if (deletion) {
+      void deleteTask(deletion);
+      return;
+    }
     const documentation = event.target.closest?.('[data-task-documentation]');
     if (documentation) {
       void generateDocumentation(documentation);
