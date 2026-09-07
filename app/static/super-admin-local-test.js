@@ -22,12 +22,40 @@
     document.head.appendChild(style);
   }
 
-  function openView(button, section, title) {
+  async function openRepairView(button, section) {
     if (!isSuperAdmin()) return window.toast?.('Acesso exclusivo do Super Admin');
-    document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
-    document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
+
+    // Reparo é uma tela profissional. Se o usuário veio do Mission Control,
+    // retire o modo espacial antes de trocar a view para não manter a overview
+    // visualmente ativa sobre o painel de diagnóstico.
+    document.body.classList.remove('mission-control-mode');
+    document.body.dataset.workspaceMode = 'professional';
+    localStorage.setItem('devpilot-workspace-mode', 'professional');
+    const missionToggle = document.getElementById('mission-control-toggle');
+    if (missionToggle) {
+      missionToggle.setAttribute('aria-pressed', 'false');
+      missionToggle.textContent = '🚀 Mission Control';
+      missionToggle.title = 'Abrir ponte de comando';
+    }
+
+    if (typeof window.devpilotNavigate === 'function') {
+      await window.devpilotNavigate('pipeline-repair', {source: 'pipeline-repair', history: false});
+    } else {
+      const root = document.documentElement;
+      document.querySelectorAll('.view').forEach(view => {
+        const active = view === section;
+        view.classList.toggle('active', active);
+        view.hidden = !active;
+        view.setAttribute('aria-hidden', active ? 'false' : 'true');
+      });
+      document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
+      root.dataset.devpilotView = 'pipeline-repair';
+    }
+
     const heading = document.getElementById('page-title');
-    if (heading) heading.textContent = title;
+    if (heading) heading.textContent = 'Reparo & Diagnóstico';
+    document.title = 'DevPilot — Reparo & Diagnóstico';
+    await loadRepair();
   }
 
   function renderRepair(data = {}) {
@@ -130,7 +158,7 @@
         </div>
       </div>`;
     main.appendChild(section);
-    button.addEventListener('click', () => { openView(button, section, 'Reparo & Diagnóstico'); void loadRepair(); });
+    button.addEventListener('click', () => { void openRepairView(button, section); });
     section.querySelector('#pipeline-repair-run')?.addEventListener('click', runRepair);
     section.querySelector('#pipeline-repair-refresh')?.addEventListener('click', loadRepair);
     section.querySelector('#local-test-compact-run')?.addEventListener('click', runLocalTest);
