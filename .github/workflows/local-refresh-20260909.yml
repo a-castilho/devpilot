@@ -1,0 +1,141 @@
+name: Local DevPilot Refresh 2026-09-09
+
+on:
+  push:
+    branches: [ops/local-refresh-20260909]
+    paths:
+      - ".github/workflows/local-refresh-20260909.yml"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    name: Atualizar DevPilot local e reiniciar serviços
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'self-hosted' }}
+    timeout-minutes: 10
+    steps:
+      - name: Atualizar checkout local com preservação
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/xx/Documents/devpilot
+          STATE="$TARGET/.devpilot-state"
+          REF=fix/mobile-standard-top-back
+          test -d "$TARGET/.git"
+          mkdir -p "$STATE/backups"
+
+          if [ -f "$TARGET/data/devpilot.db" ]; then
+            cp -a "$TARGET/data/devpilot.db" "$STATE/backups/devpilot.db.$(date +%Y%m%d-%H%M%S).bak"
+          fi
+
+          cd "$TARGET"
+          if ! git diff --quiet || ! git diff --cached --quiet; then
+            git stash push -m "devpilot-auto-backup-$(date +%Y%m%d-%H%M%S)" -- .
+          fi
+
+          git fetch origin --prune
+          git switch -C local/mobile-standard-top-back "origin/$REF"
+          git reset --hard "origin/$REF"
+
+          echo "LOCAL_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Preservar ambiente atual e parar somente processos DevPilot
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/xx/Documents/devpilot
+          STATE="$TARGET/.devpilot-state"
+          mkdir -p "$STATE"
+
+          API_PID=""
+          if [ -f "$STATE/api.pid" ]; then API_PID="$(cat "$STATE/api.pid" 2>/dev/null || true)"; fi
+          if [ -n "$API_PID" ] && [ -r "/proc/$API_PID/environ" ]; then
+            while IFS= read -r -d '' kv; do
+              name="${kv%%=*}"
+              case "$name" in
+                [A-Za-z_][A-Za-z0-9_]*) export "$kv" || true ;;
+              esac
+            done < "/proc/$API_PID/environ"
+          fi
+
+          stop_if_owned() {
+            pid="$1"
+            kind="$2"
+            [ -n "$pid" ] || return 0
+            [ -r "/proc/$pid/cmdline" ] || return 0
+            cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
+            case "$kind:$cmd" in
+              api:*uvicorn*app.main:app*) kill "$pid" ;;
+              worker:*app.worker*|worker:*worker_launcher.py*) kill "$pid" ;;
+              *) return 0 ;;
+            esac
+            for _ in $(seq 1 20); do
+              kill -0 "$pid" 2>/dev/null || return 0
+              sleep 0.25
+            done
+            kill -TERM "$pid" 2>/dev/null || true
+          }
+
+          stop_if_owned "$API_PID" api
+          WORKER_PID=""
+          if [ -f "$STATE/worker.pid" ]; then WORKER_PID="$(cat "$STATE/worker.pid" 2>/dev/null || true)"; fi
+          stop_if_owned "$WORKER_PID" worker
+
+          env | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | sed 's/=.*$/=*** preserved/' | grep -E '^(DEVPILOT_|OPENAI_|GOOGLE_|OLLAMA_|PATH=|LD_LIBRARY_PATH=)' || true
+
+      - name: Reiniciar API e worker
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/xx/Documents/devpilot
+          STATE="$TARGET/.devpilot-state"
+          PY="$TARGET/.venv/bin/python"
+          test -x "$PY"
+          mkdir -p "$STATE"
+
+          TOOL_LIB=/home/xx/.local/share/devpilot-actions-runner/_work/_tool/Python/3.12.10/x64/lib
+          export LD_LIBRARY_PATH="$TOOL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+          cd "$TARGET"
+          nohup "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8080 >"$STATE/api.log" 2>&1 &
+          echo $! > "$STATE/api.pid"
+
+          sleep 2
+          if [ -x "$STATE/start-worker.sh" ]; then
+            nohup "$STATE/start-worker.sh" >"$STATE/worker.log" 2>&1 &
+          elif [ -f "$STATE/worker_launcher.py" ]; then
+            nohup "$PY" "$STATE/worker_launcher.py" >"$STATE/worker.log" 2>&1 &
+          else
+            nohup "$PY" -m app.worker >"$STATE/worker.log" 2>&1 &
+          fi
+          echo $! > "$STATE/worker.pid"
+
+      - name: Validar serviços locais
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/xx/Documents/devpilot
+          STATE="$TARGET/.devpilot-state"
+
+          ok=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/health > /tmp/devpilot-health.json; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo "API não respondeu ao healthcheck"
+            tail -n 80 "$STATE/api.log" || true
+            exit 1
+          fi
+
+          cat /tmp/devpilot-health.json
+
+          API_PID="$(cat "$STATE/api.pid")"
+          WORKER_PID="$(cat "$STATE/worker.pid")"
+          kill -0 "$API_PID"
+          kill -0 "$WORKER_PID"
+
+          echo "Atualização local concluída em $LOCAL_SHA"
