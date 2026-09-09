@@ -16,11 +16,13 @@ Um `exit_code = 0` isolado não é suficiente quando a tarefa possui contrato de
 2. **Evidence Gate** — tarefas Build Game/Jogo/Delivery Verifier exigem `.devpilot/build-game.md` não vazio.
 3. **Self-healing** — falhas conhecidas passam pelo ciclo curto de autocorreção existente.
 4. **Incident** — quando a autocorreção não resolve, o DevPilot cria um snapshot compacto com task, run, projeto, categoria, código e mensagem sanitizada.
-5. **Repair Run** — a recuperação existente recebe `[DEVPILOT_REPAIR_PIPELINE_V1]` e executa diagnóstico de causa raiz, testes focados e verificações de integração.
-6. **Delivery** — se houver mudança de código, o DevPilot cria commit na branch da recuperação, faz push e abre Pull Request com GitHub CLI.
-7. **CI Gate** — o PR é acompanhado por `gh pr checks --watch --fail-fast`. CI com falha bloqueia o reteste da tarefa original.
-8. **Reteste** — somente com entrega válida (`ready_to_retest`) ou correção ambiental sem diff (`no_changes`) a tarefa original volta para a fila.
-9. **Prova final** — a tarefa original é executada novamente; seu resultado é a evidência final de que a causa raiz foi removida.
+5. **Baseline do workspace** — ao criar a tarefa de recuperação, o DevPilot registra quais caminhos já estavam sujos antes do reparo.
+6. **Repair Run** — a recuperação recebe `[DEVPILOT_REPAIR_PIPELINE_V1]` e executa diagnóstico de causa raiz, testes focados e verificações de integração.
+7. **Scoped Delivery** — somente caminhos que ficaram sujos depois do baseline podem ser staged automaticamente; alterações preexistentes permanecem intocadas.
+8. **Delivery** — se houver mudança nova de código, o DevPilot cria commit na branch da recuperação, faz push e abre Pull Request com GitHub CLI.
+9. **CI Gate** — o PR é acompanhado por `gh pr checks --watch --fail-fast`. CI com falha bloqueia o reteste da tarefa original.
+10. **Reteste** — somente com entrega válida (`ready_to_retest`) ou correção ambiental sem diff novo (`no_changes`) a tarefa original volta para a fila.
+11. **Prova final** — a tarefa original é executada novamente; seu resultado é a evidência final de que a causa raiz foi removida.
 
 ## Limite de autonomia
 
@@ -33,9 +35,10 @@ O prompt da tarefa de recuperação recebe um bloco como:
 ```text
 [DEVPILOT_REPAIR_PIPELINE_V1]
 [repair-incident:{...}]
+[repair-baseline:{...}]
 ```
 
-O JSON contém somente contexto compacto e minimizado. Logs brutos continuam no `Run` e seguem as regras existentes de sanitização e autorização.
+O incidente contém somente contexto compacto e minimizado. O baseline contém apenas a lista de caminhos que já estavam modificados ou não rastreados antes da recuperação. Logs brutos continuam no `Run` e seguem as regras existentes de sanitização e autorização.
 
 ## Evidence Gate
 
@@ -47,25 +50,32 @@ O JSON contém somente contexto compacto e minimizado. Logs brutos continuam no 
 
 Também combina stdout com stderr em falhas quando o stderr contém apenas a mensagem benigna do Codex (`Reading additional input from stdin...`), evitando que o diagnóstico real seja ocultado.
 
-## Entrega automática
+## Entrega automática com escopo controlado
 
-`app/services/repair_pipeline.py` materializa uma recuperação bem-sucedida:
+`app/services/repair_pipeline.py` materializa uma recuperação bem-sucedida sem varrer sujeira anterior do repositório:
 
-- `git status --porcelain` identifica se houve alteração;
-- `git add -A` e `git commit` materializam a mudança;
+- `git status --porcelain=v1 -z --untracked-files=all` captura o baseline ao criar a recuperação;
+- no final, o mesmo status é comparado com o baseline;
+- somente caminhos novos (`estado atual - baseline`) entram no staging automático;
+- `git add -A -- <paths>` limita o staging a esses caminhos;
+- caminhos sensíveis como `.env`, chaves privadas e arquivos de credencial são bloqueados;
+- `git diff --cached --name-only -z` confirma que nenhum caminho fora do escopo entrou no índice;
+- `git commit` materializa a mudança;
 - `git push -u origin <branch>` publica a branch;
-- `gh pr create` abre o PR;
+- `gh pr create` abre o PR; se o PR já existir, `gh pr view` reaproveita a URL existente;
 - `gh pr checks --watch --fail-fast` acompanha CI;
 - `Run.commit_sha` e `Run.pull_request_url` recebem as evidências de entrega.
 
-Se não houver diff, o fluxo assume uma possível correção ambiental e devolve `no_changes`; nesse caso, o reteste da tarefa original é obrigatório.
+Se não houver diff novo em relação ao baseline, o fluxo devolve `no_changes`; nesse caso, o reteste da tarefa original é obrigatório. Se houver workspace sujo mas o baseline não estiver disponível, o pipeline falha fechado com `scope_unknown` e não faz staging automático.
 
 ## Estados de entrega
 
 | Estado | Significado | Retesta original? |
 |---|---|---|
-| `no_changes` | Correção ambiental ou sem diff | Sim |
+| `no_changes` | Correção ambiental ou nenhum diff novo depois do baseline | Sim |
 | `ready_to_retest` | Commit/PR criado e CI aprovado ou não configurado | Sim |
+| `scope_unknown` | Workspace sujo sem baseline confiável | Não |
+| `scope_blocked` | Caminho inseguro ou staging fora do escopo | Não |
 | `ci_failed` | PR criado, CI falhou | Não |
 | `delivery_failed` | Falha em commit, push, PR ou infraestrutura de entrega | Não |
 
@@ -73,11 +83,13 @@ Se não houver diff, o fluxo assume uma possível correção ambiental e devolve
 
 A economia vem principalmente de evitar reanálises e prompts repetidos. O incidente persistente concentra os identificadores e a falha relevante; a tarefa de recuperação recebe o objetivo original e o contexto de erro sem depender de reconstrução manual da conversa.
 
-O pipeline também executa validações focadas antes de depender do CI completo, reduzindo tempo de CPU e chamadas desnecessárias ao agente.
+O pipeline também orienta validações focadas antes do CI completo, reduzindo tempo de CPU e chamadas desnecessárias ao agente.
 
 ## Segurança e rollback
 
 - credenciais não são copiadas para o incident snapshot;
+- alterações que já existiam antes do reparo não entram no commit automático;
+- arquivos de segredo conhecidos são bloqueados no staging automático;
 - não há merge automático;
 - falha de CI não libera a tarefa original;
 - falha de entrega converte a recuperação em falha auditável;
@@ -97,11 +109,16 @@ Correções que dependam de credencial, permissão ou decisão humana continuam 
 
 ## Testes
 
-Os testes devem cobrir pelo menos:
+Os testes cobrem:
 
 - snapshot de incidente sem dados extras;
+- round-trip do baseline;
 - reparo sem diff (`no_changes`);
+- fail-closed quando há sujeira sem baseline;
+- preservação de caminhos preexistentes fora do staging;
+- bloqueio de caminhos sensíveis;
 - criação de commit, push e PR;
+- reaproveitamento de PR existente em retry;
 - CI aprovado;
 - CI com falha bloqueando reteste;
 - Evidence Gate Build Game;
