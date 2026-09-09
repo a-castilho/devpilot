@@ -17,6 +17,16 @@
     document.body.appendChild(script);
   }
 
+  function ensureMobilePageBackRuntime() {
+    if (window.__devpilotMobilePageBackReady || document.querySelector('script[data-mobile-page-back="1"]')) return;
+    const script = document.createElement('script');
+    script.src = '/assets/mobile-page-back.js?v=mobile-page-back-20260909-v1';
+    script.async = false;
+    script.dataset.mobilePageBack = '1';
+    script.onerror = () => console.error('[DevPilot] Falha ao carregar navegação superior mobile');
+    document.body.appendChild(script);
+  }
+
   function ensureMobileRouteOverrides() {
     if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
     const style = document.createElement('style');
@@ -73,6 +83,7 @@
   function mountMobileMenu() {
     ensureMobileRouteOverrides();
     ensureGameShipsRuntime();
+    ensureMobilePageBackRuntime();
     if (window.innerWidth > 900) return false;
 
     const {sidebar, sourceNav, root: existingRoot} = sourceElements();
@@ -239,6 +250,7 @@
 
   function boot() {
     ensureGameShipsRuntime();
+    ensureMobilePageBackRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
   }
 
@@ -250,6 +262,7 @@
 
   window.addEventListener('resize', () => {
     ensureGameShipsRuntime();
+    ensureMobilePageBackRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
     scheduleSync();
   }, {passive:true});
@@ -259,5 +272,5 @@
   document.addEventListener('devpilot:feature-ready', scheduleSync);
   document.addEventListener('devpilot:login-complete', scheduleSync);
 
-  console.info('[DevPilot] Menu mobile estável com acesso direto ao Jogo e naves');
+  console.info('[DevPilot] Menu mobile estável com acesso direto ao Jogo e navegação superior');
 })();
