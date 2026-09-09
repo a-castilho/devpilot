@@ -33,6 +33,15 @@ def test_failure_surface_reports_exact_position_reason_and_outcome():
     assert "O DevPilot não vai inventar credencial, permissão ou decisão humana." in source
 
 
+def test_retesting_uses_canonical_backend_status_instead_of_stale_snapshot():
+    source = STABLE.read_text(encoding="utf-8")
+    assert "recovery?.task_status || state?.taskStatus" in source
+    assert "recoverableFailure(state, recovery)" in source
+    assert "recoveryState === 'retesting'" in source
+    assert "Correção/reteste em andamento" in source
+    assert "recovery?.task_status" in source
+
+
 def test_recovery_has_one_backend_owner_and_bounded_observer():
     recovery = RECOVERY.read_text(encoding="utf-8")
     keeper = KEEPER.read_text(encoding="utf-8")
@@ -70,6 +79,7 @@ def test_bootstrap_loads_stable_ui_and_uses_one_revision():
 def run_contract():
     test_active_round_surface_lives_outside_polling_target()
     test_failure_surface_reports_exact_position_reason_and_outcome()
+    test_retesting_uses_canonical_backend_status_instead_of_stale_snapshot()
     test_recovery_has_one_backend_owner_and_bounded_observer()
     test_internal_recovery_task_never_becomes_game_phase()
     test_bootstrap_loads_stable_ui_and_uses_one_revision()
