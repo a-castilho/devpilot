@@ -6,26 +6,11 @@
 
   let mounted = false;
   let syncFrame = 0;
+  let backFrame = 0;
 
-  function ensureGameShipsRuntime() {
-    if (window.__devpilotMobileGameShipsStable || document.querySelector('script[data-mobile-game-ships-stable="1"]')) return;
-    const script = document.createElement('script');
-    script.src = '/assets/mobile-game-ships-stable.js?v=game-ships-stable-20260903-v39';
-    script.async = false;
-    script.dataset.mobileGameShipsStable = '1';
-    script.onerror = () => console.error('[DevPilot] Falha ao carregar runtime de jogo e naves mobile');
-    document.body.appendChild(script);
-  }
-
-  function ensureMobilePageBackRuntime() {
-    if (window.__devpilotMobilePageBackReady || document.querySelector('script[data-mobile-page-back="1"]')) return;
-    const script = document.createElement('script');
-    script.src = '/assets/mobile-page-back.js?v=mobile-page-back-20260909-v1';
-    script.async = false;
-    script.dataset.mobilePageBack = '1';
-    script.onerror = () => console.error('[DevPilot] Falha ao carregar navegação superior mobile');
-    document.body.appendChild(script);
-  }
+  const MOBILE_MAX = 900;
+  const BACK_CLASS = 'mobile-page-back';
+  const BACK_STYLE_ID = 'devpilot-mobile-page-back-style';
 
   function ensureMobileRouteOverrides() {
     if (document.querySelector('style[data-mobile-simple-route-overrides="1"]')) return;
@@ -69,6 +54,60 @@
     document.head.appendChild(style);
   }
 
+  function ensureBackStyle() {
+    if (document.getElementById(BACK_STYLE_ID)) return;
+    const style = document.createElement('style');
+    style.id = BACK_STYLE_ID;
+    style.textContent = `
+      @media (max-width: ${MOBILE_MAX}px) {
+        main > .view.active > .${BACK_CLASS} {
+          position: sticky;
+          top: max(8px, env(safe-area-inset-top));
+          z-index: 80;
+          display:flex;
+          align-items:center;
+          justify-content:flex-start;
+          gap:12px;
+          width:100%;
+          min-height:56px;
+          margin:0 0 16px;
+          padding:0 18px;
+          border:1px solid rgba(55,227,215,.72);
+          border-radius:16px;
+          background:linear-gradient(90deg, rgba(0,95,102,.98), rgba(7,45,66,.98));
+          box-shadow:0 12px 30px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 1px rgba(40,210,220,.08);
+          color:#f3fbff;
+          font:inherit;
+          font-size:16px;
+          font-weight:850;
+          letter-spacing:.01em;
+          backdrop-filter:blur(14px);
+          -webkit-backdrop-filter:blur(14px);
+          cursor:pointer;
+          touch-action:manipulation;
+        }
+        main > .view.active > .${BACK_CLASS}::before {
+          content:'←';
+          display:grid;
+          place-items:center;
+          width:30px;
+          height:30px;
+          color:#49f2e3;
+          font-size:28px;
+          font-weight:500;
+          line-height:1;
+        }
+        main > .view.active > .${BACK_CLASS}:active { transform:translateY(1px); }
+        body.mobile-route #tasks-v9-back,
+        body.mobile-route .project-builder-back { display:none!important; }
+      }
+      @media (min-width: ${MOBILE_MAX + 1}px) {
+        .${BACK_CLASS} { display:none!important; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
   function sourceElements() {
     const sidebar = document.querySelector('.sidebar');
     return {
@@ -80,10 +119,73 @@
     };
   }
 
+  const activeView = () => document.querySelector('main > .view.active');
+  const sourceNav = () => document.querySelector('.sidebar > nav');
+
+  function backDestination(view) {
+    if (view?.id === 'new-project-view') return 'projects';
+    return 'overview';
+  }
+
+  function backLabel(view) {
+    if (view?.id === 'new-project-view') return 'Voltar para Projetos';
+    return 'Voltar';
+  }
+
+  function navigateBack(target) {
+    const button = sourceNav()?.querySelector(`.nav[data-view="${CSS.escape(target)}"]`);
+    if (button) {
+      button.click();
+      return;
+    }
+    window.location.hash = target === 'overview' ? '#overview' : `#${target}`;
+  }
+
+  function mountBack({scrollToTop = false} = {}) {
+    ensureBackStyle();
+    if (window.innerWidth > MOBILE_MAX) return;
+
+    const view = activeView();
+    document.querySelectorAll(`.${BACK_CLASS}`).forEach(button => {
+      if (!view || !button.closest('main > .view.active')) button.remove();
+    });
+
+    if (!view || view.id === 'overview-view') return;
+
+    let button = view.querySelector(`:scope > .${BACK_CLASS}`);
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.className = BACK_CLASS;
+      view.prepend(button);
+    }
+
+    button.textContent = backLabel(view);
+    button.setAttribute('aria-label', backLabel(view));
+    button.onclick = () => navigateBack(backDestination(view));
+
+    if (scrollToTop) {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          window.scrollTo({top: 0, left: 0, behavior: 'auto'});
+          document.scrollingElement?.scrollTo?.({top: 0, left: 0, behavior: 'auto'});
+          view.scrollTo?.({top: 0, left: 0, behavior: 'auto'});
+        });
+      });
+    }
+  }
+
+  function scheduleBack({scrollToTop = false} = {}) {
+    if (backFrame) window.cancelAnimationFrame(backFrame);
+    backFrame = window.requestAnimationFrame(() => {
+      backFrame = 0;
+      mountBack({scrollToTop});
+    });
+  }
+
   function mountMobileMenu() {
     ensureMobileRouteOverrides();
-    ensureGameShipsRuntime();
-    ensureMobilePageBackRuntime();
+    ensureBackStyle();
     if (window.innerWidth > 900) return false;
 
     const {sidebar, sourceNav, root: existingRoot} = sourceElements();
@@ -91,6 +193,7 @@
     if (existingRoot) {
       mounted = true;
       scheduleSync();
+      scheduleBack();
       return true;
     }
 
@@ -165,6 +268,7 @@
       close();
       item.click();
       scheduleSync();
+      scheduleBack({scrollToTop: true});
     }
 
     function renderMenu() {
@@ -209,6 +313,7 @@
     });
 
     scheduleSync();
+    scheduleBack({scrollToTop: true});
     return true;
   }
 
@@ -241,6 +346,8 @@
         }
       }
     }
+
+    scheduleBack();
   }
 
   function scheduleSync() {
@@ -249,8 +356,6 @@
   }
 
   function boot() {
-    ensureGameShipsRuntime();
-    ensureMobilePageBackRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
   }
 
@@ -261,16 +366,21 @@
   }
 
   window.addEventListener('resize', () => {
-    ensureGameShipsRuntime();
-    ensureMobilePageBackRuntime();
     if (window.innerWidth <= 900) mountMobileMenu();
     scheduleSync();
+    scheduleBack();
   }, {passive:true});
 
-  document.addEventListener('devpilot:view-changed', scheduleSync);
+  document.addEventListener('devpilot:view-changed', () => {
+    scheduleSync();
+    scheduleBack({scrollToTop: true});
+  });
   document.addEventListener('devpilot:page-ready', scheduleSync);
   document.addEventListener('devpilot:feature-ready', scheduleSync);
-  document.addEventListener('devpilot:login-complete', scheduleSync);
+  document.addEventListener('devpilot:login-complete', () => {
+    scheduleSync();
+    scheduleBack({scrollToTop: true});
+  });
 
-  console.info('[DevPilot] Menu mobile estável com acesso direto ao Jogo e navegação superior');
+  console.info('[DevPilot] Menu mobile estável com retorno fixo no topo e abertura no início da página');
 })();
