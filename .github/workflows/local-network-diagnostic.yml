@@ -1,0 +1,50 @@
+name: Local Network Diagnostic
+
+on:
+  push:
+    branches: [ops/local-refresh-20260909]
+    paths:
+      - ".github/workflows/local-network-diagnostic.yml"
+  workflow_dispatch:
+
+jobs:
+  diagnose:
+    name: Diagnosticar acesso LAN ao DevPilot
+    runs-on: ${{ vars.DEVPILOT_RUNNER || 'self-hosted' }}
+    timeout-minutes: 5
+    steps:
+      - name: Diagnosticar rede e listener sem alterar serviços
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/xx/Documents/devpilot
+          STATE="$TARGET/.devpilot-state"
+          echo "=== HOST ==="
+          hostname
+          echo "=== IPv4 ==="
+          ip -4 -brief addr show scope global || true
+          echo "=== hostname -I ==="
+          hostname -I || true
+          echo "=== ROTA ==="
+          ip route || true
+          echo "=== PORTA 8080 ==="
+          ss -ltnp 'sport = :8080' || true
+          echo "=== HEALTH LOOPBACK ==="
+          curl -fsS --max-time 5 http://127.0.0.1:8080/health || true
+          echo
+          echo "=== PIDFILES ==="
+          for kind in api worker; do
+            pid=""
+            [ -f "$STATE/$kind.pid" ] && pid="$(cat "$STATE/$kind.pid" 2>/dev/null || true)"
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+              echo "$kind=alive pid=$pid"
+            else
+              echo "$kind=dead pid=${pid:-none}"
+            fi
+          done
+          echo "=== FIREWALL ==="
+          if command -v ufw >/dev/null 2>&1; then
+            sudo -n ufw status 2>/dev/null || ufw status 2>/dev/null || true
+          else
+            echo "ufw=not-installed"
+          fi
