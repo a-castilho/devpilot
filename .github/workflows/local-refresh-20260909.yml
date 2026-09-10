@@ -13,6 +13,80 @@ jobs:
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'self-hosted' }}
     timeout-minutes: 10
     steps:
+      - name: Diagnosticar chat local sem expor segredos
+        shell: bash
+        run: |
+          set -euo pipefail
+          TARGET=/home/xx/Documents/devpilot
+          STATE="$TARGET/.devpilot-state"
+          PY="$TARGET/.venv/bin/python"
+          cd "$TARGET"
+
+          echo "=== PROCESSOS ANTES DA ATUALIZAÇÃO ==="
+          for kind in api worker; do
+            pid=""
+            [ -f "$STATE/$kind.pid" ] && pid="$(cat "$STATE/$kind.pid" 2>/dev/null || true)"
+            if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+              echo "$kind=alive pid=$pid"
+            else
+              echo "$kind=dead pid=${pid:-none}"
+            fi
+          done
+
+          "$PY" - <<'PY'
+          import json
+          import sqlite3
+          from pathlib import Path
+
+          db = Path('data/devpilot.db')
+          if not db.exists():
+              print('DB_DIAGNOSTIC=missing')
+              raise SystemExit(0)
+
+          con = sqlite3.connect(db)
+          cur = con.cursor()
+          print('=== CREDENCIAIS ATIVAS POR PROVEDOR ===')
+          try:
+              for provider, count in cur.execute(
+                  "select provider, count(*) from provider_credentials where enabled = 1 group by provider order by provider"
+              ):
+                  print(f'{provider}={count}')
+          except Exception as exc:
+              print(f'credential_diagnostic_error={type(exc).__name__}')
+
+          print('=== ÚLTIMAS FALHAS DO CHAT ===')
+          try:
+              rows = cur.execute(
+                  "select created_at, outcome, details from audit_events where action = 'chat.failed' order by created_at desc limit 6"
+              ).fetchall()
+              if not rows:
+                  print('chat.failed=none')
+              for created_at, outcome, raw in rows:
+                  try:
+                      details = json.loads(raw or '{}')
+                  except Exception:
+                      details = {}
+                  attempts = []
+                  for item in details.get('attempts') or []:
+                      if not isinstance(item, dict):
+                          continue
+                      attempts.append({
+                          'provider': item.get('provider'),
+                          'model': item.get('model'),
+                          'status': item.get('status'),
+                          'error': str(item.get('error') or '')[:180],
+                      })
+                  safe = {
+                      'mode': details.get('mode'),
+                      'reason': details.get('reason'),
+                      'provider_order': details.get('provider_order'),
+                      'attempts': attempts,
+                  }
+                  print(created_at, outcome, json.dumps(safe, ensure_ascii=False))
+          except Exception as exc:
+              print(f'chat_diagnostic_error={type(exc).__name__}')
+          PY
+
       - name: Atualizar checkout local com preservação
         shell: bash
         run: |
@@ -82,7 +156,7 @@ jobs:
 
           env | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | sed 's/=.*$/=*** preserved/' | grep -E '^(DEVPILOT_|OPENAI_|GOOGLE_|OLLAMA_|PATH=|LD_LIBRARY_PATH=)' || true
 
-      - name: Reiniciar API e worker
+      - name: Reiniciar API e worker fora do rastreamento do runner
         shell: bash
         run: |
           set -euo pipefail
@@ -96,16 +170,16 @@ jobs:
           export LD_LIBRARY_PATH="$TOOL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
           cd "$TARGET"
-          nohup "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8080 >"$STATE/api.log" 2>&1 &
+          env -u RUNNER_TRACKING_ID nohup "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8080 >"$STATE/api.log" 2>&1 &
           echo $! > "$STATE/api.pid"
 
           sleep 2
           if [ -x "$STATE/start-worker.sh" ]; then
-            nohup "$STATE/start-worker.sh" >"$STATE/worker.log" 2>&1 &
+            env -u RUNNER_TRACKING_ID nohup "$STATE/start-worker.sh" >"$STATE/worker.log" 2>&1 &
           elif [ -f "$STATE/worker_launcher.py" ]; then
-            nohup "$PY" "$STATE/worker_launcher.py" >"$STATE/worker.log" 2>&1 &
+            env -u RUNNER_TRACKING_ID nohup "$PY" "$STATE/worker_launcher.py" >"$STATE/worker.log" 2>&1 &
           else
-            nohup "$PY" -m app.worker >"$STATE/worker.log" 2>&1 &
+            env -u RUNNER_TRACKING_ID nohup "$PY" -m app.worker >"$STATE/worker.log" 2>&1 &
           fi
           echo $! > "$STATE/worker.pid"
 
