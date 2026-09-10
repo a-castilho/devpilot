@@ -52,6 +52,18 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Browser E2E tests must use the `browser_e2e` pytest marker and the `*_browser_e2e.py` naming contract. CI collects only those files and then filters by marker so unit-test imports cannot contaminate the isolated browser runtime.
 - Do not remove a path, module, test contract, guard, or browser E2E from the matrix merely to make CI pass; fix the implementation or update the contract to reflect the real architecture.
 
+## Cloud platform standard
+
+- Every DevPilot-created full-stack project must use the platform topology `Vercel -> Render -> Neon` by default.
+- Vercel is the primary public frontend and must be the URL shown to users when a frontend exists.
+- Render hosts the backend/API and must remain capable of serving the application frontend as a fallback/backup whenever the project supports a bundled frontend.
+- Neon is the default managed PostgreSQL provider. Do not provision a new Render PostgreSQL database for DevPilot projects unless an explicit project exception requires it.
+- Frontend traffic should reach the Render backend through a configured same-origin gateway or explicit API base URL; the Vercel deployment must not contain database credentials.
+- Render receives the Neon `DATABASE_URL` through protected environment configuration; never commit connection strings or database passwords.
+- Deployment state must keep the primary Vercel URL and the Render backup URL separately so the product can fail over or expose diagnostics without ambiguity.
+- The delivery pipeline may omit a layer only when the project genuinely has no corresponding component, but new full-stack projects must default to all three providers.
+- DevPilot itself follows the same topology in homologation and production.
+
 ## Validation
 
 - Run `pytest` for backend changes.
