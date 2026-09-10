@@ -57,6 +57,38 @@ def _status_value(value) -> str:
     return value.value if isinstance(value, TaskStatus) else str(value or "")
 
 
+def _run_history(db: Session, task: Task | None) -> list[Run]:
+    if not task:
+        return []
+    return list(
+        db.scalars(
+            select(Run)
+            .where(Run.task_id == task.id)
+            .order_by(Run.started_at.desc(), Run.id.desc())
+        ).all()
+    )
+
+
+def _run_snapshot(run: Run | None) -> dict:
+    if not run:
+        return {
+            "id": None,
+            "attempt": 0,
+            "status": None,
+            "summary": "",
+            "started_at": None,
+            "finished_at": None,
+        }
+    return {
+        "id": run.id,
+        "attempt": run.attempt,
+        "status": run.status,
+        "summary": str(run.summary or "")[:1200],
+        "started_at": run.started_at,
+        "finished_at": run.finished_at,
+    }
+
+
 def _recovery_state(original: Task, recovery: Task | None) -> str:
     original_status = _status_value(original.status)
     if original_status == TaskStatus.completed.value:
@@ -95,7 +127,8 @@ def _payload(db: Session, original: Task) -> dict:
     original_run = latest_run_for_task(db, original.id)
     original_failure = failure_details(original_run)
     recovery = find_failure_recovery_task(db, original)
-    recovery_run = latest_run_for_task(db, recovery.id) if recovery else None
+    recovery_runs = _run_history(db, recovery)
+    recovery_run = recovery_runs[0] if recovery_runs else None
     recovery_failure = failure_details(recovery_run) if recovery_run else {
         "category": "",
         "code": "",
@@ -115,6 +148,10 @@ def _payload(db: Session, original: Task) -> dict:
         and recovery_run.status == "success"
         and original.status in {TaskStatus.failed, TaskStatus.blocked}
     )
+    blocker = ""
+    if state == "intervention_required" and recovery_run:
+        blocker = str(recovery_run.summary or recovery_failure.get("message") or "")[:1200]
+
     return {
         "task_id": original.id,
         "task_title": original.title,
@@ -122,13 +159,10 @@ def _payload(db: Session, original: Task) -> dict:
         "state": state,
         "manual_intervention_required": manual,
         "can_resume_original": can_resume,
+        "blocker": blocker,
         "failure": original_failure,
         "self_healing": _healing_payload(original_run),
-        "original_run": {
-            "id": original_run.id if original_run else None,
-            "attempt": original_run.attempt if original_run else 0,
-            "status": original_run.status if original_run else None,
-        },
+        "original_run": _run_snapshot(original_run),
         "recovery_task": {
             "id": recovery.id,
             "title": recovery.title,
@@ -137,6 +171,9 @@ def _payload(db: Session, original: Task) -> dict:
             "failure": recovery_failure,
             "run_id": recovery_run.id if recovery_run else None,
             "run_status": recovery_run.status if recovery_run else None,
+            "execution_count": len(recovery_runs),
+            "latest_execution": _run_snapshot(recovery_run),
+            "next_execution_number": len(recovery_runs) + 1,
         } if recovery else None,
     }
 
@@ -185,6 +222,7 @@ def intervene_recovery(
         )
         if not recovery:
             raise HTTPException(409, "Recovery flow is not available for this task")
+    before_count = len(_run_history(db, recovery))
     try:
         apply_user_guidance(
             db,
@@ -197,7 +235,16 @@ def intervene_recovery(
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
     db.commit()
-    return _payload(db, original)
+    result = _payload(db, original)
+    result["resume_request"] = {
+        "accepted": True,
+        "recovery_task_id": recovery.id,
+        "previous_execution_count": before_count,
+        "expected_next_execution": before_count + 1,
+        "status": _status_value(recovery.status),
+        "message": "Orientação registrada. A missão de recuperação foi reenfileirada para uma nova execução.",
+    }
+    return result
 
 
 @router.post("/tasks/{task_id}/recovery/resume")
