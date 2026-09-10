@@ -1,0 +1,426 @@
+/* DevPilot canonical mobile UI — 2026-09-10
+ * Autoridade visual final para telefone. Mantém os runtimes funcionais existentes,
+ * mas neutraliza camadas legadas que causam cards gigantes, scroll concorrente e
+ * navegação comprimida. Desktop permanece fora deste escopo.
+ */
+
+@media (max-width: 760px) {
+  :root {
+    --dp-mobile-nav-height: 68px;
+    --dp-mobile-gap: 12px;
+  }
+
+  html {
+    width: 100%;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+  }
+
+  body {
+    width: 100%;
+    min-height: 100svh;
+    min-height: 100dvh;
+    margin: 0;
+    overflow-x: hidden !important;
+    overscroll-behavior-x: none;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body:not(.mobile-simple-open) {
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+  }
+
+  .shell,
+  main,
+  main > .view,
+  .view.active {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  .shell {
+    min-height: 100svh !important;
+    min-height: 100dvh !important;
+  }
+
+  main {
+    width: 100% !important;
+    padding-left: max(12px, env(safe-area-inset-left)) !important;
+    padding-right: max(12px, env(safe-area-inset-right)) !important;
+    padding-bottom: calc(var(--dp-mobile-nav-height) + env(safe-area-inset-bottom) + 18px) !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+  }
+
+  main > header {
+    margin-bottom: 12px !important;
+  }
+
+  /* Um único fluxo vertical. Nenhuma tela interna cria seu próprio viewport rolável. */
+  #overview-view,
+  #projects-view,
+  #new-project-view,
+  #tasks-view,
+  #reports-view,
+  #audit-view,
+  #providers-view,
+  #organizations-view,
+  #cloud-admin-view,
+  #linux-view {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    contain: none !important;
+  }
+
+  /* Navegação inferior: estável, legível e sem sobreposição de rótulos. */
+  body.mobile-route .sidebar {
+    position: fixed !important;
+    z-index: 1000 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: calc(var(--dp-mobile-nav-height) + env(safe-area-inset-bottom)) !important;
+    padding: 5px max(6px, env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(6px, env(safe-area-inset-left)) !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+    backdrop-filter: blur(18px);
+  }
+
+  body.mobile-route .mobile-simple-nav {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    gap: 2px !important;
+    width: 100% !important;
+    height: 56px !important;
+    margin: 0 !important;
+  }
+
+  body.mobile-route .mobile-simple-item {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 56px !important;
+    min-height: 56px !important;
+    padding: 4px 1px !important;
+    margin: 0 !important;
+    border-radius: 11px !important;
+    overflow: hidden !important;
+  }
+
+  body.mobile-route .mobile-simple-item > span {
+    display: block !important;
+    font-size: 19px !important;
+    line-height: 1 !important;
+  }
+
+  body.mobile-route .mobile-simple-item > small {
+    display: block !important;
+    width: 100% !important;
+    margin-top: 4px !important;
+    font-size: clamp(8px, 2.35vw, 10px) !important;
+    line-height: 1.05 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    text-align: center !important;
+  }
+
+  /* Execuções: substitui o cockpit vertical gigante por cards operacionais compactos. */
+  #tasks-view .tasks-v9-header {
+    margin: 0 0 10px !important;
+    padding: 12px !important;
+    border-radius: 14px !important;
+  }
+
+  #tasks-view .tasks-v9-header h2 {
+    margin: 2px 0 4px !important;
+    font-size: clamp(22px, 7vw, 29px) !important;
+    line-height: 1.05 !important;
+  }
+
+  #tasks-view .tasks-v9-header p {
+    margin: 0 !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
+
+  #tasks-view .tasks-v9-toolbar,
+  #tasks-view .tasks-v9-filters {
+    gap: 8px !important;
+  }
+
+  #tasks-view .tasks-v9-filters {
+    margin-bottom: 10px !important;
+    padding: 10px !important;
+    border-radius: 12px !important;
+  }
+
+  #tasks-view .tasks-v9-table-wrap,
+  #tasks-view .tasks-v9-table,
+  #tasks-view .tasks-v9-table tbody {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: visible !important;
+  }
+
+  #tasks-view .tasks-v9-table thead {
+    display: none !important;
+  }
+
+  #tasks-view #tasks-table > tr.tasks-v9-row,
+  #tasks-view #tasks-table > tr.tasks-render-stable-v40,
+  #tasks-view.tasks-v41-compact .tasks-v9-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 7px 10px !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    margin: 0 0 9px !important;
+    padding: 12px !important;
+    border-radius: 14px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
+
+  #tasks-view #tasks-table > tr.tasks-v9-row::before,
+  #tasks-view #tasks-table > tr.tasks-v9-row::after,
+  #tasks-view #tasks-table > tr.tasks-render-stable-v40::before,
+  #tasks-view #tasks-table > tr.tasks-render-stable-v40::after {
+    pointer-events: none !important;
+  }
+
+  #tasks-view .tasks-v9-row > td,
+  #tasks-view .tasks-render-stable-v40 > td {
+    display: block !important;
+    width: auto !important;
+    min-width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #tasks-view .tasks-v9-main,
+  #tasks-view .tasks-v9-row > td:first-child,
+  #tasks-view .tasks-render-stable-v40 > td:first-child {
+    grid-column: 1 / -1 !important;
+    padding: 0 !important;
+    border-bottom: 0 !important;
+  }
+
+  #tasks-view .tasks-v9-main::after,
+  #tasks-view .tasks-v9-state::before,
+  #tasks-view .tasks-v9-actions::before {
+    display: none !important;
+    content: none !important;
+  }
+
+  #tasks-view .tasks-v9-title,
+  #tasks-view .tasks-v9-main h3,
+  #tasks-view .tasks-v9-row h3,
+  #tasks-view .tasks-render-stable-v40 h3 {
+    display: -webkit-box !important;
+    -webkit-box-orient: vertical !important;
+    -webkit-line-clamp: 2 !important;
+    overflow: hidden !important;
+    margin: 0 0 6px !important;
+    padding: 0 !important;
+    font-size: 16px !important;
+    line-height: 1.24 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #tasks-view .tasks-v9-meta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 4px 9px !important;
+    margin: 0 !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+  }
+
+  #tasks-view .tasks-v9-state {
+    grid-column: 1 !important;
+    align-self: center !important;
+    padding: 0 !important;
+  }
+
+  #tasks-view .tasks-v9-state .status,
+  #tasks-view .tasks-v9-state .tasks-v9-status,
+  #tasks-view .status {
+    min-height: 0 !important;
+    padding: 5px 8px !important;
+    font-size: 10px !important;
+    line-height: 1.1 !important;
+  }
+
+  #tasks-view .tasks-v9-actions {
+    grid-column: 2 !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
+    align-items: center !important;
+    gap: 6px !important;
+    width: auto !important;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  #tasks-view .tasks-v9-actions button,
+  #tasks-view .tasks-v9-actions a,
+  #tasks-view .tasks-v9-actions .delete-task,
+  #tasks-view .tasks-v9-actions .tasks-v9-details,
+  #tasks-view a[href*="analysis"],
+  #tasks-view .link {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    min-height: 36px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 7px 9px !important;
+    border-radius: 9px !important;
+    font-size: 11px !important;
+    line-height: 1.15 !important;
+    white-space: normal !important;
+  }
+
+  #tasks-view .task-details-row:not([hidden]) {
+    display: block !important;
+    width: 100% !important;
+    margin: -4px 0 9px !important;
+  }
+
+  #tasks-view .task-details-row:not([hidden]) > td {
+    display: block !important;
+    width: 100% !important;
+    padding: 0 !important;
+  }
+
+  #tasks-view .tasks-v9-details-panel {
+    margin: 0 !important;
+    padding: 12px !important;
+    border-radius: 0 0 14px 14px !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  /* Renderer legado de cinco células: conserva informação, mas sem blocos gigantes. */
+  #tasks-view #tasks-table > tr[data-tasks-v41-legacy="1"] {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+  }
+
+  #tasks-view #tasks-table > tr[data-tasks-v41-legacy="1"] > td:nth-child(1) {
+    grid-column: 1 / -1 !important;
+  }
+
+  #tasks-view #tasks-table > tr[data-tasks-v41-legacy="1"] > td:nth-child(2),
+  #tasks-view #tasks-table > tr[data-tasks-v41-legacy="1"] > td:nth-child(3),
+  #tasks-view #tasks-table > tr[data-tasks-v41-legacy="1"] > td:nth-child(4) {
+    grid-column: auto !important;
+    font-size: 11px !important;
+  }
+
+  #tasks-view #tasks-table > tr[data-tasks-v41-legacy="1"] > td:nth-child(5) {
+    grid-column: 1 / -1 !important;
+  }
+
+  /* Projetos: cards compactos e sem scroll horizontal interno. */
+  #projects-view .section-head,
+  #projects-list .project-card {
+    width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #projects-view .section-head {
+    padding: 12px !important;
+    margin-bottom: 10px !important;
+    border-radius: 14px !important;
+  }
+
+  #projects-list {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) !important;
+    gap: 10px !important;
+  }
+
+  #projects-list .project-card {
+    min-height: 0 !important;
+    padding: 12px !important;
+    margin: 0 !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+  }
+
+  #projects-list .project-card h3 {
+    font-size: 16px !important;
+    line-height: 1.25 !important;
+  }
+
+  #projects-list .project-card p,
+  #projects-list .project-card small {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  /* Cadastro: respeita o documento como único scroller; conteúdo pesado fica contido. */
+  #new-project-view .project-builder {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #new-project-view .project-builder-main,
+  #new-project-view .project-builder-aside,
+  #new-project-view .builder-card,
+  #new-project-view .project-builder-hero {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #new-project-view .builder-card,
+  #new-project-view .project-builder-hero {
+    padding: 12px !important;
+    margin-bottom: 10px !important;
+    border-radius: 14px !important;
+  }
+
+  #new-project-view .project-builder-sticky-action {
+    left: max(8px, env(safe-area-inset-left)) !important;
+    right: max(8px, env(safe-area-inset-right)) !important;
+    bottom: calc(var(--dp-mobile-nav-height) + env(safe-area-inset-bottom) + 6px) !important;
+    width: auto !important;
+    max-width: none !important;
+    padding: 9px !important;
+  }
+
+  /* Elementos flutuantes nunca devem cobrir a navegação principal. */
+  .assistant-fab,
+  .ai-fab,
+  [class*="floating"][class*="assistant"],
+  [class*="floating"][class*="ai"] {
+    bottom: calc(var(--dp-mobile-nav-height) + env(safe-area-inset-bottom) + 14px) !important;
+  }
+
+  img,
+  video,
+  canvas,
+  svg {
+    max-width: 100%;
+  }
+}
