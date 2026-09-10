@@ -92,3 +92,5 @@ jobs:
           echo "Frontend primário: https://$VERCEL_ALIAS" >> "$GITHUB_STEP_SUMMARY"
           echo "Frontend backup / backend: $DEVPILOT_BACKEND_URL" >> "$GITHUB_STEP_SUMMARY"
           echo "Deployment: ${{ steps.deploy.outputs.url }}" >> "$GITHUB_STEP_SUMMARY"
+
+# Provisionamento acionado em 2026-09-10 para garantir Vercel como frontend principal.
