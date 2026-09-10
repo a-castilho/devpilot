@@ -8,7 +8,7 @@
   const MISSION_KEY = 'devpilot-build-game-mission';
   const GUARD_PREFIX = 'devpilot-build-game-subphase-created';
   const MAX_SUBPHASES = 12;
-  const PHASE_NAMES = ['Mapa da missão','Primeiro circuito','Regras blindadas','Interface jogável','Batalha de testes','Chefe final'];
+  const PHASE_NAMES = ['Planejamento','Implementação','Execução','Testes','Documentação','Git','Entrega e revisão'];
   const FAILURE_STATUSES = new Set(['failed', 'blocked']);
 
   const normalize = value => String(value || '').toLowerCase().replaceAll(' ', '_');
@@ -53,7 +53,7 @@
     const category = String(failure?.failure_category || 'unknown');
     const code = String(failure?.failure_code || 'EXECUTION_FAILED');
     const logUrl = String(failure?.log_url || 'indisponível');
-    return `${GAME_MARKER}\n${SUBPHASE_MARKER}\n[DEVPILOT_MODE=fix]\nPARTIDA: ${missionId}\nFASE: ${phaseId}/6\nSUBFASE: ${phaseId}.${number}\nOBJETIVO: ${goal}\nTAREFA_ORIGEM: ${failedTask.id}\nCATEGORIA_FALHA: ${category}\nCODIGO_FALHA: ${code}\nLOG_DA_FALHA: ${logUrl}\nMOTIVO_DA_SUBFASE: ${reason}\n\nMISSÃO DA SUBFASE:\nCorrija a causa raiz da falha que interrompeu a fase ${phaseId} (${PHASE_NAMES[phaseId - 1] || 'fase do jogo'}). Esta é uma correção obrigatória criada automaticamente pelo Jogo de construção.\n\nREGRAS DA CORREÇÃO:\n- Leia AGENTS.md e preserve as regras e mudanças válidas do projeto.\n- Use o motivo, categoria e código da falha acima como evidência inicial; consulte os registros reais disponíveis antes de decidir a correção.\n- Corrija a causa raiz, não apenas a mensagem superficial.\n- Repita exatamente a verificação que falhou quando ela puder ser identificada e execute os testes relacionados.\n- Não silencie teste, não remova assert válido, não introduza mock indevido e não transforme erro em sucesso por fallback.\n- Não exponha credenciais e não contorne autenticação ou autorização.\n- Se a falha exigir autorização externa, pare de forma segura e descreva a autorização necessária.\n- Registre no resultado o erro encontrado, a correção aplicada e as evidências de validação.\n- Não avance para a próxima fase. Esta subfase precisa terminar como concluída para liberar a progressão.\n\nCRITÉRIO DE VITÓRIA DA SUBFASE:\nA causa da falha foi corrigida e a verificação que a revelou, junto dos testes aplicáveis, foi executada novamente sem falhas não resolvidas.`;
+    return `${GAME_MARKER}\n${SUBPHASE_MARKER}\n[DEVPILOT_MODE=fix]\nPARTIDA: ${missionId}\nFASE: ${phaseId}/7\nSUBFASE: ${phaseId}.${number}\nOBJETIVO: ${goal}\nTAREFA_ORIGEM: ${failedTask.id}\nCATEGORIA_FALHA: ${category}\nCODIGO_FALHA: ${code}\nLOG_DA_FALHA: ${logUrl}\nMOTIVO_DA_SUBFASE: ${reason}\n\nMISSÃO DA SUBFASE:\nCorrija a causa raiz da falha que interrompeu a fase ${phaseId} (${PHASE_NAMES[phaseId - 1] || 'fase do jogo'}). Esta é uma correção obrigatória criada automaticamente pelo Jogo de construção.\n\nREGRAS DA CORREÇÃO:\n- Leia AGENTS.md e preserve as regras e mudanças válidas do projeto.\n- Use o motivo, categoria e código da falha acima como evidência inicial; consulte os registros reais disponíveis antes de decidir a correção.\n- Corrija a causa raiz, não apenas a mensagem superficial.\n- Repita exatamente a verificação que falhou quando ela puder ser identificada e execute os testes relacionados.\n- Não silencie teste, não remova assert válido, não introduza mock indevido e não transforme erro em sucesso por fallback.\n- Não exponha credenciais e não contorne autenticação ou autorização.\n- Se a falha exigir autorização externa, pare de forma segura e descreva a autorização necessária.\n- Registre no resultado o erro encontrado, a correção aplicada e as evidências de validação.\n- Não avance para a próxima fase. Esta subfase precisa terminar como concluída para liberar a progressão.\n\nCRITÉRIO DE VITÓRIA DA SUBFASE:\nA causa da falha foi corrigida e a verificação que a revelou, junto dos testes aplicáveis, foi executada novamente sem falhas não resolvidas.`;
   };
 
   const createCorrection = async ({projectId, missionId, phaseId, number, goal, failedTask, failure}) => {
@@ -127,7 +127,7 @@
     const data = await context();
     if (!data) return false;
     let created = false;
-    for (let phaseId = 1; phaseId <= 6; phaseId += 1) {
+    for (let phaseId = 1; phaseId <= 7; phaseId += 1) {
       const phaseTasks = data.missionTasks.filter(task => phaseFromTask(task) === phaseId);
       if (!phaseTasks.length) continue;
       const latest = phaseTasks[0];

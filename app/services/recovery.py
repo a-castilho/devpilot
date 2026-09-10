@@ -44,6 +44,12 @@ class AutoRecoveryService:
 
     MAX_ATTEMPTS = 3
 
+    _REPOSITORY_NOT_READY = (
+        "repository_not_ready",
+        "repository_url is empty",
+        'repository "" does not exist',
+        "repository '' does not exist",
+    )
     _GITHUB_AUTH = (
         "write access to repository not granted", "requested url returned error: 401",
         "requested url returned error: 403", "authentication failed", "could not read username",
@@ -61,6 +67,7 @@ class AutoRecoveryService:
 
     def classify(self, error_text: str) -> str:
         text = str(error_text or "").casefold()
+        if any(pattern in text for pattern in self._REPOSITORY_NOT_READY): return "repository_not_ready"
         if any(pattern in text for pattern in self._GITHUB_AUTH): return "github_auth"
         if any(pattern in text for pattern in self._NETWORK): return "git_network"
         if any(pattern in text for pattern in self._REPOSITORY_STATE): return "repository_state"
@@ -72,6 +79,19 @@ class AutoRecoveryService:
     def recover(self, project: Project, task: Task, error_text: str, execution_attempt: int) -> RecoveryDecision:
         category = self.classify(error_text)
         detected = {"state": "detected", "attempt": execution_attempt, "category": category, "message": self._safe_error(error_text)}
+        if category == "repository_not_ready":
+            return RecoveryDecision(
+                category="repository_not_ready",
+                status="needs_attention",
+                message=(
+                    "O repositório do projeto ainda não está pronto. A execução foi interrompida antes de usar "
+                    "Git ou Codex e só será retomada depois que repository_url existir."
+                ),
+                retry=False,
+                requires_authorization=False,
+                strategy="repository_provision_preflight",
+                steps=[detected],
+            )
         if category == "github_auth":
             decision = self._recover_github_access(project, execution_attempt); decision.steps.insert(0, detected); return decision
         if category == "git_network" and execution_attempt < self.MAX_ATTEMPTS:
@@ -184,6 +204,5 @@ class AutoRecoveryService:
         if not lines: return "Falha sem mensagem detalhada."
         compact = "\n".join(lines)
         if len(compact) <= limit: return compact
-        # Keep both beginning and end: exception type/context is often at the start while root cause is at the end.
         half = max(200, (limit - 40) // 2)
         return f"{compact[:half]}\n... [contexto reduzido] ...\n{compact[-half:]}"

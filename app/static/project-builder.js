@@ -16,6 +16,12 @@
 
   document.querySelector('#project-builder-sticky-action')?.remove();
 
+  const GAME_PROJECT_KEY = 'devpilot-build-game-project';
+  const GAME_MISSION_KEY = 'devpilot-build-game-mission';
+  const GAME_DRAFT_PROJECT_KEY = 'devpilot-game-v74-project';
+  const GAME_DRAFT_GOAL_KEY = 'devpilot-game-v74-goal';
+  const INFRASTRUCTURE_PROVIDERS = ['neon', 'render', 'vercel'];
+
   const slugify = value => String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -45,6 +51,17 @@
     document.querySelector('[data-view="projects"], .nav[data-view="projects"]')?.click?.();
   }
 
+  function prepareGame(project, description) {
+    const projectId = String(project?.id || '').trim();
+    if (!projectId) return;
+    const goal = String(description || '').trim();
+    localStorage.setItem(GAME_PROJECT_KEY, projectId);
+    localStorage.setItem(GAME_DRAFT_PROJECT_KEY, projectId);
+    localStorage.removeItem(GAME_MISSION_KEY);
+    if (goal) localStorage.setItem(GAME_DRAFT_GOAL_KEY, goal);
+    else localStorage.removeItem(GAME_DRAFT_GOAL_KEY);
+  }
+
   async function request(path, options = {}) {
     if (typeof window.api === 'function') return window.api(path, options);
     const token = String(localStorage.getItem('devpilot-token') || '');
@@ -62,6 +79,37 @@
       throw new Error(detail);
     }
     return data;
+  }
+
+  async function provisionInfrastructure(project) {
+    const projectId = String(project?.id || '').trim();
+    if (!projectId) return {status: 'invalid_project'};
+    try {
+      const state = await request(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
+        method: 'POST',
+      });
+      return state && typeof state === 'object' ? state : {status: 'unknown'};
+    } catch (error) {
+      console.warn('[DevPilot] Provisionamento automático de infraestrutura não iniciou.', error);
+      return {
+        status: 'start_failed',
+        last_error: String(error?.message || 'Falha ao iniciar infraestrutura.'),
+      };
+    }
+  }
+
+  function infrastructureNotice(name, state) {
+    const status = String(state?.status || '').toLowerCase();
+    if (status === 'ready') {
+      return [`Projeto ${name} criado com Neon, Render e Vercel prontos.`, 'info'];
+    }
+    if (status === 'blocked') {
+      return [`Projeto ${name} criado. Infraestrutura aguardando credenciais de Neon, Render ou Vercel.`, 'warning'];
+    }
+    if (status === 'failed' || status === 'start_failed') {
+      return [`Projeto ${name} criado. O provisionamento cloud precisa ser retomado.`, 'warning'];
+    }
+    return [`Projeto ${name} criado. Provisionamento Neon + Render + Vercel iniciado automaticamente.`, 'info'];
   }
 
   form.innerHTML = `
@@ -180,7 +228,7 @@
     submit.textContent = 'Criando…';
 
     try {
-      await request('/projects', {
+      const created = await request('/projects', {
         method: 'POST',
         body: JSON.stringify({
           name,
@@ -190,11 +238,26 @@
           organization_id: null,
           default_branch: 'main',
           agents_md: agentsMd,
-          codex_config: {simple_setup: true, project_type: projectType, model: 'gpt-5.4'},
+          codex_config: {
+            simple_setup: true,
+            project_type: projectType,
+            model: 'gpt-5.4',
+            infrastructure: {
+              auto_provision: true,
+              environment: 'homolog',
+              providers: [...INFRASTRUCTURE_PROVIDERS],
+            },
+          },
         }),
       });
+
+      prepareGame(created, description);
+      submit.textContent = 'Preparando infraestrutura…';
+      const infrastructure = await provisionInfrastructure(created);
+
       if (typeof window.loadProjects === 'function') await Promise.resolve(window.loadProjects()).catch(() => null);
-      notify(`Projeto ${name} criado.`);
+      const [message, type] = infrastructureNotice(name, infrastructure);
+      notify(message, type);
       form.reset();
       goProjects();
     } catch (error) {

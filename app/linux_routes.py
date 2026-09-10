@@ -22,8 +22,8 @@ router = APIRouter(prefix="/api/linux", tags=["linux"])
 _GITHUB_CLOUD_PROVIDER = "cloud:github"
 _CLOUD_CREDENTIAL_LABEL = "cloud-admin"
 _GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
-_GAME_PHASE_RE = re.compile(r"^FASE:\s*(\d+)/6\s*$", re.IGNORECASE | re.MULTILINE)
-_GAME_PHASE_XP = {1: 100, 2: 120, 3: 140, 4: 160, 5: 180, 6: 200}
+_GAME_PHASE_RE = re.compile(r"^FASE:\s*(\d+)/7\s*$", re.IGNORECASE | re.MULTILINE)
+_GAME_PHASE_XP = {1: 100, 2: 220, 3: 100, 4: 160, 5: 80, 6: 100, 7: 140}
 _TERMINAL_BONUS_PHASES = {1, 2, 3}
 _TERMINAL_BONUS_XP = sum(_GAME_PHASE_XP[phase] for phase in _TERMINAL_BONUS_PHASES)
 _TERMINAL_BONUS_ROLES = {Role.OWNER, Role.ADMIN, Role.ANALYST}
