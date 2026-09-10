@@ -274,7 +274,7 @@ function renderOverview(overview) {
     recent.innerHTML = tasks.slice(0, 6).map(task => `
       <button type="button" class="recent-task overview-task" data-view="tasks">
         <span class="task-state ${esc(normalized(task.status))}"></span>
-        <span class="task-copy"><strong>${esc(task.title)}</strong><small>${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source || 'dashboard')}</small></span>
+        <span class="task-copy"><strong>${esc(task.title)}</strong><small><b class="task-project-name">${esc(task.project_name || 'Projeto não identificado')}</b> · ${new Date(task.created_at).toLocaleString('pt-BR')} · ${esc(task.source || 'dashboard')}</small></span>
         ${status(task.status)}
       </button>
     `).join('') || '<div class="empty">Nenhuma atividade ainda. Registre a primeira execução.</div>';

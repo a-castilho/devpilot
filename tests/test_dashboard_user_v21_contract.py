@@ -13,6 +13,9 @@ def test_dashboard_user_v21_contract():
     assert 'Últimas execuções' in runtime
     assert "#overview-view" in runtime
     assert "#metrics" in runtime
+    app = (ROOT / 'app/static/app.js').read_text(encoding='utf-8')
+    assert 'task.project_name' in app
+    assert 'task-project-name' in app
 
     # O dashboard V21 hoje é carregado pelo feature-loader central. O contrato
     # antigo que procurava loadDashboardUserV21 em viewport-adaptive-v15.js não
