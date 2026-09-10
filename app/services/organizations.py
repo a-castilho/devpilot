@@ -40,6 +40,25 @@ def normalize_github_repository(payload: dict) -> dict:
     }
 
 
+def _github_repo_endpoint(client: httpx.Client, login: str) -> tuple[str, str]:
+    organization = client.get(f"https://api.github.com/orgs/{login}")
+    if organization.status_code == 200:
+        return f"https://api.github.com/orgs/{login}/repos", "organization"
+    if organization.status_code not in {401, 403, 404}:
+        raise RuntimeError(f"GitHub account lookup failed with HTTP {organization.status_code}")
+
+    user = client.get(f"https://api.github.com/users/{login}")
+    if user.status_code == 200:
+        return f"https://api.github.com/users/{login}/repos", "user"
+    if user.status_code == 401:
+        raise RuntimeError("Token GitHub inválido ou expirado.")
+    if user.status_code == 403:
+        raise RuntimeError("O GitHub recusou a consulta desta conta com a credencial atual.")
+    if user.status_code == 404:
+        raise RuntimeError("Conta GitHub não encontrada. Confira o login informado.")
+    raise RuntimeError(f"GitHub account lookup failed with HTTP {user.status_code}")
+
+
 def fetch_github_repositories(login: str, access_token: str | None = None) -> list[dict]:
     headers = {
         "Accept": "application/vnd.github+json",
@@ -51,26 +70,23 @@ def fetch_github_repositories(login: str, access_token: str | None = None) -> li
 
     repositories: list[dict] = []
     with httpx.Client(timeout=30.0, follow_redirects=True, headers=headers) as client:
+        endpoint, account_type = _github_repo_endpoint(client, login)
         for page in range(1, 21):
-            response = client.get(
-                f"https://api.github.com/orgs/{login}/repos",
-                params={"type": "all", "sort": "full_name", "per_page": 100, "page": page},
-            )
+            params = {"sort": "full_name", "per_page": 100, "page": page}
+            if account_type == "organization":
+                params["type"] = "all"
+            response = client.get(endpoint, params=params)
             if response.status_code == 401:
-                raise RuntimeError(
-                    "Token GitHub inválido ou expirado. Gere um novo Fine-grained PAT para a organização."
-                )
+                raise RuntimeError("Token GitHub inválido ou expirado.")
             if response.status_code == 403:
                 raise RuntimeError(
-                    "O GitHub recusou a sincronização. Sem token, apenas repositórios públicos podem ser lidos; "
-                    "para privados, configure um Fine-grained PAT com acesso suficiente à organização."
+                    "O GitHub recusou a sincronização. Sem credencial, somente repositórios públicos podem ser lidos; "
+                    "para privados, configure acesso GitHub autenticado no DevPilot."
                 )
             if response.status_code == 404:
-                raise RuntimeError(
-                    "Organização GitHub não encontrada ou invisível para esta credencial. Confira o login informado."
-                )
+                raise RuntimeError("Conta GitHub não encontrada ou invisível para a credencial atual.")
             if response.status_code >= 400:
-                raise RuntimeError(f"GitHub organization sync failed with HTTP {response.status_code}")
+                raise RuntimeError(f"GitHub repository sync failed with HTTP {response.status_code}")
 
             items = response.json()
             if not isinstance(items, list):
