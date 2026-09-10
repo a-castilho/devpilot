@@ -197,6 +197,9 @@
     if (view.id === 'tasks-view') return view.querySelector('.tasks-v9-toolbar .primary[data-open="task-modal"]');
     if (view.id === 'overview-view') return view.querySelector('.overview-actions .primary[data-open="task-modal"]');
     if (view.id === 'new-project-view') return view.querySelector('#project-builder-submit, .project-builder-sticky-submit');
+    // Formulários administrativos precisam manter a ação de persistência junto aos campos.
+    // Não mova o Salvar de Clouds para o CTA compacto do topo no mobile.
+    if (view.id === 'cloud-admin-view') return null;
     return view.querySelector('.primary');
   }
 
