@@ -9,7 +9,6 @@ from app.services.policy import normalize_repository_url
 
 
 SLUG_PARTS = re.compile(r"[^a-z0-9]+")
-MANAGED_ORGANIZATION = "a-castilho"
 
 
 def now() -> datetime:
@@ -42,12 +41,6 @@ def normalize_github_repository(payload: dict) -> dict:
 
 
 def fetch_github_repositories(login: str, access_token: str | None = None) -> list[dict]:
-    normalized_login = login.strip().lower()
-    if normalized_login == MANAGED_ORGANIZATION and not access_token:
-        raise RuntimeError(
-            "A organização a-castilho exige um Fine-grained PAT com Resource owner = a-castilho."
-        )
-
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -69,14 +62,12 @@ def fetch_github_repositories(login: str, access_token: str | None = None) -> li
                 )
             if response.status_code == 403:
                 raise RuntimeError(
-                    "O token GitHub não possui acesso suficiente à organização. Para a-castilho, use "
-                    "Resource owner = a-castilho e autorize os repositórios necessários; a organização "
-                    "também pode exigir aprovação do token."
+                    "O GitHub recusou a sincronização. Sem token, apenas repositórios públicos podem ser lidos; "
+                    "para privados, configure um Fine-grained PAT com acesso suficiente à organização."
                 )
             if response.status_code == 404:
                 raise RuntimeError(
-                    "Organização GitHub não encontrada ou invisível para esta credencial. Confira o login "
-                    "e, para a-castilho, confirme Resource owner = a-castilho."
+                    "Organização GitHub não encontrada ou invisível para esta credencial. Confira o login informado."
                 )
             if response.status_code >= 400:
                 raise RuntimeError(f"GitHub organization sync failed with HTTP {response.status_code}")
