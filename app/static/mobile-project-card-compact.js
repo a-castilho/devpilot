@@ -12,6 +12,7 @@
   const lowPower = () => document.documentElement.classList.contains('devpilot-low-power') || mobileViewport();
   const batchSize = () => lowPower() ? 6 : 15;
   const fetchLimit = () => lowPower() ? 12 : 50;
+  const isSuperAdminUser = () => String(window.state?.currentUser?.role || '').toUpperCase() === 'SUPER_ADMIN';
 
   let renderLimit = batchSize();
   let projectsSource = null;
@@ -98,6 +99,9 @@
 
       #projects-list [data-project-game] {
         border-color:rgba(155,108,255,.42);
+      }
+      #projects-list [data-project-deploy] {
+        border-color:rgba(54,211,153,.45);
       }
 
       html.devpilot-low-power #projects-view .project-visual-overview {
@@ -188,16 +192,30 @@
       </div>`;
   }
 
+  function projectActions(card) {
+    return card.querySelector('.list-row > div:last-child') || card.querySelector('.list-row') || card;
+  }
+
   function ensureGameButton(card, project) {
     if (!card || !project?.id || card.querySelector('[data-project-game]')) return;
-    const actions = card.querySelector('.list-row > div:last-child') || card.querySelector('.list-row') || card;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'link project-game-action';
     button.dataset.projectGame = String(project.id);
     button.textContent = 'Jogar';
     button.setAttribute('aria-label', `Jogar com o projeto ${project.name || ''}`);
-    actions.appendChild(button);
+    projectActions(card).appendChild(button);
+  }
+
+  function ensureDeployButton(card, project) {
+    if (!isSuperAdminUser() || !card || !project?.id || card.querySelector('[data-project-deploy]')) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'link project-deploy-action';
+    button.dataset.projectDeploy = String(project.id);
+    button.textContent = 'Deploy';
+    button.setAttribute('aria-label', `Configurar ou executar deploy do projeto ${project.name || ''}`);
+    projectActions(card).appendChild(button);
   }
 
   function ensureLiteShip(card, project, index) {
@@ -214,6 +232,7 @@
       const project = projects[index];
       if (!project) return;
       ensureGameButton(card, project);
+      ensureDeployButton(card, project);
       ensureLiteShip(card, project, index);
     });
   }
@@ -346,6 +365,17 @@
     window.location.assign(GAME_URL);
   }
 
+  async function openDeploy(projectId) {
+    const id = String(projectId || '').trim();
+    if (!id) return;
+    if (!isSuperAdminUser()) return window.toast?.('Acesso restrito ao Super Admin');
+    const loadFeature = window.__devpilotLoadFeature;
+    if (typeof loadFeature === 'function') await loadFeature('admin');
+    const opener = window.DevPilotDeploy?.openProject;
+    if (typeof opener !== 'function') return window.toast?.('Tela de deploy indisponível');
+    await opener(id);
+  }
+
   function loadMore() {
     const projects = typeof state !== 'undefined' && Array.isArray(state.projects)
       ? state.projects
@@ -362,6 +392,13 @@
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+
+    const deploy = target.closest('[data-project-deploy]');
+    if (deploy) {
+      event.preventDefault();
+      void openDeploy(deploy.dataset.projectDeploy);
+      return;
+    }
 
     const game = target.closest('[data-project-game]');
     if (game) {
@@ -382,5 +419,5 @@
     loadMore();
   });
 
-  console.info('[DevPilot] Mobile Projects Runtime V33 ativo');
+  console.info('[DevPilot] Mobile Projects Runtime V34 ativo');
 })();
