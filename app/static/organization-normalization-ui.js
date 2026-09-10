@@ -2,6 +2,7 @@
   const form = document.querySelector('#organization-form');
   if (!form || form.dataset.normalizationBound === '1') return;
   form.dataset.normalizationBound = '1';
+  form.noValidate = true;
 
   const normalize = (value, maxLength = 100) => String(value ?? '')
     .normalize('NFD')
@@ -19,6 +20,7 @@
   const accessToken = form.querySelector('input[name="access_token"]');
   const submit = form.querySelector('button[type="submit"]');
   let slugEdited = false;
+  let submitting = false;
 
   if (name) name.id ||= 'organization-name';
   if (slug) slug.id ||= 'organization-slug';
@@ -28,6 +30,21 @@
     accessToken.required = false;
     accessToken.placeholder = 'Opcional; use apenas para repositórios privados';
   }
+
+  let feedback = form.querySelector('#organization-submit-feedback');
+  if (!feedback && submit) {
+    feedback = document.createElement('p');
+    feedback.id = 'organization-submit-feedback';
+    feedback.setAttribute('role', 'status');
+    feedback.setAttribute('aria-live', 'polite');
+    feedback.style.cssText = 'margin:10px 0 0;color:#9fb0c2;font-size:13px;line-height:1.4;';
+    submit.insertAdjacentElement('beforebegin', feedback);
+  }
+  const setFeedback = (message = '', error = false) => {
+    if (!feedback) return;
+    feedback.textContent = message;
+    feedback.style.color = error ? '#ffb4b4' : '#9fb0c2';
+  };
 
   if (!form.querySelector('#organization-identifier-hint') && githubLogin) {
     const hint = document.createElement('p');
@@ -50,10 +67,15 @@
     githubLogin.value = normalize(githubLogin.value, 39);
   });
 
-  form.onsubmit = async event => {
+  const handleSubmit = async event => {
     event.preventDefault();
+    event.stopImmediatePropagation();
+    if (submitting) return;
+
     if (typeof isSuperAdmin === 'function' && !isSuperAdmin()) {
-      if (typeof toast === 'function') toast('Acesso exclusivo do Super Admin');
+      const message = 'Acesso exclusivo do Super Admin';
+      setFeedback(message, true);
+      if (typeof toast === 'function') toast(message);
       return;
     }
 
@@ -67,7 +89,9 @@
     if (githubLogin) githubLogin.value = normalizedLogin;
 
     if (organizationName.length < 2 || normalizedSlug.length < 2 || normalizedLogin.length < 1) {
-      if (typeof toast === 'function') toast('Informe nome, slug e login GitHub válidos.');
+      const message = 'Informe nome, slug e login GitHub válidos.';
+      setFeedback(message, true);
+      if (typeof toast === 'function') toast(message);
       return;
     }
 
@@ -79,6 +103,8 @@
     if (token) payload.access_token = token;
 
     const original = submit?.textContent || 'Conectar e sincronizar';
+    submitting = true;
+    setFeedback('Conectando organização…');
     if (submit) {
       submit.disabled = true;
       submit.textContent = 'Conectando…';
@@ -90,28 +116,35 @@
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      setFeedback('Organização cadastrada. Sincronizando repositórios…');
+      if (typeof toast === 'function') toast('Organização conectada. Sincronizando repositórios públicos…');
+      if (typeof load === 'function') await load();
+      if (organization?.id && typeof syncOrganization === 'function') {
+        await syncOrganization(organization.id);
+      }
       form.closest('dialog')?.close();
       form.reset();
       slugEdited = false;
-      if (typeof toast === 'function') toast('Organização conectada. Sincronizando repositórios públicos…');
     } catch (error) {
-      if (typeof toast === 'function') toast(error.message);
-      return;
+      const message = String(error?.message || 'Não foi possível cadastrar a organização.');
+      setFeedback(message, true);
+      if (typeof toast === 'function') toast(message);
     } finally {
+      submitting = false;
       if (submit) {
         submit.disabled = false;
         submit.textContent = original;
       }
     }
-
-    void (async () => {
-      await load();
-      await syncOrganization(organization.id);
-    })();
   };
+
+  form.onsubmit = null;
+  form.addEventListener('submit', handleSubmit, true);
 
   form.addEventListener('reset', () => {
     slugEdited = false;
+    submitting = false;
+    setFeedback('');
     if (submit) {
       submit.disabled = false;
       submit.textContent = 'Conectar e sincronizar';
