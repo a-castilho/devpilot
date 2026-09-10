@@ -233,14 +233,20 @@
       const actions = actionGroupFor(actionCell);
       if (!actions) return;
 
-      const statusValue = String(task.status || '');
+      const statusValue = String(task.status || '').trim().toLowerCase();
       if (statusValue === 'running') {
         actions.appendChild(actionButton('Parar', 'pause', task.id));
         actions.appendChild(actionButton('Cancelar', 'cancel', task.id));
-      } else if (String(task.status) !== 'completed') {
+      } else if (statusValue === 'queued') {
+        // Na fila o worker já é o dono do avanço. Não exibir comandos que
+        // competem com a fila ou sugerem uma ação que não é necessária.
+        actions.appendChild(actionButton('Arquivar', 'archive', task.id));
+      } else if (['paused', 'pause_requested'].includes(statusValue)) {
+        actions.appendChild(actionButton('Retomar', 'resume', task.id));
+        actions.appendChild(actionButton('Arquivar', 'archive', task.id));
+      } else if (statusValue !== 'completed') {
         actions.appendChild(actionButton('Próximo', 'next', task.id));
         actions.appendChild(actionButton('Continuar automaticamente', 'auto', task.id));
-        actions.appendChild(actionButton('Retomar', 'resume', task.id));
         actions.appendChild(actionButton('Arquivar', 'archive', task.id));
       }
 
