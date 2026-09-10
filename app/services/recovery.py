@@ -3,12 +3,13 @@ from __future__ import annotations
 import base64
 import os
 import re
+import shutil
 import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.config import get_settings
 from app.db import SessionLocal
@@ -23,6 +24,7 @@ _SECRET_PATTERNS = (
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"),
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
 )
+_RUNTIME_GITHUB_KEYS = ("DEVPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")
 
 
 @dataclass
@@ -61,6 +63,8 @@ class AutoRecoveryService:
 
     def classify(self, error_text: str) -> str:
         text = str(error_text or "").casefold()
+        if "rate limit exceeded" in text and "github" in text:
+            return "github_rate_limit"
         if any(pattern in text for pattern in self._GITHUB_AUTH): return "github_auth"
         if any(pattern in text for pattern in self._NETWORK): return "git_network"
         if any(pattern in text for pattern in self._REPOSITORY_STATE): return "repository_state"
@@ -74,6 +78,11 @@ class AutoRecoveryService:
         detected = {"state": "detected", "attempt": execution_attempt, "category": category, "message": self._safe_error(error_text)}
         if category == "github_auth":
             decision = self._recover_github_access(project, execution_attempt); decision.steps.insert(0, detected); return decision
+        if category == "github_rate_limit":
+            if execution_attempt < self.MAX_ATTEMPTS:
+                delay = min(2, max(1, execution_attempt)); time.sleep(delay)
+                return RecoveryDecision(category, "retrying", "Limite temporário da API do GitHub detectado. Não é uma falha de autorização; o DevPilot tentará novamente sem pedir credencial ao usuário.", True, False, "github_rate_limit_retry", [detected, {"state":"repairing","attempt":execution_attempt,"message":f"Nova tentativa agendada após {delay}s sem solicitar PAT."}])
+            return RecoveryDecision(category, "needs_attention", "O GitHub manteve o rate limit após as tentativas automáticas. A tarefa foi interrompida sem solicitar nova autorização porque não há evidência de credencial inválida.", False, False, "github_rate_limit_wait", [detected])
         if category == "git_network" and execution_attempt < self.MAX_ATTEMPTS:
             delay = min(2, max(1, execution_attempt)); time.sleep(delay)
             return RecoveryDecision(category, "retrying", "Falha transitória de rede detectada. O DevPilot tentará novamente automaticamente.", True, False, "bounded_retry", [detected, {"state":"repairing","attempt":execution_attempt,"message":f"Nova tentativa agendada após {delay}s."}])
@@ -87,29 +96,9 @@ class AutoRecoveryService:
         if category == "database":
             return RecoveryDecision(category, "needs_attention", "Falha de banco detectada. A correção automática foi interrompida para evitar operações inseguras sobre dados.", False, False, "database_safety_stop", [detected])
         if execution_attempt < self.MAX_ATTEMPTS:
-            delay = min(2, max(1, execution_attempt))
-            time.sleep(delay)
-            return RecoveryDecision(
-                category="unknown",
-                status="retrying",
-                message="A causa ainda não foi classificada, mas não há evidência de credencial, permissão ou decisão humana. O DevPilot fará uma nova tentativa controlada antes de interromper a etapa.",
-                retry=True,
-                requires_authorization=False,
-                strategy="bounded_unknown_retry",
-                steps=[
-                    detected,
-                    {
-                        "state": "repairing",
-                        "attempt": execution_attempt,
-                        "message": f"Nova tentativa controlada agendada após {delay}s para confirmar se a falha é transitória.",
-                    },
-                ],
-            )
-        return RecoveryDecision(
-            category="unknown", status="diagnosis_required",
-            message="Não foi possível identificar automaticamente a causa da falha após as tentativas controladas. O erro original foi preservado para diagnóstico; nenhuma autorização será solicitada sem evidência de credencial ou permissão.",
-            retry=False, requires_authorization=False, strategy="diagnose_original_error", steps=[detected],
-        )
+            delay = min(2, max(1, execution_attempt)); time.sleep(delay)
+            return RecoveryDecision(category="unknown", status="retrying", message="A causa ainda não foi classificada, mas não há evidência de credencial, permissão ou decisão humana. O DevPilot fará uma nova tentativa controlada antes de interromper a etapa.", retry=True, requires_authorization=False, strategy="bounded_unknown_retry", steps=[detected,{"state":"repairing","attempt":execution_attempt,"message":f"Nova tentativa controlada agendada após {delay}s para confirmar se a falha é transitória."}])
+        return RecoveryDecision(category="unknown", status="diagnosis_required", message="Não foi possível identificar automaticamente a causa da falha após as tentativas controladas. O erro original foi preservado para diagnóstico; nenhuma autorização será solicitada sem evidência de credencial ou permissão.", retry=False, requires_authorization=False, strategy="diagnose_original_error", steps=[detected])
 
     def failure_result(self, decision: RecoveryDecision, original_error: str) -> dict:
         diagnostic = self._safe_error(original_error)
@@ -125,41 +114,75 @@ class AutoRecoveryService:
             summary = f"Atenção necessária: {decision.message}"
             next_step = "Aplique o ajuste indicado pelo diagnóstico e repita a execução de forma controlada."
             impact = "A tarefa foi interrompida para evitar uma ação automática sem segurança comprovada."
-        return {
-            "mode": "self-healing", "exit_code": 1, "summary": summary,
-            "client_report": (
-                "Resumo para o cliente\n" + decision.message + "\n\n"
-                "O que encontramos\n" + f"Categoria identificada: {decision.category}.\n" + f"Diagnóstico técnico: {diagnostic}\n\n"
-                "Impacto\n" + impact + "\n\nPróximo passo\n" + next_step
-            ),
-            "stderr": diagnostic,
-            "self_healing": {"status":decision.status,"category":decision.category,"requires_authorization":decision.requires_authorization,"strategy":decision.strategy,"message":decision.message,"steps":decision.steps},
-        }
+        return {"mode":"self-healing","exit_code":1,"summary":summary,"client_report":"Resumo para o cliente\n"+decision.message+"\n\nO que encontramos\n"+f"Categoria identificada: {decision.category}.\n"+f"Diagnóstico técnico: {diagnostic}\n\nImpacto\n"+impact+"\n\nPróximo passo\n"+next_step,"stderr":diagnostic,"self_healing":{"status":decision.status,"category":decision.category,"requires_authorization":decision.requires_authorization,"strategy":decision.strategy,"message":decision.message,"steps":decision.steps}}
+
+    def _runtime_github_candidates(self) -> list[tuple[str, str]]:
+        candidates: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for key in _RUNTIME_GITHUB_KEYS:
+            token = str(os.getenv(key) or "").strip()
+            if token and token not in seen:
+                seen.add(token); candidates.append((token, f"env:{key}"))
+        if shutil.which("gh"):
+            try:
+                result = subprocess.run(["gh","auth","token"], text=True, capture_output=True, timeout=5, check=False)
+            except (OSError, subprocess.SubprocessError):
+                result = None
+            token = result.stdout.strip() if result and result.returncode == 0 else ""
+            if token and token not in seen:
+                candidates.append((token, "gh-auth"))
+        return candidates
 
     def _recover_github_access(self, project: Project, execution_attempt: int) -> RecoveryDecision:
         steps = []
-        if not project.organization_id:
-            return RecoveryDecision("github_auth","needs_authorization","O projeto não possui uma organização GitHub com credencial configurada.",False,True,"request_github_authorization",steps)
+        public_result = self._git_ls_remote(project.repository_url, None)
+        if public_result.returncode == 0:
+            return RecoveryDecision("github_auth","resolved","O repositório está acessível sem credencial. A intervenção GitHub foi descartada e a tarefa será retomada automaticamente.",execution_attempt < self.MAX_ATTEMPTS,False,"github_public_access",steps)
+
         with SessionLocal() as db:
-            organization = db.get(Organization, project.organization_id)
-            if not organization: return RecoveryDecision("github_auth","needs_authorization","A organização GitHub vinculada ao projeto não foi encontrada.",False,True,"request_github_authorization",steps)
-            credentials = list(db.scalars(select(ProviderCredential).where(ProviderCredential.workspace_id == project.workspace_id, ProviderCredential.provider == "github", ProviderCredential.enabled.is_(True))).all())
-            credentials.sort(key=lambda item: item.id != organization.credential_id)
-            if not credentials: return RecoveryDecision("github_auth","needs_authorization","Nenhuma credencial GitHub ativa está disponível para testar o acesso ao repositório.",False,True,"request_github_authorization",steps)
+            organization = db.get(Organization, project.organization_id) if project.organization_id else None
+            credentials = list(db.scalars(select(ProviderCredential).where(ProviderCredential.workspace_id == project.workspace_id, or_(ProviderCredential.provider == "github", ProviderCredential.provider == "cloud:github"), ProviderCredential.enabled.is_(True))).all())
+            if organization:
+                credentials.sort(key=lambda item: item.id != organization.credential_id)
+            tested_tokens: set[str] = set()
             for index, credential in enumerate(credentials[:self.MAX_ATTEMPTS], start=1):
                 try: token = Vault().decrypt(credential.encrypted_secret)
                 except ValueError: continue
+                if not token or token in tested_tokens: continue
+                tested_tokens.add(token)
                 result = self._git_ls_remote(project.repository_url, token)
                 if result.returncode == 0:
-                    changed = organization.credential_id != credential.id
-                    if changed: organization.credential_id = credential.id; organization.last_sync_error = ""; db.commit()
-                    return RecoveryDecision("github_auth","resolved","Acesso ao GitHub restabelecido com uma credencial já autorizada." if changed else "A credencial GitHub foi validada novamente e o acesso está disponível.",execution_attempt < self.MAX_ATTEMPTS,False,"github_credential_failover" if changed else "github_access_recheck",steps)
-                steps.append({"state":"credential_rejected","attempt":execution_attempt,"credential":credential.label,"candidate":index,"message":"A credencial não possui acesso suficiente ao repositório."})
-            return RecoveryDecision("github_auth","needs_authorization","As credenciais GitHub disponíveis foram testadas e nenhuma possui acesso ao repositório.",False,True,"request_github_authorization",steps)
+                    if organization and credential.provider == "github" and organization.credential_id != credential.id:
+                        organization.credential_id = credential.id; organization.last_sync_error = ""; db.commit()
+                    return RecoveryDecision("github_auth","resolved","O DevPilot encontrou e validou uma credencial GitHub já existente no Vault. Nenhum novo PAT é necessário.",execution_attempt < self.MAX_ATTEMPTS,False,"github_existing_credential",steps)
+                steps.append({"state":"credential_rejected","attempt":execution_attempt,"credential":credential.label,"candidate":index,"message":"A credencial salva não possui acesso suficiente ao repositório."})
 
-    def _git_ls_remote(self, repository_url: str, token: str) -> subprocess.CompletedProcess[str]:
-        encoded = base64.b64encode(f"x-access-token:{token}".encode()).decode(); env = os.environ.copy()
-        env.update({"GIT_TERMINAL_PROMPT":"0","GIT_CONFIG_COUNT":"1","GIT_CONFIG_KEY_0":"http.extraHeader","GIT_CONFIG_VALUE_0":f"Authorization: Basic {encoded}"})
+            for token, source in self._runtime_github_candidates():
+                if token in tested_tokens: continue
+                tested_tokens.add(token)
+                result = self._git_ls_remote(project.repository_url, token)
+                if result.returncode == 0:
+                    if organization:
+                        imported = db.scalar(select(ProviderCredential).where(ProviderCredential.workspace_id == project.workspace_id, ProviderCredential.provider == "github", ProviderCredential.label == "runtime-import"))
+                        if not imported:
+                            imported = ProviderCredential(workspace_id=project.workspace_id, provider="github", label="runtime-import", encrypted_secret=Vault().encrypt(token), models="[]", enabled=True)
+                            db.add(imported); db.flush()
+                        else:
+                            imported.encrypted_secret = Vault().encrypt(token); imported.enabled = True
+                        organization.credential_id = imported.id; organization.last_sync_error = ""; db.commit()
+                    return RecoveryDecision("github_auth","resolved",f"O acesso GitHub já disponível no ambiente ({source}) foi validado e reutilizado. Nenhum novo token precisa ser criado.",execution_attempt < self.MAX_ATTEMPTS,False,"github_runtime_credential",steps)
+
+            if not project.organization_id:
+                return RecoveryDecision("github_auth","needs_authorization","O repositório não é público e nenhuma credencial GitHub reutilizável foi encontrada no Vault ou no runtime.",False,True,"request_github_authorization",steps)
+            if not organization:
+                return RecoveryDecision("github_auth","needs_authorization","A organização GitHub vinculada ao projeto não foi encontrada e o repositório não está acessível publicamente.",False,True,"request_github_authorization",steps)
+            return RecoveryDecision("github_auth","needs_authorization","O DevPilot testou acesso público, Vault e credenciais do runtime; nenhuma delas possui acesso ao repositório. Somente agora é necessária autorização GitHub adicional.",False,True,"request_github_authorization",steps)
+
+    def _git_ls_remote(self, repository_url: str, token: str | None) -> subprocess.CompletedProcess[str]:
+        env = os.environ.copy(); env["GIT_TERMINAL_PROMPT"] = "0"
+        if token:
+            encoded = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+            env.update({"GIT_CONFIG_COUNT":"1","GIT_CONFIG_KEY_0":"http.extraHeader","GIT_CONFIG_VALUE_0":f"Authorization: Basic {encoded}"})
         return subprocess.run(["git","ls-remote",repository_url,"HEAD"], text=True, capture_output=True, timeout=45, check=False, env=env)
 
     def _quarantine_invalid_repository(self, project: Project) -> bool:
@@ -175,15 +198,12 @@ class AutoRecoveryService:
         raise OSError("No recovery path available")
 
     def _safe_error(self, value: str, limit: int = 2400) -> str:
-        """Preserve enough sanitized context for classification and diagnosis instead of only the final line."""
         text = str(value or "").strip()
         for pattern in _SECRET_PATTERNS:
-            replacement = r"\1[REDACTED]" if pattern is _SECRET_PATTERNS[0] else "[REDACTED]"
-            text = pattern.sub(replacement, text)
+            replacement = r"\1[REDACTED]" if pattern is _SECRET_PATTERNS[0] else "[REDACTED]"; text = pattern.sub(replacement, text)
         lines = [line.strip() for line in text.splitlines() if line.strip()]
         if not lines: return "Falha sem mensagem detalhada."
         compact = "\n".join(lines)
         if len(compact) <= limit: return compact
-        # Keep both beginning and end: exception type/context is often at the start while root cause is at the end.
         half = max(200, (limit - 40) // 2)
         return f"{compact[:half]}\n... [contexto reduzido] ...\n{compact[-half:]}"
