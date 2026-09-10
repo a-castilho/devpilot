@@ -2,6 +2,7 @@
   'use strict';
 
   const TOKEN_KEY = 'devpilot-token';
+  const BOOTSTRAP_DONE_KEY = 'devpilot-bootstrap-complete';
   const AUTH_MESSAGE_KEY = 'devpilot-auth-message';
   const modal = document.querySelector('#auth-modal');
   if (!modal) return;
@@ -135,8 +136,11 @@
     try {
       const response = await fetchWithTimeout('/api/auth/status', {cache:'no-store'});
       const data = await response.json();
-      bootstrapRequired = Boolean(data.bootstrap_required);
-      localBootstrapAvailable = Boolean(data.local_bootstrap_available);
+      const serverBootstrapRequired = Boolean(data.bootstrap_required);
+      const bootstrapAlreadyCompleted = localStorage.getItem(BOOTSTRAP_DONE_KEY) === '1';
+      if (!serverBootstrapRequired) localStorage.setItem(BOOTSTRAP_DONE_KEY, '1');
+      bootstrapRequired = serverBootstrapRequired && !bootstrapAlreadyCompleted;
+      localBootstrapAvailable = bootstrapRequired && Boolean(data.local_bootstrap_available);
     } catch (_) { bootstrapRequired = false; localBootstrapAvailable = false; }
   }
 
@@ -250,7 +254,9 @@
         const response = await fetchWithTimeout(endpoint, {method:'POST',headers,body:JSON.stringify(payload),cache:'no-store'}, 8000);
         const data = await response.json().catch(() => ({}));
         if (!response.ok || !data.access_token) throw new Error(typeof data.detail === 'string' ? data.detail : 'Falha na autenticação');
-        localStorage.setItem(TOKEN_KEY, data.access_token); sessionStorage.removeItem(AUTH_MESSAGE_KEY);
+        localStorage.setItem(TOKEN_KEY, data.access_token);
+        if (endpoint === '/api/auth/bootstrap') localStorage.setItem(BOOTSTRAP_DONE_KEY, '1');
+        sessionStorage.removeItem(AUTH_MESSAGE_KEY);
         document.dispatchEvent(new CustomEvent('devpilot:login-complete'));
         handoffAuthenticatedRuntime(errorBox);
       } catch (error) {
