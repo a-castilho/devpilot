@@ -176,6 +176,64 @@ def _inject_mobile_scroll_unlock(html: str) -> str:
     return _inject_stylesheet(html, "mobile-scroll-unlock.css")
 
 
+def _inject_initial_loading_screen(html: str) -> str:
+    """Cover the DevPilot boot with a lightweight branded first paint."""
+    if 'id="devpilot-initial-loader"' in html:
+        return html
+
+    splash = """
+  <div id="devpilot-initial-loader" role="status" aria-live="polite" aria-label="DevPilot carregando">
+    <style>
+      #devpilot-initial-loader{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:28px;background:#07111f;color:#eaf7f5;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;transition:opacity .28s ease,visibility .28s ease}
+      #devpilot-initial-loader.dp-loader-leaving{opacity:0;visibility:hidden;pointer-events:none}
+      #devpilot-initial-loader .dp-loader-card{width:min(430px,100%);text-align:center}
+      #devpilot-initial-loader .dp-loader-mark{width:72px;height:72px;margin:0 auto 22px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(145deg,#0fd6a3,#1786da);box-shadow:0 18px 50px rgba(15,214,163,.2);font-size:34px;font-weight:900}
+      #devpilot-initial-loader h1{margin:0;font-size:30px;letter-spacing:-.04em}
+      #devpilot-initial-loader p{margin:10px 0 24px;color:#8ea6b7;font-size:14px;line-height:1.55}
+      #devpilot-initial-loader .dp-loader-line{height:5px;border-radius:999px;overflow:hidden;background:#10283a}
+      #devpilot-initial-loader .dp-loader-line span{display:block;width:38%;height:100%;border-radius:inherit;background:linear-gradient(90deg,#19d9ab,#37b9ed);animation:dp-loader-move 1.15s ease-in-out infinite}
+      #devpilot-initial-loader small{display:block;margin-top:16px;color:#5f7d91;font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+      @keyframes dp-loader-move{0%{transform:translateX(-105%)}50%{transform:translateX(115%)}100%{transform:translateX(285%)}}
+      @media(max-width:520px){#devpilot-initial-loader{padding:22px}#devpilot-initial-loader .dp-loader-mark{width:64px;height:64px;border-radius:19px;font-size:30px}#devpilot-initial-loader h1{font-size:27px}}
+      @media(prefers-reduced-motion:reduce){#devpilot-initial-loader .dp-loader-line span{animation:none;width:100%}}
+    </style>
+    <div class="dp-loader-card">
+      <div class="dp-loader-mark" aria-hidden="true">D</div>
+      <h1>DevPilot</h1>
+      <p>Preparando seu ambiente, projetos e execuções.</p>
+      <div class="dp-loader-line" aria-hidden="true"><span></span></div>
+      <small>Inicializando central operacional</small>
+    </div>
+  </div>
+  <script>
+  (() => {
+    'use strict';
+    const loader = document.getElementById('devpilot-initial-loader');
+    if (!loader) return;
+    let hidden = false;
+    const hide = () => {
+      if (hidden) return;
+      hidden = true;
+      loader.classList.add('dp-loader-leaving');
+      window.setTimeout(() => loader.remove(), 340);
+    };
+    const hasToken = () => Boolean(String(localStorage.getItem('devpilot-token') || '').trim());
+    document.addEventListener('devpilot:authenticated-ui-ready', hide, {once:true});
+    document.addEventListener('devpilot:authenticated-core-ready', () => window.setTimeout(hide, 90), {once:true});
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => {
+        if (!hasToken()) window.setTimeout(hide, 180);
+      }, {once:true});
+    } else if (!hasToken()) {
+      window.setTimeout(hide, 180);
+    }
+    window.setTimeout(hide, 12000);
+  })();
+  </script>
+"""
+    return html.replace("<body>", f"<body>{splash}", 1)
+
+
 def _is_mobile_route(path: str) -> bool:
     first_segment = path.strip("/").split("/", 1)[0].lower()
     return first_segment == "mobile"
@@ -412,6 +470,7 @@ def spa(path: str):
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     html = _normalize_index_head(html)
     html = _strip_boot_runtime_scripts(html)
+    html = _inject_initial_loading_screen(html)
     if mobile_route:
         html = _mark_mobile_route(html)
 
