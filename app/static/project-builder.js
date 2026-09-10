@@ -32,6 +32,14 @@
     other: 'Outro',
   };
 
+  const PLATFORM_STANDARD = Object.freeze({
+    topology: 'vercel-render-neon',
+    frontend: Object.freeze({provider: 'vercel', role: 'primary'}),
+    backend: Object.freeze({provider: 'render'}),
+    database: Object.freeze({provider: 'neon', engine: 'postgresql'}),
+    fallback: Object.freeze({frontend: 'render'}),
+  });
+
   function notify(message, type = 'info') {
     if (typeof window.toast === 'function') return window.toast(message, type);
     console[type === 'error' ? 'error' : 'info'](`[DevPilot] ${message}`);
@@ -103,6 +111,12 @@
           <small>Ex.: a-castilho/site-pessoal</small>
         </label>
 
+        <div class="simple-project-platform simple-project-wide" aria-label="Infraestrutura padrão">
+          <strong>Infraestrutura padrão DevPilot</strong>
+          <span>Frontend Vercel · Backend Render · PostgreSQL Neon</span>
+          <small>O frontend servido pelo Render permanece como backup quando o projeto permitir.</small>
+        </div>
+
         <div class="simple-project-message" id="simple-project-message" role="status" aria-live="polite"></div>
 
         <div class="simple-project-actions">
@@ -142,6 +156,7 @@
       .simple-project-field select{cursor:pointer!important}.simple-project-field textarea{resize:vertical;min-height:112px;line-height:1.45}
       .simple-project-field input:focus,.simple-project-field select:focus,.simple-project-field textarea:focus{border-color:rgba(77,226,207,.62);box-shadow:0 0 0 3px rgba(77,226,207,.08)}
       .simple-project-field small{color:var(--muted,#8196a8);font-size:11px;font-weight:600}.simple-project-wide{grid-column:1/-1}
+      .simple-project-platform{display:grid;gap:4px;padding:12px 14px;border:1px solid rgba(77,226,207,.22);border-radius:12px;background:rgba(77,226,207,.05);color:#c7d5df}.simple-project-platform strong{color:#e8f1f5;font-size:13px}.simple-project-platform span{font-size:12px;font-weight:800}.simple-project-platform small{font-size:11px;color:var(--muted,#8196a8)}
       .simple-project-message{display:none;grid-column:1/-1;padding:10px 12px;border-radius:10px;font-size:13px;line-height:1.4}.simple-project-message.show{display:block}.simple-project-message.error{background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.24);color:#ffb4b4}
       .simple-project-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:10px;padding-top:4px}.simple-project-actions .primary{min-width:150px}
       @media(max-width:720px){
@@ -182,7 +197,7 @@
     }
 
     const typeLabel = TYPES[projectType] || TYPES.other;
-    const agentsMd = `# AGENTS.md — ${name}\n\n## Projeto\nTipo: ${typeLabel}\n\n## Objetivo\n${description || 'Evoluir o projeto conforme as solicitações registradas no DevPilot.'}\n\n## Regras essenciais\n- Preserve compatibilidade e segurança.\n- Não exponha credenciais ou segredos.\n- Execute testes relevantes antes de concluir alterações.\n- Registre claramente o que foi alterado.`;
+    const agentsMd = `# AGENTS.md — ${name}\n\n## Projeto\nTipo: ${typeLabel}\n\n## Objetivo\n${description || 'Evoluir o projeto conforme as solicitações registradas no DevPilot.'}\n\n## Plataforma padrão\n- Frontend público primário: Vercel.\n- Backend/API: Render.\n- PostgreSQL gerenciado: Neon.\n- Frontend servido pelo Render: backup quando aplicável.\n- Nunca expor DATABASE_URL ou credenciais do Neon no frontend.\n\n## Regras essenciais\n- Preserve compatibilidade e segurança.\n- Não exponha credenciais ou segredos.\n- Execute testes relevantes antes de concluir alterações.\n- Registre claramente o que foi alterado.`;
 
     setMessage('');
     submit.disabled = true;
@@ -199,7 +214,19 @@
           organization_id: null,
           default_branch: 'main',
           agents_md: agentsMd,
-          codex_config: {simple_setup: true, project_type: projectType, model: 'gpt-5.4'},
+          codex_config: {
+            simple_setup: true,
+            project_type: projectType,
+            model: 'gpt-5.4',
+            platform_standard: PLATFORM_STANDARD,
+            delivery: {
+              providers: ['neon', 'render', 'vercel'],
+              frontend_primary: 'vercel',
+              frontend_backup: 'render',
+              backend: 'render',
+              database: 'neon',
+            },
+          },
         }),
       });
       if (typeof window.loadProjects === 'function') await Promise.resolve(window.loadProjects()).catch(() => null);
