@@ -34,7 +34,7 @@ def github_actions_runner_status(actor: str = Depends(require_super_admin)):
 def voice_system_action(
     payload: VoiceCommand,
     db: Session = Depends(get_db),
-    actor: str = Depends(require_super_admin),
+    actor: str = Depends(require_access),
 ):
     intent = interpret_voice(payload.transcript)
     if intent.get("action") != "update_local":
