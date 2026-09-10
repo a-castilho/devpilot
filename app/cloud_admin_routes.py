@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import ProviderCredential
+from app.models import Organization, ProviderCredential
 from app.security import Principal, Role, require_roles
 from app.services.audit import record
 from app.services.vault import Vault
@@ -293,13 +293,62 @@ def _store_runtime_credential(db: Session, principal: Principal, provider: str, 
     return item
 
 
+def _sync_github_organization_credentials(
+    db: Session,
+    principal: Principal,
+    cloud_credential: ProviderCredential,
+) -> int:
+    if not cloud_credential.enabled:
+        return 0
+    scope = str(_metadata(cloud_credential).get("scope") or "").strip().lower()
+    organizations = db.scalars(
+        select(Organization).where(
+            Organization.workspace_id == principal.workspace_id,
+            Organization.provider == "github",
+        )
+    ).all()
+    synced = 0
+    encrypted_secret = cloud_credential.encrypted_secret
+    for organization in organizations:
+        if scope and str(organization.external_login or "").strip().lower() != scope:
+            continue
+        legacy = None
+        if organization.credential_id:
+            legacy = db.scalar(
+                select(ProviderCredential).where(
+                    ProviderCredential.id == organization.credential_id,
+                    ProviderCredential.workspace_id == principal.workspace_id,
+                    ProviderCredential.provider == "github",
+                )
+            )
+        if not legacy:
+            legacy = ProviderCredential(
+                workspace_id=principal.workspace_id,
+                provider="github",
+                label=f"GitHub org {organization.slug}",
+                encrypted_secret=encrypted_secret,
+                models="[]",
+                enabled=True,
+            )
+            db.add(legacy)
+            db.flush()
+            organization.credential_id = legacy.id
+        else:
+            legacy.encrypted_secret = encrypted_secret
+            legacy.enabled = True
+        synced += 1
+    return synced
+
+
 @router.get("")
 def list_clouds(db: Session = Depends(get_db), principal: Principal = Depends(manage_clouds)):
     imported = False
     for provider in CLOUD_PROVIDERS:
         if not _credential(db, principal, provider):
             imported = bool(_store_runtime_credential(db, principal, provider)) or imported
-    if imported:
+    github = _credential(db, principal, "github")
+    github_synced = _sync_github_organization_credentials(db, principal, github) if github else 0
+    if imported or github_synced:
         db.commit()
     return [_summary(provider, _credential(db, principal, provider)) for provider in CLOUD_PROVIDERS]
 
@@ -313,6 +362,8 @@ def import_runtime_cloud(provider: str, db: Session = Depends(get_db), principal
     item = _store_runtime_credential(db, principal, provider)
     if not item:
         raise HTTPException(status_code=404, detail="Nenhuma credencial reutilizável foi encontrada no ambiente do DevPilot")
+    if provider == "github":
+        _sync_github_organization_credentials(db, principal, item)
     db.commit()
     return _summary(provider, item)
 
@@ -338,7 +389,8 @@ def save_cloud(provider: str, payload: CloudCredentialUpdate, db: Session = Depe
     item.enabled = payload.enabled
     item.models = json.dumps({"scope": payload.scope.strip(), "credential_source": source}, ensure_ascii=False, separators=(",", ":"))
     db.flush()
-    record(db, workspace_id=principal.workspace_id, actor=principal.actor, action="cloud.credential_saved", details={"provider": provider, "enabled": item.enabled, "scope_configured": bool(payload.scope.strip()), "secret_rotated": bool(secret), "credential_source": source})
+    synced_organizations = _sync_github_organization_credentials(db, principal, item) if provider == "github" else 0
+    record(db, workspace_id=principal.workspace_id, actor=principal.actor, action="cloud.credential_saved", details={"provider": provider, "enabled": item.enabled, "scope_configured": bool(payload.scope.strip()), "secret_rotated": bool(secret), "credential_source": source, "organizations_synced": synced_organizations})
     db.commit()
     return _summary(provider, item)
 
