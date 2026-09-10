@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -8,8 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Run, Task, TaskStatus, Workspace
+from app.models import Organization, Project, ProviderCredential, Run, Task, TaskStatus, Workspace
 from app.security import require_access
+from app.services.audit import record
 from app.services.failure_recovery import (
     apply_user_guidance,
     ensure_failure_recovery_task,
@@ -123,6 +125,89 @@ def _recovery_state(original: Task, recovery: Task | None) -> str:
     return "ready_to_recover"
 
 
+def _github_access_restored(db: Session, original: Task) -> bool:
+    project = db.scalar(
+        select(Project).where(
+            Project.id == original.project_id,
+            Project.workspace_id == original.workspace_id,
+        )
+    )
+    if not project or not project.organization_id:
+        return False
+    organization = db.scalar(
+        select(Organization).where(
+            Organization.id == project.organization_id,
+            Organization.workspace_id == original.workspace_id,
+            Organization.provider == "github",
+        )
+    )
+    if not organization or not organization.credential_id:
+        return False
+    credential = db.scalar(
+        select(ProviderCredential).where(
+            ProviderCredential.id == organization.credential_id,
+            ProviderCredential.workspace_id == original.workspace_id,
+            ProviderCredential.provider == "github",
+            ProviderCredential.enabled.is_(True),
+        )
+    )
+    return credential is not None
+
+
+def _reconcile_external_blocker(db: Session, original: Task) -> bool:
+    recovery = find_failure_recovery_task(db, original)
+    if not recovery or recovery.status not in {
+        TaskStatus.awaiting_approval,
+        TaskStatus.failed,
+        TaskStatus.blocked,
+    }:
+        return False
+
+    recovery_run = latest_run_for_task(db, recovery.id)
+    recovery_failure = failure_details(recovery_run) if recovery_run else {}
+    category = str(recovery_failure.get("category") or "").strip().lower()
+    code = str(recovery_failure.get("code") or "").strip().upper()
+    prompt = str(recovery.prompt or "")
+    github_blocker = (
+        category == "github_auth"
+        or code == "GITHUB_ACCESS_DENIED"
+        or "[failure-category:github_auth]" in prompt.lower()
+        or "[failure-code:GITHUB_ACCESS_DENIED]" in prompt
+    )
+    if not github_blocker or not _github_access_restored(db, original):
+        return False
+
+    now = datetime.now(timezone.utc)
+    previous_status = _status_value(recovery.status)
+    recovery.status = TaskStatus.queued
+    recovery.requires_approval = False
+    recovery.approved_at = recovery.approved_at or now
+    recovery.updated_at = now
+    recovery.prompt = (
+        f"{prompt.rstrip()}\n\n"
+        f"[failure-external-blocker-resolved:{now.isoformat()}]\n"
+        "DEPENDÊNCIA EXTERNA REVALIDADA AUTOMATICAMENTE\n"
+        "A credencial GitHub vinculada ao projeto está presente e ativa no estado atual. "
+        "A missão de recuperação foi reenfileirada para validar o acesso real e continuar sem exigir nova intervenção humana."
+    )[:100_000]
+    record(
+        db,
+        workspace_id=original.workspace_id,
+        project_id=original.project_id,
+        task_id=recovery.id,
+        actor="system",
+        action="failure_recovery.external_blocker_resolved",
+        outcome="queued",
+        details={
+            "original_task_id": original.id,
+            "blocker": "github_auth",
+            "previous_status": previous_status,
+        },
+    )
+    db.commit()
+    return True
+
+
 def _payload(db: Session, original: Task) -> dict:
     original_run = latest_run_for_task(db, original.id)
     original_failure = failure_details(original_run)
@@ -180,12 +265,16 @@ def _payload(db: Session, original: Task) -> dict:
 
 @router.get("/tasks/{task_id}/recovery")
 def recovery_status(task_id: str, db: Session = Depends(get_db)):
-    return _payload(db, _task(db, task_id))
+    original = _task(db, task_id)
+    _reconcile_external_blocker(db, original)
+    return _payload(db, original)
 
 
 @router.post("/tasks/{task_id}/recovery/escalate")
 def escalate_recovery(task_id: str, db: Session = Depends(get_db)):
     original = _task(db, task_id)
+    if _reconcile_external_blocker(db, original):
+        return _payload(db, original)
     if original.status not in {TaskStatus.failed, TaskStatus.blocked}:
         raise HTTPException(409, "Only failed or blocked tasks can enter recovery")
     run = latest_run_for_task(db, original.id)
