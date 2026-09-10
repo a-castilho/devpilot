@@ -33,8 +33,23 @@ jobs:
               echo "$kind=alive pid=$pid"
             else
               echo "$kind=dead pid=${pid:-none}"
+              if [ "$kind" = api ] && [ -f "$STATE/api.log" ]; then
+                echo "api.log tail:"
+                tail -n 30 "$STATE/api.log" | sed -E 's/(api[_-]?key|token|authorization)[=: ]+[^ ]+/\1=***REDACTED***/Ig' || true
+              fi
             fi
           done
+
+          LISTENER_PID="$(ss -ltnp 'sport = :8080' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1 || true)"
+          if [ -n "$LISTENER_PID" ]; then
+            echo "port8080_listener=pid:$LISTENER_PID"
+            if [ -r "/proc/$LISTENER_PID/cmdline" ]; then
+              tr '\0' ' ' < "/proc/$LISTENER_PID/cmdline" | sed 's#^#port8080_cmd=#'
+              echo
+            fi
+          else
+            echo "port8080_listener=none"
+          fi
 
           "$PY" - <<'PY'
           import json
@@ -115,10 +130,9 @@ jobs:
           git fetch origin --prune
           git switch -C local/mobile-standard-top-back "origin/$REF"
           git reset --hard "origin/$REF"
-
           echo "LOCAL_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
-      - name: Preservar ambiente atual e parar somente processos DevPilot
+      - name: Preservar ambiente e parar somente processos DevPilot
         shell: bash
         run: |
           set -euo pipefail
@@ -126,28 +140,29 @@ jobs:
           STATE="$TARGET/.devpilot-state"
           mkdir -p "$STATE"
 
-          API_PID=""
-          if [ -f "$STATE/api.pid" ]; then API_PID="$(cat "$STATE/api.pid" 2>/dev/null || true)"; fi
-          if [ -n "$API_PID" ] && [ -r "/proc/$API_PID/environ" ]; then
+          import_env_from_pid() {
+            pid="$1"
+            [ -n "$pid" ] && [ -r "/proc/$pid/environ" ] || return 0
             while IFS= read -r -d '' kv; do
               name="${kv%%=*}"
               case "$name" in
-                [A-Za-z_][A-Za-z0-9_]*) export "$kv" || true ;;
+                DEVPILOT_*|OPENAI_*|GOOGLE_*|GEMINI_*|OLLAMA_*|PATH|LD_LIBRARY_PATH) export "$kv" || true ;;
               esac
-            done < "/proc/$API_PID/environ"
-          fi
+            done < "/proc/$pid/environ"
+          }
 
-          stop_if_owned() {
+          stop_owned() {
             pid="$1"
             kind="$2"
             [ -n "$pid" ] || return 0
             [ -r "/proc/$pid/cmdline" ] || return 0
             cmd="$(tr '\0' ' ' < "/proc/$pid/cmdline")"
             case "$kind:$cmd" in
-              api:*uvicorn*app.main:app*) kill "$pid" ;;
-              worker:*app.worker*|worker:*worker_launcher.py*) kill "$pid" ;;
+              api:*uvicorn*app.main:app*) ;;
+              worker:*app.worker*|worker:*worker_launcher.py*) ;;
               *) return 0 ;;
             esac
+            kill "$pid" 2>/dev/null || true
             for _ in $(seq 1 20); do
               kill -0 "$pid" 2>/dev/null || return 0
               sleep 0.25
@@ -155,12 +170,38 @@ jobs:
             kill -TERM "$pid" 2>/dev/null || true
           }
 
-          stop_if_owned "$API_PID" api
-          WORKER_PID=""
-          if [ -f "$STATE/worker.pid" ]; then WORKER_PID="$(cat "$STATE/worker.pid" 2>/dev/null || true)"; fi
-          stop_if_owned "$WORKER_PID" worker
+          API_PID=""
+          [ -f "$STATE/api.pid" ] && API_PID="$(cat "$STATE/api.pid" 2>/dev/null || true)"
+          LISTENER_PID="$(ss -ltnp 'sport = :8080' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1 || true)"
 
-          env | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | sed 's/=.*$/=*** preserved/' | grep -E '^(DEVPILOT_|OPENAI_|GOOGLE_|OLLAMA_|PATH=|LD_LIBRARY_PATH=)' || true
+          if [ -n "$LISTENER_PID" ] && [ -r "/proc/$LISTENER_PID/cmdline" ]; then
+            LISTENER_CMD="$(tr '\0' ' ' < "/proc/$LISTENER_PID/cmdline")"
+            LISTENER_CWD="$(readlink -f "/proc/$LISTENER_PID/cwd" 2>/dev/null || true)"
+            case "$LISTENER_CMD" in
+              *uvicorn*app.main:app*)
+                if [ "$LISTENER_CWD" = "$TARGET" ]; then
+                  import_env_from_pid "$LISTENER_PID"
+                  stop_owned "$LISTENER_PID" api
+                else
+                  echo "Porta 8080 ocupada por uvicorn fora do DevPilot: $LISTENER_CWD"
+                  exit 43
+                fi
+                ;;
+              *)
+                echo "Porta 8080 ocupada por processo não reconhecido; não será encerrado."
+                exit 44
+                ;;
+            esac
+          else
+            import_env_from_pid "$API_PID"
+            stop_owned "$API_PID" api
+          fi
+
+          WORKER_PID=""
+          [ -f "$STATE/worker.pid" ] && WORKER_PID="$(cat "$STATE/worker.pid" 2>/dev/null || true)"
+          stop_owned "$WORKER_PID" worker
+
+          env | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | sed 's/=.*$/=*** preserved/' | grep -E '^(DEVPILOT_|OPENAI_|GOOGLE_|GEMINI_|OLLAMA_|PATH=|LD_LIBRARY_PATH=)' || true
 
       - name: Reiniciar API e worker fora do rastreamento do runner
         shell: bash
@@ -174,12 +215,12 @@ jobs:
 
           TOOL_LIB=/home/xx/.local/share/devpilot-actions-runner/_work/_tool/Python/3.12.10/x64/lib
           export LD_LIBRARY_PATH="$TOOL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
           cd "$TARGET"
+
           env -u RUNNER_TRACKING_ID nohup "$PY" -m uvicorn app.main:app --host 0.0.0.0 --port 8080 >"$STATE/api.log" 2>&1 &
           echo $! > "$STATE/api.pid"
-
           sleep 2
+
           if [ -x "$STATE/start-worker.sh" ]; then
             env -u RUNNER_TRACKING_ID nohup "$STATE/start-worker.sh" >"$STATE/worker.log" 2>&1 &
           elif [ -f "$STATE/worker_launcher.py" ]; then
@@ -189,7 +230,7 @@ jobs:
           fi
           echo $! > "$STATE/worker.pid"
 
-      - name: Validar serviços locais
+      - name: Validar serviços locais e listener real
         shell: bash
         run: |
           set -euo pipefail
@@ -204,7 +245,6 @@ jobs:
             fi
             sleep 1
           done
-
           if [ "$ok" -ne 1 ]; then
             echo "API não respondeu ao healthcheck"
             tail -n 80 "$STATE/api.log" || true
@@ -212,10 +252,18 @@ jobs:
           fi
 
           cat /tmp/devpilot-health.json
-
           API_PID="$(cat "$STATE/api.pid")"
           WORKER_PID="$(cat "$STATE/worker.pid")"
           kill -0 "$API_PID"
           kill -0 "$WORKER_PID"
 
+          LISTENER_PID="$(ss -ltnp 'sport = :8080' 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1 || true)"
+          if [ "$LISTENER_PID" != "$API_PID" ]; then
+            echo "Listener da porta 8080 não corresponde à API recém-iniciada: listener=$LISTENER_PID api=$API_PID"
+            tail -n 80 "$STATE/api.log" || true
+            exit 45
+          fi
+
+          echo "API_PID=$API_PID"
+          echo "WORKER_PID=$WORKER_PID"
           echo "Atualização local concluída em $LOCAL_SHA"
