@@ -14,12 +14,15 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Diagnosticar chat local sem expor segredos
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
           TARGET=/home/xx/Documents/devpilot
           STATE="$TARGET/.devpilot-state"
           PY="$TARGET/.venv/bin/python"
+          TOOL_LIB=/home/xx/.local/share/devpilot-actions-runner/_work/_tool/Python/3.12.10/x64/lib
+          export LD_LIBRARY_PATH="$TOOL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           cd "$TARGET"
 
           echo "=== PROCESSOS ANTES DA ATUALIZAÇÃO ==="
@@ -47,9 +50,12 @@ jobs:
           cur = con.cursor()
           print('=== CREDENCIAIS ATIVAS POR PROVEDOR ===')
           try:
-              for provider, count in cur.execute(
+              rows = list(cur.execute(
                   "select provider, count(*) from provider_credentials where enabled = 1 group by provider order by provider"
-              ):
+              ))
+              if not rows:
+                  print('provider_credentials=none')
+              for provider, count in rows:
                   print(f'{provider}={count}')
           except Exception as exc:
               print(f'credential_diagnostic_error={type(exc).__name__}')
