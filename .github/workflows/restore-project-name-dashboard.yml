@@ -45,7 +45,7 @@ jobs:
               t = t.replace(needle, needle + addition, 1)
               test.write_text(t, encoding='utf-8')
           PY
-          python -m pytest -q tests/test_dashboard_user_v21_contract.py
+          python tests/test_dashboard_user_v21_contract.py
           git rm .github/workflows/restore-project-name-dashboard.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
