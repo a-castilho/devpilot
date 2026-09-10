@@ -22,6 +22,8 @@ manage_clouds = require_roles(Role.SUPER_ADMIN)
 
 _CREDENTIAL_LABEL = "cloud-admin"
 _PROVIDER_PREFIX = "cloud:"
+_LEGACY_CREDENTIAL_LABEL = "Principal"
+_LEGACY_PROVIDER_PREFIX = "cloud-"
 _REQUEST_TIMEOUT = 10.0
 
 CLOUD_PROVIDERS: dict[str, dict[str, str]] = {
@@ -75,13 +77,31 @@ def _credential(
     principal: Principal,
     provider: str,
 ) -> ProviderCredential | None:
-    return db.scalar(
+    canonical = db.scalar(
         select(ProviderCredential).where(
             ProviderCredential.workspace_id == principal.workspace_id,
             ProviderCredential.provider == _provider_storage_key(provider),
             ProviderCredential.label == _CREDENTIAL_LABEL,
         )
     )
+    if canonical:
+        return canonical
+
+    return db.scalar(
+        select(ProviderCredential).where(
+            ProviderCredential.workspace_id == principal.workspace_id,
+            ProviderCredential.provider == f"{_LEGACY_PROVIDER_PREFIX}{provider}",
+            ProviderCredential.label == _LEGACY_CREDENTIAL_LABEL,
+        )
+    )
+
+
+def _legacy_payload(item: ProviderCredential) -> dict[str, Any]:
+    try:
+        value = json.loads(Vault().decrypt(item.encrypted_secret))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _metadata(item: ProviderCredential | None) -> dict[str, Any]:
@@ -90,8 +110,16 @@ def _metadata(item: ProviderCredential | None) -> dict[str, Any]:
     try:
         value = json.loads(item.models or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
+        value = {}
+    metadata = value if isinstance(value, dict) else {}
+    if metadata.get("scope"):
+        return metadata
+
+    legacy = _legacy_payload(item)
+    if legacy.get("account_id"):
+        metadata = dict(metadata)
+        metadata["scope"] = str(legacy.get("account_id") or "")
+    return metadata
 
 
 def _summary(provider: str, item: ProviderCredential | None) -> dict[str, Any]:
@@ -111,9 +139,17 @@ def _summary(provider: str, item: ProviderCredential | None) -> dict[str, Any]:
 
 def _decrypt(item: ProviderCredential) -> str:
     try:
-        return Vault().decrypt(item.encrypted_secret)
+        secret = Vault().decrypt(item.encrypted_secret)
     except ValueError as error:
         raise CloudProviderError("A credencial salva não pôde ser descriptografada.") from error
+
+    try:
+        payload = json.loads(secret)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return secret
+    if isinstance(payload, dict) and str(payload.get("token") or "").strip():
+        return str(payload["token"]).strip()
+    return secret
 
 
 def _headers(provider: str, secret: str) -> dict[str, str]:
@@ -341,8 +377,25 @@ def save_cloud(
             enabled=payload.enabled,
         )
         db.add(item)
-    elif secret:
-        item.encrypted_secret = Vault().encrypt(secret)
+    else:
+        is_legacy = (
+            item.provider == f"{_LEGACY_PROVIDER_PREFIX}{provider}"
+            and item.label == _LEGACY_CREDENTIAL_LABEL
+        )
+        if is_legacy:
+            legacy_payload = _legacy_payload(item)
+            current_token = str(legacy_payload.get("token") or "").strip()
+            next_token = secret or current_token
+            if next_token:
+                item.encrypted_secret = Vault().encrypt(
+                    json.dumps(
+                        {"token": next_token, "account_id": payload.scope.strip()},
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                    )
+                )
+        elif secret:
+            item.encrypted_secret = Vault().encrypt(secret)
 
     item.enabled = payload.enabled
     item.models = json.dumps(
