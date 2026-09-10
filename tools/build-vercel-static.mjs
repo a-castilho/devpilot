@@ -53,9 +53,12 @@ const scripts = [
   'mission-control.js',
 ];
 
+// Order matters. The canonical mobile stylesheet is intentionally last so that
+// historical V39/V41/V45 presentation layers cannot reclaim layout authority.
 const stylesheets = [
   'mobile-scroll-unlock.css',
   'super-admin-voice.css',
+  'mobile-ui-canonical-20260910.css',
 ];
 
 function revision(path) {
@@ -91,8 +94,12 @@ for (const name of stylesheets) {
     throw new Error(`Vercel build requires missing frontend asset: ${name}`);
   }
 
-  if (!html.includes(`/assets/${name}`)) {
-    const tag = `<link rel="stylesheet" href="/assets/${name}?v=${revision(assetPath)}">`;
+  // Re-inject canonical mobile authority even if an older static tag exists.
+  // Content-hash revision makes browser/CDN invalidation deterministic.
+  const tag = `<link rel="stylesheet" href="/assets/${name}?v=${revision(assetPath)}">`;
+  if (name === 'mobile-ui-canonical-20260910.css') {
+    html = html.replace('</head>', `  ${tag}\n</head>`);
+  } else if (!html.includes(`/assets/${name}`)) {
     html = html.replace('</head>', `  ${tag}\n</head>`);
   }
 }
