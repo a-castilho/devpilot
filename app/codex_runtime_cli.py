@@ -12,16 +12,27 @@ from pathlib import Path
 import httpx
 
 CODEX_VERSION = "0.153.4"
-RELEASE_API = f"https://api.github.com/repos/openai/codex/releases/tags/rust-v{CODEX_VERSION}"
 CACHE_ROOT = Path(os.getenv("DEVPILOT_CODEX_RUNTIME_DIR", "/tmp/devpilot-codex"))
+ASSETS = {
+    "x86_64": {
+        "name": "codex-x86_64-unknown-linux-musl.tar.gz",
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-x86_64-unknown-linux-musl.tar.gz",
+        "sha256": "f479424eca092484dc40d87ae28c44f4cc40234a60045d6131e493800d814a30",
+    },
+    "aarch64": {
+        "name": "codex-aarch64-unknown-linux-musl.tar.gz",
+        "url": "https://github.com/openai/codex/releases/download/rust-v0.153.4/codex-aarch64-unknown-linux-musl.tar.gz",
+        "sha256": "5cda6182bd94c3a30f2eb63a495489ebf7f691fddb14d70f48c6c1a5071b6cde",
+    },
+}
 
 
-def _target() -> str:
+def _architecture() -> str:
     machine = platform.machine().lower()
     if machine in {"x86_64", "amd64"}:
-        return "x86_64-unknown-linux-musl"
+        return "x86_64"
     if machine in {"aarch64", "arm64"}:
-        return "aarch64-unknown-linux-musl"
+        return "aarch64"
     raise RuntimeError(f"Arquitetura não suportada para Codex no worker: {machine}")
 
 
@@ -30,32 +41,20 @@ def _binary_path() -> Path:
 
 
 def _download_codex() -> Path:
-    target = _target()
-    asset_name = f"codex-{target}.tar.gz"
+    asset = ASSETS[_architecture()]
+    asset_name = asset["name"]
     binary = _binary_path()
     if binary.is_file() and os.access(binary, os.X_OK):
         return binary
 
-    headers = {"Accept": "application/vnd.github+json", "User-Agent": "DevPilot/worker"}
-    with httpx.Client(timeout=60.0, follow_redirects=True, headers=headers) as client:
-        metadata_response = client.get(RELEASE_API)
-        metadata_response.raise_for_status()
-        metadata = metadata_response.json()
-        asset = next((item for item in metadata.get("assets", []) if item.get("name") == asset_name), None)
-        if not asset:
-            raise RuntimeError(f"Asset oficial do Codex não encontrado: {asset_name}")
-        url = str(asset.get("browser_download_url") or "")
-        digest = str(asset.get("digest") or "")
-        if not url or not digest.startswith("sha256:"):
-            raise RuntimeError("Metadados oficiais do Codex não contêm URL e SHA-256 verificável")
-
-        response = client.get(url)
+    headers = {"User-Agent": "DevPilot/worker"}
+    with httpx.Client(timeout=120.0, follow_redirects=True, headers=headers) as client:
+        response = client.get(asset["url"])
         response.raise_for_status()
         payload = response.content
 
-    expected = digest.split(":", 1)[1].lower()
     actual = hashlib.sha256(payload).hexdigest().lower()
-    if actual != expected:
+    if actual != asset["sha256"]:
         raise RuntimeError("Falha de integridade ao baixar o Codex CLI")
 
     binary.parent.mkdir(parents=True, exist_ok=True)
@@ -64,7 +63,14 @@ def _download_codex() -> Path:
         archive.write_bytes(payload)
         with tarfile.open(archive, "r:gz") as package:
             members = [member for member in package.getmembers() if member.isfile()]
-            candidate = next((member for member in members if Path(member.name).name.startswith("codex-")), None)
+            candidate = next(
+                (
+                    member
+                    for member in members
+                    if Path(member.name).name.startswith("codex-")
+                ),
+                None,
+            )
             if not candidate:
                 raise RuntimeError("Binário Codex ausente no pacote oficial")
             extracted = package.extractfile(candidate)
