@@ -95,3 +95,4 @@ jobs:
 
 # Provisionamento acionado em 2026-09-10 para garantir Vercel como frontend principal.
 # Publicação acionada após corrigir bootstrap para uso único.
+# Publicação acionada após garantir auth-ui antes do app legado.
