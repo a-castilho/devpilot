@@ -11,7 +11,7 @@ from app.cloud_admin_routes import (
     save_cloud,
 )
 from app.db import Base
-from app.models import ProviderCredential, Workspace
+from app.models import Organization, ProviderCredential, Workspace
 from app.security import Principal, Role
 from app.services.vault import Vault
 
@@ -90,6 +90,67 @@ def test_cloud_credentials_are_workspace_isolated(clouds_db):
 
     assert render["configured"] is False
     assert render["scope"] == ""
+
+
+def test_github_cloud_save_updates_linked_organization_credential(clouds_db):
+    db, workspace, _ = clouds_db
+    organization = Organization(
+        workspace_id=workspace.id,
+        provider="github",
+        name="A Castilho",
+        slug="a-castilho",
+        external_login="a-castilho",
+    )
+    db.add(organization)
+    db.commit()
+
+    token = "github-cloud-token-latest-123456"
+    save_cloud(
+        "github",
+        CloudCredentialUpdate(secret=token, enabled=True, scope=""),
+        db=db,
+        principal=principal(workspace),
+    )
+    db.refresh(organization)
+
+    assert organization.credential_id
+    linked = db.scalar(
+        select(ProviderCredential).where(ProviderCredential.id == organization.credential_id)
+    )
+    assert linked is not None
+    assert linked.provider == "github"
+    assert linked.enabled is True
+    assert Vault().decrypt(linked.encrypted_secret) == token
+
+
+def test_github_cloud_existing_secret_is_reused_for_organization_sync(clouds_db):
+    db, workspace, _ = clouds_db
+    cloud = ProviderCredential(
+        workspace_id=workspace.id,
+        provider="cloud:github",
+        label="cloud-admin",
+        encrypted_secret=Vault().encrypt("github-existing-cloud-token-123456"),
+        models='{"scope":"","credential_source":"manual"}',
+        enabled=True,
+    )
+    organization = Organization(
+        workspace_id=workspace.id,
+        provider="github",
+        name="A Castilho",
+        slug="a-castilho",
+        external_login="a-castilho",
+    )
+    db.add_all([cloud, organization])
+    db.commit()
+
+    list_clouds(db=db, principal=principal(workspace))
+    db.refresh(organization)
+
+    linked = db.scalar(
+        select(ProviderCredential).where(ProviderCredential.id == organization.credential_id)
+    )
+    assert linked is not None
+    assert Vault().decrypt(linked.encrypted_secret) == "github-existing-cloud-token-123456"
 
 
 class FakeResponse:
