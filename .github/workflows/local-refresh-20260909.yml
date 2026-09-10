@@ -138,15 +138,20 @@ jobs:
           set -euo pipefail
           TARGET=/home/xx/Documents/devpilot
           STATE="$TARGET/.devpilot-state"
+          RUNTIME_ENV="$STATE/runtime.env"
           mkdir -p "$STATE"
+          : > "$RUNTIME_ENV"
+          chmod 600 "$RUNTIME_ENV"
 
-          import_env_from_pid() {
+          capture_env_from_pid() {
             pid="$1"
             [ -n "$pid" ] && [ -r "/proc/$pid/environ" ] || return 0
             while IFS= read -r -d '' kv; do
               name="${kv%%=*}"
               case "$name" in
-                DEVPILOT_*|OPENAI_*|GOOGLE_*|GEMINI_*|OLLAMA_*|PATH|LD_LIBRARY_PATH) export "$kv" || true ;;
+                DEVPILOT_*|OPENAI_*|GOOGLE_*|GEMINI_*|OLLAMA_*|PATH|LD_LIBRARY_PATH)
+                  printf '%s\n' "$kv" >> "$RUNTIME_ENV"
+                  ;;
               esac
             done < "/proc/$pid/environ"
           }
@@ -180,7 +185,7 @@ jobs:
             case "$LISTENER_CMD" in
               *uvicorn*app.main:app*)
                 if [ "$LISTENER_CWD" = "$TARGET" ]; then
-                  import_env_from_pid "$LISTENER_PID"
+                  capture_env_from_pid "$LISTENER_PID"
                   stop_owned "$LISTENER_PID" api
                 else
                   echo "Porta 8080 ocupada por uvicorn fora do DevPilot: $LISTENER_CWD"
@@ -193,7 +198,7 @@ jobs:
                 ;;
             esac
           else
-            import_env_from_pid "$API_PID"
+            capture_env_from_pid "$API_PID"
             stop_owned "$API_PID" api
           fi
 
@@ -201,7 +206,8 @@ jobs:
           [ -f "$STATE/worker.pid" ] && WORKER_PID="$(cat "$STATE/worker.pid" 2>/dev/null || true)"
           stop_owned "$WORKER_PID" worker
 
-          env | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | sed 's/=.*$/=*** preserved/' | grep -E '^(DEVPILOT_|OPENAI_|GOOGLE_|GEMINI_|OLLAMA_|PATH=|LD_LIBRARY_PATH=)' || true
+          echo "runtime_env_entries=$(wc -l < "$RUNTIME_ENV")"
+          cut -d= -f1 "$RUNTIME_ENV" | sed 's/$/=*** preserved/' || true
 
       - name: Reiniciar API e worker fora do rastreamento do runner
         shell: bash
@@ -209,9 +215,16 @@ jobs:
           set -euo pipefail
           TARGET=/home/xx/Documents/devpilot
           STATE="$TARGET/.devpilot-state"
+          RUNTIME_ENV="$STATE/runtime.env"
           PY="$TARGET/.venv/bin/python"
           test -x "$PY"
           mkdir -p "$STATE"
+
+          if [ -f "$RUNTIME_ENV" ]; then
+            while IFS= read -r kv; do
+              [ -n "$kv" ] && export "$kv"
+            done < "$RUNTIME_ENV"
+          fi
 
           TOOL_LIB=/home/xx/.local/share/devpilot-actions-runner/_work/_tool/Python/3.12.10/x64/lib
           export LD_LIBRARY_PATH="$TOOL_LIB${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
