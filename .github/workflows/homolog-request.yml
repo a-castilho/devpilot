@@ -1,0 +1,106 @@
+name: Homolog Deploy Request
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".deploy/homolog-request.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devpilot-homolog-request
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Publicar homologação solicitada
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: homologation
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve request
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+          payload = json.loads(Path('.deploy/homolog-request.json').read_text(encoding='utf-8'))
+          sha = str(payload.get('sha') or '').strip()
+          if len(sha) != 40 or any(c not in '0123456789abcdefABCDEF' for c in sha):
+              raise SystemExit('SHA de homologação inválido')
+          print(f'sha={sha}')
+          PY
+
+      - name: Resolve Render target
+        id: render
+        env:
+          CONFIGURED_BASE_URL: ${{ vars.RENDER_HOMOLOG_BASE_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_URL="${CONFIGURED_BASE_URL:-https://devpilot-homolog.onrender.com}"
+          BASE_URL="${BASE_URL%/}"
+          case "$BASE_URL" in
+            https://*) ;;
+            *) echo "::error::RENDER_HOMOLOG_BASE_URL deve ser HTTPS"; exit 1 ;;
+          esac
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+          echo "Homologação: $BASE_URL"
+
+      - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_HOMOLOG_DEPLOY_HOOK }}
+          SHA: ${{ steps.request.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$HOOK" ]; then
+            echo "::error::RENDER_HOMOLOG_DEPLOY_HOOK não configurado no ambiente homologation."
+            exit 1
+          fi
+          SEP='?'; [[ "$HOOK" == *'?'* ]] && SEP='&'
+          curl --fail --show-error --silent --request POST "${HOOK}${SEP}ref=${SHA}"
+          echo
+          echo "Deploy solicitado para $SHA"
+
+      - name: Wait for health
+        env:
+          BASE_URL: ${{ steps.render.outputs.base_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            code=$(curl -L -sS -o /tmp/devpilot-health.json -w '%{http_code}' --max-time 20 "$BASE_URL/health" || true)
+            if [ "$code" = "200" ] && grep -qi 'devpilot' /tmp/devpilot-health.json; then
+              cat /tmp/devpilot-health.json
+              echo "Homologação saudável em $BASE_URL"
+              exit 0
+            fi
+            if [ "$code" = "404" ]; then
+              echo "::error::Serviço de homologação não provisionado ou URL incorreta: $BASE_URL"
+              exit 1
+            fi
+            echo "attempt=$attempt status=$code"
+            sleep 10
+          done
+          echo "::error::Homologação não ficou saudável dentro do tempo limite."
+          exit 1
+
+      - name: Verify SPA
+        env:
+          BASE_URL: ${{ steps.render.outputs.base_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -L -sS -o /tmp/devpilot-root.html -w '%{http_code}' --max-time 30 "$BASE_URL/")
+          test "$code" = "200"
+          grep -qi 'DevPilot' /tmp/devpilot-root.html
+          echo "SPA publicada: $BASE_URL"
