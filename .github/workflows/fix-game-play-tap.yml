@@ -18,101 +18,15 @@ jobs:
         with:
           ref: fix/mobile-standard-top-back
           fetch-depth: 0
-      - name: Make Jogar agora reliable on Android
+      - name: Apply patch
+        run: python scripts/patch_game_play_tap.py
+      - name: Validate JavaScript
+        run: node --check app/static/game/objective-controls.js
+      - name: Commit fix
         run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path('app/static/game/objective-controls.js')
-          text = path.read_text(encoding='utf-8')
-          old = """      button.onclick = async () => {
-        const projectId = project?.value || '';
-        const targetGoal = goal?.value || '';
-        button.disabled = true;
-        button.textContent = '🚀 Iniciando rodada…';
-        status.classList.remove('game74-error');
-        status.innerHTML = '<strong>Rodada iniciada.</strong> Criando Planejamento na esteira real…';
-        try {
-          await engine.startRound({projectId, goal: targetGoal});
-          localStorage.removeItem(DRAFT_GOAL_KEY);
-          localStorage.setItem(DRAFT_PROJECT_KEY, projectId);
-        } catch (error) {
-          button.disabled = false;
-          button.textContent = '🚀 Jogar agora';
-          status.classList.add('game74-error');
-          status.textContent = error?.message || 'Falha ao iniciar a rodada';
-        }
-      };
-"""
-          new = """      let startInFlight = false;
-      let pointerStartedAt = 0;
-      const startRoundFromUi = async event => {
-        event?.preventDefault?.();
-        if (startInFlight) return;
-        const projectId = String(project?.value || '').trim();
-        const targetGoal = String(goal?.value || '').trim();
-        if (!projectId || targetGoal.length < 3) {
-          syncStartState();
-          goal?.focus();
-          return;
-        }
-        startInFlight = true;
-        button.disabled = true;
-        button.textContent = '🚀 Iniciando rodada…';
-        status.classList.remove('game74-error');
-        status.innerHTML = '<strong>Rodada iniciada.</strong> Criando Planejamento na esteira real…';
-        try {
-          const liveEngine = controller();
-          if (!liveEngine || typeof liveEngine.startRound !== 'function') throw new Error('Controlador do jogo ainda não está pronto');
-          await liveEngine.startRound({projectId, goal: targetGoal});
-          localStorage.removeItem(DRAFT_GOAL_KEY);
-          localStorage.setItem(DRAFT_PROJECT_KEY, projectId);
-          document.dispatchEvent(new CustomEvent('devpilot:game:rendered', {detail:{source:'game74-start'}}));
-        } catch (error) {
-          startInFlight = false;
-          button.disabled = false;
-          button.textContent = '🚀 Jogar agora';
-          status.classList.add('game74-error');
-          status.textContent = error?.message || 'Falha ao iniciar a rodada';
-        }
-      };
-      button.addEventListener('pointerup', event => {
-        if (event.pointerType && event.pointerType !== 'touch' && event.pointerType !== 'pen') return;
-        pointerStartedAt = Date.now();
-        void startRoundFromUi(event);
-      });
-      button.addEventListener('click', event => {
-        if (Date.now() - pointerStartedAt < 900) {
-          event.preventDefault();
-          return;
-        }
-        void startRoundFromUi(event);
-      });
-"""
-          if old not in text:
-              raise SystemExit('Handler esperado de Jogar agora não encontrado')
-          path.write_text(text.replace(old, new, 1), encoding='utf-8')
-
-          test = Path('tests/test_game_unified_v73.py')
-          t = test.read_text(encoding='utf-8')
-          marker = "    assert \"data-game74-example\" in source\n"
-          addition = (
-              "    assert \"button.addEventListener('pointerup'\" in source\n"
-              "    assert \"button.addEventListener('click'\" in source\n"
-              "    assert \"startInFlight\" in source\n"
-              "    assert \"const liveEngine = controller()\" in source\n"
-          )
-          if addition not in t:
-              if marker not in t:
-                  raise SystemExit('Ponto de teste não encontrado')
-              t = t.replace(marker, marker + addition, 1)
-              test.write_text(t, encoding='utf-8')
-          PY
-          node --check app/static/game/objective-controls.js
-          python -m pytest -q tests/test_game_unified_v73.py
-          git rm .github/workflows/fix-game-play-tap.yml
+          git rm .github/workflows/fix-game-play-tap.yml scripts/patch_game_play_tap.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/static/game/objective-controls.js tests/test_game_unified_v73.py
+          git add app/static/game/objective-controls.js
           git commit -m "fix(game): garantir toque em Jogar agora no Android"
           git push origin HEAD:fix/mobile-standard-top-back
