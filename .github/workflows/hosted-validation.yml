@@ -1,0 +1,71 @@
+name: DevPilot Hosted Validation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hosted-validation:
+    name: GitHub-hosted validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DEVPILOT_RUN_BROWSER_E2E: "0"
+      DEVPILOT_RUN_CRITICAL_MATRIX: "0"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+
+      - name: Resolve policy base
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          else
+            BASE="$(git rev-parse HEAD^)"
+          fi
+          echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
+          echo "Policy base: $BASE"
+
+      - name: Engineering policy
+        run: python scripts/check-engineering-standards.py --changed
+
+      - name: Compile Python sources
+        run: python -m compileall -q app tests
+
+      - name: Unit and contract tests
+        run: python -m pytest -q -m "not browser_e2e"
+
+      - name: Summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## DevPilot Hosted Validation"
+            echo
+            echo "Runner: GitHub-hosted ubuntu-latest"
+            echo "Python: $(python --version 2>&1)"
+            echo "Commit: $GITHUB_SHA"
+            echo
+            echo "Este gate não depende do Linux local, do runner self-hosted, do SQLite local ou da porta 8080 da máquina do usuário."
+          } >> "$GITHUB_STEP_SUMMARY"
