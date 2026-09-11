@@ -5,6 +5,7 @@ from app import public_git_fallback as _public_git_fallback  # noqa: F401,E402
 from app import github_optional_org as _github_optional_org  # noqa: F401,E402
 from app import execution_preflight_guard as _execution_preflight_guard  # noqa: F401,E402
 from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401,E402
+from app import recovery_classification_guard as _recovery_classification_guard  # noqa: F401,E402
 from app import mandatory_cloud_policy as _mandatory_cloud_policy  # noqa: F401,E402
 from app import delivery_credential_compat as _delivery_credential_compat  # noqa: F401,E402
 from app import neon_delivery_compat as _neon_delivery_compat  # noqa: F401,E402
