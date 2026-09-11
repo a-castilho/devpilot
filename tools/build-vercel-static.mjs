@@ -37,6 +37,10 @@ function requireAsset(name) {
   try { statSync(path); } catch { throw new Error(`Vercel build requires missing frontend asset: ${name}`); }
   return path;
 }
+function optionalAsset(name) {
+  const path = assetPath(name);
+  try { statSync(path); return path; } catch { return null; }
+}
 function normalizeHead(value) {
   return value.replace(/<head>[\s\S]*?<\/head>/, head => head.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n'));
 }
@@ -57,9 +61,11 @@ function preauthTags() {
 }
 function authenticatedLoader() {
   CORE_SCRIPTS.forEach(requireAsset);
-  DEFERRED_SCRIPTS.forEach(requireAsset);
+  const availableDeferred = DEFERRED_SCRIPTS
+    .map(name => [name, optionalAsset(name)])
+    .filter(([, path]) => Boolean(path));
   const coreSources = CORE_SCRIPTS.map(name => `/assets/${name}?v=${revision(assetPath(name))}`);
-  const assetRevisions = Object.fromEntries(DEFERRED_SCRIPTS.map(name => [name, revision(assetPath(name))]));
+  const assetRevisions = Object.fromEntries(availableDeferred.map(([name, path]) => [name, revision(path)]));
   return `  <script>
 (() => {
   'use strict';
@@ -67,6 +73,7 @@ function authenticatedLoader() {
   window.__devpilotAssetRevisions = Object.freeze(${JSON.stringify(assetRevisions)});
   const boot = window.__devpilotBoot = {phase:'auth',current:null,loaded:[],failed:[],timings:{},startedAt:Date.now()};
   const token = () => String(localStorage.getItem('devpilot-token') || '').trim();
+  let starting = false;
   const waitForAuthentication = async () => {
     if (window.__devpilotAuthReady) {
       try { return Boolean(await window.__devpilotAuthReady); } catch (_) { return false; }
@@ -90,18 +97,25 @@ function authenticatedLoader() {
     document.body.appendChild(script);
   });
   const start = async () => {
-    const authenticated = await waitForAuthentication();
-    boot.authenticated = authenticated;
-    if (!authenticated || !token()) { boot.phase = 'waiting-login'; return; }
-    boot.phase = 'core';
-    for (const src of coreSources) {
-      if (!token()) { boot.phase = 'logged-out'; return; }
-      if (!(await loadScript(src))) { boot.phase = 'failed'; return; }
+    if (starting || boot.phase === 'core' || boot.phase === 'ready') return;
+    starting = true;
+    try {
+      const authenticated = await waitForAuthentication();
+      boot.authenticated = authenticated;
+      if (!authenticated || !token()) { boot.phase = 'waiting-login'; return; }
+      boot.phase = 'core';
+      for (const src of coreSources) {
+        if (!token()) { boot.phase = 'logged-out'; return; }
+        if (!(await loadScript(src))) { boot.phase = 'failed'; return; }
+      }
+      boot.phase = 'ready'; boot.finishedAt = Date.now();
+      document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
+      document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
+    } finally {
+      starting = false;
     }
-    boot.phase = 'ready'; boot.finishedAt = Date.now();
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-core-ready'));
-    document.dispatchEvent(new CustomEvent('devpilot:authenticated-ui-ready'));
   };
+  document.addEventListener('devpilot:login-complete', () => void start());
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => void start(), {once:true});
   else void start();
 })();
