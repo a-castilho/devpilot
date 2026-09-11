@@ -7,16 +7,18 @@ import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 
-from app.config import get_settings
 from app.db import SessionLocal
 from app.models import Organization, Project, ProviderCredential, Task
+from app.services.policy import normalize_repository_url
+from app.services.repository_paths import repository_path
 from app.services.vault import Vault
 
 
-SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
+GITHUB_HOST = "github.com"
 _SECRET_PATTERNS = (
     re.compile(r"(?i)(authorization\s*:\s*(?:bearer|basic)\s+)[^\s\"']+"),
     re.compile(r"\bgithub_pat_[A-Za-z0-9_]+\b"),
@@ -138,32 +140,171 @@ class AutoRecoveryService:
 
     def _recover_github_access(self, project: Project, execution_attempt: int) -> RecoveryDecision:
         steps = []
-        if not project.organization_id:
-            return RecoveryDecision("github_auth","needs_authorization","O projeto não possui uma organização GitHub com credencial configurada.",False,True,"request_github_authorization",steps)
+        try:
+            repository_url = normalize_repository_url(str(project.repository_url or ""))
+        except ValueError:
+            return RecoveryDecision("github_auth","needs_attention","A URL persistida do repositório está fora da política Git permitida. Nenhuma credencial foi enviada.",False,False,"repository_url_safety_stop",steps)
+        parsed_repository = urlparse(repository_url)
+        if str(parsed_repository.hostname or "").lower() != GITHUB_HOST:
+            return RecoveryDecision("github_auth","needs_attention","A credencial GitHub não será enviada para um host Git diferente de github.com.",False,False,"github_host_boundary_stop",steps)
+        repository_parts = [part for part in parsed_repository.path.split("/") if part]
+        if len(repository_parts) < 2:
+            return RecoveryDecision("github_auth","needs_attention","A URL do repositório GitHub não contém owner e repositório válidos. Nenhuma credencial foi enviada.",False,False,"repository_url_safety_stop",steps)
+        repository_owner = repository_parts[0].casefold()
+
         with SessionLocal() as db:
-            organization = db.get(Organization, project.organization_id)
-            if not organization: return RecoveryDecision("github_auth","needs_authorization","A organização GitHub vinculada ao projeto não foi encontrada.",False,True,"request_github_authorization",steps)
-            credentials = list(db.scalars(select(ProviderCredential).where(ProviderCredential.workspace_id == project.workspace_id, ProviderCredential.provider == "github", ProviderCredential.enabled.is_(True))).all())
+            inferred_organization = False
+            if project.organization_id:
+                organization = db.scalar(
+                    select(Organization).where(
+                        Organization.id == project.organization_id,
+                        Organization.workspace_id == project.workspace_id,
+                        Organization.provider == "github",
+                    )
+                )
+                if not organization:
+                    return RecoveryDecision("github_auth","needs_authorization","A organização GitHub vinculada ao projeto não foi encontrada neste workspace.",False,True,"request_github_authorization",steps)
+                if str(organization.external_login or "").casefold() != repository_owner:
+                    return RecoveryDecision("github_auth","needs_attention","A organização GitHub vinculada ao projeto não corresponde ao owner do repositório. Nenhuma credencial foi enviada.",False,False,"github_owner_boundary_stop",steps)
+            else:
+                workspace_organizations = list(
+                    db.scalars(
+                        select(Organization).where(
+                            Organization.workspace_id == project.workspace_id,
+                            Organization.provider == "github",
+                        )
+                    ).all()
+                )
+                owner_matches = [
+                    item for item in workspace_organizations
+                    if str(item.external_login or "").casefold() == repository_owner
+                ]
+                if not owner_matches:
+                    return RecoveryDecision(
+                        "github_auth",
+                        "needs_authorization",
+                        f"A organização GitHub '{repository_parts[0]}' do repositório não está vinculada a este workspace.",
+                        False,
+                        True,
+                        "request_github_authorization",
+                        steps,
+                    )
+                if len(owner_matches) != 1:
+                    return RecoveryDecision(
+                        "github_auth",
+                        "needs_attention",
+                        "Há mais de uma organização GitHub compatível neste workspace; o DevPilot não escolherá uma credencial de forma ambígua.",
+                        False,
+                        False,
+                        "github_organization_ambiguity_stop",
+                        steps,
+                    )
+                organization = owner_matches[0]
+                inferred_organization = True
+                steps.append({
+                    "state": "organization_resolved",
+                    "attempt": execution_attempt,
+                    "organization": organization.external_login,
+                    "message": "Organização do repositório localizada no mesmo workspace; a credencial será validada antes de reparar o vínculo do projeto.",
+                })
+
+            credentials = list(
+                db.scalars(
+                    select(ProviderCredential).where(
+                        ProviderCredential.workspace_id == project.workspace_id,
+                        ProviderCredential.provider == "github",
+                        ProviderCredential.enabled.is_(True),
+                    )
+                ).all()
+            )
             credentials.sort(key=lambda item: item.id != organization.credential_id)
-            if not credentials: return RecoveryDecision("github_auth","needs_authorization","Nenhuma credencial GitHub ativa está disponível para testar o acesso ao repositório.",False,True,"request_github_authorization",steps)
+            if not credentials:
+                return RecoveryDecision("github_auth","needs_authorization","Nenhuma credencial GitHub ativa está disponível neste workspace para testar o acesso ao repositório.",False,True,"request_github_authorization",steps)
+
             for index, credential in enumerate(credentials[:self.MAX_ATTEMPTS], start=1):
-                try: token = Vault().decrypt(credential.encrypted_secret)
-                except ValueError: continue
-                result = self._git_ls_remote(project.repository_url, token)
+                try:
+                    token = Vault().decrypt(credential.encrypted_secret)
+                except ValueError:
+                    continue
+                result = self._git_ls_remote(repository_url, token)
                 if result.returncode == 0:
-                    changed = organization.credential_id != credential.id
-                    if changed: organization.credential_id = credential.id; organization.last_sync_error = ""; db.commit()
-                    return RecoveryDecision("github_auth","resolved","Acesso ao GitHub restabelecido com uma credencial já autorizada." if changed else "A credencial GitHub foi validada novamente e o acesso está disponível.",execution_attempt < self.MAX_ATTEMPTS,False,"github_credential_failover" if changed else "github_access_recheck",steps)
+                    project_link_changed = False
+                    if inferred_organization:
+                        relink = db.execute(
+                            update(Project)
+                            .where(
+                                Project.id == project.id,
+                                Project.workspace_id == project.workspace_id,
+                                Project.organization_id.is_(None),
+                            )
+                            .values(organization_id=organization.id)
+                        )
+                        if int(relink.rowcount or 0) == 1:
+                            project_link_changed = True
+                        else:
+                            current_organization_id = db.scalar(
+                                select(Project.organization_id).where(
+                                    Project.id == project.id,
+                                    Project.workspace_id == project.workspace_id,
+                                )
+                            )
+                            if current_organization_id != organization.id:
+                                db.rollback()
+                                return RecoveryDecision(
+                                    "github_auth",
+                                    "needs_attention",
+                                    "O vínculo do projeto mudou durante a recuperação. O DevPilot interrompeu a correção para não sobrescrever outra organização.",
+                                    False,
+                                    False,
+                                    "github_project_link_race_stop",
+                                    steps,
+                                )
+                        project.organization_id = organization.id
+
+                    credential_changed = organization.credential_id != credential.id
+                    if credential_changed:
+                        organization.credential_id = credential.id
+                    if credential_changed or project_link_changed:
+                        organization.last_sync_error = ""
+                        db.commit()
+
+                    if project_link_changed:
+                        steps.append({
+                            "state": "project_link_repaired",
+                            "attempt": execution_attempt,
+                            "organization": organization.external_login,
+                            "message": "O vínculo projeto-organização foi restaurado após a credencial já cadastrada comprovar acesso ao repositório.",
+                        })
+                        message = "A credencial GitHub já cadastrada foi validada e o vínculo do projeto com a organização foi restaurado."
+                        strategy = "github_project_link_repair"
+                    elif credential_changed:
+                        message = "Acesso ao GitHub restabelecido com uma credencial já autorizada neste workspace."
+                        strategy = "github_credential_failover"
+                    else:
+                        message = "A credencial GitHub já cadastrada foi validada novamente e o acesso está disponível."
+                        strategy = "github_access_recheck"
+                    return RecoveryDecision(
+                        "github_auth",
+                        "resolved",
+                        message,
+                        execution_attempt < self.MAX_ATTEMPTS,
+                        False,
+                        strategy,
+                        steps,
+                    )
                 steps.append({"state":"credential_rejected","attempt":execution_attempt,"credential":credential.label,"candidate":index,"message":"A credencial não possui acesso suficiente ao repositório."})
-            return RecoveryDecision("github_auth","needs_authorization","As credenciais GitHub disponíveis foram testadas e nenhuma possui acesso ao repositório.",False,True,"request_github_authorization",steps)
+            return RecoveryDecision("github_auth","needs_authorization","As credenciais GitHub disponíveis neste workspace foram testadas e nenhuma possui acesso ao repositório.",False,True,"request_github_authorization",steps)
 
     def _git_ls_remote(self, repository_url: str, token: str) -> subprocess.CompletedProcess[str]:
+        safe_repository_url = normalize_repository_url(str(repository_url or ""))
+        if str(urlparse(safe_repository_url).hostname or "").lower() != GITHUB_HOST:
+            raise ValueError("GitHub credential cannot be sent to a non-GitHub host")
         encoded = base64.b64encode(f"x-access-token:{token}".encode()).decode(); env = os.environ.copy()
-        env.update({"GIT_TERMINAL_PROMPT":"0","GIT_CONFIG_COUNT":"1","GIT_CONFIG_KEY_0":"http.extraHeader","GIT_CONFIG_VALUE_0":f"Authorization: Basic {encoded}"})
-        return subprocess.run(["git","ls-remote",repository_url,"HEAD"], text=True, capture_output=True, timeout=45, check=False, env=env)
+        env.update({"GIT_TERMINAL_PROMPT":"0","GIT_CONFIG_COUNT":"1","GIT_CONFIG_KEY_0":"http.https://github.com/.extraHeader","GIT_CONFIG_VALUE_0":f"Authorization: Basic {encoded}"})
+        return subprocess.run(["git","ls-remote",safe_repository_url,"HEAD"], text=True, capture_output=True, timeout=45, check=False, env=env)
 
     def _quarantine_invalid_repository(self, project: Project) -> bool:
-        path = get_settings().repositories_dir / SAFE_NAME.sub("-", project.slug)
+        path = repository_path(project)
         if not path.exists() or (path / ".git").exists(): return False
         try: path.rename(self._available_recovery_path(path)); return True
         except OSError: return False
