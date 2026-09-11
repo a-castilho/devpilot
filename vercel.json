@@ -5,25 +5,8 @@
   "outputDirectory": ".vercel-static",
   "routes": [
     {
-      "src": "/api/(.*)",
-      "dest": "${DEVPILOT_BACKEND_URL}/api/$1",
-      "env": ["DEVPILOT_BACKEND_URL"]
-    },
-    {
-      "src": "/health",
-      "dest": "${DEVPILOT_BACKEND_URL}/health",
-      "env": ["DEVPILOT_BACKEND_URL"]
-    },
-    {
-      "src": "/telemetry",
-      "dest": "/assets/telemetry.html"
-    },
-    {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/.*",
-      "dest": "/index.html",
+      "src": "/(.*)",
+      "dest": "https://devpilot-homolog.onrender.com/$1",
       "headers": {
         "Cache-Control": "no-store, max-age=0, must-revalidate"
       }
