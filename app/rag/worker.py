@@ -8,6 +8,7 @@ from .db import get_rag_engine
 from .ingestion import RagIndexer
 from .jobs import claim_next_job, complete_job, fail_job, update_progress
 from .runtime import get_rag_embedder, reload_rag_service
+from .scope import project_rag_scope
 
 
 def process_one_rag_job(db: Session) -> bool:
@@ -22,7 +23,8 @@ def process_one_rag_job(db: Session) -> bool:
         project = db.get(Project, job["project_id"])
         if not project:
             raise RuntimeError("Project not found for RAG job")
-        if not project.organization_id or project.organization_id != job["organization_id"]:
+        scope_id = project_rag_scope(project)
+        if scope_id != str(job["organization_id"]):
             raise RuntimeError("RAG job project scope mismatch")
         embedder = get_rag_embedder()
         if embedder is None:
@@ -42,7 +44,7 @@ def process_one_rag_job(db: Session) -> bool:
             ),
         )
         rag.invalidate_project(
-            organization_id=project.organization_id,
+            organization_id=scope_id,
             project_id=project.id,
         )
         if int(result.get("failed") or 0) > 0:
