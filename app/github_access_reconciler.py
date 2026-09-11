@@ -91,6 +91,51 @@ def _sync_cloud_credential(db, workspace_id: str) -> list[Organization]:
     return organizations
 
 
+def _link_projects_by_repository_owner(db, workspace_id: str, organizations: list[Organization]) -> int:
+    """Attach GitHub projects to the matching organization using the repository owner.
+
+    Older/project-creation flows can persist repository_url before organization_id. That made
+    valid GitHub credentials invisible to the reconciler. The repository owner is deterministic
+    for github.com URLs, so we repair the missing relation automatically.
+    """
+    by_owner = {
+        str(org.external_login or "").strip().lower(): org
+        for org in organizations
+        if str(org.external_login or "").strip()
+    }
+    if not by_owner:
+        return 0
+
+    linked = 0
+    projects = list(
+        db.scalars(
+            select(Project).where(
+                Project.workspace_id == workspace_id,
+                Project.organization_id.is_(None),
+            )
+        ).all()
+    )
+    for project in projects:
+        owner = _github_owner(project.repository_url)
+        org = by_owner.get(owner)
+        if not org:
+            continue
+        project.organization_id = org.id
+        linked += 1
+        record(
+            db,
+            workspace_id=project.workspace_id,
+            project_id=project.id,
+            actor="github-access-reconciler",
+            action="github.project_organization_linked",
+            outcome="linked",
+            details={"owner": owner, "organization_id": org.id, "automatic": True},
+        )
+    if linked:
+        db.flush()
+    return linked
+
+
 def _resume_github_recovery(db, project: Project, token: str) -> int:
     if not _github_owner(project.repository_url):
         return 0
@@ -143,6 +188,7 @@ def reconcile_once() -> int:
         )
         for workspace_id in workspace_ids:
             organizations = _sync_cloud_credential(db, workspace_id)
+            _link_projects_by_repository_owner(db, workspace_id, organizations)
             db.flush()
             for org in organizations:
                 if not org.credential_id:
