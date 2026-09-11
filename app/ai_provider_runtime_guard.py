@@ -58,6 +58,8 @@ def _provider_failure(attempts: list[dict]) -> HTTPException:
         )
 
     quota_fragments = (
+        "credit_balance_exhausted",
+        "no credits remaining",
         "insufficient_quota",
         "billing_hard_limit",
         "billing limit",
@@ -67,7 +69,12 @@ def _provider_failure(attempts: list[dict]) -> HTTPException:
     for item in configured_external:
         text = " ".join(str(item.get(key) or "").lower() for key in ("error_code", "error_type", "message"))
         if any(fragment in text for fragment in quota_fragments):
-            return HTTPException(402, "O provedor de IA está configurado, mas a cota ou faturamento foi esgotado. Revise a conta do provedor.")
+            provider = str(item.get("provider") or "provedor").title()
+            return HTTPException(
+                402,
+                f"{provider} está configurado e a API key foi reconhecida, mas a conta está sem créditos/cota disponível. "
+                "Adicione créditos ou habilite faturamento no provedor; trocar de modelo não corrige falta de saldo.",
+            )
 
     auth_failures = [item for item in configured_external if int(item.get("status") or 0) in {401, 403}]
     if auth_failures:
@@ -105,8 +112,6 @@ async def _cloud_safe_ollama(original, client, input_text: str, instructions: st
 
 
 def install_ai_provider_runtime_guard() -> None:
-    # Importa os módulos de rota cedo e substitui as referências locais que foram
-    # copiadas com `from ... import ...`. Assim chat e voz usam a mesma política.
     from app import chat_mode_routes, voice_all_provider_routes, voice_conversation_routes
 
     original_ollama = voice_conversation_routes._try_ollama
