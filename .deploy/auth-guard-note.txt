@@ -1,0 +1,1 @@
+Homologation auth guard: Vercel may publish aliases only when backend /api/auth/status reports bootstrap_required=false. This prevents a wrong/empty database from exposing the one-time bootstrap token screen again.
