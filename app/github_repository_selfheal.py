@@ -1,24 +1,18 @@
 from __future__ import annotations
 
-import re
 from urllib.parse import urlparse
 
 import httpx
-from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.github_optional_org import github_credential_candidates
-from app.models import Organization, Project
+from app.models import Project
 from app.services.audit import record
 from app.services.policy import normalize_repository_url
 from app.services.vault import Vault
 
 _GITHUB_API = "https://api.github.com"
 _TIMEOUT = 12.0
-
-
-def _compact_login(value: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", str(value or "").casefold())
 
 
 def _repository_parts(repository_url: str) -> tuple[str, str]:
@@ -37,46 +31,50 @@ def _headers(token: str) -> dict[str, str]:
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "DevPilot-GitHub-SelfHeal/1.0",
+        "User-Agent": "DevPilot-GitHub-SelfHeal/2.0",
     }
 
 
-def _identity(token: str) -> str:
+def _get_json(url: str, token: str) -> tuple[int, dict]:
     try:
-        response = httpx.get(f"{_GITHUB_API}/user", headers=_headers(token), timeout=_TIMEOUT)
+        response = httpx.get(url, headers=_headers(token), timeout=_TIMEOUT)
     except httpx.HTTPError:
-        return ""
-    if response.status_code != 200:
-        return ""
+        return 0, {}
     try:
-        data = response.json()
+        data = response.json() if response.content else {}
     except ValueError:
+        data = {}
+    return int(response.status_code), data if isinstance(data, dict) else {}
+
+
+def _identity(token: str) -> str:
+    status, data = _get_json(f"{_GITHUB_API}/user", token)
+    return str(data.get("login") or "").strip() if status == 200 else ""
+
+
+def _owner_type(token: str, owner: str) -> str:
+    status, data = _get_json(f"{_GITHUB_API}/users/{owner}", token)
+    if status != 200:
         return ""
-    return str(data.get("login") or "").strip()
+    return str(data.get("type") or "").strip().lower()
 
 
 def _repo_status(token: str, owner: str, name: str) -> int:
-    try:
-        response = httpx.get(
-            f"{_GITHUB_API}/repos/{owner}/{name}",
-            headers=_headers(token),
-            timeout=_TIMEOUT,
-        )
-    except httpx.HTTPError:
-        return 0
-    return int(response.status_code)
+    status, _ = _get_json(f"{_GITHUB_API}/repos/{owner}/{name}", token)
+    return status
 
 
-def _create_personal_repo(token: str, name: str) -> tuple[bool, str, str]:
-    """Create a private repository for the authenticated personal account.
+def _create_repo(token: str, owner: str, owner_type: str, authenticated_login: str, name: str) -> tuple[bool, str]:
+    if owner_type == "organization":
+        url = f"{_GITHUB_API}/orgs/{owner}/repos"
+    elif owner_type == "user" and authenticated_login.casefold() == owner.casefold():
+        url = f"{_GITHUB_API}/user/repos"
+    else:
+        return False, "owner_not_authorized_for_creation"
 
-    This is used only when the configured owner is a punctuation-only variant of
-    the authenticated login (for example a-castilho vs acastilho) and the target
-    repository is proven absent for that same account.
-    """
     try:
         response = httpx.post(
-            f"{_GITHUB_API}/user/repos",
+            url,
             headers={**_headers(token), "Content-Type": "application/json"},
             json={
                 "name": name,
@@ -87,23 +85,25 @@ def _create_personal_repo(token: str, name: str) -> tuple[bool, str, str]:
             timeout=_TIMEOUT,
         )
     except httpx.HTTPError as error:
-        return False, "", f"network:{type(error).__name__}"
-    if response.status_code not in {201, 422}:
-        return False, "", f"http:{response.status_code}"
-    try:
-        data = response.json()
-    except ValueError:
-        data = {}
-    clone_url = str(data.get("clone_url") or "").strip()
-    html_url = str(data.get("html_url") or "").strip()
-    return response.status_code == 201, clone_url or html_url, "created" if response.status_code == 201 else "exists"
+        return False, f"network:{type(error).__name__}"
+
+    if response.status_code == 201:
+        return True, "created"
+    if response.status_code == 422 and _repo_status(token, owner, name) == 200:
+        return True, "exists"
+    if response.status_code in {401, 403}:
+        return False, f"permission_denied:{response.status_code}"
+    return False, f"http:{response.status_code}"
 
 
 def repair_github_project(project: Project) -> tuple[bool, str]:
-    """Repair canonical GitHub owner/repository state when it is safe to do so.
+    """Make a GitHub repository usable without guessing a different owner.
 
-    Returns (ready, proof). It never guesses across unrelated owners. Canonical
-    owner repair is allowed only when owner/login differ by punctuation/case.
+    The owner stored in the project is authoritative. If the repository already
+    exists and the credential can access it, execution is ready. If it is absent,
+    DevPilot may create it only under that exact owner: either an organization or
+    the authenticated personal account. Punctuation-based owner rewriting is not
+    allowed because a user and an organization may legitimately have similar names.
     """
     owner, repo = _repository_parts(project.repository_url)
     if not owner or not repo:
@@ -114,96 +114,61 @@ def repair_github_project(project: Project) -> tuple[bool, str]:
         if not current:
             return False, "project_not_found"
 
+        diagnostics: list[str] = []
         for credential in github_credential_candidates(db, current)[:8]:
             try:
                 token = Vault().decrypt(credential.encrypted_secret)
             except ValueError:
+                diagnostics.append("credential_decrypt_failed")
                 continue
 
             login = _identity(token)
             if not login:
+                diagnostics.append("credential_identity_failed")
                 continue
 
-            # Never redirect a project to an unrelated account. Only punctuation/
-            # case variants are canonicalized automatically.
-            same_account = _compact_login(owner) == _compact_login(login)
-            canonical_owner = login if same_account else owner
-            status = _repo_status(token, canonical_owner, repo)
-
+            status = _repo_status(token, owner, repo)
             if status == 200:
-                canonical_url = f"https://github.com/{canonical_owner}/{repo}.git"
-                changed = str(current.repository_url or "") != canonical_url
-                if changed:
+                canonical_url = f"https://github.com/{owner}/{repo}.git"
+                if str(current.repository_url or "") != canonical_url:
                     current.repository_url = canonical_url
-                    if current.organization_id:
-                        organization = db.scalar(
-                            select(Organization).where(
-                                Organization.id == current.organization_id,
-                                Organization.workspace_id == current.workspace_id,
-                            )
-                        )
-                        if organization and _compact_login(organization.external_login) != _compact_login(canonical_owner):
-                            current.organization_id = None
-                    record(
-                        db,
-                        workspace_id=current.workspace_id,
-                        project_id=current.id,
-                        actor="github-repository-selfheal",
-                        action="github.repository_url_canonicalized",
-                        outcome="repaired",
-                        details={
-                            "previous_owner": owner,
-                            "canonical_owner": canonical_owner,
-                            "repository": repo,
-                            "organization_required": False,
-                        },
-                    )
                     db.commit()
                     project.repository_url = canonical_url
-                    project.organization_id = current.organization_id
-                return True, f"github api repository access confirmed for {canonical_owner}/{repo}"
+                return True, f"github repository access confirmed for {owner}/{repo}"
 
-            # A repository may be provisioned automatically only for the same
-            # authenticated personal account. This prevents creating repositories
-            # under a different/guessed organization.
-            if status == 404 and same_account:
-                created, created_url, result = _create_personal_repo(token, repo)
-                if created:
-                    canonical_url = created_url if created_url.endswith(".git") else f"https://github.com/{login}/{repo}.git"
-                    current.repository_url = canonical_url
-                    if current.organization_id:
-                        organization = db.scalar(
-                            select(Organization).where(
-                                Organization.id == current.organization_id,
-                                Organization.workspace_id == current.workspace_id,
-                            )
-                        )
-                        if organization and _compact_login(organization.external_login) != _compact_login(login):
-                            current.organization_id = None
-                    record(
-                        db,
-                        workspace_id=current.workspace_id,
-                        project_id=current.id,
-                        actor="github-repository-selfheal",
-                        action="github.repository_provisioned",
-                        outcome="created",
-                        details={
-                            "repository": f"{login}/{repo}",
-                            "visibility": "private",
-                            "organization_required": False,
-                        },
-                    )
-                    db.commit()
-                    project.repository_url = canonical_url
-                    project.organization_id = current.organization_id
-                    return True, f"private repository {login}/{repo} provisioned automatically"
-                if result.startswith("http:403"):
-                    return False, "github token authenticated but cannot create repository; repository administration permission is required"
-                if result == "exists" and _repo_status(token, login, repo) == 200:
-                    canonical_url = f"https://github.com/{login}/{repo}.git"
-                    current.repository_url = canonical_url
-                    db.commit()
-                    project.repository_url = canonical_url
-                    return True, f"existing repository {login}/{repo} recovered after provisioning race"
+            if status != 404:
+                diagnostics.append(f"repo_http_{status}")
+                continue
 
-    return False, "repository unavailable to every configured GitHub credential"
+            owner_type = _owner_type(token, owner)
+            if not owner_type:
+                diagnostics.append("owner_not_found_or_not_visible")
+                continue
+
+            created, result = _create_repo(token, owner, owner_type, login, repo)
+            if not created:
+                diagnostics.append(result)
+                continue
+
+            canonical_url = f"https://github.com/{owner}/{repo}.git"
+            current.repository_url = canonical_url
+            record(
+                db,
+                workspace_id=current.workspace_id,
+                project_id=current.id,
+                actor="github-repository-selfheal",
+                action="github.repository_provisioned",
+                outcome="created" if result == "created" else "ready",
+                details={
+                    "repository": f"{owner}/{repo}",
+                    "owner_type": owner_type,
+                    "visibility": "private",
+                    "organization_required": owner_type == "organization",
+                },
+            )
+            db.commit()
+            project.repository_url = canonical_url
+            return True, f"repository {owner}/{repo} is ready ({result})"
+
+    proof = ",".join(dict.fromkeys(diagnostics)) or "no_usable_github_credential"
+    return False, proof
