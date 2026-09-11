@@ -1,8 +1,10 @@
 FROM node:22-bookworm-slim AS codex-cli
 
-# Install Codex in an isolated build stage. The npm registry occasionally resets
-# long-lived connections on slow/mobile links, so use both npm-level retries and
-# a retry around the complete install. The runtime image does not need npm.
+# Codex 0.149.0 has a confirmed auth-header regression in automated Linux
+# executions. Keep homologation on the last known-good release until the
+# upstream regression is resolved, otherwise valid API keys reach Responses
+# without Authorization and every queued task fails with HTTP 401.
+ARG CODEX_VERSION=0.148.0
 ENV NPM_CONFIG_FETCH_RETRIES=5 \
     NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
     NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
@@ -13,8 +15,8 @@ RUN set -eux; \
     npm config set registry https://registry.npmjs.org/; \
     installed=0; \
     for attempt in 1 2 3 4; do \
-        echo "Codex npm install attempt ${attempt}/4"; \
-        if npm install -g --no-audit --no-fund @openai/codex; then \
+        echo "Codex npm install attempt ${attempt}/4 version ${CODEX_VERSION}"; \
+        if npm install -g --no-audit --no-fund "@openai/codex@${CODEX_VERSION}"; then \
             installed=1; \
             break; \
         fi; \
@@ -22,7 +24,7 @@ RUN set -eux; \
         sleep $((attempt * 10)); \
     done; \
     [ "$installed" = "1" ]; \
-    codex --version
+    codex --version | grep -F "${CODEX_VERSION}"
 
 FROM python:3.12-slim-bookworm
 
