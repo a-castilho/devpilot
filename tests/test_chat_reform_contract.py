@@ -1,4 +1,8 @@
 from pathlib import Path
+import shutil
+import subprocess
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -10,7 +14,7 @@ def test_canonical_chat_runtime_owns_mobile_controls_and_normal_chat():
     assert "replaceInteractive($('#voice-transcript'))" in source
     assert "replaceInteractive($('#voice-chat-send'))" in source
     assert "replaceInteractive($('#voice-start'))" in source
-    assert "data-chat-mode" not in source or "dataset.chatMode" in source
+    assert "dataset.chatMode" in source
     assert "api('/chat'" in source
     assert "api('/voice/transcriptions'" in source
     assert "response_style: 'chat'" in source
@@ -51,3 +55,25 @@ def test_rag_scope_falls_back_to_workspace_when_organization_is_optional():
     assert "project_rag_scope(project)" in worker
     assert "project_rag_scope(project)" in admin
     assert "Project must belong to an organization" not in admin
+
+
+def test_chat_javascript_has_valid_syntax():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js is not installed in this test environment")
+    for path in (
+        ROOT / "app/static/chat-canonical-runtime.js",
+        ROOT / "app/static/chat-canonical-bootstrap.js",
+        ROOT / "tools/build-vercel-static.mjs",
+    ):
+        subprocess.run([node, "--check", str(path)], cwd=ROOT, check=True, capture_output=True, text=True)
+
+
+def test_vercel_static_build_includes_canonical_chat():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js is not installed in this test environment")
+    subprocess.run([node, "tools/build-vercel-static.mjs"], cwd=ROOT, check=True, capture_output=True, text=True)
+    built = (ROOT / ".vercel-static/index.html").read_text(encoding="utf-8")
+    assert "/assets/chat-canonical-bootstrap.js" in built
+    assert "DEVPILOT_BOOTSTRAP_TOKEN" not in built
