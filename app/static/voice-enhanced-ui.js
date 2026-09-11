@@ -183,6 +183,7 @@
   const localUpdatePatterns = [
     /^(?:atualizar|atualize|atualiza|sincronizar|sincronize)\s+(?:o\s+)?(?:devpilot\s+)?local(?:\s+(?:no\s+)?linux)?$/i,
     /^(?:atualizar|atualize|atualiza)\s+(?:o\s+)?linux(?:\s+local)?$/i,
+    /^(?:reiniciar|reinicie|restart)\s+(?:o\s+)?(?:linux|servidor|devpilot|api(?:\s+e\s+worker)?)$/i,
   ];
 
   const normalize = (value) => String(value || '').trim().replace(/\s+/g, ' ');
@@ -260,9 +261,6 @@
   };
 
   const runLocalUpdate = async (text) => {
-    if (typeof isSuperAdmin === 'function' && !isSuperAdmin()) {
-      throw new Error('Atualização local por voz é exclusiva do Super Admin.');
-    }
     const data = await api('/voice/system-actions', {
       method: 'POST',
       body: JSON.stringify({transcript: normalize(text), project_id: null}),

@@ -2,18 +2,14 @@
   const CLOUD_ROLE = 'SUPER_ADMIN';
   const cloudState = {items: [], selected: '', resources: []};
 
-  function isSuperAdmin() {
-    return String(state.currentUser?.role || '').toUpperCase() === CLOUD_ROLE;
-  }
-
-  function html(value) {
-    return String(value ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
+  const byId = id => document.getElementById(id);
+  const isSuperAdmin = () => String(state.currentUser?.role || '').toUpperCase() === CLOUD_ROLE;
+  const html = value => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
 
   function safeUrl(value) {
     try {
@@ -25,7 +21,7 @@
   }
 
   function ensureStyles() {
-    if (document.getElementById('cloud-admin-styles')) return;
+    if (byId('cloud-admin-styles')) return;
     const style = document.createElement('style');
     style.id = 'cloud-admin-styles';
     style.textContent = `
@@ -47,87 +43,72 @@
       .cloud-resource small{opacity:.68}
       .cloud-empty{padding:16px;border:1px dashed var(--border,#26354a);border-radius:12px;opacity:.75}
       .cloud-secret-note{font-size:12px;opacity:.72;margin-top:-8px}
+      .cloud-admin-mobile-save{display:none}
       @media(max-width:760px){
         .cloud-admin-grid{grid-template-columns:1fr}
         .cloud-summary{grid-template-columns:1fr}
         .cloud-license-note{display:grid}
         .cloud-resource{grid-template-columns:1fr auto}
         .cloud-resource .cloud-kind,.cloud-resource .cloud-status{grid-column:1}
-        .cloud-admin-actions>*{flex:1 1 auto}
+        .cloud-admin-actions{display:grid;grid-template-columns:1fr;gap:10px;width:100%}
+        .cloud-admin-actions>*{width:100%!important;min-width:0}
+        #cloud-admin-save{display:none!important}
+        .cloud-admin-mobile-save{
+          display:block!important;
+          width:100%!important;
+          min-height:54px!important;
+          visibility:visible!important;
+          opacity:1!important;
+          position:static!important;
+          pointer-events:auto!important;
+        }
       }
     `;
     document.head.appendChild(style);
   }
 
   function ensurePanel() {
-    if (!isSuperAdmin() || document.getElementById('cloud-admin-view')) return;
+    if (!isSuperAdmin() || byId('cloud-admin-view')) return;
     ensureStyles();
-
     const nav = document.querySelector('.sidebar nav');
     if (!nav) return;
 
-    const button = document.createElement('button');
-    button.className = 'nav';
-    button.type = 'button';
-    button.dataset.view = 'cloud-admin';
-    button.textContent = 'Clouds';
-    nav.insertBefore(
-      button,
-      nav.querySelector('[data-view="deploy-admin"]') || nav.querySelector('[data-view="reports"]') || null,
-    );
+    const navButton = document.createElement('button');
+    navButton.className = 'nav';
+    navButton.type = 'button';
+    navButton.dataset.view = 'cloud-admin';
+    navButton.textContent = 'Clouds';
+    nav.insertBefore(navButton, nav.querySelector('[data-view="deploy-admin"]') || nav.querySelector('[data-view="reports"]') || null);
 
     const section = document.createElement('section');
     section.className = 'view';
     section.id = 'cloud-admin-view';
     section.innerHTML = `
       <div class="section-head">
-        <div>
-          <p>Credenciais próprias para instalação self-managed/licença do código. Usuários de teste usam a infraestrutura gerenciada do DevPilot automaticamente.</p>
-        </div>
+        <div><p>Credenciais próprias para instalação self-managed/licença do código. Usuários de teste usam a infraestrutura gerenciada do DevPilot automaticamente.</p></div>
         <button class="ghost" type="button" id="cloud-admin-refresh">Atualizar</button>
       </div>
-
       <div class="panel cloud-license-note">
         <strong>🔐 Código adquirido / self-managed</strong>
         <span>Cadastre tokens somente quando a instalação precisar operar nas contas cloud do comprador. No teste do DevPilot, o cliente não cadastra, recebe nem visualiza credenciais: o backend usa a cloud gerenciada como experiência de demonstração.</span>
       </div>
-
       <div id="cloud-admin-summary" class="cloud-summary"></div>
-
       <div class="cloud-admin-grid">
         <article class="panel">
-          <div class="panel-title">
-            <div><span class="eyebrow">SUPER ADMIN</span><h3>Clouds</h3></div>
-          </div>
-          <div id="cloud-provider-list" class="cloud-provider-list">
-            <div class="cloud-empty">Carregando clouds...</div>
-          </div>
+          <div class="panel-title"><div><span class="eyebrow">SUPER ADMIN</span><h3>Clouds</h3></div></div>
+          <div id="cloud-provider-list" class="cloud-provider-list"><div class="cloud-empty">Carregando clouds...</div></div>
         </article>
-
         <article class="panel">
           <form id="cloud-admin-form" class="cloud-admin-form">
             <div class="panel-title">
-              <div>
-                <span class="eyebrow">CREDENCIAL CRIPTOGRAFADA</span>
-                <h3 id="cloud-admin-title">Selecione um cloud</h3>
-              </div>
+              <div><span class="eyebrow">CREDENCIAL CRIPTOGRAFADA</span><h3 id="cloud-admin-title">Selecione um cloud</h3></div>
               <span id="cloud-admin-badge" class="status">—</span>
             </div>
-
-            <label id="cloud-scope-wrap">Escopo
-              <input name="scope" maxlength="200" autocomplete="off">
-            </label>
-
-            <label>Token / API key
-              <input name="secret" type="password" minlength="8" maxlength="10000" autocomplete="new-password"
-                placeholder="Cole somente para cadastrar ou trocar">
-            </label>
-            <div class="cloud-secret-note">
-              O token nunca volta para o navegador. Se já estiver configurado, deixe este campo vazio para mantê-lo.
-            </div>
-
+            <label id="cloud-scope-wrap">Escopo<input name="scope" maxlength="200" autocomplete="off"></label>
+            <label>Token / API key<input name="secret" type="password" minlength="8" maxlength="10000" autocomplete="new-password" placeholder="Cole somente para cadastrar ou trocar"></label>
+            <div class="cloud-secret-note">O token nunca volta para o navegador. Se já estiver configurado, deixe este campo vazio para mantê-lo.</div>
             <label class="check"><input name="enabled" type="checkbox"> Cloud ativo no DevPilot</label>
-
+            <button class="primary cloud-admin-mobile-save" type="button" id="cloud-admin-save-mobile">Salvar credencial</button>
             <div class="cloud-admin-actions">
               <button class="primary" type="submit" id="cloud-admin-save">Salvar</button>
               <button class="ghost" type="button" id="cloud-admin-test">Testar conexão</button>
@@ -136,111 +117,83 @@
               <button class="ghost" type="button" id="cloud-admin-delete">Remover</button>
             </div>
           </form>
-
           <div style="margin-top:18px">
-            <div class="panel-title">
-              <div><span class="eyebrow">INVENTÁRIO</span><h3>Recursos do cloud</h3></div>
-              <span id="cloud-resource-count" class="status">0</span>
-            </div>
-            <div id="cloud-resource-list" class="cloud-resource-list">
-              <div class="cloud-empty">Carregue os recursos para visualizar projetos e serviços.</div>
-            </div>
+            <div class="panel-title"><div><span class="eyebrow">INVENTÁRIO</span><h3>Recursos do cloud</h3></div><span id="cloud-resource-count" class="status">0</span></div>
+            <div id="cloud-resource-list" class="cloud-resource-list"><div class="cloud-empty">Carregue os recursos para visualizar projetos e serviços.</div></div>
           </div>
         </article>
       </div>
     `;
 
-    const deploy = document.getElementById('deploy-admin-view');
-    const reports = document.getElementById('reports-view');
-    const anchor = deploy || reports;
+    const anchor = byId('deploy-admin-view') || byId('reports-view');
     (anchor?.parentNode || document.querySelector('main')).insertBefore(section, anchor || null);
-
-    button.addEventListener('click', () => openView(button, section));
-    section.querySelector('#cloud-admin-refresh').addEventListener('click', () => loadClouds(true));
-    section.querySelector('#cloud-admin-form').addEventListener('submit', saveCloud);
-    section.querySelector('#cloud-admin-test').addEventListener('click', testCloud);
-    section.querySelector('#cloud-admin-resources').addEventListener('click', loadResources);
-    section.querySelector('#cloud-admin-console').addEventListener('click', openConsole);
-    section.querySelector('#cloud-admin-delete').addEventListener('click', deleteCloud);
+    navButton.addEventListener('click', () => openView(navButton, section));
+    byId('cloud-admin-refresh').addEventListener('click', () => loadClouds(true));
+    byId('cloud-admin-form').addEventListener('submit', saveCloud);
+    byId('cloud-admin-save-mobile').addEventListener('click', () => byId('cloud-admin-form')?.requestSubmit());
+    byId('cloud-admin-test').addEventListener('click', testCloud);
+    byId('cloud-admin-resources').addEventListener('click', loadResources);
+    byId('cloud-admin-console').addEventListener('click', openConsole);
+    byId('cloud-admin-delete').addEventListener('click', deleteCloud);
   }
 
   function openView(button, section) {
     if (!isSuperAdmin()) return toast('Acesso exclusivo do Super Admin');
     document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
-    const title = document.getElementById('page-title');
-    if (title) title.textContent = 'Clouds';
+    if (byId('page-title')) byId('page-title').textContent = 'Clouds';
     loadClouds();
   }
 
-  function current() {
-    return cloudState.items.find(item => item.provider === cloudState.selected) || null;
-  }
+  const current = () => cloudState.items.find(item => item.provider === cloudState.selected) || null;
 
   function renderSummary() {
-    const target = document.getElementById('cloud-admin-summary');
+    const target = byId('cloud-admin-summary');
     if (!target) return;
     const configured = cloudState.items.filter(item => item.configured).length;
     const enabled = cloudState.items.filter(item => item.enabled).length;
     target.innerHTML = `
       <div class="cloud-metric"><span class="eyebrow">CLOUDS</span><strong>${cloudState.items.length}</strong><small>integráveis</small></div>
       <div class="cloud-metric"><span class="eyebrow">CONFIGURADOS</span><strong>${configured}</strong><small>com credencial salva</small></div>
-      <div class="cloud-metric"><span class="eyebrow">ATIVOS</span><strong>${enabled}</strong><small>disponíveis ao DevPilot</small></div>
-    `;
+      <div class="cloud-metric"><span class="eyebrow">ATIVOS</span><strong>${enabled}</strong><small>disponíveis ao DevPilot</small></div>`;
   }
 
   function renderProviders() {
-    const target = document.getElementById('cloud-provider-list');
+    const target = byId('cloud-provider-list');
     if (!target) return;
     target.innerHTML = cloudState.items.map(item => `
-      <button class="cloud-provider ${item.provider === cloudState.selected ? 'active' : ''}"
-        type="button" data-cloud="${html(item.provider)}">
-        <span class="cloud-provider-head">
-          <strong>${html(item.name)}</strong>
-          <span class="status">${item.enabled ? 'ATIVO' : (item.configured ? 'PAUSADO' : 'NOVO')}</span>
-        </span>
+      <button class="cloud-provider ${item.provider === cloudState.selected ? 'active' : ''}" type="button" data-cloud="${html(item.provider)}">
+        <span class="cloud-provider-head"><strong>${html(item.name)}</strong><span class="status">${item.enabled ? 'ATIVO' : (item.configured ? 'PAUSADO' : 'NOVO')}</span></span>
         <small>${item.configured ? 'credencial protegida no vault' : 'não configurado'}</small>
         <small>${item.scope ? `escopo: ${html(item.scope)}` : 'escopo padrão'}</small>
-      </button>
-    `).join('');
-
-    target.querySelectorAll('[data-cloud]').forEach(button => {
-      button.addEventListener('click', () => {
-        cloudState.selected = button.dataset.cloud;
-        cloudState.resources = [];
-        renderProviders();
-        fillForm();
-        renderResources();
-      });
-    });
+      </button>`).join('');
+    target.querySelectorAll('[data-cloud]').forEach(button => button.addEventListener('click', () => {
+      cloudState.selected = button.dataset.cloud;
+      cloudState.resources = [];
+      renderProviders();
+      fillForm();
+      renderResources();
+    }));
   }
 
   function fillForm() {
     const item = current();
-    const form = document.getElementById('cloud-admin-form');
+    const form = byId('cloud-admin-form');
     if (!item || !form) return;
-    document.getElementById('cloud-admin-title').textContent = item.name;
-    document.getElementById('cloud-admin-badge').textContent = item.configured
-      ? (item.enabled ? 'ATIVO' : 'PAUSADO')
-      : 'NÃO CONFIGURADO';
+    byId('cloud-admin-title').textContent = item.name;
+    byId('cloud-admin-badge').textContent = item.configured ? (item.enabled ? 'ATIVO' : 'PAUSADO') : 'NÃO CONFIGURADO';
     form.elements.scope.value = item.scope || '';
     form.elements.secret.value = '';
-    form.elements.secret.placeholder = item.configured
-      ? 'Token já salvo — deixe vazio para manter'
-      : 'Cole o token / API key';
+    form.elements.secret.placeholder = item.configured ? 'Token já salvo — deixe vazio para manter' : 'Cole o token / API key';
     form.elements.enabled.checked = Boolean(item.enabled);
-    const scopeWrap = document.getElementById('cloud-scope-wrap');
-    if (scopeWrap) {
-      const textNode = scopeWrap.firstChild;
-      if (textNode) textNode.textContent = `${item.scope_label || 'Escopo'} `;
-    }
-    const remove = document.getElementById('cloud-admin-delete');
-    if (remove) remove.disabled = !item.configured;
+    const scopeWrap = byId('cloud-scope-wrap');
+    if (scopeWrap?.firstChild) scopeWrap.firstChild.textContent = `${item.scope_label || 'Escopo'} `;
+    byId('cloud-admin-delete').disabled = !item.configured;
   }
 
   function renderResources() {
-    const target = document.getElementById('cloud-resource-list');
-    const count = document.getElementById('cloud-resource-count');
+    const target = byId('cloud-resource-list');
+    const count = byId('cloud-resource-count');
     if (!target || !count) return;
     count.textContent = String(cloudState.resources.length);
     if (!cloudState.resources.length) {
@@ -249,32 +202,36 @@
     }
     target.innerHTML = cloudState.resources.map(resource => {
       const url = safeUrl(resource.url);
-      return `
-        <div class="cloud-resource">
-          <div><strong>${html(resource.name)}</strong><small>${html(resource.id)}</small></div>
-          <div class="cloud-kind"><small>tipo</small><div>${html(resource.kind || '—')}</div></div>
-          <div class="cloud-status"><small>status</small><div>${html(resource.status || '—')}</div></div>
-          <div>${url ? `<a class="ghost" href="${html(url)}" target="_blank" rel="noopener">Abrir</a>` : ''}</div>
-        </div>
-      `;
+      return `<div class="cloud-resource">
+        <div><strong>${html(resource.name)}</strong><small>${html(resource.id)}</small></div>
+        <div class="cloud-kind"><small>tipo</small><div>${html(resource.kind || '—')}</div></div>
+        <div class="cloud-status"><small>status</small><div>${html(resource.status || '—')}</div></div>
+        <div>${url ? `<a class="ghost" href="${html(url)}" target="_blank" rel="noopener">Abrir</a>` : ''}</div>
+      </div>`;
     }).join('');
   }
 
   async function loadClouds(force = false) {
     if (!isSuperAdmin()) return;
-    const active = document.getElementById('cloud-admin-view')?.classList.contains('active');
+    const active = byId('cloud-admin-view')?.classList.contains('active');
     if (!active && !force) return;
     try {
       cloudState.items = await api('/admin/clouds');
-      if (!cloudState.selected || !cloudState.items.some(item => item.provider === cloudState.selected)) {
-        cloudState.selected = cloudState.items[0]?.provider || '';
-      }
+      if (!cloudState.selected || !cloudState.items.some(item => item.provider === cloudState.selected)) cloudState.selected = cloudState.items[0]?.provider || '';
       renderSummary();
       renderProviders();
       fillForm();
     } catch (error) {
       toast(error.message);
     }
+  }
+
+  function setSaveBusy(busy) {
+    [byId('cloud-admin-save'), byId('cloud-admin-save-mobile')].filter(Boolean).forEach(button => {
+      if (!button.dataset.idleLabel) button.dataset.idleLabel = button.textContent;
+      button.disabled = busy;
+      button.textContent = busy ? 'Salvando...' : button.dataset.idleLabel;
+    });
   }
 
   async function saveCloud(event) {
@@ -287,37 +244,28 @@
       enabled: form.elements.enabled.checked,
       scope: form.elements.scope.value.trim(),
     };
-    const button = document.getElementById('cloud-admin-save');
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Salvando...';
+    setSaveBusy(true);
     try {
-      await api(`/admin/clouds/${item.provider}`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
+      await api(`/admin/clouds/${item.provider}`, {method:'PUT', body:JSON.stringify(payload)});
       toast(`${item.name} atualizado`);
       await loadClouds(true);
     } catch (error) {
       toast(error.message);
     } finally {
-      button.disabled = false;
-      button.textContent = original;
+      setSaveBusy(false);
     }
   }
 
   async function testCloud() {
     const item = current();
     if (!item?.configured) return toast('Salve a credencial antes de testar');
-    const button = document.getElementById('cloud-admin-test');
+    const button = byId('cloud-admin-test');
     const original = button.textContent;
     button.disabled = true;
     button.textContent = 'Testando...';
     try {
-      const result = await api(`/admin/clouds/${item.provider}/test`, {method: 'POST'});
-      const detail = result.identity
-        ? ` conectado como ${result.identity}`
-        : (Number.isInteger(result.resource_count) ? ` · ${result.resource_count} recurso(s) visíveis` : '');
+      const result = await api(`/admin/clouds/${item.provider}/test`, {method:'POST'});
+      const detail = result.identity ? ` conectado como ${result.identity}` : (Number.isInteger(result.resource_count) ? ` · ${result.resource_count} recurso(s) visíveis` : '');
       toast(`${item.name}: conexão OK${detail}`);
     } catch (error) {
       toast(error.message);
@@ -331,7 +279,7 @@
     const item = current();
     if (!item?.configured) return toast('Configure o cloud primeiro');
     if (!item.enabled) return toast('Ative o cloud para listar recursos');
-    const button = document.getElementById('cloud-admin-resources');
+    const button = byId('cloud-admin-resources');
     const original = button.textContent;
     button.disabled = true;
     button.textContent = 'Carregando...';
@@ -349,8 +297,7 @@
   }
 
   function openConsole() {
-    const item = current();
-    const url = safeUrl(item?.dashboard_url);
+    const url = safeUrl(current()?.dashboard_url);
     if (!url) return toast('Console indisponível');
     window.open(url, '_blank', 'noopener');
   }
@@ -360,7 +307,7 @@
     if (!item?.configured) return;
     if (!window.confirm(`Remover a credencial ${item.name} do DevPilot?`)) return;
     try {
-      await api(`/admin/clouds/${item.provider}`, {method: 'DELETE'});
+      await api(`/admin/clouds/${item.provider}`, {method:'DELETE'});
       cloudState.resources = [];
       toast(`${item.name}: credencial removida`);
       await loadClouds(true);
@@ -373,10 +320,7 @@
   let checks = 0;
   const waitForRole = () => {
     checks += 1;
-    if (state.currentUser) {
-      ensurePanel();
-      return;
-    }
+    if (state.currentUser) return ensurePanel();
     if (checks < 40) setTimeout(waitForRole, 250);
   };
   waitForRole();

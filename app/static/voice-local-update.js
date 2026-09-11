@@ -58,10 +58,6 @@
 
   async function dispatchLocalUpdate(transcript, automatic = false) {
     if (dispatching) return;
-    if (typeof isSuperAdmin === 'function' && !isSuperAdmin()) {
-      toast('Atualização local por voz é exclusiva do Super Admin');
-      return;
-    }
 
     dispatching = true;
     startButton.disabled = true;

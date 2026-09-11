@@ -55,6 +55,32 @@ def test_frontend_bundle_contains_completed_task_documentation_action():
     loader = open("app/static/feature-loader.js", encoding="utf-8").read()
 
     assert "Gerar documentação" in source
-    assert "String(task.status) !== 'completed'" in source
+    assert "statusValue !== 'completed'" in source
     assert "/documentation" in source
     assert "task-completion-documentation.js" in loader
+
+
+def test_queued_tasks_only_add_archive_as_orchestrator_action():
+    source = open("app/static/task-completion-documentation.js", encoding="utf-8").read()
+
+    queued_block = source.split("else if (statusValue === 'queued') {", 1)[1].split(
+        "} else if (['paused', 'pause_requested'].includes(statusValue)) {", 1
+    )[0]
+
+    assert "actionButton('Arquivar', 'archive'" in queued_block
+    assert "actionButton('Próximo', 'next'" not in queued_block
+    assert "actionButton('Continuar automaticamente', 'auto'" not in queued_block
+    assert "actionButton('Retomar', 'resume'" not in queued_block
+
+
+def test_paused_tasks_keep_resume_and_archive_only():
+    source = open("app/static/task-completion-documentation.js", encoding="utf-8").read()
+
+    paused_block = source.split("else if (['paused', 'pause_requested'].includes(statusValue)) {", 1)[1].split(
+        "} else if (statusValue !== 'completed') {", 1
+    )[0]
+
+    assert "actionButton('Retomar', 'resume'" in paused_block
+    assert "actionButton('Arquivar', 'archive'" in paused_block
+    assert "actionButton('Próximo', 'next'" not in paused_block
+    assert "actionButton('Continuar automaticamente', 'auto'" not in paused_block

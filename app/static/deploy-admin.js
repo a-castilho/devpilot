@@ -113,6 +113,20 @@
     loadDeployments();
   }
 
+  async function openProjectDeploy(projectId) {
+    if (!canManageDeploy()) return toast('Acesso restrito ao Super Admin');
+    ensurePanel();
+    const section = document.getElementById('deploy-admin-view');
+    const button = document.querySelector('.nav[data-view="deploy-admin"]');
+    if (!section || !button) return toast('Tela de deploy indisponível');
+    deployState.selectedId = String(projectId || '');
+    openDeployView(button, section);
+    await loadDeployments(true);
+    deployState.selectedId = String(projectId || '');
+    renderProjectList();
+    fillForm();
+  }
+
   function currentItem() {
     return deployState.items.find(item => item.project_id === deployState.selectedId) || null;
   }
@@ -256,6 +270,8 @@
     };
     deployState.pollTimer = setTimeout(check, 1000);
   }
+
+  window.DevPilotDeploy = Object.freeze({openProject: openProjectDeploy});
 
   let roleChecks = 0;
   const waitForRole = () => {
