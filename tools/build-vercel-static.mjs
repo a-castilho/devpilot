@@ -67,7 +67,17 @@ function normalizeHead(value) {
   return value.replace(/<head>[\s\S]*?<\/head>/, head => head.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n'));
 }
 
+function removeLegacyBootstrapFallback(value) {
+  const legacy = /<dialog id="auth-modal"><form method="dialog" class="modal"><span class="eyebrow">ACESSO<\/span><h2>Conectar ao DevPilot<\/h2><p>Informe o token configurado em <code>DEVPILOT_BOOTSTRAP_TOKEN<\/code>\.<\/p><label>Token<input id="token" type="password" autocomplete="current-password" required><\/label><button class="primary" id="save-token" value="default">Entrar<\/button><\/form><\/dialog>/;
+  const safe = '<dialog id="auth-modal"><div class="modal" role="status" aria-live="polite"><span class="eyebrow">ACESSO</span><h2>Carregando DevPilot…</h2><p>Validando sua sessão e o estado da homologação.</p></div></dialog>';
+  if (!legacy.test(value)) {
+    throw new Error('Vercel build could not locate legacy bootstrap fallback in index.html');
+  }
+  return value.replace(legacy, safe);
+}
+
 let html = normalizeHead(readFileSync(join(source, 'index.html'), 'utf8'));
+html = removeLegacyBootstrapFallback(html);
 
 for (const name of scripts) {
   const assetPath = join(source, name);
@@ -95,6 +105,10 @@ for (const name of stylesheets) {
     const tag = `<link rel="stylesheet" href="/assets/${name}?v=${revision(assetPath)}">`;
     html = html.replace('</head>', `  ${tag}\n</head>`);
   }
+}
+
+if (html.includes('DEVPILOT_BOOTSTRAP_TOKEN') || html.includes('id="save-token"')) {
+  throw new Error('Vercel build must never publish the legacy bootstrap-token login form');
 }
 
 writeFileSync(join(output, 'index.html'), html);
