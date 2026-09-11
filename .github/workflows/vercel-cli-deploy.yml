@@ -87,18 +87,21 @@ jobs:
       - name: Validate backend before frontend deploy
         shell: bash
         run: |
+          set -euo pipefail
           BACKEND_URL="$(tr -d '\r\n' < .deploy/vercel-backend-target.txt)"
-          echo "Waiting for ${BACKEND_URL}/health"
+          echo "Waiting for ${BACKEND_URL}/health and initialized auth"
           for attempt in $(seq 1 30); do
             HEALTH=$(curl -sS -o /tmp/backend-health.json -w '%{http_code}' --max-time 8 "${BACKEND_URL}/health" || true)
             AUTH=$(curl -sS -o /tmp/backend-auth.json -w '%{http_code}' --max-time 8 "${BACKEND_URL}/api/auth/status" || true)
-            if [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ]; then
-              echo "Backend ready: health=$HEALTH auth=$AUTH"
+            if [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ] && grep -Eq '"bootstrap_required"[[:space:]]*:[[:space:]]*false' /tmp/backend-auth.json; then
+              echo "Backend ready and already bootstrapped: health=$HEALTH auth=$AUTH"
               exit 0
             fi
+            echo "Waiting for initialized backend: health=$HEALTH auth=$AUTH"
             sleep 5
           done
-          echo "::error::Backend Docker did not become healthy/auth-ready in time"
+          echo "::error::Backend is unhealthy or reports bootstrap_required=true. Refusing to publish a broken homolog login."
+          cat /tmp/backend-auth.json 2>/dev/null || true
           exit 1
 
       - name: Deploy production with Vercel CLI
@@ -128,27 +131,27 @@ jobs:
               --scope maquina-de-leads1
           done
 
-      - name: Verify public frontend and auth routing
+      - name: Verify public frontend and initialized auth routing
         shell: bash
         run: |
+          set -euo pipefail
           for HOST in devpilot-homolog.vercel.app pilot-homolog.vercel.app; do
             READY=0
             for attempt in $(seq 1 24); do
               FRONT=$(curl -sS -o /tmp/front.html -w '%{http_code}' --max-time 8 "https://${HOST}" || true)
               HEALTH=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 8 "https://${HOST}/health" || true)
               AUTH=$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' --max-time 8 "https://${HOST}/api/auth/status" || true)
-              if [ "$FRONT" = "200" ] && [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ]; then
-                if grep -q 'bootstrap_required' /tmp/auth-status.json; then
-                  echo "Vercel homolog ready: host=$HOST frontend=$FRONT health=$HEALTH auth=$AUTH"
-                  READY=1
-                  break
-                fi
+              if [ "$FRONT" = "200" ] && [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ] && grep -Eq '"bootstrap_required"[[:space:]]*:[[:space:]]*false' /tmp/auth-status.json; then
+                echo "Vercel homolog ready: host=$HOST frontend=$FRONT health=$HEALTH auth=$AUTH bootstrap_required=false"
+                READY=1
+                break
               fi
               echo "Waiting for $HOST: frontend=$FRONT health=$HEALTH auth=$AUTH"
               sleep 5
             done
             if [ "$READY" != "1" ]; then
-              echo "::error::Vercel homologation did not become publicly/auth ready for $HOST in time"
+              echo "::error::Homologation is not public/healthy or auth regressed to bootstrap mode for $HOST"
+              cat /tmp/auth-status.json 2>/dev/null || true
               exit 1
             fi
           done
