@@ -9,10 +9,10 @@ _STARTED = False
 _RECONCILE_SECONDS = 30
 _INITIAL_DELAY_SECONDS = 15
 _FAILED_RETRY_SECONDS = 300
-# Delivery is mandatory and self-healing. A project that was blocked because a
-# credential was missing, or failed while its repository/code was not ready, must
-# be retried automatically after the external condition changes.
-_ACTIVE_STATES = {"pending", "provisioning", "deploying", "blocked", "failed"}
+# Delivery is mandatory and self-healing. waiting_code is a normal state: the
+# implementation has not published the deployable revision yet, so no cloud
+# provider should be called until the repository becomes ready.
+_ACTIVE_STATES = {"pending", "provisioning", "deploying", "waiting_code", "blocked", "failed"}
 
 
 def _delivery_payload(project) -> dict:
