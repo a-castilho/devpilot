@@ -5,6 +5,7 @@ from app import public_git_fallback as _public_git_fallback  # noqa: F401,E402
 from app import github_optional_org as _github_optional_org  # noqa: F401,E402
 from app import execution_preflight_guard as _execution_preflight_guard  # noqa: F401,E402
 from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401,E402
+from app import task_queue_guard as _task_queue_guard  # noqa: F401,E402
 from app import recovery_classification_guard as _recovery_classification_guard  # noqa: F401,E402
 from app import build_game_delivery_contract as _build_game_delivery_contract  # noqa: F401,E402
 from app import build_game_publish_runtime as _build_game_publish_runtime  # noqa: F401,E402
