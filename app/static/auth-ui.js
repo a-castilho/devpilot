@@ -278,16 +278,20 @@
     document.querySelector('#auth-public-home')?.addEventListener('click', () => renderPublicHome());
   }
 
+  const isInitialLoadingPlaceholder = () => modal.textContent?.includes('Carregando DevPilot') === true;
+
   const boot = async () => {
     const fallback = window.setTimeout(() => {
-      if (!modal.open && root.classList.contains('devpilot-auth-pending')) {
+      if ((!modal.open || isInitialLoadingPlaceholder()) && root.classList.contains('devpilot-auth-pending')) {
+        if (modal.open && isInitialLoadingPlaceholder()) closeModal();
         const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
         if (token && !tokenExpired(token)) renderResumeSession(token);
         else { if (token) localStorage.removeItem(TOKEN_KEY); renderPublicHome(consumeAuthMessage('')); }
       }
     }, FETCH_TIMEOUT_MS + 500);
     await readStatus(); window.clearTimeout(fallback);
-    if (modal.open) return;
+    if (modal.open && !isInitialLoadingPlaceholder()) return;
+    if (modal.open && isInitialLoadingPlaceholder()) closeModal();
     const token = String(localStorage.getItem(TOKEN_KEY) || '').trim();
     if (!token || tokenExpired(token)) { if (token) localStorage.removeItem(TOKEN_KEY); renderPublicHome(consumeAuthMessage(token ? 'Sua sessão expirou. Entre novamente.' : '')); return; }
     renderResumeSession(token);
