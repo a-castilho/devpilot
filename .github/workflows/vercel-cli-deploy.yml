@@ -29,7 +29,6 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Check Vercel credentials
-        id: vercel_auth
         shell: bash
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -44,7 +43,7 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Ensure Vercel project exists without prompt
+      - name: Ensure Vercel project exists and public production is reachable
         shell: bash
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
@@ -54,9 +53,7 @@ jobs:
           STATUS=$(curl -sS -o /tmp/vercel-project.json -w '%{http_code}' \
             -H "Authorization: Bearer $VERCEL_TOKEN" \
             "https://api.vercel.com/v9/projects/devpilot?teamId=$VERCEL_TEAM_ID")
-          if [ "$STATUS" = "200" ]; then
-            echo "Vercel project devpilot already exists"
-          elif [ "$STATUS" = "404" ]; then
+          if [ "$STATUS" = "404" ]; then
             CREATE=$(curl -sS -o /tmp/vercel-project-create.json -w '%{http_code}' \
               -X POST \
               -H "Authorization: Bearer $VERCEL_TOKEN" \
@@ -68,12 +65,24 @@ jobs:
               echo "::error::Failed to create Vercel project (HTTP $CREATE)"
               exit 1
             fi
-            echo "Vercel project devpilot created"
-          else
+          elif [ "$STATUS" != "200" ]; then
             cat /tmp/vercel-project.json
             echo "::error::Unable to inspect Vercel project (HTTP $STATUS)"
             exit 1
           fi
+
+          PROTECT=$(curl -sS -o /tmp/vercel-project-protection.json -w '%{http_code}' \
+            -X PATCH \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://api.vercel.com/v9/projects/devpilot?teamId=$VERCEL_TEAM_ID" \
+            --data '{"ssoProtection":null}')
+          if [ "$PROTECT" -lt 200 ] || [ "$PROTECT" -ge 300 ]; then
+            cat /tmp/vercel-project-protection.json
+            echo "::error::Failed to disable Vercel Authentication for homolog production (HTTP $PROTECT)"
+            exit 1
+          fi
+          echo "Vercel Authentication disabled for DevPilot homolog production; app authentication remains authoritative."
 
       - name: Validate backend before frontend deploy
         shell: bash
@@ -81,13 +90,15 @@ jobs:
           BACKEND_URL="$(tr -d '\r\n' < .deploy/vercel-backend-target.txt)"
           echo "Waiting for ${BACKEND_URL}/health"
           for attempt in $(seq 1 30); do
-            if curl -fsS --max-time 8 "${BACKEND_URL}/health" >/dev/null; then
-              echo "Backend ready"
+            HEALTH=$(curl -sS -o /tmp/backend-health.json -w '%{http_code}' --max-time 8 "${BACKEND_URL}/health" || true)
+            AUTH=$(curl -sS -o /tmp/backend-auth.json -w '%{http_code}' --max-time 8 "${BACKEND_URL}/api/auth/status" || true)
+            if [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ]; then
+              echo "Backend ready: health=$HEALTH auth=$AUTH"
               exit 0
             fi
             sleep 5
           done
-          echo "::error::Backend Docker did not become healthy in time"
+          echo "::error::Backend Docker did not become healthy/auth-ready in time"
           exit 1
 
       - name: Deploy production with Vercel CLI
@@ -117,23 +128,27 @@ jobs:
               --scope maquina-de-leads1
           done
 
-      - name: Verify frontend and backend routing
+      - name: Verify public frontend and auth routing
         shell: bash
         run: |
           for HOST in devpilot-homolog.vercel.app pilot-homolog.vercel.app; do
             READY=0
             for attempt in $(seq 1 24); do
-              FRONT=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "https://${HOST}" || true)
-              HEALTH=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 "https://${HOST}/health" || true)
-              if [ "$FRONT" -ge 200 ] && [ "$FRONT" -lt 400 ] && [ "$HEALTH" -ge 200 ] && [ "$HEALTH" -lt 400 ]; then
-                echo "Vercel homolog ready: host=$HOST frontend=$FRONT health=$HEALTH"
-                READY=1
-                break
+              FRONT=$(curl -sS -o /tmp/front.html -w '%{http_code}' --max-time 8 "https://${HOST}" || true)
+              HEALTH=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 8 "https://${HOST}/health" || true)
+              AUTH=$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' --max-time 8 "https://${HOST}/api/auth/status" || true)
+              if [ "$FRONT" = "200" ] && [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ]; then
+                if grep -q 'bootstrap_required' /tmp/auth-status.json; then
+                  echo "Vercel homolog ready: host=$HOST frontend=$FRONT health=$HEALTH auth=$AUTH"
+                  READY=1
+                  break
+                fi
               fi
+              echo "Waiting for $HOST: frontend=$FRONT health=$HEALTH auth=$AUTH"
               sleep 5
             done
             if [ "$READY" != "1" ]; then
-              echo "::error::Vercel homologation did not become ready for $HOST in time"
+              echo "::error::Vercel homologation did not become publicly/auth ready for $HOST in time"
               exit 1
             fi
           done
