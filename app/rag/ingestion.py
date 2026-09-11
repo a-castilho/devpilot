@@ -14,6 +14,7 @@ from .chunking import RagChunker
 from .embedding import EmbeddingProvider, embedding_info
 from .git_source import GitRagSource
 from .sanitizer import RagSanitizer
+from .scope import project_rag_scope
 
 
 class RagIndexer:
@@ -25,8 +26,7 @@ class RagIndexer:
         self.source = GitRagSource()
 
     def index_project(self, project: Project, progress: Callable[[int, int], None] | None = None) -> dict:
-        if not project.organization_id:
-            raise ValueError("Project must belong to an organization before RAG indexing")
+        scope_id = project_rag_scope(project)
         indexed = 0
         skipped = 0
         failed = 0
@@ -50,6 +50,8 @@ class RagIndexer:
                 progress(position, total)
         return {
             "project_id": project.id,
+            "scope_id": scope_id,
+            "scope_type": "organization" if project.organization_id else "workspace",
             "indexed": indexed,
             "skipped": skipped,
             "failed": failed,
@@ -63,6 +65,7 @@ class RagIndexer:
         return changed
 
     def _index_file_with_stats(self, project: Project, path: str) -> tuple[bool, int]:
+        scope_id = project_rag_scope(project)
         raw = self.source.read(project, path)
         content = self.sanitizer.sanitize(raw)
         if not content.strip():
@@ -81,7 +84,7 @@ class RagIndexer:
                     LIMIT 1
                 """),
                 {
-                    "organization_id": project.organization_id,
+                    "organization_id": scope_id,
                     "project_id": project.id,
                     "source_type": source_type,
                     "source_id": path,
@@ -97,13 +100,14 @@ class RagIndexer:
                     WHERE organization_id=:organization_id AND project_id=:project_id
                       AND source_type=:source_type AND source_id=:source_id AND deleted_at IS NULL
                 """),
-                {"organization_id": project.organization_id, "project_id": project.id, "source_type": source_type, "source_id": path},
+                {"organization_id": scope_id, "project_id": project.id, "source_type": source_type, "source_id": path},
             )
             document_id = str(uuid.uuid4())
             now = datetime.now(timezone.utc)
             document_metadata = {
                 "repository_url": project.repository_url,
                 "branch": project.default_branch,
+                "scope_type": "organization" if project.organization_id else "workspace",
                 "embedding_provider": provider.get("provider"),
                 "embedding_model": provider.get("model"),
                 "embedding_dimensions": provider.get("dimensions"),
@@ -117,7 +121,7 @@ class RagIndexer:
                 """),
                 {
                     "id": document_id,
-                    "organization_id": project.organization_id,
+                    "organization_id": scope_id,
                     "project_id": project.id,
                     "source_type": source_type,
                     "source_id": path,
@@ -137,6 +141,7 @@ class RagIndexer:
                 literal = "[" + ",".join(f"{value:.10f}" for value in vector) + "]"
                 chunk_metadata = {
                     "path": path,
+                    "scope_type": "organization" if project.organization_id else "workspace",
                     "embedding_provider": provider.get("provider"),
                     "embedding_model": provider.get("model"),
                     "embedding_dimensions": provider.get("dimensions"),
@@ -151,7 +156,7 @@ class RagIndexer:
                     {
                         "id": str(uuid.uuid4()),
                         "document_id": document_id,
-                        "organization_id": project.organization_id,
+                        "organization_id": scope_id,
                         "project_id": project.id,
                         "chunk_index": chunk.index,
                         "content": chunk.content,
