@@ -4,6 +4,11 @@ from app import product_delivery_routes as delivery
 
 
 MANDATORY_PROJECT_PROVIDERS = ["neon", "render", "vercel"]
+MANDATORY_ARCHITECTURE = {
+    "frontend": "vercel",
+    "backend": "render",
+    "database": "neon",
+}
 
 
 def mandatory_selected_providers(_project) -> list[str]:
