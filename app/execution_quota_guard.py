@@ -8,6 +8,7 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import ProviderCredential
 from app.services import alternating_flow
+from app.services import executor as executor_service
 from app.services.recovery import AutoRecoveryService, RecoveryDecision
 from app.services.task_flow import is_read_only_task
 from app.services.vault import Vault
@@ -30,35 +31,7 @@ def _contains_quota_error(value: object) -> bool:
     return any(signal in text for signal in _QUOTA_SIGNALS)
 
 
-def _safe_for_text_provider(task) -> bool:
-    title = str(getattr(task, "title", "") or "").casefold()
-    prompt = str(getattr(task, "prompt", "") or "").casefold()
-    if is_read_only_task(task):
-        return True
-    if "planejamento" in title or "planejamento" in prompt:
-        return True
-    if "análise" in title or "analise" in title:
-        return True
-    return False
-
-
-def _google_models(credential: ProviderCredential) -> list[str]:
-    try:
-        payload = json.loads(str(credential.models or "[]"))
-    except (TypeError, ValueError):
-        payload = []
-    values = [str(item).strip() for item in payload if str(item).strip()] if isinstance(payload, list) else []
-    preferred = [
-        model for model in values
-        if model.startswith("gemini-") and ("flash" in model or "pro" in model)
-    ]
-    return preferred or ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
-
-
-def _google_fallback(project, task) -> dict | None:
-    if not _safe_for_text_provider(task):
-        return None
-
+def _google_credential(task):
     with SessionLocal() as db:
         credential = db.scalar(
             select(ProviderCredential)
@@ -71,39 +44,36 @@ def _google_fallback(project, task) -> dict | None:
             .limit(1)
         )
         if credential is None:
-            return None
+            return "", []
         try:
-            api_key = Vault().decrypt(credential.encrypted_secret)
+            api_key = Vault().decrypt(credential.encrypted_secret).strip()
         except ValueError:
-            return None
-        models = _google_models(credential)
+            return "", []
+        try:
+            payload = json.loads(str(credential.models or "[]"))
+        except (TypeError, ValueError):
+            payload = []
+        models = [str(item).strip() for item in payload if str(item).strip()] if isinstance(payload, list) else []
+        models = [item for item in models if item.startswith("gemini-")]
+        return api_key, models or ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
 
+
+def _google_text_fallback(project, task, api_key: str, models: list[str]) -> dict | None:
+    if not is_read_only_task(task) and "planejamento" not in str(task.title or "").casefold():
+        return None
     instruction = (
-        "Você é o provedor secundário do DevPilot. Execute somente análise/planejamento em modo seguro, "
-        "sem inventar alterações já aplicadas. Responda em português do Brasil com plano objetivo, critérios "
-        "de aceite, riscos e próximo passo executável.\n\n"
-        f"PROJETO: {getattr(project, 'name', '')}\n"
-        f"REPOSITÓRIO: {getattr(project, 'repository_url', '')}\n"
-        f"TAREFA: {getattr(task, 'title', '')}\n\n"
-        f"PEDIDO:\n{getattr(task, 'prompt', '')}"
+        "Você é o provedor secundário do DevPilot. Execute análise/planejamento sem alterar arquivos. "
+        "Responda em português do Brasil com plano objetivo, critérios de aceite, riscos e próximo passo.\n\n"
+        f"PROJETO: {project.name}\nTAREFA: {task.title}\n\nPEDIDO:\n{task.prompt}"
     )[:100_000]
-
     errors: list[str] = []
     with httpx.Client(timeout=45.0) as client:
         for model in models[:3]:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
             try:
                 response = client.post(
-                    url,
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "application/json",
-                        "x-goog-api-key": api_key,
-                    },
-                    json={
-                        "contents": [{"role": "user", "parts": [{"text": instruction}]}],
-                        "generationConfig": {"temperature": 0.2},
-                    },
+                    f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                    headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
+                    json={"contents": [{"role": "user", "parts": [{"text": instruction}]}]},
                 )
             except httpx.HTTPError as error:
                 errors.append(f"{model}:network:{type(error).__name__}")
@@ -118,67 +88,92 @@ def _google_fallback(project, task) -> dict | None:
                 text = "\n".join(str(part.get("text") or "") for part in parts if isinstance(part, dict)).strip()
             except (ValueError, TypeError, IndexError, AttributeError):
                 text = ""
-            if not text:
-                errors.append(f"{model}:empty")
-                continue
+            if text:
+                return {
+                    "exit_code": 0,
+                    "mode": "analysis-read-only",
+                    "summary": "Fallback concluído com Google Gemini.",
+                    "client_report": text,
+                    "stdout": text,
+                    "stderr": "",
+                    "provider_failover": {"primary": "openai", "selected": "google", "model": model, "reason": "openai_ai_quota"},
+                }
+    return None
+
+
+def _google_agent_fallback(project, task, previous: dict, api_key: str, models: list[str]) -> dict | None:
+    if is_read_only_task(task):
+        return None
+    repository = executor_service.ensure_repository(project)
+    branch = str(previous.get("branch") or task.branch_name or f"devpilot/{task.id[:8]}").strip()
+    current = executor_service.run(["git", "branch", "--show-current"], cwd=repository)
+    current_branch = current.stdout.strip() if current.returncode == 0 else ""
+    if current_branch != branch:
+        switched = executor_service.run(["git", "switch", branch], cwd=repository)
+        if switched.returncode:
+            switched = executor_service.run(["git", "switch", "-C", branch, f"origin/{project.default_branch}"], cwd=repository)
+        if switched.returncode:
+            return None
+
+    prompt = (
+        executor_service.development_prompt(task)
+        + "\n\nPROVIDER FAILOVER: OpenAI/Codex ficou indisponível. Você é o executor secundário autorizado. "
+          "Pode criar, editar, renomear e excluir arquivos necessários nesta branch e executar testes locais. "
+          "Não faça push, merge, deploy nem altere credenciais. Preserve a menor alteração correta e segura."
+    )[:100_000]
+
+    for model in models[:3]:
+        command = [
+            "gemini", "--model", model, "--prompt", prompt,
+            "--approval-mode", "yolo", "--skip-trust", "--output-format", "text",
+        ]
+        result = executor_service.run(
+            command,
+            cwd=repository,
+            timeout=executor_service.task_timeout(project),
+            env_overrides={"GEMINI_API_KEY": api_key, "GOOGLE_API_KEY": api_key},
+        )
+        if result.returncode == 0:
             return {
                 "exit_code": 0,
-                "mode": "analysis-read-only",
-                "summary": "Fallback automático concluído com Google Gemini após indisponibilidade da OpenAI.",
-                "client_report": text,
-                "stdout": text,
-                "stderr": "",
-                "provider_failover": {
-                    "primary": "openai",
-                    "selected": "google",
-                    "model": model,
-                    "reason": "openai_ai_quota",
-                },
+                "mode": "execute",
+                "summary": "Execução concluída com Google Gemini após failover da OpenAI.",
+                "client_report": result.stdout[-30_000:],
+                "stdout": result.stdout[-100_000:],
+                "stderr": result.stderr[-20_000:],
+                "branch": branch,
+                "provider_failover": {"primary": "openai", "selected": "google", "model": model, "reason": "openai_ai_quota", "write_enabled": True},
             }
-    return {
-        "exit_code": 1,
-        "mode": "provider-failover-failed",
-        "summary": "OpenAI indisponível e o fallback Google também não conseguiu responder.",
-        "stderr": "GOOGLE_FALLBACK_FAILED: " + "; ".join(errors[-3:]),
-        "provider_failover": {
-            "primary": "openai",
-            "selected": None,
-            "attempted": "google",
-            "reason": "openai_ai_quota",
-        },
-    }
+    return None
 
 
 def _execute_task(project, task):
     result = _ORIGINAL_EXECUTE_TASK(project, task)
     if not isinstance(result, dict):
         return result
-
-    combined = "\n".join(
-        str(result.get(key) or "") for key in ("stderr", "stdout", "summary", "client_report")
-    )
+    combined = "\n".join(str(result.get(key) or "") for key in ("stderr", "stdout", "summary", "client_report"))
     if not _contains_quota_error(combined):
         return result
 
-    fallback = _google_fallback(project, task)
+    api_key, models = _google_credential(task)
+    fallback = None
+    if api_key:
+        fallback = _google_text_fallback(project, task, api_key, models)
+        if fallback is None:
+            fallback = _google_agent_fallback(project, task, result, api_key, models)
     if isinstance(fallback, dict) and fallback.get("exit_code", 1) == 0:
         return fallback
 
     guarded = dict(result)
-    guarded["stderr"] = (
-        "OPENAI_CREDIT_BALANCE_EXHAUSTED: a credencial foi aceita pela OpenAI, "
-        "mas a organização/projeto associado a esta chave está sem créditos disponíveis."
-    )
+    guarded["stderr"] = "OPENAI_CREDIT_BALANCE_EXHAUSTED: OpenAI sem créditos e nenhum executor secundário concluiu a tarefa."
     guarded["provider_blocker"] = {
         "provider": "openai",
         "category": "ai_quota",
         "retryable": False,
         "external_condition": True,
-        "fallback_attempted": bool(fallback),
-        "fallback_provider": "google" if fallback else None,
+        "fallback_attempted": bool(api_key),
+        "fallback_provider": "google" if api_key else None,
     }
-    if fallback:
-        guarded["provider_failover"] = fallback.get("provider_failover")
     return guarded
 
 
@@ -193,19 +188,11 @@ def _recover(self: AutoRecoveryService, project, task, error_text: str, executio
         return RecoveryDecision(
             category="ai_quota",
             status="needs_authorization",
-            message=(
-                "A OpenAI está sem créditos e nenhum provedor secundário seguro concluiu esta etapa. "
-                "O DevPilot interrompeu novas tentativas para não manter a fila ocupada inutilmente."
-            ),
+            message="OpenAI está sem créditos e o failover Google também não concluiu esta tarefa.",
             retry=False,
             requires_authorization=True,
             strategy="multi_provider_failover_then_stop",
-            steps=[{
-                "state": "detected",
-                "attempt": execution_attempt,
-                "category": "ai_quota",
-                "message": "OpenAI sem créditos; fallback secundário permitido apenas para análise/planejamento seguro.",
-            }],
+            steps=[{"state": "detected", "attempt": execution_attempt, "category": "ai_quota", "message": "OpenAI sem créditos; Google Gemini foi tentado como executor secundário."}],
         )
     return _ORIGINAL_RECOVER(self, project, task, error_text, execution_attempt)
 
