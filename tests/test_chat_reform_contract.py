@@ -11,16 +11,39 @@ def test_canonical_chat_runtime_owns_mobile_controls_and_normal_chat():
     source = (ROOT / "app/static/chat-canonical-runtime.js").read_text(encoding="utf-8")
 
     assert "#voice-visible-conversation" in source
-    assert "replaceInteractive($('#voice-transcript'))" in source
+    assert "replaceInteractive(legacyTranscript)" in source
     assert "replaceInteractive($('#voice-chat-send'))" in source
-    assert "replaceInteractive($('#voice-start'))" in source
+    assert "replaceInteractive($('#voice-start'))" not in source
+    assert "devpilotVoiceConversationSubmit" in source
+    assert "voice-runtime-stability" in source
     assert "dataset.chatMode" in source
     assert "api('/chat'" in source
-    assert "api('/voice/transcriptions'" in source
     assert "response_style: 'chat'" in source
     assert "knowledge?.sources" in source
     assert "100dvh" in source
     assert "window.visualViewport" in source
+
+
+def test_mobile_chat_forces_real_scroll_area_above_status_and_composer():
+    source = (ROOT / "app/static/chat-canonical-runtime.js").read_text(encoding="utf-8")
+
+    assert "data-canonical-chat=\"1\"" in source
+    assert "#voice-visible-conversation{box-sizing:border-box!important;flex:1 1 auto!important;min-height:0!important" in source
+    assert "scroll-padding-bottom:140px!important" in source
+    assert ".voice-chatgpt-stage{width:100%!important" in source
+    assert "display:flex!important" in source
+    assert ".voice-chatgpt-composer{width:100%!important" in source
+    assert "#voice-start," in source
+    assert "pointer-events:auto!important" in source
+
+
+def test_chat_history_is_scoped_by_authenticated_identity_and_project():
+    source = (ROOT / "app/static/chat-canonical-runtime.js").read_text(encoding="utf-8")
+
+    assert "sessionIdentity" in source
+    assert "payload.workspace_id" in source
+    assert "payload.sub" in source
+    assert "${sessionIdentity()}:${projectId() || 'general'}" in source
 
 
 def test_canonical_chat_runtime_is_owned_by_feature_loader():
