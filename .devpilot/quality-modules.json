@@ -31,6 +31,9 @@
     "app/services/rag_*.py",
     "app/services/alternating_flow.py",
     "app/services/executor.py",
+    "app/services/task_orchestrator.py",
+    "app/services/recovery.py",
+    "app/services/repository_paths.py",
     "app/services/git_reader.py",
     "app/services/github_*.py",
     "app/services/ollama_git_context.py",
@@ -45,174 +48,63 @@
   "modules": [
     {
       "name": "auth",
-      "source": [
-        "app/*auth*.py",
-        "app/security*.py",
-        "app/static/auth-ui.js",
-        "app/static/acs-loader.js"
-      ],
-      "tests": [
-        "tests/test_auth.py",
-        "tests/test_account_isolation.py",
-        "tests/test_authenticated_minimal_boot.py",
-        "tests/test_explicit_login_and_safe_core_runtime.py",
-        "tests/test_login_fresh_boot.py",
-        "tests/test_mobile_auth_blank_screen_guard.py"
-      ],
-      "browser_tests": [
-        "tests/test_critical_flows_browser_e2e.py"
-      ],
+      "source": ["app/*auth*.py", "app/security*.py", "app/static/auth-ui.js", "app/static/acs-loader.js"],
+      "tests": ["tests/test_auth.py", "tests/test_account_isolation.py", "tests/test_authenticated_minimal_boot.py", "tests/test_explicit_login_and_safe_core_runtime.py", "tests/test_login_fresh_boot.py", "tests/test_mobile_auth_blank_screen_guard.py"],
+      "browser_tests": ["tests/test_critical_flows_browser_e2e.py"],
       "browser_required": true
     },
     {
       "name": "tasks_worker",
-      "source": [
-        "app/*task*.py",
-        "app/*worker*.py",
-        "app/embedded_worker.py",
-        "app/services/alternating_flow.py",
-        "app/services/executor.py",
-        "app/static/task-*.js",
-        "app/static/tasks-*.js"
-      ],
-      "tests": [
-        "tests/test_alternating_task_flow.py",
-        "tests/test_embedded_worker.py",
-        "tests/test_task_*.py",
-        "tests/test_tasks_*.py"
-      ],
-      "browser_tests": [
-        "tests/test_critical_flows_browser_e2e.py"
-      ],
+      "source": ["app/*task*.py", "app/*worker*.py", "app/embedded_worker.py", "app/services/task_orchestrator.py", "app/services/alternating_flow.py", "app/services/executor.py", "app/services/recovery.py", "app/services/repository_paths.py", "app/static/task-*.js", "app/static/tasks-*.js"],
+      "tests": ["tests/test_alternating_task_flow.py", "tests/test_embedded_worker.py", "tests/test_task_*.py", "tests/test_tasks_*.py", "tests/test_worker_lease_fencing.py", "tests/test_git_credential_boundary.py"],
+      "browser_tests": ["tests/test_critical_flows_browser_e2e.py"],
       "browser_required": true
     },
     {
       "name": "game",
-      "source": [
-        "app/*game*.py",
-        "app/static/build-game*.js",
-        "app/static/game-*.js",
-        "app/static/game/**"
-      ],
-      "tests": [
-        "tests/test_build_game*.py",
-        "tests/test_game_*.py",
-        "tests/test_isolated_game_runtime.py",
-        "tests/test_post_login_game_lazy_boot.py"
-      ],
-      "browser_tests": [
-        "tests/test_game_browser_e2e.py"
-      ],
+      "source": ["app/*game*.py", "app/static/build-game*.js", "app/static/game-*.js", "app/static/game/**"],
+      "tests": ["tests/test_build_game*.py", "tests/test_game_*.py", "tests/test_isolated_game_runtime.py", "tests/test_post_login_game_lazy_boot.py"],
+      "browser_tests": ["tests/test_game_browser_e2e.py"],
       "browser_required": true
     },
     {
       "name": "super_admin",
-      "source": [
-        "app/*super_admin*.py",
-        "app/cloud_admin_routes.py",
-        "app/static/super-admin*.js",
-        "app/static/super-admin*.css"
-      ],
-      "tests": [
-        "tests/test_super_admin_*.py",
-        "tests/test_profile_super_admin_stability.py",
-        "tests/test_cloud_admin.py"
-      ],
-      "browser_tests": [
-        "tests/test_critical_flows_browser_e2e.py"
-      ],
+      "source": ["app/*super_admin*.py", "app/cloud_admin_routes.py", "app/static/super-admin*.js", "app/static/super-admin*.css"],
+      "tests": ["tests/test_super_admin_*.py", "tests/test_profile_super_admin_stability.py", "tests/test_cloud_admin.py"],
+      "browser_tests": ["tests/test_critical_flows_browser_e2e.py"],
       "browser_required": true
     },
     {
       "name": "rag",
-      "source": [
-        "app/rag/**",
-        "app/rag_*.py",
-        "app/*_rag.py",
-        "app/services/rag_*.py",
-        "app/static/rag-*.js",
-        "app/static/rag/**"
-      ],
-      "tests": [
-        "tests/test_rag*.py"
-      ],
-      "browser_tests": [
-        "tests/test_rag_browser_e2e.py"
-      ],
+      "source": ["app/rag/**", "app/rag_*.py", "app/*_rag.py", "app/services/rag_*.py", "app/static/rag-*.js", "app/static/rag/**"],
+      "tests": ["tests/test_rag*.py"],
+      "browser_tests": ["tests/test_rag_browser_e2e.py"],
       "browser_required": true,
       "activate_when_source_exists": true
     },
     {
       "name": "github",
-      "source": [
-        "app/*github*.py",
-        "app/*git*.py",
-        "app/services/git_reader.py",
-        "app/services/github_*.py",
-        "app/services/ollama_git_context.py",
-        "app/static/*github*.js",
-        "app/static/*git*.js"
-      ],
-      "tests": [
-        "tests/test_git_reader.py",
-        "tests/test_github_provisioning.py",
-        "tests/test_ollama_git_context.py"
-      ],
+      "source": ["app/*github*.py", "app/*git*.py", "app/services/executor.py", "app/services/recovery.py", "app/services/repository_paths.py", "app/services/git_reader.py", "app/services/github_*.py", "app/services/ollama_git_context.py", "app/static/*github*.js", "app/static/*git*.js"],
+      "tests": ["tests/test_git_reader.py", "tests/test_git_credential_boundary.py", "tests/test_github_provisioning.py", "tests/test_ollama_git_context.py"],
       "browser_tests": []
     },
     {
       "name": "linux",
-      "source": [
-        "app/*linux*.py",
-        "app/linux_agent/**",
-        "app/services/linux_*.py",
-        "app/static/linux-*.js",
-        "scripts/install-linux-agent.sh"
-      ],
-      "tests": [
-        "tests/test_linux_*.py",
-        "tests/test_host_actions.py"
-      ],
+      "source": ["app/*linux*.py", "app/linux_agent/**", "app/services/linux_*.py", "app/static/linux-*.js", "scripts/install-linux-agent.sh"],
+      "tests": ["tests/test_linux_*.py", "tests/test_host_actions.py"],
       "browser_tests": []
     },
     {
       "name": "cloud_deploy",
-      "source": [
-        "app/*cloud*.py",
-        "app/*deploy*.py",
-        "app/delivery_*.py",
-        "render.yaml",
-        "vercel.json",
-        "tools/build-vercel-static.mjs"
-      ],
-      "tests": [
-        "tests/test_cloud_admin.py",
-        "tests/test_delivery_cloud_bridge.py",
-        "tests/test_product_delivery.py",
-        "tests/test_render_homolog_deployment.py",
-        "tests/test_runtime_image_packaging.py"
-      ],
+      "source": ["app/*cloud*.py", "app/*deploy*.py", "app/delivery_*.py", "render.yaml", "vercel.json", "tools/build-vercel-static.mjs"],
+      "tests": ["tests/test_cloud_admin.py", "tests/test_delivery_cloud_bridge.py", "tests/test_product_delivery.py", "tests/test_render_homolog_deployment.py", "tests/test_runtime_image_packaging.py"],
       "browser_tests": []
     },
     {
       "name": "frontend",
-      "source": [
-        "app/static/**",
-        "tools/build-vercel-static.mjs",
-        "vercel.json"
-      ],
-      "tests": [
-        "tests/test_frontend_runtime_circuit_breaker.py",
-        "tests/test_progressive_frontend_boot.py",
-        "tests/test_spa_static_path_isolation.py",
-        "tests/test_mobile_*.py",
-        "tests/test_profile_ui_integrity.py"
-      ],
-      "browser_tests": [
-        "tests/test_critical_flows_browser_e2e.py",
-        "tests/test_game_browser_e2e.py",
-        "tests/test_rag_browser_e2e.py"
-      ],
+      "source": ["app/static/**", "tools/build-vercel-static.mjs", "vercel.json"],
+      "tests": ["tests/test_frontend_runtime_circuit_breaker.py", "tests/test_progressive_frontend_boot.py", "tests/test_spa_static_path_isolation.py", "tests/test_mobile_*.py", "tests/test_profile_ui_integrity.py"],
+      "browser_tests": ["tests/test_critical_flows_browser_e2e.py", "tests/test_game_browser_e2e.py", "tests/test_rag_browser_e2e.py"],
       "browser_required": true
     }
   ]
