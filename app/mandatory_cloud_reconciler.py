@@ -31,7 +31,9 @@ def _delivery_status(project) -> str:
     return str(delivery.get("status") or "pending").strip().lower()
 
 
-def _retry_due(project) -> bool:
+def _retry_due(project, *, force: bool = False) -> bool:
+    if force:
+        return True
     delivery = _delivery_payload(project)
     status = str(delivery.get("status") or "pending").strip().lower()
     if status not in {"failed", "blocked"}:
@@ -50,6 +52,7 @@ def _retry_due(project) -> bool:
 
 def _run() -> None:
     time.sleep(_INITIAL_DELAY_SECONDS)
+    first_pass = True
     while True:
         try:
             from sqlalchemy import select
@@ -68,7 +71,7 @@ def _run() -> None:
                     ).all()
                 )
                 for project in projects:
-                    if _delivery_status(project) not in _ACTIVE_STATES or not _retry_due(project):
+                    if _delivery_status(project) not in _ACTIVE_STATES or not _retry_due(project, force=first_pass):
                         continue
                     try:
                         result = delivery.run_delivery(db, project, "system:mandatory-cloud-reconciler")
@@ -82,8 +85,10 @@ def _run() -> None:
                             f"[mandatory-cloud] {project.slug}: {type(error).__name__}: {error}",
                             flush=True,
                         )
+            first_pass = False
         except Exception as error:
             print(f"[mandatory-cloud] reconciler error: {type(error).__name__}: {error}", flush=True)
+            first_pass = False
         time.sleep(_RECONCILE_SECONDS)
 
 
