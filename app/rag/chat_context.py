@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from app.models import Project, Run, Task, TaskStatus
 
+from .db import get_rag_engine
+from .jobs import enqueue_index_job
 from .runtime import get_rag_service
 from .scope import project_rag_scope
 from .service import RagQueryMode, RetrievalResult
@@ -119,6 +121,26 @@ def _rag_context(result: RetrievalResult) -> tuple[str, list[dict[str, Any]]]:
     return "\n".join(lines), sources
 
 
+def _ensure_project_index(project: Project, result: RetrievalResult) -> str:
+    state = result.index_state or {}
+    needs_index = int(state.get("total_vectors") or 0) == 0 or bool(state.get("reindex_required"))
+    if not needs_index:
+        return ""
+    try:
+        engine = get_rag_engine()
+        if engine.dialect.name != "postgresql":
+            return ""
+        job = enqueue_index_job(
+            engine,
+            organization_id=project_rag_scope(project),
+            project_id=project.id,
+        )
+    except Exception as exc:
+        logger.warning("RAG auto-index unavailable for project %s: %s", project.id, type(exc).__name__)
+        return ""
+    return f"Indexação RAG automática: {job.get('status', 'pending')} (job {str(job.get('id') or '')[:8]})."
+
+
 def build_chat_knowledge_context(
     db: Session,
     *,
@@ -136,9 +158,6 @@ def build_chat_knowledge_context(
     if project_memory:
         parts.append(project_memory)
 
-    # O chat sempre recebe estado operacional quando existe projeto. Isto faz
-    # perguntas naturais como "o que está acontecendo?" funcionarem sem exigir
-    # palavras-chave específicas do roteador RAG.
     if project_id or mode in {RagQueryMode.LIVE, RagQueryMode.RAG_LIVE}:
         parts.append(_live_context(db, workspace_id, project_id))
 
@@ -161,6 +180,10 @@ def build_chat_knowledge_context(
                 rag_text, sources = _rag_context(result)
                 parts.append(rag_text)
                 cache_hit = result.cache_hit
+                if rag.settings.enabled:
+                    indexing = _ensure_project_index(project, result)
+                    if indexing:
+                        parts.append(indexing)
         else:
             parts.append("Memória RAG não consultada: projeto não encontrado no workspace atual.")
     elif mode in {RagQueryMode.RAG, RagQueryMode.RAG_LIVE}:
