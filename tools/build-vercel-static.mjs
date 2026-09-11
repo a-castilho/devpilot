@@ -67,7 +67,17 @@ function normalizeHead(value) {
   return value.replace(/<head>[\s\S]*?<\/head>/, head => head.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n'));
 }
 
+function removeLegacyBootstrapTokenFallback(value) {
+  const safeAuthShell = `<dialog id="auth-modal"><div class="modal"><span class="eyebrow">ACESSO</span><h2>Preparando acesso seguro…</h2><p>Carregando autenticação por e-mail e senha.</p></div></dialog>`;
+  const next = value.replace(/<dialog id="auth-modal">[\s\S]*?<\/dialog>/, safeAuthShell);
+  if (next === value) {
+    throw new Error('Vercel build could not replace the legacy authentication fallback');
+  }
+  return next;
+}
+
 let html = normalizeHead(readFileSync(join(source, 'index.html'), 'utf8'));
+html = removeLegacyBootstrapTokenFallback(html);
 
 for (const name of scripts) {
   const assetPath = join(source, name);
@@ -95,6 +105,10 @@ for (const name of stylesheets) {
     const tag = `<link rel="stylesheet" href="/assets/${name}?v=${revision(assetPath)}">`;
     html = html.replace('</head>', `  ${tag}\n</head>`);
   }
+}
+
+if (html.includes('DEVPILOT_BOOTSTRAP_TOKEN') || html.includes('id="save-token"')) {
+  throw new Error('Vercel static shell still exposes the legacy bootstrap-token login');
 }
 
 writeFileSync(join(output, 'index.html'), html);
