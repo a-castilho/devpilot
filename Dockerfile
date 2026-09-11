@@ -1,10 +1,8 @@
 FROM node:22-bookworm-slim AS codex-cli
 
-# Codex 0.149.0 has a confirmed auth-header regression in automated Linux
-# executions. Keep homologation on the last known-good release until the
-# upstream regression is resolved, otherwise valid API keys reach Responses
-# without Authorization and every queued task fails with HTTP 401.
+# Keep Codex on the known-good release and pin Gemini CLI for deterministic builds.
 ARG CODEX_VERSION=0.148.0
+ARG GEMINI_VERSION=0.59.0
 ENV NPM_CONFIG_FETCH_RETRIES=5 \
     NPM_CONFIG_FETCH_RETRY_FACTOR=2 \
     NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
@@ -15,8 +13,10 @@ RUN set -eux; \
     npm config set registry https://registry.npmjs.org/; \
     installed=0; \
     for attempt in 1 2 3 4; do \
-        echo "Codex npm install attempt ${attempt}/4 version ${CODEX_VERSION}"; \
-        if npm install -g --no-audit --no-fund "@openai/codex@${CODEX_VERSION}"; then \
+        echo "AI CLI install attempt ${attempt}/4"; \
+        if npm install -g --no-audit --no-fund \
+            "@openai/codex@${CODEX_VERSION}" \
+            "@google/gemini-cli@${GEMINI_VERSION}"; then \
             installed=1; \
             break; \
         fi; \
@@ -24,7 +24,8 @@ RUN set -eux; \
         sleep $((attempt * 10)); \
     done; \
     [ "$installed" = "1" ]; \
-    codex --version | grep -F "${CODEX_VERSION}"
+    codex --version | grep -F "${CODEX_VERSION}"; \
+    gemini --version | grep -F "${GEMINI_VERSION}"
 
 FROM python:3.12-slim-bookworm
 
@@ -37,11 +38,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# The worker executes Git and Codex inside this image. Keep the runtime lean:
-# Debian installs only the small native tools needed at runtime. espeak-ng is
-# used on demand as the no-API fallback when Chromium/Brave exposes Web Speech
-# but cannot actually synthesize audio on Linux. The self-hosted runner may
-# temporarily lose DNS, so retry the complete apt refresh/install transaction.
 RUN set -eux; \
     installed=0; \
     for attempt in 1 2 3 4; do \
@@ -61,21 +57,18 @@ RUN set -eux; \
 
 COPY --from=codex-cli /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex-cli /usr/local/lib/node_modules/@openai /usr/local/lib/node_modules/@openai
+COPY --from=codex-cli /usr/local/lib/node_modules/@google /usr/local/lib/node_modules/@google
 RUN ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
+    && ln -sf /usr/local/lib/node_modules/@google/gemini-cli/dist/index.js /usr/local/bin/gemini \
     && chmod +x /usr/local/lib/node_modules/@openai/codex/bin/codex.js \
+    && chmod +x /usr/local/lib/node_modules/@google/gemini-cli/dist/index.js \
     && node --version \
-    && codex --version
+    && codex --version \
+    && gemini --version
 
-# setuptools resolves the dynamic version from app.version and discovers app*
-# while building the wheel. The source tree therefore must exist before pip
-# evaluates pyproject.toml; copying only pyproject.toml makes the image build
-# fail with ModuleNotFoundError: app.
 COPY pyproject.toml README.md AGENTS.md ./
 COPY app ./app
 
-# PyPI/DNS can be temporarily unavailable on the self-hosted runner. Retry the
-# complete install with backoff, but still fail the image build if every attempt
-# fails so dependency or packaging errors are never hidden.
 RUN set -eux; \
     installed=0; \
     for attempt in 1 2 3 4; do \
