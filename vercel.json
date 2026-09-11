@@ -6,13 +6,11 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "${DEVPILOT_BACKEND_URL}/api/$1",
-      "env": ["DEVPILOT_BACKEND_URL"]
+      "dest": "https://devpilot-homolog-docker.onrender.com/api/$1"
     },
     {
       "src": "/health",
-      "dest": "${DEVPILOT_BACKEND_URL}/health",
-      "env": ["DEVPILOT_BACKEND_URL"]
+      "dest": "https://devpilot-homolog-docker.onrender.com/health"
     },
     {
       "src": "/telemetry",
