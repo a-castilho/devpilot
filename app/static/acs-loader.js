@@ -1,10 +1,6 @@
 (() => {
   'use strict';
 
-  // /assets/game/index.html is served directly by Starlette StaticFiles and can
-  // never fall through to the authenticated dashboard SPA. If an older backend
-  // serves the dashboard document for any legacy game URL, this pre-auth loader
-  // redirects before app.js, /auth/me, /overview or /tasks can start.
   const GAME_FALLBACK_PATHS = new Set(['/game', '/game/', '/game/index.html']);
   if (GAME_FALLBACK_PATHS.has(window.location.pathname)) {
     const target = `/assets/game/index.html${window.location.search || ''}${window.location.hash || ''}`;
@@ -48,7 +44,7 @@
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260825-deterministic1';
+    link.href = '/assets/acs-loader.css?v=20260911-vercel-ready1';
     document.head.appendChild(link);
   }
 
@@ -83,6 +79,9 @@
 
   let removed = false;
   let leaving = false;
+  let coreReady = false;
+  let platformReady = !/\.vercel\.app$/i.test(window.location.hostname);
+  const statusText = loader.querySelector('.acs-loader__status span');
 
   const removeNow = () => {
     if (removed) return;
@@ -91,13 +90,58 @@
   };
 
   const dismiss = () => {
-    if (removed || leaving) return;
+    if (removed || leaving || !coreReady || !platformReady) return;
     leaving = true;
     loader.classList.add('acs-loader--leaving');
     window.setTimeout(removeNow, 220);
   };
 
-  document.addEventListener('devpilot:authenticated-core-ready', dismiss, {once: true});
-  window.setTimeout(dismiss, 650);
-  window.setTimeout(removeNow, 1200);
+  document.addEventListener('devpilot:authenticated-core-ready', () => {
+    coreReady = true;
+    dismiss();
+  }, {once: true});
+
+  async function waitForVercelReadiness() {
+    if (platformReady) return;
+    const started = Date.now();
+    const timeoutMs = 90000;
+    const pollMs = 2000;
+    if (statusText) statusText.textContent = 'Aguardando publicação na Vercel';
+
+    while (!removed && Date.now() - started < timeoutMs) {
+      try {
+        const response = await fetch(`/health?_=${Date.now()}`, {
+          method: 'GET',
+          cache: 'no-store',
+          headers: {'Accept': 'application/json,text/plain,*/*'},
+        });
+        if (response.ok) {
+          platformReady = true;
+          if (statusText) statusText.textContent = 'Aplicação pronta';
+          dismiss();
+          return;
+        }
+      } catch (_) {
+        // Vercel/Render can still be warming up. Retry until the bounded timeout.
+      }
+      await new Promise(resolve => window.setTimeout(resolve, pollMs));
+    }
+
+    // Never trap the user indefinitely if a project does not expose /health.
+    platformReady = true;
+    if (statusText) statusText.textContent = 'Abrindo aplicação';
+    dismiss();
+  }
+
+  void waitForVercelReadiness();
+
+  // Local/Render loads keep the fast path; Vercel loads stay visible while the
+  // deployment/backend readiness check is still warming up.
+  window.setTimeout(() => {
+    coreReady = true;
+    dismiss();
+  }, platformReady ? 650 : 1200);
+  window.setTimeout(() => {
+    if (!/\.vercel\.app$/i.test(window.location.hostname)) removeNow();
+  }, 1200);
 })();
