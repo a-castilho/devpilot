@@ -7,7 +7,17 @@ from pathlib import Path
 from app.config import get_settings
 from app.models import Project, Task
 from app.services import executor as executor_service
+from app.services.github_checkout import ensure_repository as ensure_authenticated_repository
 from app.services.task_flow import execution_branch, is_analysis_action_task, is_verification_analysis
+
+
+# Keep the executor API stable while making every alternating-flow checkout resolve
+# and revalidate the workspace GitHub credential immediately before Git operations.
+def _ensure_repository(project: Project) -> Path:
+    return ensure_authenticated_repository(project, executor_service.run)
+
+
+executor_service.ensure_repository = _ensure_repository
 
 
 def _disabled_result(mode: str) -> dict:
