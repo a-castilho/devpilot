@@ -8,6 +8,14 @@ import time
 _STARTED = False
 
 
+def _metadata(value: str | None) -> dict:
+    try:
+        data = json.loads(value or "{}")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def _run() -> None:
     time.sleep(8)
     try:
@@ -33,42 +41,61 @@ def _run() -> None:
             print("[render-autoprovision] credencial Render ativa não encontrada; nada a fazer", flush=True)
             return
 
-        target = None
+        target = credentials[0]
         owner_id = ""
         for item in credentials:
-            try:
-                metadata = json.loads(item.models or "{}")
-            except (TypeError, ValueError, json.JSONDecodeError):
-                metadata = {}
-            scope = str(metadata.get("scope") or "").strip() if isinstance(metadata, dict) else ""
+            scope = str(_metadata(item.models).get("scope") or "").strip()
             if scope:
                 target = item
                 owner_id = scope
                 break
 
-        if target is None:
-            print("[render-autoprovision] Workspace / Owner ID não configurado; nada a fazer", flush=True)
-            return
-
         secret = Vault().decrypt(target.encrypted_secret)
         headers = {
             "Authorization": f"Bearer {secret}",
             "Accept": "application/json",
-            "User-Agent": "DevPilot-Render-Autoprovision/1.2",
+            "User-Agent": "DevPilot-Render-Autoprovision/1.3",
         }
 
         with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+            params = {"limit": 100}
+            if owner_id:
+                params["ownerId"] = owner_id
             response = client.get(
                 "https://api.render.com/v1/services",
                 headers=headers,
-                params={"ownerId": owner_id, "limit": 100},
+                params=params,
             )
             response.raise_for_status()
             data = response.json()
+            services: list[dict] = []
             for wrapper in data if isinstance(data, list) else []:
                 if not isinstance(wrapper, dict):
                     continue
                 service = wrapper.get("service") if isinstance(wrapper.get("service"), dict) else wrapper
+                if isinstance(service, dict):
+                    services.append(service)
+
+            if not owner_id:
+                for service in services:
+                    candidate = str(service.get("ownerId") or "").strip()
+                    if candidate:
+                        owner_id = candidate
+                        break
+                if owner_id:
+                    with SessionLocal() as db:
+                        current = db.get(ProviderCredential, target.id)
+                        if current:
+                            metadata = _metadata(current.models)
+                            metadata["scope"] = owner_id
+                            current.models = json.dumps(metadata, ensure_ascii=False, separators=(",", ":"))
+                            db.commit()
+                    print(f"[render-autoprovision] Workspace / Owner ID descoberto e salvo: {owner_id}", flush=True)
+                else:
+                    print("[render-autoprovision] não foi possível descobrir o Workspace / Owner ID", flush=True)
+                    return
+
+            for service in services:
                 if str(service.get("name") or "") == "devpilot-homolog-docker":
                     print(f"[render-autoprovision] serviço já existe: {service.get('id', '')}", flush=True)
                     return
