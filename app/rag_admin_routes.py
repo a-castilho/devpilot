@@ -13,6 +13,7 @@ from app.rag.db import get_rag_engine
 from app.rag.jobs import enqueue_index_job, list_jobs, retry_job
 from app.rag.metrics import RagMetricsService
 from app.rag.runtime import get_rag_service, reload_rag_service
+from app.rag.scope import project_rag_scope
 from app.rag.settings_store import save_runtime_settings
 from app.security import Principal, require_super_admin, session_principal
 from app.services.audit import record
@@ -89,9 +90,7 @@ def project_metrics(project_id: str, db: Session = Depends(get_db)) -> dict[str,
     project = db.scalar(select(Project).where(Project.id == project_id))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not project.organization_id:
-        raise HTTPException(status_code=409, detail="Project must belong to an organization")
-    return _metrics().project(organization_id=project.organization_id, project_id=project.id)
+    return _metrics().project(organization_id=project_rag_scope(project), project_id=project.id)
 
 
 @router.get("/settings")
@@ -132,12 +131,11 @@ def index_project(
     project = db.scalar(select(Project).where(Project.id == project_id))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not project.organization_id:
-        raise HTTPException(status_code=409, detail="Project must belong to an organization")
     _require_index_backend()
+    scope_id = project_rag_scope(project)
     job = enqueue_index_job(
         get_rag_engine(),
-        organization_id=project.organization_id,
+        organization_id=scope_id,
         project_id=project.id,
     )
     record(
@@ -147,10 +145,15 @@ def index_project(
         actor=principal.actor,
         action="rag.index.enqueued",
         outcome=str(job["status"]),
-        details={"job_id": job["id"], "created": job["created"], "organization_id": project.organization_id},
+        details={
+            "job_id": job["id"],
+            "created": job["created"],
+            "scope_id": scope_id,
+            "scope_type": "organization" if project.organization_id else "workspace",
+        },
     )
     db.commit()
-    return {"status": job["status"], "job_id": job["id"], "created": job["created"]}
+    return {"status": job["status"], "job_id": job["id"], "created": job["created"], "scope_id": scope_id}
 
 
 @router.get("/jobs")
@@ -184,13 +187,11 @@ def retrieve_project(project_id: str, payload: dict[str, Any], db: Session = Dep
     project = db.scalar(select(Project).where(Project.id == project_id))
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    if not project.organization_id:
-        raise HTTPException(status_code=409, detail="Project must belong to an organization")
     query = str(payload.get("query") or "").strip()
     if not query:
         raise HTTPException(status_code=422, detail="query is required")
     result = get_rag_service().retrieve(
-        organization_id=project.organization_id,
+        organization_id=project_rag_scope(project),
         project_id=project.id,
         query=query,
         diagnostic=bool(payload.get("diagnostic", True)),
@@ -223,7 +224,7 @@ def clear_project_cache(
         project_id=project_id,
         actor=principal.actor,
         action="rag.cache.cleared",
-        details={"organization_id": organization_id},
+        details={"scope_id": organization_id},
     )
     db.commit()
     return {"status": "ok", "organization_id": organization_id, "project_id": project_id}
