@@ -8,7 +8,7 @@ const assetsOutput = join(output, 'assets');
 const gameOutput = join(output, 'game');
 
 const PREAUTH_SCRIPTS = ['acs-loader.js', 'auth-ui.js'];
-const CORE_SCRIPTS = ['app.js', 'feature-loader.js'];
+const CORE_SCRIPTS = ['app.js', 'feature-loader.js', 'chat-canonical-bootstrap.js'];
 const DEFERRED_SCRIPTS = [
   'consolidated-ui.js','project-delete-ui.js','project-provisioning.js','project-builder.js','project-description-profile.js',
   'task-modal.js','task-completion-documentation.js','task-analytics.js','reports.js','example-project.js',
@@ -24,7 +24,7 @@ const DEFERRED_SCRIPTS = [
   'dashboard-user-v21.js','executions-v18.js','executions-focus-v19.js','simplified-nav.js','profile.js','users.js','tasks-operational-ui.js',
   'task-recovery-flow.js','tasks-recovery-layout-v41.js','execution-results-v28.js','mobile-voice-capture-final.js','voice-project-autoload.js',
   'mobile-chat-project-picker.js','voice-runtime-stability.js','chat-request-watchdog.js','super-admin-task-panel.js','game-rules-admin.js',
-  'rag-admin-ui.js','rag-jobs-ui.js','game-weapons.js'
+  'rag-admin-ui.js','rag-jobs-ui.js','game-weapons.js','chat-canonical-runtime.js'
 ];
 const stylesheets = ['mobile-scroll-unlock.css', 'super-admin-voice.css'];
 
@@ -141,6 +141,7 @@ if (html.includes('DEVPILOT_BOOTSTRAP_TOKEN') || html.includes('id="save-token"'
 if (!html.includes('data-devpilot-auth-loading="true"')) throw new Error('Vercel build must publish a detectable initial auth loading placeholder');
 if ((html.match(/\/assets\/app\.js/g) || []).length !== 1) throw new Error('Vercel build must load app.js exactly once and only after authentication');
 if ((html.match(/\/assets\/feature-loader\.js/g) || []).length !== 1) throw new Error('Vercel build must load feature-loader.js exactly once and only after authentication');
+if ((html.match(/\/assets\/chat-canonical-bootstrap\.js/g) || []).length !== 1) throw new Error('Vercel build must load the canonical chat bootstrap exactly once');
 
 writeFileSync(join(output, 'index.html'), html);
-console.log('DevPilot Vercel frontend built with authenticated runtime parity');
+console.log('DevPilot Vercel frontend built with authenticated runtime parity and canonical chat bootstrap');
