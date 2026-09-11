@@ -1,6 +1,13 @@
 (() => {
   const CLOUD_ROLE = 'SUPER_ADMIN';
-  const cloudState = {items: [], selected: '', resources: [], renderProvision: null, renderTimer: null};
+  const cloudState = {
+    items: [],
+    selected: '',
+    resources: [],
+    renderProvision: null,
+    renderTimer: null,
+    renderAutoStarted: false,
+  };
 
   const byId = id => document.getElementById(id);
   const isSuperAdmin = () => String(state.currentUser?.role || '').toUpperCase() === CLOUD_ROLE;
@@ -72,8 +79,8 @@
           </form>
           <div id="cloud-render-box" class="cloud-render-box" style="margin-top:16px">
             <div class="cloud-render-head"><div><span class="eyebrow">HOMOLOGAÇÃO DOCKER</span><h3 style="margin:2px 0 0">Render</h3></div><span id="cloud-render-status" class="status">NÃO INICIADO</span></div>
-            <div id="cloud-render-detail" class="cloud-render-detail">O provisionamento é assíncrono: a requisição apenas inicia o serviço. O DevPilot acompanha o deploy sem manter a conexão HTTP aberta.</div>
-            <div class="cloud-render-actions"><button class="primary" type="button" id="cloud-render-provision">Provisionar homologação</button><button class="ghost" type="button" id="cloud-render-check">Verificar status</button><a class="ghost" id="cloud-render-open" href="#" target="_blank" rel="noopener" style="display:none">Abrir homologação</a></div>
+            <div id="cloud-render-detail" class="cloud-render-detail">Com a Key e o Workspace salvos, o DevPilot garante automaticamente a homologação Docker e acompanha o deploy por consultas curtas.</div>
+            <div class="cloud-render-actions"><button class="primary" type="button" id="cloud-render-provision">Garantir homologação</button><button class="ghost" type="button" id="cloud-render-check">Verificar status</button><a class="ghost" id="cloud-render-open" href="#" target="_blank" rel="noopener" style="display:none">Abrir homologação</a></div>
           </div>
           <div style="margin-top:18px"><div class="panel-title"><div><span class="eyebrow">INVENTÁRIO</span><h3>Recursos do cloud</h3></div><span id="cloud-resource-count" class="status">0</span></div><div id="cloud-resource-list" class="cloud-resource-list"><div class="cloud-empty">Carregue os recursos para visualizar projetos e serviços.</div></div></div>
         </article>
@@ -101,6 +108,7 @@
   }
 
   const current = () => cloudState.items.find(item => item.provider === cloudState.selected) || null;
+  const renderItem = () => cloudState.items.find(item => item.provider === 'render') || null;
 
   function renderSummary() {
     const target = byId('cloud-admin-summary'); if (!target) return;
@@ -113,8 +121,8 @@
     const target = byId('cloud-provider-list'); if (!target) return;
     target.innerHTML = cloudState.items.map(item => `<button class="cloud-provider ${item.provider === cloudState.selected ? 'active' : ''}" type="button" data-cloud="${html(item.provider)}"><span class="cloud-provider-head"><strong>${html(item.name)}</strong><span class="status">${item.enabled ? 'ATIVO' : (item.configured ? 'PAUSADO' : 'NOVO')}</span></span><small>${item.configured ? 'credencial protegida no vault' : 'não configurado'}</small><small>${item.scope ? `escopo: ${html(item.scope)}` : 'escopo padrão'}</small></button>`).join('');
     target.querySelectorAll('[data-cloud]').forEach(button => button.addEventListener('click', () => {
-      cloudState.selected = button.dataset.cloud; cloudState.resources = []; stopRenderPolling(); renderProviders(); fillForm(); renderResources(); renderRenderProvision();
-      if (cloudState.selected === 'render' && current()?.configured) checkRenderProvision(false);
+      cloudState.selected = button.dataset.cloud; cloudState.resources = []; renderProviders(); fillForm(); renderResources(); renderRenderProvision();
+      if (cloudState.selected === 'render' && renderItem()?.configured) checkRenderProvision(false);
     }));
   }
 
@@ -151,7 +159,7 @@
     const status = byId('cloud-render-status'); const detail = byId('cloud-render-detail'); const open = byId('cloud-render-open'); const provision = byId('cloud-render-provision');
     provision.disabled = !item?.configured || !item?.enabled;
     if (!data) {
-      status.textContent = 'NÃO INICIADO'; detail.textContent = item?.configured ? 'Pronto para provisionar. A operação inicia rápido e o acompanhamento ocorre por consultas curtas.' : 'Salve e ative a credencial Render primeiro.'; open.style.display = 'none'; return;
+      status.textContent = 'NÃO INICIADO'; detail.textContent = item?.configured ? 'O DevPilot verificará e provisionará automaticamente esta homologação.' : 'Salve e ative a credencial Render primeiro.'; open.style.display = 'none'; return;
     }
     status.textContent = statusLabel(data.status || data.render_status);
     const elapsed = Number(data.elapsed_seconds || 0); const max = Number(data.max_wait_seconds || 1200);
@@ -168,27 +176,58 @@
   function stopRenderPolling() { if (cloudState.renderTimer) clearTimeout(cloudState.renderTimer); cloudState.renderTimer = null; }
   function scheduleRenderPoll(seconds) { stopRenderPolling(); const delay = Math.max(5, Number(seconds || 5)); cloudState.renderTimer = setTimeout(() => checkRenderProvision(false), delay * 1000); }
 
-  async function provisionRender() {
-    const item = current(); if (item?.provider !== 'render') return;
-    if (!item.configured) return toast('Salve a credencial Render primeiro');
-    if (!item.scope) return toast('Informe e salve o Workspace / Owner ID da Render');
-    const button = byId('cloud-render-provision'); const original = button.textContent; button.disabled = true; button.textContent = 'Iniciando...';
+  async function provisionRender(showToast = true) {
+    const item = renderItem();
+    if (!item?.configured || !item.enabled) return showToast ? toast('Salve e ative a credencial Render primeiro') : undefined;
+    if (!item.scope) return showToast ? toast('Informe e salve o Workspace / Owner ID da Render') : undefined;
+    const button = byId('cloud-render-provision'); const original = button?.textContent || 'Garantir homologação';
+    if (button) { button.disabled = true; button.textContent = 'Iniciando...'; }
+    cloudState.renderAutoStarted = true;
     try {
       cloudState.renderProvision = await api('/admin/clouds/render/provision-homologation', {method:'POST'});
-      renderRenderProvision(); toast(cloudState.renderProvision.created ? 'Homologação Docker criada. Acompanhamento iniciado.' : 'Homologação encontrada. Acompanhamento iniciado.');
+      renderRenderProvision();
+      if (showToast) toast(cloudState.renderProvision.created ? 'Homologação Docker criada. Acompanhamento iniciado.' : 'Homologação encontrada. Acompanhamento iniciado.');
       scheduleRenderPoll(cloudState.renderProvision.poll_after_seconds || 5);
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; button.textContent = original; }
+    } catch (error) {
+      cloudState.renderAutoStarted = false;
+      if (showToast) toast(error.message);
+    } finally {
+      if (button) { button.disabled = false; button.textContent = original; }
+    }
   }
 
   async function checkRenderProvision(showToast = false) {
-    const item = current(); if (item?.provider !== 'render' || !item.configured || !item.enabled) return;
+    const item = renderItem(); if (!item?.configured || !item.enabled) return;
     try {
       const result = await api('/admin/clouds/render/provision-homologation/status'); cloudState.renderProvision = result; renderRenderProvision();
+      if (result.status === 'not_provisioned' && item.scope) {
+        stopRenderPolling();
+        return provisionRender(showToast);
+      }
       if (result.ready) { stopRenderPolling(); if (showToast) toast('Homologação Docker pronta'); }
       else if (result.terminal) { stopRenderPolling(); if (showToast || result.timed_out) toast(result.timed_out ? 'Tempo de acompanhamento atingido' : `Deploy finalizado: ${statusLabel(result.status)}`); }
       else { if (showToast) toast(`Render: ${statusLabel(result.status)}`); scheduleRenderPoll(result.next_poll_seconds || 5); }
     } catch (error) { stopRenderPolling(); if (showToast) toast(error.message); }
+  }
+
+  async function ensureRenderProvisioned() {
+    const item = renderItem();
+    if (!item?.configured || !item.enabled || !item.scope || cloudState.renderAutoStarted) return;
+    cloudState.renderAutoStarted = true;
+    try {
+      const result = await api('/admin/clouds/render/provision-homologation/status');
+      cloudState.renderProvision = result;
+      renderRenderProvision();
+      if (result.status === 'not_provisioned') {
+        cloudState.renderAutoStarted = false;
+        await provisionRender(false);
+        return;
+      }
+      if (!result.terminal) scheduleRenderPoll(result.next_poll_seconds || 5);
+    } catch (error) {
+      cloudState.renderAutoStarted = false;
+      console.warn('Render auto-provision indisponível:', error);
+    }
   }
 
   async function loadClouds(force = false) {
@@ -197,7 +236,8 @@
       cloudState.items = await api('/admin/clouds');
       if (!cloudState.selected || !cloudState.items.some(item => item.provider === cloudState.selected)) cloudState.selected = cloudState.items[0]?.provider || '';
       renderSummary(); renderProviders(); fillForm();
-      if (cloudState.selected === 'render' && current()?.configured) checkRenderProvision(false);
+      await ensureRenderProvisioned();
+      if (cloudState.selected === 'render' && renderItem()?.configured) checkRenderProvision(false);
     } catch (error) { toast(error.message); }
   }
 
@@ -209,8 +249,12 @@
     event.preventDefault(); const item = current(); if (!item) return toast('Selecione um cloud'); const form = event.currentTarget;
     const payload = {secret: form.elements.secret.value.trim() || null, enabled: form.elements.enabled.checked, scope: form.elements.scope.value.trim()};
     setSaveBusy(true);
-    try { await api(`/admin/clouds/${item.provider}`, {method:'PUT', body:JSON.stringify(payload)}); toast(`${item.name} atualizado`); await loadClouds(true); }
-    catch (error) { toast(error.message); } finally { setSaveBusy(false); }
+    try {
+      await api(`/admin/clouds/${item.provider}`, {method:'PUT', body:JSON.stringify(payload)});
+      if (item.provider === 'render') cloudState.renderAutoStarted = false;
+      toast(`${item.name} atualizado`);
+      await loadClouds(true);
+    } catch (error) { toast(error.message); } finally { setSaveBusy(false); }
   }
 
   async function testCloud() {
@@ -229,8 +273,18 @@
 
   async function deleteCloud() {
     const item = current(); if (!item?.configured) return; if (!window.confirm(`Remover a credencial ${item.name} do DevPilot?`)) return;
-    try { await api(`/admin/clouds/${item.provider}`, {method:'DELETE'}); cloudState.resources = []; cloudState.renderProvision = null; stopRenderPolling(); toast(`${item.name}: credencial removida`); await loadClouds(true); renderResources(); }
-    catch (error) { toast(error.message); }
+    try {
+      await api(`/admin/clouds/${item.provider}`, {method:'DELETE'});
+      cloudState.resources = [];
+      if (item.provider === 'render') {
+        cloudState.renderProvision = null;
+        cloudState.renderAutoStarted = false;
+        stopRenderPolling();
+      }
+      toast(`${item.name}: credencial removida`);
+      await loadClouds(true);
+      renderResources();
+    } catch (error) { toast(error.message); }
   }
 
   let checks = 0; const waitForRole = () => { checks += 1; if (state.currentUser) return ensurePanel(); if (checks < 40) setTimeout(waitForRole, 250); }; waitForRole();
