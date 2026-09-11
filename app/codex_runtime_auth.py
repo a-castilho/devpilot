@@ -34,18 +34,20 @@ def _openai_api_key() -> str:
     return ""
 
 
-def refresh_process_environment() -> bool:
-    """Expose the active OpenAI key only to the server process/child Codex process.
+def _apply_key(environment: dict[str, str], secret: str) -> None:
+    # Current Codex builds accept OPENAI_API_KEY for API-key auth. CODEX_API_KEY
+    # is also supported by Codex automation paths; setting both avoids auth-mode
+    # ambiguity without persisting an auth.json file in the ephemeral container.
+    environment["OPENAI_API_KEY"] = secret
+    environment["CODEX_API_KEY"] = secret
 
-    The controlled worker launches Codex directly with subprocess.Popen, so the
-    key must be available in the parent environment in addition to executor.run's
-    explicit env_overrides path. The secret is never returned, logged or persisted
-    outside the existing encrypted Vault row.
-    """
+
+def refresh_process_environment() -> bool:
+    """Expose the active OpenAI key only to this process and its Codex children."""
     secret = _openai_api_key()
     if not secret:
         return False
-    os.environ["OPENAI_API_KEY"] = secret
+    _apply_key(os.environ, secret)
     return True
 
 
@@ -55,17 +57,15 @@ def _run_with_codex_auth(args, cwd=None, timeout=900, env_overrides=None):
         return _ORIGINAL_RUN(args, cwd=cwd, timeout=timeout, env_overrides=env_overrides)
 
     environment = dict(env_overrides or {})
-    if not environment.get("OPENAI_API_KEY"):
+    if not environment.get("OPENAI_API_KEY") or not environment.get("CODEX_API_KEY"):
         secret = _openai_api_key()
         if secret:
-            environment["OPENAI_API_KEY"] = secret
-            os.environ["OPENAI_API_KEY"] = secret
+            _apply_key(environment, secret)
+            _apply_key(os.environ, secret)
     return _ORIGINAL_RUN(args, cwd=cwd, timeout=timeout, env_overrides=environment)
 
 
 def install() -> None:
-    # Refresh even when the runner wrapper was already installed so a newly saved
-    # key becomes available after application restart without another integration.
     refresh_process_environment()
     if getattr(executor.run, "_devpilot_codex_auth", False):
         return
