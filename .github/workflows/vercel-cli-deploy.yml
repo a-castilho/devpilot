@@ -29,7 +29,7 @@ jobs:
       VERCEL_PROJECT: devpilot
       VERCEL_ALIAS: devpilot-homolog.vercel.app
       DEVPILOT_BACKEND_URL: https://devpilot-homolog.onrender.com
-      SOURCE_REF: acaabdbd6a2b5184e2916c8b605c97932a0b5cec
+      SOURCE_REF: a59b18e458d3078e1a26097d3ea896b7699a4eec
 
     steps:
       - name: Checkout frontend source
