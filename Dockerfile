@@ -59,9 +59,9 @@ COPY --from=codex-cli /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex-cli /usr/local/lib/node_modules/@openai /usr/local/lib/node_modules/@openai
 COPY --from=codex-cli /usr/local/lib/node_modules/@google /usr/local/lib/node_modules/@google
 RUN ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex \
-    && ln -sf /usr/local/lib/node_modules/@google/gemini-cli/dist/index.js /usr/local/bin/gemini \
+    && ln -sf /usr/local/lib/node_modules/@google/gemini-cli/bundle/gemini.js /usr/local/bin/gemini \
     && chmod +x /usr/local/lib/node_modules/@openai/codex/bin/codex.js \
-    && chmod +x /usr/local/lib/node_modules/@google/gemini-cli/dist/index.js \
+    && chmod +x /usr/local/lib/node_modules/@google/gemini-cli/bundle/gemini.js \
     && node --version \
     && codex --version \
     && gemini --version
