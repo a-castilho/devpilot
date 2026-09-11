@@ -29,7 +29,7 @@ jobs:
       VERCEL_PROJECT: devpilot
       VERCEL_ALIAS: devpilot-homolog.vercel.app
       DEVPILOT_BACKEND_URL: https://devpilot-homolog.onrender.com
-      SOURCE_REF: fix/mobile-standard-top-back
+      SOURCE_REF: ff795a78534edfaba5b5e98d1b19d70ddf8c91db
 
     steps:
       - name: Checkout frontend source
