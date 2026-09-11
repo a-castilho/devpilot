@@ -3,27 +3,49 @@ from __future__ import annotations
 import json
 import threading
 import time
+from datetime import datetime, timezone
 
 _STARTED = False
 _RECONCILE_SECONDS = 30
 _INITIAL_DELAY_SECONDS = 15
+_FAILED_RETRY_SECONDS = 300
 # Delivery is mandatory and self-healing. A project that was blocked because a
 # credential was missing, or failed while its repository/code was not ready, must
 # be retried automatically after the external condition changes.
 _ACTIVE_STATES = {"pending", "provisioning", "deploying", "blocked", "failed"}
 
 
-def _delivery_status(project) -> str:
+def _delivery_payload(project) -> dict:
     try:
         config = json.loads(project.codex_config or "{}")
     except (TypeError, ValueError, json.JSONDecodeError):
-        return "pending"
+        return {}
     if not isinstance(config, dict):
-        return "pending"
+        return {}
     delivery = config.get("delivery")
-    if not isinstance(delivery, dict):
-        return "pending"
+    return delivery if isinstance(delivery, dict) else {}
+
+
+def _delivery_status(project) -> str:
+    delivery = _delivery_payload(project)
     return str(delivery.get("status") or "pending").strip().lower()
+
+
+def _retry_due(project) -> bool:
+    delivery = _delivery_payload(project)
+    status = str(delivery.get("status") or "pending").strip().lower()
+    if status not in {"failed", "blocked"}:
+        return True
+    raw = str(delivery.get("updated_at") or "").strip()
+    if not raw:
+        return True
+    try:
+        updated = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+    except ValueError:
+        return True
+    return (datetime.now(timezone.utc) - updated).total_seconds() >= _FAILED_RETRY_SECONDS
 
 
 def _run() -> None:
@@ -46,7 +68,7 @@ def _run() -> None:
                     ).all()
                 )
                 for project in projects:
-                    if _delivery_status(project) not in _ACTIVE_STATES:
+                    if _delivery_status(project) not in _ACTIVE_STATES or not _retry_due(project):
                         continue
                     try:
                         result = delivery.run_delivery(db, project, "system:mandatory-cloud-reconciler")
