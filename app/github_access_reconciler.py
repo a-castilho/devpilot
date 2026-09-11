@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from app.db import SessionLocal
 from app.github_optional_org import github_credential_candidates, github_owner
+from app.github_repository_selfheal import repair_github_project
 from app.models import Project, ProviderCredential, Task, TaskStatus
 from app.services.audit import record
 from app.services.recovery import AutoRecoveryService
@@ -28,19 +29,12 @@ def _enabled() -> bool:
 
 
 def _resume_github_recovery(db, project: Project) -> int:
-    """Validate real repository access and resume blocked recovery tasks.
+    """Repair GitHub repository state, validate access and resume blocked tasks.
 
-    Project.organization_id is intentionally optional. The repository owner and
-    workspace credentials are enough to prove access. Organization only affects
-    credential priority through github_credential_candidates().
+    Organization is optional. Before waiting for a human, DevPilot tries to repair
+    a punctuation/case owner mismatch and can provision a missing private personal
+    repository when the authenticated GitHub identity proves it is the same owner.
     """
-    try:
-        owner = github_owner(project.repository_url)
-    except ValueError:
-        return 0
-    if not owner:
-        return 0
-
     pending = list(
         db.scalars(
             select(Task).where(
@@ -56,16 +50,33 @@ def _resume_github_recovery(db, project: Project) -> int:
     if not pending:
         return 0
 
+    # The project may have been created with a non-canonical owner or with a
+    # repository that does not exist yet. Repair that before concluding auth failed.
+    repaired, repair_proof = repair_github_project(project)
+    if repaired:
+        try:
+            db.refresh(project)
+        except Exception:
+            pass
+
+    try:
+        owner = github_owner(project.repository_url)
+    except ValueError:
+        return 0
+    if not owner:
+        return 0
+
     service = AutoRecoveryService()
-    access_proof = ""
+    access_proof = repair_proof if repaired else ""
 
     # A public repository can recover without any credential at all.
-    try:
-        anonymous = service._git_ls_remote(project.repository_url, "")
-        if anonymous.returncode == 0:
-            access_proof = "git ls-remote succeeded without organization requirement"
-    except Exception:
-        pass
+    if not access_proof:
+        try:
+            anonymous = service._git_ls_remote(project.repository_url, "")
+            if anonymous.returncode == 0:
+                access_proof = "git ls-remote succeeded without organization requirement"
+        except Exception:
+            pass
 
     if not access_proof:
         for credential in github_credential_candidates(db, project)[:8]:
