@@ -8,17 +8,6 @@ import time
 _STARTED = False
 
 
-def _is_homologation_runtime() -> bool:
-    service_name = os.getenv("RENDER_SERVICE_NAME", "").strip().lower()
-    external_url = os.getenv("RENDER_EXTERNAL_URL", "").strip().lower()
-    env = os.getenv("DEVPILOT_ENV", "").strip().lower()
-    return (
-        service_name.startswith("devpilot-homolog")
-        or "devpilot-homolog" in external_url
-        or env in {"homolog", "homologation"}
-    )
-
-
 def _run() -> None:
     time.sleep(8)
     try:
@@ -65,7 +54,7 @@ def _run() -> None:
         headers = {
             "Authorization": f"Bearer {secret}",
             "Accept": "application/json",
-            "User-Agent": "DevPilot-Render-Autoprovision/1.1",
+            "User-Agent": "DevPilot-Render-Autoprovision/1.2",
         }
 
         with httpx.Client(timeout=12.0, follow_redirects=True) as client:
@@ -156,7 +145,7 @@ def _run() -> None:
 
 def start() -> None:
     global _STARTED
-    if _STARTED or not _is_homologation_runtime():
+    if _STARTED:
         return
     _STARTED = True
     threading.Thread(target=_run, name="render-autoprovision", daemon=True).start()
