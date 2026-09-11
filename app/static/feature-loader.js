@@ -128,6 +128,7 @@
       'mobile-chat-project-picker.js',
       'voice-runtime-stability.js',
       'chat-request-watchdog.js',
+      'chat-canonical-runtime.js',
     ],
 
     admin: [
@@ -135,6 +136,8 @@
       'super-admin-task-panel.js',
       'token-usage.js',
       'token-usage-mobile-fix.js',
+      'provider-models.js',
+      'provider-ollama.js',
       'deploy-admin.js',
       'cloud-admin.js',
       'super-admin-local-test.js',
