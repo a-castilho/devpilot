@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import json
 import os
 import threading
 import time
 from datetime import datetime, timezone
-from urllib.parse import urlparse
 
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Organization, Project, ProviderCredential, Task, TaskStatus
+from app.github_optional_org import github_credential_candidates, github_owner
+from app.models import Project, ProviderCredential, Task, TaskStatus
 from app.services.audit import record
 from app.services.recovery import AutoRecoveryService
 from app.services.vault import Vault
@@ -28,123 +27,21 @@ def _enabled() -> bool:
     return any(str(value).strip().lower() in {"1", "true", "yes", "on"} for value in values)
 
 
-def _metadata(item: ProviderCredential) -> dict:
-    try:
-        value = json.loads(item.models or "{}")
-    except (TypeError, ValueError, json.JSONDecodeError):
-        return {}
-    return value if isinstance(value, dict) else {}
+def _resume_github_recovery(db, project: Project) -> int:
+    """Validate real repository access and resume blocked recovery tasks.
 
-
-def _github_owner(repository_url: str) -> str:
-    parsed = urlparse(str(repository_url or ""))
-    if str(parsed.hostname or "").lower() != "github.com":
-        return ""
-    parts = [part for part in parsed.path.split("/") if part]
-    return parts[0].lower() if len(parts) >= 2 else ""
-
-
-def _sync_cloud_credential(db, workspace_id: str) -> list[Organization]:
-    cloud = db.scalar(
-        select(ProviderCredential).where(
-            ProviderCredential.workspace_id == workspace_id,
-            ProviderCredential.provider == "cloud:github",
-            ProviderCredential.label == "cloud-admin",
-            ProviderCredential.enabled.is_(True),
-        )
-    )
-    organizations = list(
-        db.scalars(
-            select(Organization).where(
-                Organization.workspace_id == workspace_id,
-                Organization.provider == "github",
-            )
-        ).all()
-    )
-    if not cloud or not organizations:
-        return organizations
-
-    scope = str(_metadata(cloud).get("scope") or "").strip().lower()
-    candidates = [org for org in organizations if str(org.external_login or "").strip().lower() == scope] if scope else organizations
-    if not scope and len(candidates) != 1:
-        return organizations
-
-    for org in candidates:
-        operational = db.get(ProviderCredential, org.credential_id) if org.credential_id else None
-        if operational is None:
-            operational = ProviderCredential(
-                workspace_id=workspace_id,
-                provider="github",
-                label=f"GitHub org {org.external_login or org.slug}",
-                encrypted_secret=cloud.encrypted_secret,
-                enabled=True,
-                models=json.dumps({"credential_source": "cloud-admin"}),
-            )
-            db.add(operational)
-            db.flush()
-            org.credential_id = operational.id
-        elif operational.encrypted_secret != cloud.encrypted_secret or not operational.enabled:
-            operational.encrypted_secret = cloud.encrypted_secret
-            operational.enabled = True
-            operational.models = json.dumps({"credential_source": "cloud-admin"})
-        org.last_sync_error = ""
-    return organizations
-
-
-def _link_projects_by_repository_owner(db, workspace_id: str, organizations: list[Organization]) -> int:
-    """Attach GitHub projects to the matching organization using the repository owner.
-
-    Older/project-creation flows can persist repository_url before organization_id. That made
-    valid GitHub credentials invisible to the reconciler. The repository owner is deterministic
-    for github.com URLs, so we repair the missing relation automatically.
+    Project.organization_id is intentionally optional. The repository owner and
+    workspace credentials are enough to prove access. Organization only affects
+    credential priority through github_credential_candidates().
     """
-    by_owner = {
-        str(org.external_login or "").strip().lower(): org
-        for org in organizations
-        if str(org.external_login or "").strip()
-    }
-    if not by_owner:
+    try:
+        owner = github_owner(project.repository_url)
+    except ValueError:
+        return 0
+    if not owner:
         return 0
 
-    linked = 0
-    projects = list(
-        db.scalars(
-            select(Project).where(
-                Project.workspace_id == workspace_id,
-                Project.organization_id.is_(None),
-            )
-        ).all()
-    )
-    for project in projects:
-        owner = _github_owner(project.repository_url)
-        org = by_owner.get(owner)
-        if not org:
-            continue
-        project.organization_id = org.id
-        linked += 1
-        record(
-            db,
-            workspace_id=project.workspace_id,
-            project_id=project.id,
-            actor="github-access-reconciler",
-            action="github.project_organization_linked",
-            outcome="linked",
-            details={"owner": owner, "organization_id": org.id, "automatic": True},
-        )
-    if linked:
-        db.flush()
-    return linked
-
-
-def _resume_github_recovery(db, project: Project, token: str) -> int:
-    if not _github_owner(project.repository_url):
-        return 0
-    result = AutoRecoveryService()._git_ls_remote(project.repository_url, token)
-    if result.returncode != 0:
-        return 0
-
-    now = datetime.now(timezone.utc)
-    tasks = list(
+    pending = list(
         db.scalars(
             select(Task).where(
                 Task.workspace_id == project.workspace_id,
@@ -156,8 +53,40 @@ def _resume_github_recovery(db, project: Project, token: str) -> int:
             )
         ).all()
     )
+    if not pending:
+        return 0
+
+    service = AutoRecoveryService()
+    access_proof = ""
+
+    # A public repository can recover without any credential at all.
+    try:
+        anonymous = service._git_ls_remote(project.repository_url, "")
+        if anonymous.returncode == 0:
+            access_proof = "git ls-remote succeeded without organization requirement"
+    except Exception:
+        pass
+
+    if not access_proof:
+        for credential in github_credential_candidates(db, project)[:8]:
+            try:
+                token = Vault().decrypt(credential.encrypted_secret)
+            except ValueError:
+                continue
+            try:
+                result = service._git_ls_remote(project.repository_url, token)
+            except Exception:
+                continue
+            if result.returncode == 0:
+                access_proof = f"git ls-remote succeeded for repository owner {owner}"
+                break
+
+    if not access_proof:
+        return 0
+
+    now = datetime.now(timezone.utc)
     resumed = 0
-    for task in tasks:
+    for task in pending:
         task.status = TaskStatus.queued
         task.requires_approval = False
         task.approved_at = now
@@ -170,7 +99,13 @@ def _resume_github_recovery(db, project: Project, token: str) -> int:
             actor="github-access-reconciler",
             action="failure_recovery.github_access_restored",
             outcome="queued",
-            details={"automatic": True, "proof": "git ls-remote succeeded"},
+            details={
+                "automatic": True,
+                "proof": access_proof,
+                "repository_owner": owner,
+                "organization_id": project.organization_id,
+                "organization_required": False,
+            },
         )
         resumed += 1
     return resumed
@@ -182,36 +117,21 @@ def reconcile_once() -> int:
         workspace_ids = list(
             db.scalars(
                 select(ProviderCredential.workspace_id)
-                .where(ProviderCredential.provider == "cloud:github", ProviderCredential.enabled.is_(True))
+                .where(
+                    ProviderCredential.provider.in_(("github", "cloud:github")),
+                    ProviderCredential.enabled.is_(True),
+                )
                 .distinct()
             ).all()
         )
         for workspace_id in workspace_ids:
-            organizations = _sync_cloud_credential(db, workspace_id)
-            _link_projects_by_repository_owner(db, workspace_id, organizations)
-            db.flush()
-            for org in organizations:
-                if not org.credential_id:
-                    continue
-                credential = db.get(ProviderCredential, org.credential_id)
-                if not credential or not credential.enabled:
-                    continue
-                try:
-                    token = Vault().decrypt(credential.encrypted_secret)
-                except ValueError:
-                    continue
-                projects = list(
-                    db.scalars(
-                        select(Project).where(
-                            Project.workspace_id == workspace_id,
-                            Project.organization_id == org.id,
-                        )
-                    ).all()
-                )
-                for project in projects:
-                    if _github_owner(project.repository_url) != str(org.external_login or "").strip().lower():
-                        continue
-                    resumed += _resume_github_recovery(db, project, token)
+            projects = list(
+                db.scalars(
+                    select(Project).where(Project.workspace_id == workspace_id)
+                ).all()
+            )
+            for project in projects:
+                resumed += _resume_github_recovery(db, project)
         db.commit()
     return resumed
 
