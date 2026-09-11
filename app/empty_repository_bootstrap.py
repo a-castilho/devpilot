@@ -56,6 +56,33 @@ def _bootstrap_prompt(executor, task) -> str:
     return executor.development_prompt(task) + EMPTY_REPOSITORY_BOOTSTRAP
 
 
+def _empty_analysis_result(project, task) -> dict[str, Any]:
+    return {
+        "mode": "analysis-read-only-empty-repository",
+        "exit_code": 0,
+        "persisted_changes": False,
+        "empty_repository_bootstrap_required": True,
+        "summary": "Repositório vazio identificado; o fluxo seguirá automaticamente para criação da aplicação.",
+        "client_report": (
+            "Resumo para o cliente\n"
+            f"O projeto ‘{project.name}’ ainda não possui uma revisão de aplicação publicada. Isso não é um bloqueio: o DevPilot seguirá automaticamente para a criação da estrutura inicial e implementação do objetivo solicitado.\n\n"
+            "O que encontramos\n"
+            "- O acesso ao repositório está disponível.\n"
+            "- Ainda não existe código-fonte publicado na branch principal.\n"
+            "- A ausência de arquivos foi classificada como condição inicial de desenvolvimento, não como dependência de autorização humana.\n\n"
+            "Impacto\n"
+            "A etapa de análise não precisa esperar intervenção manual; a próxima etapa pode criar a aplicação desde zero.\n\n"
+            "Recomendações\n"
+            "Prosseguir automaticamente com bootstrap da aplicação, implementação, testes, documentação e preparação para deploy.\n\n"
+            "Próximo passo\n"
+            "O DevPilot criará automaticamente a estrutura inicial e executará a implementação solicitada."
+        ),
+        "stdout": "",
+        "stderr": "",
+        "branch": "",
+    }
+
+
 def _execute_empty_repository(executor, project, task, repository) -> dict[str, Any]:
     branch = _prepare_empty_branch(executor, repository, task)
     if project.agents_md:
@@ -101,12 +128,14 @@ def install_empty_repository_bootstrap() -> None:
 
     def execute_task(project, task):
         settings = executor.get_settings()
-        if executor.is_read_only_task(task) or not settings.execution_enabled:
+        if not settings.execution_enabled:
             return original_execute_task(project, task)
 
         repository = executor.ensure_repository(project)
         if _remote_default_exists(executor, repository, project):
             return original_execute_task(project, task)
+        if executor.is_read_only_task(task):
+            return _empty_analysis_result(project, task)
         return _execute_empty_repository(executor, project, task, repository)
 
     execute_task._devpilot_empty_repo_bootstrap = True
