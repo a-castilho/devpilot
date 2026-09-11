@@ -47,8 +47,8 @@
       agent_recovery: 'Correção automática em execução',
       retesting: 'Correção aplicada; retestando a mesma etapa',
       resolved: 'Falha corrigida',
-      awaiting_intervention: 'Aguardando intervenção necessária',
-      intervention_required: 'Intervenção necessária para continuar',
+      awaiting_intervention: 'Aguardando condição externa necessária',
+      intervention_required: 'Condição externa necessária para continuar',
       recovery_exhausted: 'Correção automática não resolveu a falha',
     };
     return map[String(recovery?.state || '')] || 'Diagnóstico da falha em andamento';
@@ -61,7 +61,7 @@
     if (recoveryState === 'retesting') return 'Correção aplicada. Retestando esta mesma etapa…';
     if (recoveryState === 'resolved') return 'Falha corrigida. Retomando a rodada…';
     if (recoverableFailure(state, recovery)) {
-      if (isTerminalRecovery(recovery)) return 'A correção automática parou com diagnóstico. Veja o motivo e a posição abaixo.';
+      if (isTerminalRecovery(recovery)) return 'A correção automática parou porque há uma condição externa. O DevPilot retomará sozinho quando ela estiver válida.';
       if (effectiveTaskStatus(state, recovery) === 'blocked') return 'A execução foi bloqueada. Diagnosticando a causa para retomar esta mesma etapa…';
       return state.verifier
         ? 'A validação falhou. Enviando o mesmo gate para recuperação segura…'
@@ -105,7 +105,7 @@
           <span style="opacity:.72">Correção</span><span data-game-recovery-state>${esc(recoveryStateText(recovery))}</span>
           ${recoveryTask?.status ? `<span style="opacity:.72">Tarefa de reparo</span><span>${esc(recoveryTask.status)}${recoveryTask.id ? ` · ${esc(recoveryTask.id)}` : ''}</span>` : ''}
         </div>
-        ${manual ? '<p data-game-recovery-manual style="margin:1px 0 0;font-size:11px"><strong>O DevPilot não vai inventar credencial, permissão ou decisão humana.</strong> Corrija a condição externa indicada acima e use “Atualizar diagnóstico”.</p>' : ''}
+        ${manual ? '<p data-game-recovery-manual style="margin:1px 0 0;font-size:11px"><strong>Não há botão falso de correção.</strong> Esta falha depende de uma condição externa. Assim que credencial/permissão estiver válida, o backend valida o acesso e retoma automaticamente a mesma etapa.</p>' : ''}
       </section>`;
   };
 
@@ -267,7 +267,7 @@
         <div class="game74-actions">
           ${failed
             ? (terminalRecovery
-              ? '<button class="game74-primary" type="button" data-stable-refresh>↻ Atualizar diagnóstico</button>'
+              ? ''
               : '<button class="game74-primary" type="button" data-stable-retry>↻ Corrigir e continuar</button>')
             : (canceled
               ? '<button class="game74-primary" type="button" data-stable-retry>↻ Recriar e continuar</button>'
