@@ -55,6 +55,7 @@ def install_openai_quota_guard() -> None:
         )
 
         for api_key in keys:
+            stop_current_key = False
             for model in models:
                 try:
                     response = await client.post(
@@ -86,13 +87,8 @@ def install_openai_quota_guard() -> None:
                 if response.status_code >= 400:
                     metadata = _provider_error_metadata(response)
                     attempts.append(_attempt("openai", model, **metadata))
-                    # Saldo/cota pertence à conta/chave, não ao modelo. Não bombardear
-                    # a API tentando todos os modelos quando a primeira resposta já
-                    # prova que nenhum deles poderá funcionar com esta chave.
-                    if _quota_exhausted(metadata):
-                        break
-                    # 401/403 também são falhas da credencial, não do modelo.
-                    if response.status_code in {401, 403}:
+                    if _quota_exhausted(metadata) or response.status_code in {401, 403}:
+                        stop_current_key = True
                         break
                     continue
 
@@ -118,13 +114,9 @@ def install_openai_quota_guard() -> None:
                     "model": model,
                     "usage": usage if isinstance(usage, dict) else {},
                 }, attempts
-            else:
+
+            if stop_current_key:
                 continue
-            # Interrompe este provider quando a chave está sem saldo ou inválida.
-            if attempts:
-                last = attempts[-1]
-                if _quota_exhausted(last) or int(last.get("status") or 0) in {401, 403}:
-                    continue
 
         return None, attempts
 
