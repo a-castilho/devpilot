@@ -1,11 +1,11 @@
-/* DevPilot Build Game delivery gate v74.
+/* DevPilot Build Game delivery gate v75.
  * Creates one independent verifier after each completed base phase and starts final cloud delivery automatically.
  */
 (() => {
   'use strict';
 
-  if (window.__devpilotDeliveryGateV74Ready) return;
-  window.__devpilotDeliveryGateV74Ready = true;
+  if (window.__devpilotDeliveryGateV75Ready) return;
+  window.__devpilotDeliveryGateV75Ready = true;
 
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
@@ -13,6 +13,7 @@
   const MISSION_KEY = 'devpilot-build-game-mission';
   const MAX_PHASES = 7;
   const DELIVERY_RETRY_MS = 15000;
+  const DELIVERY_BLOCKED_RETRY_MS = 60000;
   const inFlight = new Set();
   const deliveryInFlight = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
@@ -57,12 +58,12 @@
     return true;
   };
 
-  const scheduleDeliveryRetry = () => {
+  const scheduleDeliveryRetry = (delay = DELIVERY_RETRY_MS) => {
     if (deliveryRetryTimer) return;
     deliveryRetryTimer = window.setTimeout(() => {
       deliveryRetryTimer = 0;
       schedule();
-    }, DELIVERY_RETRY_MS);
+    }, delay);
   };
 
   const ensureAutomaticDelivery = async projectId => {
@@ -82,7 +83,6 @@
         document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: current}));
         return true;
       }
-      if (currentStatus === 'blocked') return false;
 
       const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
         method: 'POST',
@@ -95,7 +95,11 @@
         document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: next}));
         return true;
       }
-      if (nextStatus === 'deploying' || nextStatus === 'provisioning') scheduleDeliveryRetry();
+      if (nextStatus === 'blocked') {
+        scheduleDeliveryRetry(DELIVERY_BLOCKED_RETRY_MS);
+      } else if (nextStatus === 'deploying' || nextStatus === 'provisioning' || nextStatus === 'failed') {
+        scheduleDeliveryRetry();
+      }
       return false;
     } catch (error) {
       console.warn('[DevPilot Automatic Delivery]', error);
