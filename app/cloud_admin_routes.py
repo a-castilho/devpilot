@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 from urllib.parse import quote
 
@@ -23,6 +24,9 @@ manage_clouds = require_roles(Role.SUPER_ADMIN)
 _CREDENTIAL_LABEL = "cloud-admin"
 _PROVIDER_PREFIX = "cloud:"
 _REQUEST_TIMEOUT = 10.0
+_RENDER_SERVICE_NAME = "devpilot-homolog-docker"
+_RENDER_REPOSITORY = "https://github.com/a-castilho/devpilot"
+_RENDER_BRANCH = "fix/mobile-standard-top-back"
 
 CLOUD_PROVIDERS: dict[str, dict[str, str]] = {
     "vercel": {
@@ -309,12 +313,182 @@ def _require_item(
     return item
 
 
+def _runtime_env_vars() -> list[dict[str, str]]:
+    required = (
+        "DEVPILOT_DATABASE_URL",
+        "DEVPILOT_AUTH_SECRET",
+        "DEVPILOT_ENCRYPTION_KEY",
+    )
+    missing = [name for name in required if not os.getenv(name, "").strip()]
+    if missing:
+        raise CloudProviderError(
+            "Homologação atual não possui variáveis obrigatórias: " + ", ".join(missing)
+        )
+
+    values: dict[str, str] = {
+        "DEVPILOT_ENV": "homologation",
+        "DEVPILOT_DATA_DIR": "/tmp/devpilot",
+        "DEVPILOT_REPOSITORIES_DIR": "/tmp/devpilot/repositories",
+        "DEVPILOT_HOST_ACTIONS_DIR": "/tmp/devpilot/host-actions",
+        "DEVPILOT_AUTH_TOKEN_TTL_SECONDS": os.getenv("DEVPILOT_AUTH_TOKEN_TTL_SECONDS", "3600"),
+        "DEVPILOT_EXECUTION_ENABLED": "true",
+        "DEVPILOT_EMBEDDED_WORKER": "true",
+        "DEVPILOT_ALLOWED_GIT_HOSTS": os.getenv("DEVPILOT_ALLOWED_GIT_HOSTS", "github.com"),
+    }
+    for name in (
+        "DEVPILOT_DATABASE_URL",
+        "DEVPILOT_AUTH_SECRET",
+        "DEVPILOT_ENCRYPTION_KEY",
+        "DEVPILOT_BOOTSTRAP_TOKEN",
+        "OPENAI_API_KEY",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+    ):
+        value = os.getenv(name, "").strip()
+        if value:
+            values[name] = value
+    return [{"key": key, "value": value} for key, value in values.items()]
+
+
+def _render_service_url(service: dict[str, Any]) -> str:
+    details = service.get("serviceDetails")
+    details = details if isinstance(details, dict) else {}
+    return str(details.get("url") or service.get("url") or "")
+
+
+def _find_render_service(secret: str, owner_id: str) -> dict[str, Any] | None:
+    params: dict[str, Any] = {"limit": 100}
+    if owner_id:
+        params["ownerId"] = owner_id
+    try:
+        response = httpx.get(
+            "https://api.render.com/v1/services",
+            headers=_headers("render", secret),
+            params=params,
+            timeout=_REQUEST_TIMEOUT,
+        )
+    except httpx.HTTPError as error:
+        raise CloudProviderError("Não foi possível consultar os serviços Render.") from error
+    if response.status_code >= 400:
+        raise CloudProviderError(f"Render respondeu HTTP {response.status_code} ao listar serviços.")
+    data = response.json()
+    if not isinstance(data, list):
+        return None
+    for wrapper in data:
+        if not isinstance(wrapper, dict):
+            continue
+        service = wrapper.get("service") if isinstance(wrapper.get("service"), dict) else wrapper
+        if str(service.get("name") or "") == _RENDER_SERVICE_NAME:
+            return service
+    return None
+
+
+def _provision_render_homologation(secret: str, owner_id: str) -> dict[str, Any]:
+    if not owner_id:
+        raise CloudProviderError("Informe o Workspace / Owner ID da Render antes de provisionar.")
+
+    existing = _find_render_service(secret, owner_id)
+    if existing:
+        return {
+            "ok": True,
+            "created": False,
+            "service_id": str(existing.get("id") or ""),
+            "name": str(existing.get("name") or _RENDER_SERVICE_NAME),
+            "url": _render_service_url(existing),
+            "status": "existing",
+        }
+
+    body: dict[str, Any] = {
+        "type": "web_service",
+        "name": _RENDER_SERVICE_NAME,
+        "ownerId": owner_id,
+        "repo": _RENDER_REPOSITORY,
+        "branch": _RENDER_BRANCH,
+        "autoDeploy": "yes",
+        "envVars": _runtime_env_vars(),
+        "serviceDetails": {
+            "runtime": "docker",
+            "plan": "free",
+            "healthCheckPath": "/health",
+            "envSpecificDetails": {
+                "dockerfilePath": "./Dockerfile",
+                "dockerContext": ".",
+            },
+        },
+    }
+    try:
+        response = httpx.post(
+            "https://api.render.com/v1/services",
+            headers={**_headers("render", secret), "Content-Type": "application/json"},
+            json=body,
+            timeout=30.0,
+        )
+    except httpx.HTTPError as error:
+        raise CloudProviderError("Não foi possível criar a homologação Docker na Render.") from error
+    if response.status_code >= 400:
+        detail = response.text[:300].strip()
+        raise CloudProviderError(
+            f"Render respondeu HTTP {response.status_code} ao criar homologação"
+            + (f": {detail}" if detail else ".")
+        )
+    data = response.json() if response.content else {}
+    service = data.get("service") if isinstance(data, dict) and isinstance(data.get("service"), dict) else data
+    if not isinstance(service, dict) or not service.get("id"):
+        raise CloudProviderError("Render não retornou o serviço criado.")
+    return {
+        "ok": True,
+        "created": True,
+        "service_id": str(service.get("id") or ""),
+        "name": str(service.get("name") or _RENDER_SERVICE_NAME),
+        "url": _render_service_url(service),
+        "status": "deploying",
+    }
+
+
 @router.get("")
 def list_clouds(
     db: Session = Depends(get_db),
     principal: Principal = Depends(manage_clouds),
 ):
     return [_summary(provider, _credential(db, principal, provider)) for provider in CLOUD_PROVIDERS]
+
+
+@router.post("/render/provision-homologation")
+def provision_render_homologation(
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(manage_clouds),
+):
+    item = _require_item(db, principal, "render")
+    if not item.enabled:
+        raise HTTPException(status_code=409, detail="Render está desativado")
+    owner_id = str(_metadata(item).get("scope") or "").strip()
+    try:
+        result = _provision_render_homologation(_decrypt(item), owner_id)
+    except CloudProviderError as error:
+        record(
+            db,
+            workspace_id=principal.workspace_id,
+            actor=principal.actor,
+            action="cloud.render_homologation_provisioned",
+            outcome="failed",
+            details={"service_name": _RENDER_SERVICE_NAME},
+        )
+        db.commit()
+        raise HTTPException(status_code=502, detail=str(error)) from error
+
+    record(
+        db,
+        workspace_id=principal.workspace_id,
+        actor=principal.actor,
+        action="cloud.render_homologation_provisioned",
+        details={
+            "service_name": result["name"],
+            "service_id": result["service_id"],
+            "created": result["created"],
+        },
+    )
+    db.commit()
+    return result
 
 
 @router.put("/{provider}")
