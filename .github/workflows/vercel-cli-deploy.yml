@@ -35,28 +35,44 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "::error::VERCEL_TOKEN is not configured."
             exit 1
           fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: Ensure Vercel project exists
+      - name: Ensure Vercel project exists without prompt
         shell: bash
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: team_KrFJ87iJN82qsZ56d8eKsvqJ
         run: |
-          if ! npx --yes vercel@latest project inspect devpilot \
-            --token "$VERCEL_TOKEN" \
-            --scope maquina-de-leads1 >/dev/null 2>&1; then
-            npx --yes vercel@latest project add devpilot \
-              --token "$VERCEL_TOKEN" \
-              --scope maquina-de-leads1
+          set -euo pipefail
+          STATUS=$(curl -sS -o /tmp/vercel-project.json -w '%{http_code}' \
+            -H "Authorization: Bearer $VERCEL_TOKEN" \
+            "https://api.vercel.com/v9/projects/devpilot?teamId=$VERCEL_TEAM_ID")
+          if [ "$STATUS" = "200" ]; then
+            echo "Vercel project devpilot already exists"
+          elif [ "$STATUS" = "404" ]; then
+            CREATE=$(curl -sS -o /tmp/vercel-project-create.json -w '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer $VERCEL_TOKEN" \
+              -H 'Content-Type: application/json' \
+              "https://api.vercel.com/v10/projects?teamId=$VERCEL_TEAM_ID" \
+              --data '{"name":"devpilot","framework":null}')
+            if [ "$CREATE" -lt 200 ] || [ "$CREATE" -ge 300 ]; then
+              cat /tmp/vercel-project-create.json
+              echo "::error::Failed to create Vercel project (HTTP $CREATE)"
+              exit 1
+            fi
+            echo "Vercel project devpilot created"
+          else
+            cat /tmp/vercel-project.json
+            echo "::error::Unable to inspect Vercel project (HTTP $STATUS)"
+            exit 1
           fi
 
       - name: Validate backend before frontend deploy
@@ -82,7 +98,7 @@ jobs:
         run: |
           URL="$(npx --yes vercel@latest deploy \
             --prod \
-            --non-interactive \
+            --yes \
             --token "$VERCEL_TOKEN" \
             --scope maquina-de-leads1 \
             --project devpilot)"
