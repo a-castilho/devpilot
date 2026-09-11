@@ -7,7 +7,10 @@ import time
 _STARTED = False
 _RECONCILE_SECONDS = 30
 _INITIAL_DELAY_SECONDS = 15
-_ACTIVE_STATES = {"pending", "provisioning", "deploying"}
+# Delivery is mandatory and self-healing. A project that was blocked because a
+# credential was missing, or failed while its repository/code was not ready, must
+# be retried automatically after the external condition changes.
+_ACTIVE_STATES = {"pending", "provisioning", "deploying", "blocked", "failed"}
 
 
 def _delivery_status(project) -> str:
@@ -48,7 +51,7 @@ def _run() -> None:
                     try:
                         result = delivery.run_delivery(db, project, "system:mandatory-cloud-reconciler")
                         print(
-                            f"[mandatory-cloud] {project.slug}: {result.get('status', 'unknown')}",
+                            f"[mandatory-cloud] {project.slug}: {result.get('status', 'unknown')} url={result.get('url', '')}",
                             flush=True,
                         )
                     except Exception as error:
