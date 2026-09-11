@@ -7,11 +7,18 @@
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const GAME_MISSION_KEY = 'devpilot-build-game-mission';
   const GAME_URL = '/game/index.html';
+  const AUTO_DELIVERY_POLL_MS = 30000;
+  const AUTO_DELIVERY_MAX_RETRIES = 3;
+  const AUTO_ACTIVE = new Set(['queued','planning','running','in_progress','approved','processing','review','awaiting_approval']);
+  const AUTO_FAILURE = new Set(['failed','error','blocked']);
+  const autoDeliveryInFlight = new Set();
+  const autoDeliveryRetries = new Map();
 
   const mobileViewport = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
   const lowPower = () => document.documentElement.classList.contains('devpilot-low-power') || mobileViewport();
   const batchSize = () => lowPower() ? 6 : 15;
   const fetchLimit = () => lowPower() ? 12 : 50;
+  const normalizeStatus = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
   let renderLimit = batchSize();
   let projectsSource = null;
@@ -98,6 +105,28 @@
 
       #projects-list [data-project-game] {
         border-color:rgba(155,108,255,.42);
+      }
+      #projects-list .project-public-url {
+        display:block;
+        margin-top:10px;
+        padding:10px 12px;
+        border:1px solid rgba(54,211,153,.30);
+        border-radius:12px;
+        background:rgba(54,211,153,.06);
+        color:#7ce7cf;
+        text-decoration:none;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+        font-weight:800;
+        font-size:12px;
+      }
+      #projects-list .project-auto-delivery-state {
+        display:block;
+        margin-top:8px;
+        color:#89a4b5;
+        font-size:11px;
+        line-height:1.35;
       }
 
       html.devpilot-low-power #projects-view .project-visual-overview {
@@ -208,13 +237,104 @@
     card.dataset.shipLiteEnhanced = '1';
   }
 
+  function deliveryHost(card) {
+    return card.querySelector('.product-delivery-box') || card;
+  }
+
+  function renderDeliveryState(card, delivery) {
+    if (!card || !delivery) return;
+    const host = deliveryHost(card);
+    const url = String(delivery.url || '').trim();
+    if (url) {
+      let link = card.querySelector('.project-public-url');
+      if (!link) {
+        link = document.createElement('a');
+        link.className = 'project-public-url';
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        host.appendChild(link);
+      }
+      link.href = url;
+      link.textContent = `🌐 ${url}`;
+      link.title = 'Abrir produto publicado';
+    }
+
+    let stateLine = card.querySelector('.project-auto-delivery-state');
+    if (!stateLine) {
+      stateLine = document.createElement('small');
+      stateLine.className = 'project-auto-delivery-state';
+      host.appendChild(stateLine);
+    }
+    const status = normalizeStatus(delivery.status || 'pending');
+    stateLine.textContent = ({
+      pending:'Entrega automática aguardando o código ficar pronto.',
+      provisioning:'Preparando infraestrutura automaticamente…',
+      deploying:'Publicando e validando URL automaticamente…',
+      ready:'Produto publicado e URL validada.',
+      failed:'Publicação falhou; o DevPilot fará tentativas controladas.',
+      blocked:'Publicação bloqueada por uma dependência externa.',
+    })[status] || 'Entrega automática em acompanhamento.';
+  }
+
+  async function projectTasksReady(projectId) {
+    try {
+      const result = await api(`/tasks?project_id=${encodeURIComponent(projectId)}&limit=40`);
+      const items = Array.isArray(result) ? result : [];
+      if (!items.length) return false;
+      if (items.some(item => AUTO_ACTIVE.has(normalizeStatus(item?.status)))) return false;
+      if (items.some(item => AUTO_FAILURE.has(normalizeStatus(item?.status)))) return false;
+      return items.some(item => ['completed','done'].includes(normalizeStatus(item?.status)));
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async function advanceAutoDelivery(project, card) {
+    if (!project?.id || !String(project.repository_url || '').trim() || typeof api !== 'function') return;
+    const key = String(project.id);
+    if (autoDeliveryInFlight.has(key)) return;
+
+    let current;
+    try {
+      current = await api(`/projects/${encodeURIComponent(key)}/delivery`);
+    } catch (_) {
+      return;
+    }
+    renderDeliveryState(card, current);
+    const status = normalizeStatus(current?.status || 'pending');
+    if (status === 'ready' && current?.url) return;
+    if (!(await projectTasksReady(key))) return;
+
+    const retryable = status === 'failed' || status === 'blocked';
+    const retries = autoDeliveryRetries.get(key) || 0;
+    if (retryable && retries >= AUTO_DELIVERY_MAX_RETRIES) return;
+    if (!['pending','provisioning','deploying','failed','blocked'].includes(status)) return;
+
+    autoDeliveryInFlight.add(key);
+    try {
+      const next = await api(`/projects/${encodeURIComponent(key)}/delivery/auto`, {method:'POST'});
+      if (retryable) autoDeliveryRetries.set(key, retries + 1);
+      renderDeliveryState(card, next || current);
+      if (normalizeStatus(next?.status) === 'ready' && next?.url) {
+        window.toast?.(`Produto pronto: ${next.url}`);
+      }
+    } catch (error) {
+      if (retryable) autoDeliveryRetries.set(key, retries + 1);
+      console.warn('[DevPilot] entrega automática pendente:', error?.message || error);
+    } finally {
+      autoDeliveryInFlight.delete(key);
+    }
+  }
+
   function decorateProjectCards(projects, target) {
     const cards = Array.from(target.children).filter(node => node.classList?.contains('project-card'));
     cards.forEach((card, index) => {
       const project = projects[index];
       if (!project) return;
+      card.dataset.projectId = String(project.id || '');
       ensureGameButton(card, project);
       ensureLiteShip(card, project, index);
+      void advanceAutoDelivery(project, card);
     });
   }
 
@@ -355,6 +475,16 @@
     if (typeof window.renderProjects === 'function') window.renderProjects();
   }
 
+  async function refreshVisibleAutoDelivery() {
+    if (!document.querySelector('#projects-view.active')) return;
+    const allProjects = typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : [];
+    const cards = [...document.querySelectorAll('#projects-list .project-card')];
+    for (const card of cards.slice(0, batchSize())) {
+      const project = allProjects.find(item => String(item?.id || '') === String(card.dataset.projectId || ''));
+      if (project) await advanceAutoDelivery(project, card);
+    }
+  }
+
   injectStyles();
   installRenderGuard();
   installLoadGuard();
@@ -382,5 +512,10 @@
     loadMore();
   });
 
-  console.info('[DevPilot] Mobile Projects Runtime V33 ativo');
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshVisibleAutoDelivery();
+  });
+  window.setInterval(() => void refreshVisibleAutoDelivery(), AUTO_DELIVERY_POLL_MS);
+
+  console.info('[DevPilot] Mobile Projects Runtime V34 ativo · entrega automática até URL');
 })();
