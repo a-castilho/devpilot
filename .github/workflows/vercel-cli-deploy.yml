@@ -141,17 +141,28 @@ jobs:
               FRONT=$(curl -sS -o /tmp/front.html -w '%{http_code}' --max-time 8 "https://${HOST}" || true)
               HEALTH=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 8 "https://${HOST}/health" || true)
               AUTH=$(curl -sS -o /tmp/auth-status.json -w '%{http_code}' --max-time 8 "https://${HOST}/api/auth/status" || true)
-              if [ "$FRONT" = "200" ] && [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ] && grep -Eq '"bootstrap_required"[[:space:]]*:[[:space:]]*false' /tmp/auth-status.json; then
-                echo "Vercel homolog ready: host=$HOST frontend=$FRONT health=$HEALTH auth=$AUTH bootstrap_required=false"
+              LEGACY_BOOTSTRAP=0
+              if grep -q 'DEVPILOT_BOOTSTRAP_TOKEN\|id="save-token"' /tmp/front.html 2>/dev/null; then
+                LEGACY_BOOTSTRAP=1
+              fi
+              AUTH_UI=0
+              if grep -q 'auth-ui.js' /tmp/front.html 2>/dev/null; then
+                AUTH_UI=1
+              fi
+              if [ "$FRONT" = "200" ] && [ "$HEALTH" = "200" ] && [ "$AUTH" = "200" ] && [ "$LEGACY_BOOTSTRAP" = "0" ] && [ "$AUTH_UI" = "1" ] && grep -Eq '"bootstrap_required"[[:space:]]*:[[:space:]]*false' /tmp/auth-status.json; then
+                echo "Vercel homolog ready: host=$HOST frontend=$FRONT health=$HEALTH auth=$AUTH bootstrap_required=false legacy_bootstrap=absent auth_ui=present"
                 READY=1
                 break
               fi
-              echo "Waiting for $HOST: frontend=$FRONT health=$HEALTH auth=$AUTH"
+              echo "Waiting for $HOST: frontend=$FRONT health=$HEALTH auth=$AUTH legacy_bootstrap=$LEGACY_BOOTSTRAP auth_ui=$AUTH_UI"
               sleep 5
             done
             if [ "$READY" != "1" ]; then
-              echo "::error::Homologation is not public/healthy or auth regressed to bootstrap mode for $HOST"
+              echo "::error::Homologation is not public/healthy, auth regressed to bootstrap mode, or legacy bootstrap UI is still published for $HOST"
+              echo "--- auth status ---"
               cat /tmp/auth-status.json 2>/dev/null || true
+              echo "--- legacy markers ---"
+              grep -n 'DEVPILOT_BOOTSTRAP_TOKEN\|id="save-token"\|auth-ui.js' /tmp/front.html 2>/dev/null || true
               exit 1
             fi
           done
