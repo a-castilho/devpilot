@@ -1,0 +1,1 @@
+Homologation branch requires synchronization with main so GitHub credential recovery fixes are present in the runtime. This marker is intentionally temporary and documents the sync request created after diagnosing clone failures without injected credentials.
