@@ -168,10 +168,24 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
 
 
 def install_github_access_bridge() -> None:
-    """Install repository-specific resolution in executor and recovery flows."""
+    """Install repository-specific resolution in every Git checkout and recovery flow."""
     from app.services import executor
     from app.services import failure_recovery
+    from app.services.github_checkout import ensure_repository as ensure_authenticated_repository
     from app.services.recovery import AutoRecoveryService, RecoveryDecision
+
+    # The executor historically had its own clone/fetch implementation. That allowed
+    # some code paths to bypass the repository credential resolver and fall back to an
+    # anonymous HTTPS clone, producing `could not read Username` in non-interactive
+    # workers. Route the canonical executor entry point through the authenticated
+    # checkout service so every caller (worker, RAG, Git reader and recovery flow)
+    # gets the same credential failover behavior.
+    if not getattr(executor.ensure_repository, "_devpilot_repository_access_bridge", False):
+        def ensure_repository(project: Project):
+            return ensure_authenticated_repository(project, executor.run)
+
+        setattr(ensure_repository, "_devpilot_repository_access_bridge", True)
+        executor.ensure_repository = ensure_repository
 
     if not getattr(executor.git_environment, "_devpilot_repository_access_bridge", False):
         def git_environment(project: Project) -> dict[str, str]:
