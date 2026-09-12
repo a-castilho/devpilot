@@ -66,10 +66,10 @@ def _probe(repository_url: str, token: str) -> bool:
 def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAccessResolution:
     """Resolve a credential by proving access to the exact repository.
 
-    Project and organization links are treated as hints, not as truth. The resolver
-    searches active GitHub credentials in the same workspace, validates each one
-    with git ls-remote, then repairs stale project/organization links. No secret is
-    returned to the browser or written to logs.
+    Project and organization links are hints, not requirements. The resolver searches
+    active GitHub credentials in the same workspace, validates each one with
+    ``git ls-remote`` and repairs stale links when possible. Secrets never leave the
+    backend and the end user is never responsible for repository authentication.
     """
     repository_url = str(project.repository_url or "").strip()
     if not repository_url:
@@ -157,13 +157,13 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
                 _git_environment(token),
                 credential_id=str(credential.id),
                 organization_id=str(organization.id) if organization else "",
-                message="Credencial GitHub validada para o repositório.",
+                message="Credencial GitHub cadastrada no DevPilot validada para o repositório.",
             )
 
     return GitHubAccessResolution(
         False,
         {"GIT_TERMINAL_PROMPT": "0"},
-        message="Nenhuma credencial GitHub ativa do workspace possui acesso ao repositório.",
+        message="Nenhuma credencial GitHub administrativa cadastrada no workspace possui acesso ao repositório.",
     )
 
 
@@ -191,23 +191,23 @@ def install_github_access_bridge() -> None:
                 return RecoveryDecision(
                     "github_auth",
                     "resolved",
-                    "O DevPilot reencontrou uma credencial GitHub válida, reparou o vínculo do projeto e retomará a mesma etapa.",
+                    "O DevPilot encontrou uma credencial GitHub cadastrada, reparou o vínculo do projeto quando necessário e retomará a mesma etapa.",
                     execution_attempt < self.MAX_ATTEMPTS,
                     False,
                     "repository_credential_rebind",
                     [{
                         "state": "credential_validated",
                         "attempt": execution_attempt,
-                        "message": "Acesso ao repositório confirmado.",
+                        "message": "Acesso administrativo ao repositório confirmado.",
                     }],
                 )
             return RecoveryDecision(
                 "github_auth",
-                "needs_authorization",
+                "needs_attention",
                 resolution.message,
                 False,
-                True,
-                "request_github_authorization",
+                False,
+                "github_credentials_exhausted_admin",
                 [{
                     "state": "credential_rejected",
                     "attempt": execution_attempt,
@@ -234,20 +234,29 @@ def install_github_access_bridge() -> None:
             return recovery
         if str(failure.get("category") or "").lower() != "github_auth":
             return recovery
-        if recovery.status != TaskStatus.awaiting_approval:
-            return recovery
 
         project = db.get(Project, original_task.project_id)
         if not project:
             return recovery
+
         resolution = resolve_github_access(project)
-        if not resolution.ok:
+        now = datetime.now(timezone.utc)
+
+        if resolution.ok:
+            recovery.requires_approval = False
+            recovery.approved_at = recovery.approved_at or now
+            recovery.status = TaskStatus.queued
+            recovery.updated_at = now
+            db.flush()
             return recovery
 
-        now = datetime.now(timezone.utc)
+        # GitHub access is an administrative system dependency, never an end-user
+        # approval gate. Keep the recovery visible but blocked until a system
+        # credential is corrected; do not render a fake GitHub authorization action.
         recovery.requires_approval = False
         recovery.approved_at = recovery.approved_at or now
-        recovery.status = TaskStatus.queued
+        if recovery.status == TaskStatus.awaiting_approval:
+            recovery.status = TaskStatus.blocked
         recovery.updated_at = now
         db.flush()
         return recovery

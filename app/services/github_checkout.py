@@ -39,17 +39,12 @@ def _git_environment(access_token: str | None = None) -> dict[str, str]:
 def _resolve_github_token(project: Project, run_command: RunCommand) -> str | None:
     """Return the first workspace credential that can actually read this repository.
 
-    The organization credential is preferred, but stale bindings no longer make the
-    clone run unauthenticated. A successful fallback is persisted on the organization
-    so subsequent worker runs use the same validated credential.
+    A project/organization binding is only a preference. Every enabled GitHub
+    credential registered in the same workspace is eligible for failover, so a stale
+    or missing organization link never forces the end user to authenticate GitHub.
     """
-    if not project.organization_id:
-        return None
-
     with SessionLocal() as db:
-        organization = db.get(Organization, project.organization_id)
-        if not organization:
-            return None
+        organization = db.get(Organization, project.organization_id) if project.organization_id else None
 
         credentials = list(
             db.scalars(
@@ -60,12 +55,15 @@ def _resolve_github_token(project: Project, run_command: RunCommand) -> str | No
                 )
             ).all()
         )
-        credentials.sort(key=lambda item: item.id != organization.credential_id)
+        preferred_credential_id = organization.credential_id if organization else None
+        credentials.sort(key=lambda item: (item.id != preferred_credential_id, item.id))
 
         for credential in credentials:
             try:
-                token = Vault().decrypt(credential.encrypted_secret)
-            except ValueError:
+                token = Vault().decrypt(credential.encrypted_secret).strip()
+            except (TypeError, ValueError):
+                continue
+            if not token:
                 continue
 
             probe = run_command(
@@ -76,7 +74,9 @@ def _resolve_github_token(project: Project, run_command: RunCommand) -> str | No
             if getattr(probe, "returncode", 1) != 0:
                 continue
 
-            if organization.credential_id != credential.id or organization.last_sync_error:
+            if organization and (
+                organization.credential_id != credential.id or organization.last_sync_error
+            ):
                 organization.credential_id = credential.id
                 organization.last_sync_error = ""
                 db.commit()
@@ -88,11 +88,11 @@ def _resolve_github_token(project: Project, run_command: RunCommand) -> str | No
 def ensure_repository(project: Project, run_command: RunCommand) -> Path:
     """Prepare the checkout only after resolving a usable GitHub credential.
 
-    For public repositories the unauthenticated probe succeeds naturally. For private
+    For public repositories the unauthenticated clone succeeds naturally. For private
     repositories every active workspace credential is tested without exposing tokens
     in argv, logs or repository URLs. If no credential works, the clone is allowed to
-    fail with the normal Git error so the existing recovery classifier remains the
-    single authority for user-facing diagnosis.
+    fail with the normal Git error so the recovery classifier can register an
+    administrative repository-access problem without asking the end user for GitHub.
     """
     path = _repository_path(project)
     token = _resolve_github_token(project, run_command)
