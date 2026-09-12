@@ -95,11 +95,20 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
             str(item.created_at or ""),
         ))
 
+        decryptable = 0
         for credential in credentials[:_MAX_CREDENTIAL_CANDIDATES]:
+            vault = Vault()
             try:
-                token = Vault().decrypt(credential.encrypted_secret).strip()
+                token = vault.decrypt(credential.encrypted_secret).strip()
+                rotated_secret = vault.rotate(credential.encrypted_secret)
             except (TypeError, ValueError):
                 continue
+
+            decryptable += 1
+            if rotated_secret != credential.encrypted_secret:
+                credential.encrypted_secret = rotated_secret
+                db.commit()
+
             if not token or not _probe(repository_url, token):
                 continue
 
@@ -124,11 +133,12 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
                 message="Credencial GitHub cadastrada no DevPilot validada para o repositório.",
             )
 
-    return GitHubAccessResolution(
-        False,
-        {"GIT_TERMINAL_PROMPT": "0"},
-        message="Nenhuma credencial GitHub administrativa cadastrada no workspace possui acesso ao repositório.",
-    )
+    if credentials and decryptable == 0:
+        message = "As credenciais GitHub existem, mas não puderam ser descriptografadas por este runtime. A rotação automática de chave está aguardando uma instância com a chave anterior válida."
+    else:
+        message = "Nenhuma credencial GitHub administrativa cadastrada no workspace possui acesso ao repositório."
+
+    return GitHubAccessResolution(False, {"GIT_TERMINAL_PROMPT": "0"}, message=message)
 
 
 def install_github_access_bridge() -> None:
