@@ -31,7 +31,7 @@ services:
       - key: DEVPILOT_ENCRYPTION_KEY
         generateValue: true
       - key: DEVPILOT_EXECUTION_ENABLED
-        value: "false"
+        value: "true"
       - key: DEVPILOT_EMBEDDED_WORKER
         value: "true"
       - key: DEVPILOT_ALLOWED_GIT_HOSTS
