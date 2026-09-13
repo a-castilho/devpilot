@@ -5,16 +5,16 @@ import re
 from pathlib import Path
 from typing import Callable
 
-from sqlalchemy import select
-
 from app.config import get_settings
-from app.db import SessionLocal
-from app.models import Organization, Project, ProviderCredential
-from app.services.vault import Vault
+from app.models import Project
 
 
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
 RunCommand = Callable[..., object]
+
+
+class GitHubRepositoryAccessError(RuntimeError):
+    """Raised when DevPilot cannot prove access to a GitHub repository before checkout."""
 
 
 def _repository_path(project: Project) -> Path:
@@ -36,67 +36,48 @@ def _git_environment(access_token: str | None = None) -> dict[str, str]:
     return environment
 
 
-def _resolve_github_token(project: Project, run_command: RunCommand) -> str | None:
-    """Return the first workspace credential that can actually read this repository.
+def _public_repository_access(project: Project, run_command: RunCommand) -> bool:
+    """Return True when the exact repository can be read without credentials."""
+    result = run_command(
+        ["git", "ls-remote", project.repository_url, "HEAD"],
+        timeout=45,
+        env_overrides={"GIT_TERMINAL_PROMPT": "0"},
+    )
+    return getattr(result, "returncode", 1) == 0
 
-    A project/organization binding is only a preference. Every enabled GitHub
-    credential registered in the same workspace is eligible for failover, so a stale
-    or missing organization link never forces the end user to authenticate GitHub.
+
+def _resolved_git_environment(project: Project, run_command: RunCommand) -> dict[str, str]:
+    """Resolve repository access before clone/fetch.
+
+    Public repositories are accepted without credentials. Otherwise the canonical
+    GitHub access resolver validates every enabled GitHub credential in the workspace,
+    repairs stale project/organization bindings when possible and returns the proven
+    authentication environment. No clone/fetch is attempted until access is proven.
     """
-    with SessionLocal() as db:
-        organization = db.get(Organization, project.organization_id) if project.organization_id else None
+    if _public_repository_access(project, run_command):
+        return {"GIT_TERMINAL_PROMPT": "0"}
 
-        credentials = list(
-            db.scalars(
-                select(ProviderCredential).where(
-                    ProviderCredential.workspace_id == project.workspace_id,
-                    ProviderCredential.provider == "github",
-                    ProviderCredential.enabled.is_(True),
-                )
-            ).all()
-        )
-        preferred_credential_id = organization.credential_id if organization else None
-        credentials.sort(key=lambda item: (item.id != preferred_credential_id, item.id))
+    # Local import avoids service-package import cycles during application bootstrap.
+    from app.services.github_access_bridge import resolve_github_access
 
-        for credential in credentials:
-            try:
-                token = Vault().decrypt(credential.encrypted_secret).strip()
-            except (TypeError, ValueError):
-                continue
-            if not token:
-                continue
+    resolution = resolve_github_access(project)
+    if resolution.ok:
+        return resolution.environment
 
-            probe = run_command(
-                ["git", "ls-remote", project.repository_url, "HEAD"],
-                timeout=45,
-                env_overrides=_git_environment(token),
-            )
-            if getattr(probe, "returncode", 1) != 0:
-                continue
-
-            if organization and (
-                organization.credential_id != credential.id or organization.last_sync_error
-            ):
-                organization.credential_id = credential.id
-                organization.last_sync_error = ""
-                db.commit()
-            return token
-
-    return None
+    message = str(resolution.message or "Nenhuma credencial GitHub válida foi encontrada.").strip()
+    raise GitHubRepositoryAccessError(f"repository access denied: {message}")
 
 
 def ensure_repository(project: Project, run_command: RunCommand) -> Path:
-    """Prepare the checkout only after resolving a usable GitHub credential.
+    """Prepare checkout only after DevPilot has proven repository access.
 
-    For public repositories the unauthenticated clone succeeds naturally. For private
-    repositories every active workspace credential is tested without exposing tokens
-    in argv, logs or repository URLs. If no credential works, the clone is allowed to
-    fail with the normal Git error so the recovery classifier can register an
-    administrative repository-access problem without asking the end user for GitHub.
+    This is a preflight gate: a private/inaccessible repository never reaches an
+    unauthenticated ``git clone`` or ``git fetch``. That keeps GitHub authorization as
+    an administrative system dependency and lets the recovery flow block/revalidate
+    the same task instead of producing a misleading execution failure first.
     """
     path = _repository_path(project)
-    token = _resolve_github_token(project, run_command)
-    git_env = _git_environment(token)
+    git_env = _resolved_git_environment(project, run_command)
 
     if not path.exists():
         result = run_command(
