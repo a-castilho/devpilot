@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.blueprint_routes import registry as blueprint_registry
+from app.blueprint_routes import router as blueprint_router
+from app.blueprint_routes import service as blueprint_service
+from app.blueprints import ProjectRequirements
 from app.db import SessionLocal, get_db
 from app.models import Organization, Project, ProviderCredential, Repository, Workspace
 from app.security import Principal, Role, require_access, require_super_admin, session_principal
@@ -20,6 +24,7 @@ AUTHORIZED_ORGANIZATION = "a-castilho"
 GENERIC_PROJECT_CREATE_ERROR = "Não foi possível criar o projeto. A administração foi notificada."
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
+router.include_router(blueprint_router)
 
 
 class ProjectProvisionCreate(BaseModel):
@@ -127,6 +132,43 @@ def project_config(project: Project) -> dict:
     return {}
 
 
+def _string_dict(value: object) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {str(key): str(item) for key, item in value.items() if item is not None}
+
+
+def _string_list(value: object) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple, set)):
+        return ()
+    return tuple(str(item) for item in value if item)
+
+
+def select_project_blueprint(config: dict, description: str) -> dict | None:
+    """Select a reusable base before project-specific generation; never blocks project creation."""
+    explicit = str(config.get("blueprint_slug") or "").strip()
+    try:
+        if explicit:
+            manifest = blueprint_registry.get(explicit, str(config.get("blueprint_version") or "") or None)
+            return {
+                "slug": manifest.slug,
+                "version": manifest.version,
+                "score": 1.0,
+                "reasons": ["explicit selection"],
+            }
+        requirements = ProjectRequirements(
+            description=description,
+            stack=_string_dict(config.get("stack")),
+            capabilities=_string_list(config.get("capabilities")),
+            tags=_string_list(config.get("tags")),
+        )
+        matches = blueprint_service.recommend(requirements, minimum_score=0.35, limit=1)
+        return blueprint_service.selection_payload(matches[0]) if matches else None
+    except (KeyError, ValueError, OSError) as error:
+        logger.warning("Blueprint selection failed; falling back to normal generation: %s", error)
+        return None
+
+
 def persist_deferred_project(
     db: Session,
     *,
@@ -147,6 +189,10 @@ def persist_deferred_project(
     config["repository_provision_state"] = (
         "queued" if source == "automatic_provision_queued" else "pending"
     )
+    blueprint = select_project_blueprint(config, description)
+    config["generation_strategy"] = "blueprint_delta" if blueprint else "from_scratch"
+    if blueprint:
+        config["blueprint"] = blueprint
 
     item = Project(
         workspace_id=ws.id,
@@ -161,6 +207,15 @@ def persist_deferred_project(
     )
     db.add(item)
     db.flush()
+    if blueprint:
+        blueprint_registry.record_usage(
+            project_id=item.id,
+            slug=blueprint["slug"],
+            version=blueprint["version"],
+            score=float(blueprint["score"]),
+            outcome="selected",
+            metadata={"source": source},
+        )
     record(
         db,
         workspace_id=ws.id,
@@ -173,6 +228,8 @@ def persist_deferred_project(
             "repository_provision_state": config["repository_provision_state"],
             "organization_id": item.organization_id,
             "source": source,
+            "generation_strategy": config["generation_strategy"],
+            "blueprint": blueprint,
         },
     )
     db.commit()
