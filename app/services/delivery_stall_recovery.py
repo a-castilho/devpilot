@@ -95,7 +95,7 @@ def recover_stalled_delivery_repairs_once() -> int:
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         projects = list(
-            db.scalars(select(Project).order_by(Project.updated_at.desc()).limit(250)).all()
+            db.scalars(select(Project).order_by(Project.created_at.desc()).limit(250)).all()
         )
         for project in projects:
             state = _delivery_state(project)
