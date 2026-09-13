@@ -39,11 +39,13 @@ def test_pipeline_repair_panel_and_mobile_menu_sync_are_preserved():
     assert "source:'super-admin-diagnostics'" in text
 
 
-def test_pipeline_repair_view_recovers_from_hidden_navigation_state():
+def test_pipeline_repair_view_bypasses_generic_router_and_unhides_itself():
     text = source()
 
-    assert "button.dataset.view = 'pipeline-repair'" in text
+    assert "button.dataset.view = 'pipeline-repair'" not in text
     assert "view.hidden = !active" in text
     assert "section.hidden = false" in text
+    assert "section.removeAttribute('hidden')" in text
     assert "section.setAttribute('aria-hidden', 'false')" in text
+    assert "event.stopPropagation()" in text
     assert "document.documentElement.dataset.devpilotView = 'pipeline-repair'" in text
