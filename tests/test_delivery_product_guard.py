@@ -36,12 +36,29 @@ def test_delivery_repair_uses_original_project_scope_and_remote_proof():
     assert "MAX_SAFE_RETRIES = 3" in GUARD
 
 
+def test_public_repository_still_gets_inspected_if_saved_github_credential_fails():
+    assert "candidates = [dict(base_headers)]" in GUARD
+    assert 'authenticated["Authorization"] = f"Bearer {token}"' in GUARD
+    assert "candidates.insert(0, authenticated)" in GUARD
+    assert "for headers in candidates" in GUARD
+    assert "if response.status_code == 200" in GUARD
+
+
 def test_product_guard_runs_before_public_url_recovery():
     cloud_pos = RECOVERY.index("install_delivery_cloud_bridge()")
     guard_pos = RECOVERY.index("install_delivery_product_guard()")
     wrapper_pos = RECOVERY.index("current = delivery.run_delivery", guard_pos)
     assert cloud_pos < guard_pos < wrapper_pos
     assert 'if status == "repairing":' in RECOVERY
+
+
+def test_backend_reconciles_delivery_without_browser_polling():
+    assert '_RECONCILE_STATUSES = {"repairing", "provisioning", "deploying"}' in RECOVERY
+    assert "def _reconcile_once()" in RECOVERY
+    assert 'delivery.run_delivery(db, project, "delivery-reconciler")' in RECOVERY
+    assert 'name="devpilot-delivery-reconciler"' in RECOVERY
+    assert "daemon=True" in RECOVERY
+    assert "Project.created_at.desc()" in RECOVERY
 
 
 def test_game_keeps_advancing_automatic_repair_until_remote_proof():
