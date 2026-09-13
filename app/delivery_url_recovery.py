@@ -271,7 +271,7 @@ def _run_delivery_with_public_url_recovery(
 def _reconcile_once() -> int:
     processed = 0
     with SessionLocal() as db:
-        projects = list(db.scalars(select(Project).order_by(Project.updated_at.desc()).limit(200)).all())
+        projects = list(db.scalars(select(Project).order_by(Project.created_at.desc()).limit(200)).all())
         for project in projects:
             state = delivery.initial_delivery(project)
             status = str(state.get("status") or "").lower()
