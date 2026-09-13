@@ -164,8 +164,12 @@
       }
 
       if (status === 'repairing') {
+        delivery = await call(endpoint(projectId, '/auto'), {method: 'POST'});
+        status = normalized(delivery);
         render(panel, delivery || {});
-        schedule(panel, projectId, attempt + 1);
+        if (!delivered(delivery) && ['repairing', 'provisioning', 'deploying', 'failed', 'blocked'].includes(status)) {
+          schedule(panel, projectId, attempt + 1);
+        }
         return;
       }
 
