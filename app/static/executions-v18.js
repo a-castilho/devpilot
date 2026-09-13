@@ -171,12 +171,141 @@
     }
   }
 
+  const DELIVERY_CACHE_TTL_MS = 30000;
+  const DELIVERY_VISIBLE_LIMIT = 12;
+  const deliveryCache = new Map();
+  const deliveryRequests = new Map();
+  let accessLinkFrame = 0;
+
+  const stateTasks = () => (typeof state !== 'undefined' && Array.isArray(state.tasks) ? state.tasks : []);
+  const stateProjects = () => (typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : []);
+  const safePublicUrl = value => {
+    const candidate = String(value || '').trim();
+    return /^https:\/\//i.test(candidate) ? candidate : '';
+  };
+  const readyDelivery = delivery => String(delivery?.status || '').trim().toLowerCase() === 'ready' && Boolean(safePublicUrl(delivery?.url));
+  const projectById = projectId => stateProjects().find(project => String(project?.id || '') === String(projectId || ''));
+
+  async function fetchReadyDelivery(projectId) {
+    const key = String(projectId || '').trim();
+    if (!key || typeof api !== 'function') return null;
+    const cached = deliveryCache.get(key);
+    if (cached && Date.now() - cached.at < DELIVERY_CACHE_TTL_MS) return cached.value;
+    if (deliveryRequests.has(key)) return deliveryRequests.get(key);
+
+    const request = api(`/projects/${encodeURIComponent(key)}/delivery`)
+      .then(value => {
+        const delivery = readyDelivery(value) ? {status:'ready', url:safePublicUrl(value.url)} : null;
+        deliveryCache.set(key, {at:Date.now(), value:delivery});
+        return delivery;
+      })
+      .catch(() => null)
+      .finally(() => deliveryRequests.delete(key));
+    deliveryRequests.set(key, request);
+    return request;
+  }
+
+  function accessLink(project, url, className) {
+    const link = document.createElement('a');
+    link.className = `project-ready-access-link ${className}`.trim();
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.title = `Abrir ${project?.name || 'projeto'} · ${url}`;
+    link.setAttribute('aria-label', `Abrir projeto ${project?.name || ''}`.trim());
+    link.innerHTML = '<span aria-hidden="true">🌐</span> Abrir projeto <span aria-hidden="true">↗</span>';
+    link.addEventListener('click', event => event.stopPropagation());
+    return link;
+  }
+
+  async function decorateExecutionProjectLinks() {
+    const rows = qsa('#tasks-table tr.task-main-row[data-task-id], #tasks-table tr.tasks-v9-row[data-task-id]').slice(0, DELIVERY_VISIBLE_LIMIT);
+    if (!rows.length) return;
+    const byTask = new Map(stateTasks().map(task => [String(task?.id || ''), task]));
+    const projectIds = [...new Set(rows.map(row => String(byTask.get(String(row.dataset.taskId || ''))?.project_id || '')).filter(Boolean))];
+    const deliveries = new Map(await Promise.all(projectIds.map(async projectId => [projectId, await fetchReadyDelivery(projectId)])));
+
+    rows.forEach(row => {
+      const task = byTask.get(String(row.dataset.taskId || ''));
+      const projectId = String(task?.project_id || '');
+      const project = projectById(projectId);
+      const delivery = deliveries.get(projectId);
+      const host = qs('.tasks-v9-main, .task-primary-cell, td', row);
+      const current = qs('.project-ready-access-link-execution', row);
+      if (!project || !delivery?.url || !host) {
+        current?.remove();
+        return;
+      }
+      if (current) {
+        current.href = delivery.url;
+        current.title = `Abrir ${project.name || 'projeto'} · ${delivery.url}`;
+        return;
+      }
+      const link = accessLink(project, delivery.url, 'project-ready-access-link-execution');
+      link.style.cssText = 'display:inline-flex;align-items:center;gap:5px;margin-top:7px;padding:6px 9px;border:1px solid rgba(54,211,153,.28);border-radius:9px;color:#7ce7cf;text-decoration:none;font-size:.76rem;font-weight:800;max-width:100%';
+      host.appendChild(link);
+    });
+  }
+
+  async function decorateOverviewProjectLinks() {
+    const recent = qs('#recent-tasks');
+    if (!recent) return;
+    const recentProjectIds = [...new Set(stateTasks().slice(0, 6).map(task => String(task?.project_id || '')).filter(Boolean))];
+    if (!recentProjectIds.length) {
+      qs('#overview-project-ready-links')?.remove();
+      return;
+    }
+
+    const deliveries = new Map(await Promise.all(recentProjectIds.map(async projectId => [projectId, await fetchReadyDelivery(projectId)])));
+    const ready = recentProjectIds
+      .map(projectId => ({project:projectById(projectId), delivery:deliveries.get(projectId)}))
+      .filter(item => item.project && item.delivery?.url)
+      .slice(0, 6);
+
+    if (!ready.length) {
+      qs('#overview-project-ready-links')?.remove();
+      return;
+    }
+
+    let host = qs('#overview-project-ready-links');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'overview-project-ready-links';
+      host.style.cssText = 'display:grid;gap:7px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(255,255,255,.08)';
+      recent.insertAdjacentElement('afterend', host);
+    }
+    host.innerHTML = '<strong style="font-size:.76rem;letter-spacing:.04em;color:#9eacc2">PROJETOS DISPONÍVEIS PARA TESTE</strong>';
+
+    ready.forEach(({project, delivery}) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0';
+      const name = document.createElement('span');
+      name.textContent = project.name || 'Projeto';
+      name.style.cssText = 'min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.8rem;color:#c8d3e6';
+      row.appendChild(name);
+      const link = accessLink(project, delivery.url, 'project-ready-access-link-overview');
+      link.style.cssText = 'display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;padding:6px 8px;border:1px solid rgba(54,211,153,.28);border-radius:9px;color:#7ce7cf;text-decoration:none;font-size:.72rem;font-weight:800';
+      row.appendChild(link);
+      host.appendChild(row);
+    });
+  }
+
+  function scheduleProjectAccessLinks() {
+    if (accessLinkFrame) return;
+    accessLinkFrame = window.requestAnimationFrame(() => {
+      accessLinkFrame = 0;
+      if (qs('#tasks-view.active')) void decorateExecutionProjectLinks();
+      if (qs('#overview-view.active')) void decorateOverviewProjectLinks();
+    });
+  }
+
   let labelFrame = 0;
   function scheduleLabels() {
     if (labelFrame) return;
     labelFrame = window.requestAnimationFrame(() => {
       labelFrame = 0;
       executionLabels();
+      scheduleProjectAccessLinks();
     });
   }
 
@@ -188,6 +317,7 @@
       void requestOperationalTasksUi();
     }
     scheduleLabels();
+    if (event.detail?.view === 'tasks' || event.detail?.view === 'overview') scheduleProjectAccessLinks();
   });
   document.addEventListener('devpilot:page-ready', scheduleLabels);
   document.addEventListener('devpilot:tasks-rendered', scheduleLabels);
@@ -199,6 +329,7 @@
     scheduleLabels();
   });
   document.addEventListener('devpilot:execution-created', scheduleLabels);
+  document.addEventListener('devpilot:authenticated-ui-ready', scheduleProjectAccessLinks);
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scheduleLabels, {once:true});
@@ -206,6 +337,6 @@
     scheduleLabels();
   }
 
-  document.documentElement.dataset.devpilotExecutions = 'v46';
-  console.info('[DevPilot] Execuções V46 · runtime único operacional');
+  document.documentElement.dataset.devpilotExecutions = 'v47';
+  console.info('[DevPilot] Execuções V47 · runtime único operacional + acesso ao projeto publicado');
 })();
