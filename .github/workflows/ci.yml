@@ -16,8 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Use repository variable DEVPILOT_RUNNER=devpilot-ci (or self-hosted)
-# to bypass GitHub-hosted minute exhaustion without weakening any gate.
+# Policy and quality intentionally use GitHub-hosted runners so an unavailable
+# local runner cannot stall every PR. Self-hosted remains reserved for the
+# runtime image/local Linux smoke where machine-specific validation is useful.
 jobs:
   changes:
     name: Detect change scope
@@ -77,7 +78,7 @@ jobs:
 
   policy:
     name: DevPilot policy
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout full history for policy diff
@@ -120,7 +121,7 @@ jobs:
   quality:
     name: DevPilot quality
     needs: [policy, changes]
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
       DEVPILOT_RUN_BROWSER_E2E: ${{ needs.changes.outputs.frontend_only == 'true' && '0' || '1' }}
@@ -151,7 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "Frontend-only change: skipping dependency install, browser E2E, critical matrix and Docker image."
-          mapfile -t JS_FILES < <(git diff --name-only "$DEVPILOT_POLICY_BASE" HEAD -- 'app/static/**/*.js' 'app/static/*.js')
+          mapfile -t JS_FILES < <(git diff --name-only "$DEVPILOT_POLICY_BASE" HEAD | grep -E '^app/static/.*\.js$' || true)
           for file in "${JS_FILES[@]}"; do
             [[ -f "$file" ]] || continue
             echo "node --check $file"
@@ -183,13 +184,9 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -e '.[test,e2e]'
 
-      - name: Install Chromium on GitHub-hosted runner
-        if: needs.changes.outputs.frontend_only != 'true' && !vars.DEVPILOT_RUNNER
+      - name: Install Chromium
+        if: needs.changes.outputs.frontend_only != 'true'
         run: python3 -m playwright install --with-deps chromium
-
-      - name: Install Chromium on self-hosted runner
-        if: needs.changes.outputs.frontend_only != 'true' && vars.DEVPILOT_RUNNER
-        run: python3 -m playwright install chromium
 
       - name: Run complete validation including critical matrix and browser E2E
         if: needs.changes.outputs.frontend_only != 'true'
