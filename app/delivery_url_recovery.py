@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -10,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
+from app.db import SessionLocal
 from app.delivery_cloud_bridge import install_delivery_cloud_bridge
 from app.models import AuditEvent, Project
 from app.services.audit import record
@@ -17,10 +20,13 @@ from app.services.delivery_product_guard import install_delivery_product_guard
 
 
 _RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning", "repairing"}
+_RECONCILE_STATUSES = {"repairing", "provisioning", "deploying"}
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GENERIC_DELIVERY_ERROR = "Não foi possível concluir esta etapa. Tente novamente."
 _ORIGINAL_RUN_DELIVERY = delivery.run_delivery
+_RECONCILER_STARTED = False
+_RECONCILER_LOCK = threading.Lock()
 
 
 def _safe_public_url(value: object) -> str:
@@ -262,6 +268,58 @@ def _run_delivery_with_public_url_recovery(
     return state
 
 
+def _reconcile_once() -> int:
+    processed = 0
+    with SessionLocal() as db:
+        projects = list(db.scalars(select(Project).order_by(Project.updated_at.desc()).limit(200)).all())
+        for project in projects:
+            state = delivery.initial_delivery(project)
+            status = str(state.get("status") or "").lower()
+            if status not in _RECONCILE_STATUSES or state.get("delivery_gate") == "delivered":
+                continue
+            try:
+                delivery.run_delivery(db, project, "delivery-reconciler")
+                processed += 1
+            except Exception as error:
+                db.rollback()
+                print(
+                    f"[delivery-reconciler] project={project.id} status={status} error={type(error).__name__}: {str(error)[:180]}",
+                    flush=True,
+                )
+    return processed
+
+
+def _reconciler_loop() -> None:
+    # Give application startup/migrations time to settle, then continue delivery
+    # independently from any browser session. The worker executes repair tasks; this
+    # loop re-proves the remote product and advances cloud publication afterwards.
+    time.sleep(4)
+    while True:
+        try:
+            processed = _reconcile_once()
+            if processed:
+                print(f"[delivery-reconciler] processed={processed}", flush=True)
+        except Exception as error:
+            print(
+                f"[delivery-reconciler] cycle error={type(error).__name__}: {str(error)[:180]}",
+                flush=True,
+            )
+        time.sleep(8)
+
+
+def _start_reconciler() -> None:
+    global _RECONCILER_STARTED
+    with _RECONCILER_LOCK:
+        if _RECONCILER_STARTED:
+            return
+        _RECONCILER_STARTED = True
+        threading.Thread(
+            target=_reconciler_loop,
+            name="devpilot-delivery-reconciler",
+            daemon=True,
+        ).start()
+
+
 @delivery.router.post("/projects/{project_id}/delivery/validate-url")
 def validate_delivery_url(
     project_id: str,
@@ -304,8 +362,10 @@ def install_delivery_url_recovery() -> None:
     install_delivery_product_guard()
     current = delivery.run_delivery
     if getattr(current, "_devpilot_public_url_recovery", False):
+        _start_reconciler()
         return
     global _ORIGINAL_RUN_DELIVERY
     _ORIGINAL_RUN_DELIVERY = current
     setattr(_run_delivery_with_public_url_recovery, "_devpilot_public_url_recovery", True)
     delivery.run_delivery = _run_delivery_with_public_url_recovery
+    _start_reconciler()
