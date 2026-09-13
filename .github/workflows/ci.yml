@@ -15,12 +15,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Use repository variable DEVPILOT_RUNNER=devpilot-ci (or self-hosted)
-# to bypass GitHub-hosted minute exhaustion without weakening any gate.
+# CI deve ser independente da máquina local. Runners self-hosted continuam úteis
+# para tarefas auxiliares, mas não podem bloquear o gate principal quando estiverem offline.
 jobs:
   policy:
     name: DevPilot policy
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout full history for policy diff
@@ -63,7 +63,7 @@ jobs:
   quality:
     name: DevPilot full quality
     needs: policy
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
       DEVPILOT_RUN_BROWSER_E2E: "1"
@@ -108,13 +108,8 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -e '.[test,e2e]'
 
-      - name: Install Chromium on GitHub-hosted runner
-        if: ${{ !vars.DEVPILOT_RUNNER }}
+      - name: Install Chromium
         run: python3 -m playwright install --with-deps chromium
-
-      - name: Install Chromium on self-hosted runner
-        if: ${{ vars.DEVPILOT_RUNNER }}
-        run: python3 -m playwright install chromium
 
       - name: Run complete validation including critical matrix and browser E2E
         run: |
@@ -134,19 +129,14 @@ jobs:
     name: DevPilot runtime image
     if: github.event_name != 'pull_request'
     needs: quality
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Build Docker image
-        run: |
-          if [[ -n "${{ vars.DEVPILOT_RUNNER }}" ]]; then
-            docker build --network=host -t devpilot:ci .
-          else
-            docker build -t devpilot:ci .
-          fi
+        run: docker build -t devpilot:ci .
 
       - name: Verify worker runtime tools
         run: |

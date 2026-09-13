@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     repo: https://github.com/a-castilho/devpilot
-    branch: homolog/snapshot-20260909
+    branch: main
     renderSubdomainPolicy: enabled
     dockerfilePath: ./Dockerfile
     dockerContext: .
@@ -31,7 +31,7 @@ services:
       - key: DEVPILOT_ENCRYPTION_KEY
         generateValue: true
       - key: DEVPILOT_EXECUTION_ENABLED
-        value: "false"
+        value: "true"
       - key: DEVPILOT_EMBEDDED_WORKER
         value: "true"
       - key: DEVPILOT_ALLOWED_GIT_HOSTS

@@ -1,4 +1,11 @@
-from app.services.github_access_bridge import _git_environment, _repository_owner
+from types import SimpleNamespace
+
+from app.services import executor
+from app.services.github_access_bridge import (
+    _git_environment,
+    _managed_repository,
+    _repository_owner,
+)
 
 
 def test_repository_owner_accepts_https_and_ssh():
@@ -12,3 +19,31 @@ def test_git_environment_is_non_interactive_and_uses_header_not_url():
     assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
     assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
     assert "github_pat_example" not in env["GIT_CONFIG_VALUE_0"]
+
+
+def test_executor_repository_checkout_is_installed_through_access_bridge():
+    assert getattr(executor.ensure_repository, "_devpilot_repository_access_bridge", False) is True
+
+
+def test_managed_repository_can_be_repaired_from_automatic_project_metadata():
+    project = SimpleNamespace(
+        repository_url="https://github.com/outro-owner/repo-antigo.git",
+        codex_config='{"repository_mode":"automatic","repository_pending":false}',
+    )
+    assert _managed_repository(project) is True
+
+
+def test_managed_repository_can_be_repaired_when_it_belongs_to_admin_org():
+    project = SimpleNamespace(
+        repository_url="https://github.com/a-castilho/candidataai.git",
+        codex_config="{}",
+    )
+    assert _managed_repository(project) is True
+
+
+def test_explicit_third_party_repository_is_never_silently_replaced():
+    project = SimpleNamespace(
+        repository_url="https://github.com/cliente/repo-privado.git",
+        codex_config='{"repository_mode":"external","repository_pending":false}',
+    )
+    assert _managed_repository(project) is False
