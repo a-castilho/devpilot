@@ -13,9 +13,10 @@ from app import product_delivery_routes as delivery
 from app.delivery_cloud_bridge import install_delivery_cloud_bridge
 from app.models import AuditEvent, Project
 from app.services.audit import record
+from app.services.delivery_product_guard import install_delivery_product_guard
 
 
-_RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning"}
+_RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning", "repairing"}
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GENERIC_DELIVERY_ERROR = "Não foi possível concluir esta etapa. Tente novamente."
@@ -240,6 +241,11 @@ def _run_delivery_with_public_url_recovery(
     state = _surface_delivery_failure(db, project, state)
     status = str(state.get("status") or "").lower()
 
+    # A product repair is an active internal state. It must never be bypassed by
+    # scavenging an old deployment URL from provider metadata.
+    if status == "repairing":
+        return state
+
     if status in _RECOVERABLE_STATUSES:
         return _recover_public_url(db, project, actor, state)
 
@@ -270,6 +276,9 @@ def validate_delivery_url(
     """
     project = delivery.project_or_404(db, project_id)
     state = delivery.initial_delivery(project)
+    if str(state.get("status") or "").lower() == "repairing":
+        return state
+
     recovered = _recover_public_url(db, project, actor, state)
     if str(recovered.get("status") or "").lower() == "ready" and _safe_public_url(recovered.get("url")):
         return recovered
@@ -286,15 +295,17 @@ def validate_delivery_url(
 def install_delivery_url_recovery() -> None:
     """Recover a real test URL and reuse clouds configured by Super Admin.
 
-    Managed Neon/Render/Vercel credentials remain the primary delivery path. The bridge makes
-    that path consume the canonical credentials from Super Admin > Clouds. If managed deploy is
-    still pending, DevPilot can also recover an already-published Vercel/Render URL. A build-game
-    mission is only considered delivered after the public URL is reachable and tied to this
-    project's delivery metadata.
+    Managed Neon/Render/Vercel credentials remain the primary delivery path. Before cloud
+    provisioning, the product guard proves that the requested system is actually materialized
+    on the remote default branch and starts an autonomous repair task when it is not. Only after
+    that proof may the public URL recovery/gate mark the mission as delivered.
     """
     install_delivery_cloud_bridge()
+    install_delivery_product_guard()
     current = delivery.run_delivery
     if getattr(current, "_devpilot_public_url_recovery", False):
         return
+    global _ORIGINAL_RUN_DELIVERY
+    _ORIGINAL_RUN_DELIVERY = current
     setattr(_run_delivery_with_public_url_recovery, "_devpilot_public_url_recovery", True)
     delivery.run_delivery = _run_delivery_with_public_url_recovery
