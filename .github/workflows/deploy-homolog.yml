@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: devpilot-homolog-deploy
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
@@ -60,7 +64,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          code=$(curl -L -sS -o /tmp/devpilot-render-preflight.txt -w '%{http_code}' --max-time 20 "${BASE_URL}/health" || true)
+          code=$(curl -L -sS -o /tmp/devpilot-render-preflight.txt -w '%{http_code}' --max-time 12 "${BASE_URL}/health" || true)
           if [ "$code" = "404" ]; then
             echo "::error::Render homolog target returned HTTP 404. The devpilot-homolog service/Blueprint is not provisioned at this URL, or its onrender.com subdomain is disabled. Connect render.yaml in Render (New > Blueprint) or configure RENDER_HOMOLOG_BASE_URL for the actual service URL before retrying."
             cat /tmp/devpilot-render-preflight.txt 2>/dev/null || true
@@ -75,8 +79,8 @@ jobs:
         run: |
           set -euo pipefail
           echo "Waiting for ${BASE_URL}/health"
-          for attempt in $(seq 1 60); do
-            code=$(curl -L -sS -o /tmp/devpilot-health.json -w '%{http_code}' --max-time 20 "${BASE_URL}/health" || true)
+          for attempt in $(seq 1 90); do
+            code=$(curl -L -sS -o /tmp/devpilot-health.json -w '%{http_code}' --max-time 8 "${BASE_URL}/health" || true)
             if [ "$code" = "200" ] && grep -qi 'devpilot' /tmp/devpilot-health.json; then
               echo "Health check OK on attempt ${attempt}."
               cat /tmp/devpilot-health.json
@@ -87,8 +91,8 @@ jobs:
               cat /tmp/devpilot-health.json 2>/dev/null || true
               exit 1
             fi
-            echo "attempt=${attempt} status=${code}; retrying in 10s"
-            sleep 10
+            echo "attempt=${attempt} status=${code}; retrying in 5s"
+            sleep 5
           done
           echo "::error::DevPilot homologation health did not become ready."
           cat /tmp/devpilot-health.json 2>/dev/null || true
@@ -100,7 +104,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          code=$(curl -L -sS -o /tmp/devpilot-root.html -w '%{http_code}' --max-time 30 "${BASE_URL}/")
+          code=$(curl -L -sS -o /tmp/devpilot-root.html -w '%{http_code}' --max-time 20 "${BASE_URL}/")
           if [ "$code" != "200" ]; then
             echo "::error::Root returned HTTP ${code}."
             cat /tmp/devpilot-root.html || true

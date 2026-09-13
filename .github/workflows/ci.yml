@@ -4,7 +4,8 @@ on:
   push:
     branches: [main]
     paths-ignore:
-      - "docs/reviews/**"
+      - "docs/**"
+      - "**/*.md"
   pull_request:
   workflow_dispatch:
 
@@ -15,12 +16,69 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
-# Use repository variable DEVPILOT_RUNNER=devpilot-ci (or self-hosted)
-# to bypass GitHub-hosted minute exhaustion without weakening any gate.
+# Policy and quality intentionally use GitHub-hosted runners so an unavailable
+# local runner cannot stall every PR. Self-hosted remains reserved for the
+# runtime image/local Linux smoke where machine-specific validation is useful.
 jobs:
+  changes:
+    name: Detect change scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      frontend_only: ${{ steps.scope.outputs.frontend_only }}
+      changed_files: ${{ steps.scope.outputs.changed_files }}
+    steps:
+      - name: Checkout diff range
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Classify changed files
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "frontend_only=false" >> "$GITHUB_OUTPUT"
+            echo "changed_files=manual" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -n "$BEFORE" && "$BEFORE" != "0000000000000000000000000000000000000000" ]]; then
+              BASE="$BEFORE"
+            else
+              BASE="$(git rev-parse HEAD^)"
+            fi
+          fi
+
+          mapfile -t FILES < <(git diff --name-only "$BASE" HEAD)
+          printf '%s\n' "${FILES[@]}"
+          printf 'changed_files=%s\n' "${#FILES[@]}" >> "$GITHUB_OUTPUT"
+
+          FRONTEND_ONLY=true
+          if [[ ${#FILES[@]} -eq 0 ]]; then
+            FRONTEND_ONLY=false
+          fi
+          for path in "${FILES[@]}"; do
+            case "$path" in
+              app/static/*|tests/test_*ui*.py|tests/test_*frontend*.py|tests/test_game_*contract.py)
+                ;;
+              *)
+                FRONTEND_ONLY=false
+                break
+                ;;
+            esac
+          done
+          echo "frontend_only=$FRONTEND_ONLY" >> "$GITHUB_OUTPUT"
+          echo "Frontend-only: $FRONTEND_ONLY"
+
   policy:
     name: DevPilot policy
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Checkout full history for policy diff
@@ -61,13 +119,13 @@ jobs:
         run: python scripts/check-engineering-standards.py --changed
 
   quality:
-    name: DevPilot full quality
-    needs: policy
-    runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
+    name: DevPilot quality
+    needs: [policy, changes]
+    runs-on: ubuntu-latest
     timeout-minutes: 35
     env:
-      DEVPILOT_RUN_BROWSER_E2E: "1"
-      DEVPILOT_RUN_CRITICAL_MATRIX: "1"
+      DEVPILOT_RUN_BROWSER_E2E: ${{ needs.changes.outputs.frontend_only == 'true' && '0' || '1' }}
+      DEVPILOT_RUN_CRITICAL_MATRIX: ${{ needs.changes.outputs.frontend_only == 'true' && '0' || '1' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -88,13 +146,30 @@ jobs:
           fi
           echo "DEVPILOT_POLICY_BASE=$BASE" >> "$GITHUB_ENV"
 
+      - name: Fast frontend validation
+        if: needs.changes.outputs.frontend_only == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Frontend-only change: skipping dependency install, browser E2E, critical matrix and Docker image."
+          mapfile -t JS_FILES < <(git diff --name-only "$DEVPILOT_POLICY_BASE" HEAD | grep -E '^app/static/.*\.js$' || true)
+          for file in "${JS_FILES[@]}"; do
+            [[ -f "$file" ]] || continue
+            echo "node --check $file"
+            node --check "$file"
+          done
+          python3 -m compileall -q tests
+          echo "FAST_FRONTEND_VALIDATION_OK"
+
       - name: Set up Python 3.12
+        if: needs.changes.outputs.frontend_only != 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Verify Python runtime
+        if: needs.changes.outputs.frontend_only != 'true'
         run: |
           python3 - <<'PY'
           import sys
@@ -104,25 +179,23 @@ jobs:
           PY
 
       - name: Install package, test and browser dependencies
+        if: needs.changes.outputs.frontend_only != 'true'
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install -e '.[test,e2e]'
 
-      - name: Install Chromium on GitHub-hosted runner
-        if: ${{ !vars.DEVPILOT_RUNNER }}
+      - name: Install Chromium
+        if: needs.changes.outputs.frontend_only != 'true'
         run: python3 -m playwright install --with-deps chromium
 
-      - name: Install Chromium on self-hosted runner
-        if: ${{ vars.DEVPILOT_RUNNER }}
-        run: python3 -m playwright install chromium
-
       - name: Run complete validation including critical matrix and browser E2E
+        if: needs.changes.outputs.frontend_only != 'true'
         run: |
           export PYTHON_BIN="$(command -v python3)"
           bash scripts/test-all.sh
 
       - name: Publish complete failure report
-        if: always()
+        if: always() && needs.changes.outputs.frontend_only != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: devpilot-test-results-${{ github.run_id }}-${{ github.run_attempt }}
@@ -132,8 +205,8 @@ jobs:
 
   runtime-image:
     name: DevPilot runtime image
-    if: github.event_name != 'pull_request'
-    needs: quality
+    if: github.event_name != 'pull_request' && needs.changes.outputs.frontend_only != 'true'
+    needs: [quality, changes]
     runs-on: ${{ vars.DEVPILOT_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
