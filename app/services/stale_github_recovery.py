@@ -48,13 +48,33 @@ def _run_is_github_auth(run: Run) -> bool:
     return isinstance(healing, dict) and str(healing.get("category") or "").lower() == "github_auth"
 
 
-def recover_stale_github_failures_once() -> int:
-    """Requeue old GitHub-auth failures when repository access is valid again.
+def _repository_ready_for_execution(project: Project) -> tuple[bool, str]:
+    try:
+        resolution = resolve_github_access(project)
+    except Exception as error:
+        print(f"[github-recovery] remote preflight error project={project.id}: {error}", flush=True)
+        resolution = None
 
-    Only original tasks are reconciled here. Recovery tasks remain audit evidence and
-    the original mission is resumed directly. The conditional UPDATE prevents two
-    API/worker processes from queueing the same mission twice.
-    """
+    if resolution is not None and resolution.ok:
+        return True, resolution.credential_id or "remote"
+
+    # GitHub is a delivery concern for DevPilot-managed projects. If every remote
+    # recovery route is exhausted, keep development moving in the isolated local Git
+    # workspace and let delivery reconcile/publish the remote later.
+    try:
+        from app.services.managed_local_repository import ensure_managed_local_repository
+
+        local = ensure_managed_local_repository(project)
+    except Exception as error:
+        print(f"[github-recovery] local fallback error project={project.id}: {error}", flush=True)
+        return False, ""
+    if local is None:
+        return False, ""
+    return True, "managed-local"
+
+
+def recover_stale_github_failures_once() -> int:
+    """Requeue GitHub-auth failures once execution has a valid repository workspace."""
     recovered = 0
     with SessionLocal() as db:
         tasks = list(
@@ -86,12 +106,8 @@ def recover_stale_github_failures_once() -> int:
             if project is None:
                 continue
 
-            try:
-                resolution = resolve_github_access(project)
-            except Exception as error:
-                print(f"[github-recovery] preflight error task={task.id}: {error}", flush=True)
-                continue
-            if not resolution.ok:
+            ready, strategy = _repository_ready_for_execution(project)
+            if not ready:
                 continue
 
             now = datetime.now(timezone.utc)
@@ -114,8 +130,7 @@ def recover_stale_github_failures_once() -> int:
             db.commit()
             recovered += 1
             print(
-                f"[github-recovery] requeued stale task={task.id} project={project.id} "
-                f"credential={resolution.credential_id or 'resolved'}",
+                f"[github-recovery] requeued stale task={task.id} project={project.id} strategy={strategy}",
                 flush=True,
             )
 
