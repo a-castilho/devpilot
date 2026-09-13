@@ -56,7 +56,10 @@ TASK_LEARNING = Table(
 TERMINAL_STATES = {"completed", "failed", "blocked", "canceled", "archived"}
 STOP_STATES = {"paused", "pause_requested", "canceled", "cancel_requested", "archived"}
 CLAIMED_STATES = {"running", "pause_requested", "cancel_requested"}
-LEASE_SECONDS = 7200
+# Live workers renew their claim every minute while supervising the subprocess. A five-minute
+# lease gives enough tolerance for transient DB/network delays while making Render restarts
+# recoverable quickly instead of leaving an autonomous task stuck for hours.
+LEASE_SECONDS = 300
 LEASE_RENEW_INTERVAL_SECONDS = 60
 _PROCESS_CLAIMS: dict[str, str] = {}
 _PROCESS_CLAIM_RENEWED_AT: dict[str, float] = {}
@@ -282,183 +285,48 @@ def learning_events(db: Session, task_id: str, limit: int = 30) -> list[dict]:
     return result
 
 
-def runtime_view(db: Session, task: Task) -> dict:
-    runtime = _runtime(db, task.id)
-    state = _state(task, runtime)
-    decision = evaluate_task(task.prompt, task.requires_approval and task.approved_at is None)
-    gate = state == "awaiting_approval" or (decision.requires_approval and task.approved_at is None)
-    if gate:
-        next_action = "approve"
-    elif state == "paused":
-        next_action = "resume"
-    elif state in {"queued", "failed"}:
-        next_action = "execute"
-    elif state == "running":
-        next_action = "wait"
-    else:
-        next_action = "none"
-    return {
-        "task_id": task.id,
-        "state": state,
-        "version": int(runtime["version"] if runtime else 0),
-        "auto_advance": bool(runtime["auto_advance"] if runtime else False),
-        "claim_owner": str(runtime["claim_owner"] or "") if runtime else "",
-        "lease_expires_at": runtime["lease_expires_at"] if runtime else None,
-        "last_action": str(runtime["last_action"] or "") if runtime else "",
-        "last_message": str(runtime["last_message"] or "") if runtime else "",
-        "archived_at": runtime["archived_at"] if runtime else None,
-        "next_action": next_action,
-        "gate": {"blocked": gate, "reasons": list(decision.reasons)},
-        "learning": learning_events(db, task.id, 12),
-    }
-
-
-class TaskOrchestrator:
-    def __init__(self, db: Session, actor: str = "owner"):
-        self.db = db
-        self.actor = actor
-        ensure_orchestrator_schema()
-
-    def _task(self, task_id: str) -> Task:
-        task = self.db.get(Task, task_id)
-        if task is None:
-            raise LookupError("Task not found")
-        return task
-
-    def _audit(self, task: Task, action: str, outcome: str = "success", details: dict | None = None) -> None:
-        record(
-            self.db,
-            workspace_id=task.workspace_id,
-            project_id=task.project_id,
-            task_id=task.id,
-            actor=self.actor,
-            action=action,
-            outcome=outcome,
-            details=details or {},
-        )
-
-    def next(self, task_id: str) -> dict:
-        task = self._task(task_id)
-        runtime = _runtime(self.db, task.id)
-        state = _state(task, runtime)
-        if state in {"archived", "running", "pause_requested", "cancel_requested", "completed", "canceled"}:
-            return runtime_view(self.db, task)
-        decision = evaluate_task(task.prompt, task.requires_approval and task.approved_at is None)
-        if decision.requires_approval and task.approved_at is None:
-            task.status = TaskStatus.awaiting_approval
-            _set_runtime(self.db, task, "awaiting_approval", "next", "Fluxo parado no gate de autorização explícita.", auto=False)
-            self._audit(task, "task.orchestrator.gate", "blocked", {"reasons": decision.reasons})
-            self.db.commit()
-            return runtime_view(self.db, task)
-        if task.status in {TaskStatus.failed, TaskStatus.blocked, TaskStatus.awaiting_approval} or state == "paused":
-            task.status = TaskStatus.queued
-        _set_runtime(self.db, task, "queued", "next", "Próxima ação segura colocada na fila sem duplicar execução.")
-        _learn(
-            self.db,
-            task,
-            "next",
-            "O orquestrador calculou uma única transição segura.",
-            "Todos os canais devem usar a mesma máquina de estados.",
-            "Idempotência e máquina de estados",
-            "Estado persistido e gate antes da execução.",
-            "Repetir Próximo não cria uma segunda execução.",
-            {"from": state, "to": "queued"},
-        )
-        self._audit(task, "task.orchestrator.next", details={"from": state, "to": "queued"})
-        self.db.commit()
-        return runtime_view(self.db, task)
-
-    def auto_advance(self, task_id: str) -> dict:
-        task = self._task(task_id)
-        runtime = _runtime(self.db, task.id)
-        _set_runtime(self.db, task, _state(task, runtime), "auto_advance", "Avanço automático habilitado até o próximo gate crítico.", auto=True)
-        self._audit(task, "task.orchestrator.auto_enabled")
-        self.db.commit()
-        return self.next(task_id)
-
-    def pause(self, task_id: str) -> dict:
-        task = self._task(task_id)
-        runtime = _runtime(self.db, task.id)
-        state = _state(task, runtime)
-        if state in TERMINAL_STATES | {"paused", "pause_requested"}:
-            return runtime_view(self.db, task)
-        target = "pause_requested" if task.status == TaskStatus.running else "paused"
-        _set_runtime(self.db, task, target, "pause", "Pausa cooperativa solicitada." if target.endswith("requested") else "Tarefa pausada antes da execução.", auto=False)
-        self._audit(task, "task.orchestrator.pause", "requested" if target.endswith("requested") else "success", {"from": state, "to": target})
-        self.db.commit()
-        return runtime_view(self.db, task)
-
-    def resume(self, task_id: str) -> dict:
-        task = self._task(task_id)
-        state = _state(task, _runtime(self.db, task.id))
-        if state not in {"paused", "pause_requested"}:
-            return runtime_view(self.db, task)
-        task.status = TaskStatus.queued
-        _set_runtime(self.db, task, "queued", "resume", "Tarefa retomada sem apagar runs ou evidências.")
-        _learn(
-            self.db,
-            task,
-            "resume",
-            "A tarefa voltou à fila preservando o histórico.",
-            "Pausa controla trabalho futuro e não simula rollback.",
-            "Execução retomável",
-            "Runs e auditoria anteriores continuam registrados.",
-            "Retomar reaproveita estado persistido sem apagar efeitos reais.",
-        )
-        self._audit(task, "task.orchestrator.resume", details={"from": state, "to": "queued"})
-        self.db.commit()
-        return runtime_view(self.db, task)
-
-    def cancel(self, task_id: str) -> dict:
-        task = self._task(task_id)
-        state = _state(task, _runtime(self.db, task.id))
-        if state in {"archived", "canceled"}:
-            return runtime_view(self.db, task)
-        target = "cancel_requested" if task.status == TaskStatus.running else "canceled"
-        if target == "canceled" and task.status == TaskStatus.queued:
-            task.status = TaskStatus.failed
-        _set_runtime(self.db, task, target, "cancel", "Cancelamento cooperativo solicitado." if target.endswith("requested") else "Tarefa cancelada antes de nova execução.", auto=False)
-        self._audit(task, "task.orchestrator.cancel", "requested" if target.endswith("requested") else "success", {"from": state, "to": target})
-        self.db.commit()
-        return runtime_view(self.db, task)
-
-    def archive(self, task_id: str) -> dict:
-        task = self._task(task_id)
-        state = _state(task, _runtime(self.db, task.id))
-        if task.status == TaskStatus.running or state in {"pause_requested", "cancel_requested"}:
-            raise RuntimeError("Running task must be stopped before archive")
-        _set_runtime(self.db, task, "archived", "archive", "Arquivamento lógico concluído; runs e auditoria preservados.", auto=False, archive=now())
-        self._audit(task, "task.orchestrator.archived", details={"previous_state": state, "history_preserved": True})
-        self.db.commit()
-        return runtime_view(self.db, task)
-
-
 def _recover_expired_claims(db: Session) -> None:
-    """Recover only the expired runtime row that was actually observed."""
+    """Recover expired or heartbeat-stale worker claims with compare-and-set fencing."""
     ensure_orchestrator_schema()
-    cutoff = now()
-    expired = db.execute(
-        select(TASK_RUNTIME.c.task_id, TASK_RUNTIME.c.claim_owner).where(
+    point = now()
+    stale_cutoff = point - timedelta(seconds=LEASE_SECONDS)
+    observed = db.execute(
+        select(
+            TASK_RUNTIME.c.task_id,
+            TASK_RUNTIME.c.claim_owner,
+            TASK_RUNTIME.c.lease_expires_at,
+            TASK_RUNTIME.c.updated_at,
+        ).where(
             TASK_RUNTIME.c.state == "running",
             TASK_RUNTIME.c.lease_expires_at.is_not(None),
-            TASK_RUNTIME.c.lease_expires_at < cutoff,
+            (
+                (TASK_RUNTIME.c.lease_expires_at < point)
+                | (TASK_RUNTIME.c.updated_at < stale_cutoff)
+            ),
         )
     ).mappings().all()
     recovered = False
-    for row in expired:
+    for row in observed:
         task_id = str(row["task_id"])
         claim_owner = str(row["claim_owner"] or "")
+        observed_updated_at = row["updated_at"]
         task = db.get(Task, task_id)
         if not task or task.status != TaskStatus.running:
             continue
+        # A live process renews updated_at at most every minute. Matching the exact
+        # observed timestamp fences this recovery against a concurrent heartbeat.
         result = db.execute(
             update(TASK_RUNTIME)
             .where(
                 TASK_RUNTIME.c.task_id == task_id,
                 TASK_RUNTIME.c.state == "running",
                 TASK_RUNTIME.c.claim_owner == claim_owner,
+                TASK_RUNTIME.c.updated_at == observed_updated_at,
                 TASK_RUNTIME.c.lease_expires_at.is_not(None),
-                TASK_RUNTIME.c.lease_expires_at < cutoff,
+                (
+                    (TASK_RUNTIME.c.lease_expires_at < point)
+                    | (TASK_RUNTIME.c.updated_at < stale_cutoff)
+                ),
             )
             .values(
                 state="queued",
@@ -466,8 +334,8 @@ def _recover_expired_claims(db: Session) -> None:
                 claim_owner="",
                 lease_expires_at=None,
                 last_action="lease_recovered",
-                last_message="Lease expirado recuperado; tarefa devolvida à fila.",
-                updated_at=cutoff,
+                last_message="Claim sem heartbeat recuperado; tarefa devolvida à fila.",
+                updated_at=point,
             )
         )
         if int(result.rowcount or 0) != 1:
@@ -481,7 +349,11 @@ def _recover_expired_claims(db: Session) -> None:
             actor="worker",
             action="task.orchestrator.lease_recovered",
             outcome="success",
-            details={"expired_claim_owner": claim_owner},
+            details={
+                "expired_claim_owner": claim_owner,
+                "stale_seconds": LEASE_SECONDS,
+                "heartbeat_fenced": True,
+            },
         )
         recovered = True
     if recovered:
@@ -618,109 +490,3 @@ def _grant_quest_reward(db: Session, task: Task, run: Run) -> None:
         db.flush()
     reward = reward_for(mission.risk_level, mission.difficulty)
     apply_reward(profile, reward)
-    mission.status = QuestMissionStatus.completed.value
-    mission.completed_at = now()
-    mission.validation_summary = summary
-    mission.evidence_json = json.dumps({"run_id": run.id, "run_status": run.status, "commit_sha": run.commit_sha, "pull_request_url": run.pull_request_url}, ensure_ascii=False)
-    record(
-        db,
-        workspace_id=task.workspace_id,
-        project_id=task.project_id,
-        task_id=task.id,
-        actor="worker",
-        action="QUEST_REWARD_GRANTED",
-        outcome="success",
-        details={"mission_id": mission.id, "reward": {"xp": reward.xp, "stars": reward.stars, "moons": reward.moons, "swords": reward.swords}, "automatic": True, "rbac_unchanged": True},
-    )
-
-
-def mark_worker_finished(db: Session, task: Task, run: Run) -> None:
-    claim_owner = require_task_claim(db, task)
-    state = "completed" if run.status == "success" else ("blocked" if task.status == TaskStatus.blocked else "failed")
-    if claim_owner:
-        _transition_claimed_runtime(
-            db,
-            task,
-            claim_owner,
-            expected_states=("running",),
-            state=state,
-            action="worker_finished",
-            message=str(run.summary or ""),
-        )
-    else:
-        _set_runtime(db, task, state, "worker_finished", str(run.summary or ""), owner="", lease=None)
-    _learn(
-        db,
-        task,
-        state,
-        "A execução terminou com evidência persistida no run.",
-        "Conclusão, aprendizado e recompensa só usam o resultado real do executor.",
-        "Conclusão baseada em evidência",
-        "Status, resumo, commit e pull request quando registrados.",
-        "Uma mensagem de sucesso não substitui evidência persistida.",
-        {"run_id": run.id, "run_status": run.status, "commit_sha": run.commit_sha, "pull_request_url": run.pull_request_url},
-    )
-    if state == "completed":
-        _grant_quest_reward(db, task, run)
-    if claim_owner:
-        _forget_process_claim(task.id, claim_owner)
-
-
-@contextmanager
-def controlled_executor_run(task: Task, original_run: Callable):
-    """Yield a subprocess runner that cooperatively stops on control or lost lease."""
-    def controlled(args, cwd=None, timeout=900, env_overrides=None):
-        if not args or os.path.basename(str(args[0])) != "codex":
-            requested_control(task.id)
-            result = original_run(args, cwd=cwd, timeout=timeout, env_overrides=env_overrides)
-            requested_control(task.id)
-            return result
-        environment = os.environ.copy()
-        if env_overrides:
-            environment.update(env_overrides)
-        process = subprocess.Popen(args, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, start_new_session=True)
-        started = time.monotonic()
-        while process.poll() is None:
-            try:
-                control = requested_control(task.id)
-            except LostTaskClaim:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    process.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    process.communicate()
-                raise
-            if control in {"pause_requested", "cancel_requested"}:
-                try:
-                    os.killpg(process.pid, signal.SIGTERM)
-                except ProcessLookupError:
-                    pass
-                try:
-                    stdout, stderr = process.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    try:
-                        os.killpg(process.pid, signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
-                    stdout, stderr = process.communicate()
-                return subprocess.CompletedProcess(args, 130, stdout or "", (stderr or "") + f"\nDevPilot {control}")
-            if time.monotonic() - started >= timeout:
-                try:
-                    os.killpg(process.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-                stdout, stderr = process.communicate()
-                raise subprocess.TimeoutExpired(args, timeout, output=stdout, stderr=stderr)
-            time.sleep(0.4)
-        stdout, stderr = process.communicate()
-        requested_control(task.id)
-        return subprocess.CompletedProcess(args, int(process.returncode or 0), stdout or "", stderr or "")
-
-    yield controlled
