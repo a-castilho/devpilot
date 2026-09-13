@@ -57,7 +57,6 @@ def _resolved_git_environment(project: Project, run_command: RunCommand) -> dict
     if _public_repository_access(project, run_command):
         return {"GIT_TERMINAL_PROMPT": "0"}
 
-    # Local import avoids service-package import cycles during application bootstrap.
     from app.services.github_access_bridge import resolve_github_access
 
     resolution = resolve_github_access(project)
@@ -68,13 +67,23 @@ def _resolved_git_environment(project: Project, run_command: RunCommand) -> dict
     raise GitHubRepositoryAccessError(f"repository access denied: {message}")
 
 
+def _prepare_blueprint(project: Project, path: Path) -> None:
+    """Best-effort blueprint seeding; generation remains usable if the optional layer is absent."""
+    try:
+        from app.blueprint_execution import prepare_blueprint_workspace
+
+        prepare_blueprint_workspace(project, path)
+    except (ImportError, KeyError, ValueError, OSError) as error:
+        raise RuntimeError(f"Blueprint workspace preparation failed: {error}") from error
+
+
 def ensure_repository(project: Project, run_command: RunCommand) -> Path:
     """Prepare checkout only after DevPilot has proven repository access.
 
     This is a preflight gate: a private/inaccessible repository never reaches an
-    unauthenticated ``git clone`` or ``git fetch``. That keeps GitHub authorization as
-    an administrative system dependency and lets the recovery flow block/revalidate
-    the same task instead of producing a misleading execution failure first.
+    unauthenticated ``git clone`` or ``git fetch``. After checkout, a selected blueprint
+    is materialized by creating only files that do not already exist, so existing code
+    is never overwritten and the AI generates only the remaining delta.
     """
     path = _repository_path(project)
     git_env = _resolved_git_environment(project, run_command)
@@ -94,4 +103,6 @@ def ensure_repository(project: Project, run_command: RunCommand) -> Path:
     )
     if getattr(result, "returncode", 1):
         raise RuntimeError(getattr(result, "stderr", "").strip() or "Unable to fetch repository")
+
+    _prepare_blueprint(project, path)
     return path
