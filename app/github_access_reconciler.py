@@ -109,7 +109,22 @@ def _prove_access(db, project: Project) -> tuple[bool, str]:
             continue
         if result.returncode == 0:
             return True, f"authenticated git ls-remote succeeded with credential {credential.id}"
-    return False, "no configured GitHub credential proved repository access"
+
+    # GitHub remoto é uma dependência de entrega, não um pré-requisito para o
+    # desenvolvimento de projetos gerenciados pelo DevPilot. Se o fallback local
+    # canônico conseguir preparar o workspace, a cadeia deve voltar para a fila e
+    # continuar; a publicação remota permanece pendente para reconciliação posterior.
+    try:
+        from app.services.managed_local_repository import ensure_managed_local_repository
+
+        local = ensure_managed_local_repository(project)
+    except Exception as error:
+        _LOG.warning("Managed local GitHub fallback failed project=%s: %s", project.id, error)
+        local = None
+    if local is not None:
+        return True, "managed-local workspace ready; remote delivery pending"
+
+    return False, "no configured GitHub credential proved repository access and managed-local fallback unavailable"
 
 
 def _resume_github_recovery(db, project: Project) -> int:
@@ -172,7 +187,7 @@ def _resume_github_recovery(db, project: Project) -> int:
             "resumed_source": task.source,
         },
     )
-    _LOG.info("GitHub recovery resumed project=%s task=%s", project.id, task.id)
+    _LOG.info("GitHub recovery resumed project=%s task=%s proof=%s", project.id, task.id, access_proof)
     return 1
 
 
