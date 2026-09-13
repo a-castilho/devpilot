@@ -3,6 +3,7 @@ from __future__ import annotations
 import threading
 
 from app.services.runtime_preflight import worker_runtime_paths
+from app.services.stale_delivery_claims import recover_stale_delivery_claims
 from app.worker import process_one
 
 
@@ -18,6 +19,7 @@ class EmbeddedWorker:
         self.poll_seconds = max(0.05, float(poll_seconds))
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._last_stale_recovery_at = 0.0
 
     @property
     def is_running(self) -> bool:
@@ -33,6 +35,13 @@ class EmbeddedWorker:
             + ", ".join(f"{tool}={path}" for tool, path in runtime.items()),
             flush=True,
         )
+
+        # Recover final-delivery work abandoned by the previous Render instance
+        # before claiming new queue items. This keeps homologation autonomous across
+        # rolling deploys without changing the lease policy for unrelated tasks.
+        recovered = recover_stale_delivery_claims()
+        if recovered:
+            print(f"[embedded-worker] recovered stale delivery tasks={recovered}", flush=True)
 
         self._stop.clear()
         self._thread = threading.Thread(
