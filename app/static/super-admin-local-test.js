@@ -52,12 +52,18 @@
       view.setAttribute('aria-hidden', active ? 'false' : 'true');
     });
     section.hidden = false;
+    section.removeAttribute('hidden');
     section.setAttribute('aria-hidden', 'false');
-    document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
-    button.setAttribute('aria-current', 'page');
+    document.querySelectorAll('.nav').forEach(item => {
+      const active = item === button;
+      item.classList.toggle('active', active);
+      if (active) item.setAttribute('aria-current', 'page');
+      else item.removeAttribute('aria-current');
+    });
     document.documentElement.dataset.devpilotView = 'pipeline-repair';
     const heading = document.getElementById('page-title');
     if (heading) heading.textContent = title;
+    document.dispatchEvent(new CustomEvent('devpilot:view-changed', {detail:{view:'pipeline-repair', source:'repair-panel'}}));
   }
 
   function renderRepair(data = {}) {
@@ -189,7 +195,6 @@
     const button = document.createElement('button');
     button.className = 'nav';
     button.type = 'button';
-    button.dataset.view = 'pipeline-repair';
     button.dataset.pipelineRepairNav = '1';
     button.dataset.superAdmin = 'true';
     button.textContent = '🛠 Reparo & Diagnóstico';
@@ -211,7 +216,12 @@
         </div>
       </div>`;
     main.appendChild(section);
-    button.addEventListener('click', () => { openView(button, section, 'Reparo & Diagnóstico'); void loadRepair(); });
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      openView(button, section, 'Reparo & Diagnóstico');
+      void loadRepair();
+    });
     section.querySelector('#pipeline-repair-run')?.addEventListener('click', runRepair);
     section.querySelector('#pipeline-repair-refresh')?.addEventListener('click', loadRepair);
     section.querySelector('#local-test-compact-run')?.addEventListener('click', runLocalTest);
