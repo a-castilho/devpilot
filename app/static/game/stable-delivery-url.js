@@ -18,7 +18,9 @@
     const candidate = String(value || '').trim();
     return /^https:\/\//i.test(candidate) ? candidate : '';
   };
-  const role = () => String(window.state?.currentUser?.role || '').toUpperCase();
+  const role = () => String(
+    (typeof state !== 'undefined' && state.currentUser?.role) || window.state?.currentUser?.role || ''
+  ).toUpperCase();
   const canOperate = () => OPERATORS.has(role());
   const controller = () => window.__devpilotGameControllerV73;
   const round = () => document.querySelector('#devpilot-game-stable-round-v91 [data-stable-round-card]');
