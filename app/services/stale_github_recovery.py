@@ -4,7 +4,7 @@ import json
 import threading
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 
 from app.config import get_settings
 from app.db import SessionLocal
@@ -14,7 +14,6 @@ from app.services.github_access_bridge import resolve_github_access
 
 _POLL_SECONDS = 20
 _MAX_CANDIDATES = 200
-_MAX_GITHUB_FAILURE_RUNS = 3
 _STARTED = False
 _START_LOCK = threading.Lock()
 _STOP = threading.Event()
@@ -58,9 +57,6 @@ def _repository_ready_for_execution(project: Project) -> tuple[bool, str]:
     if resolution is not None and resolution.ok:
         return True, resolution.credential_id or "remote"
 
-    # GitHub is a delivery concern for DevPilot-managed projects. If every remote
-    # recovery route is exhausted, keep development moving in the isolated local Git
-    # workspace and let delivery reconcile/publish the remote later.
     try:
         from app.services.managed_local_repository import ensure_managed_local_repository
 
@@ -74,7 +70,13 @@ def _repository_ready_for_execution(project: Project) -> tuple[bool, str]:
 
 
 def recover_stale_github_failures_once() -> int:
-    """Requeue GitHub-auth failures once execution has a valid repository workspace."""
+    """Requeue a terminal task when its latest run is a GitHub-auth failure.
+
+    Historical retry count is intentionally ignored. Older DevPilot versions could
+    consume several attempts before this reconciler existed; those attempts must not
+    prevent the fixed runtime from resuming the mission. Once resumed, a non-GitHub
+    failure becomes the latest run and therefore stops this reconciler from looping.
+    """
     recovered = 0
     with SessionLocal() as db:
         tasks = list(
@@ -82,7 +84,7 @@ def recover_stale_github_failures_once() -> int:
                 select(Task)
                 .where(
                     Task.status.in_([TaskStatus.failed, TaskStatus.blocked]),
-                    Task.source != "failure-recovery",
+                    or_(Task.source.is_(None), Task.source != "failure-recovery"),
                 )
                 .order_by(Task.updated_at.desc())
                 .limit(_MAX_CANDIDATES)
@@ -90,16 +92,13 @@ def recover_stale_github_failures_once() -> int:
         )
 
         for task in tasks:
-            runs = list(
-                db.scalars(
-                    select(Run)
-                    .where(Run.task_id == task.id)
-                    .order_by(Run.started_at.desc())
-                    .limit(_MAX_GITHUB_FAILURE_RUNS + 1)
-                ).all()
+            latest_run = db.scalar(
+                select(Run)
+                .where(Run.task_id == task.id)
+                .order_by(Run.started_at.desc(), Run.attempt.desc())
+                .limit(1)
             )
-            github_runs = [run for run in runs if _run_is_github_auth(run)]
-            if not github_runs or len(github_runs) > _MAX_GITHUB_FAILURE_RUNS:
+            if latest_run is None or not _run_is_github_auth(latest_run):
                 continue
 
             project = db.get(Project, task.project_id)
