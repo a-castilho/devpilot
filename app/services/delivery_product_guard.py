@@ -87,6 +87,11 @@ def _github_token(db: Session, workspace_id: str) -> str:
 def _repository_paths(db: Session, project) -> list[str] | None:
     """Return files from the remote default branch.
 
+    Stored credentials are tried first so private repositories keep working. If that
+    credential is stale or belongs to an account without access, retry anonymously.
+    This lets public repositories remain inspectable instead of silently bypassing the
+    product guard because of an unrelated credential problem.
+
     None means the guard could not inspect the remote safely, in which case the normal
     delivery path remains authoritative instead of producing a false blocker.
     """
@@ -96,24 +101,31 @@ def _repository_paths(db: Session, project) -> list[str] | None:
 
     branch = quote(str(project.default_branch or "main"), safe="")
     token = _github_token(db, project.workspace_id)
-    headers = {
+    base_headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "DevPilot/1.0",
     }
+    candidates = [dict(base_headers)]
     if token:
-        headers["Authorization"] = f"Bearer {token}"
+        authenticated = dict(base_headers)
+        authenticated["Authorization"] = f"Bearer {token}"
+        candidates.insert(0, authenticated)
 
+    response = None
     try:
         with httpx.Client(timeout=8.0, follow_redirects=True) as client:
-            response = client.get(
-                f"https://api.github.com/repos/{full_name}/git/trees/{branch}",
-                params={"recursive": "1"},
-                headers=headers,
-            )
+            for headers in candidates:
+                response = client.get(
+                    f"https://api.github.com/repos/{full_name}/git/trees/{branch}",
+                    params={"recursive": "1"},
+                    headers=headers,
+                )
+                if response.status_code == 200:
+                    break
     except httpx.HTTPError:
         return None
-    if response.status_code != 200:
+    if response is None or response.status_code != 200:
         return None
     try:
         payload = response.json()
