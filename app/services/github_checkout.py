@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import logging
 import re
 from pathlib import Path
 from typing import Callable
@@ -9,6 +10,7 @@ from app.config import get_settings
 from app.models import Project
 
 
+logger = logging.getLogger(__name__)
 SAFE_NAME = re.compile(r"[^a-zA-Z0-9._-]+")
 RunCommand = Callable[..., object]
 
@@ -37,7 +39,6 @@ def _git_environment(access_token: str | None = None) -> dict[str, str]:
 
 
 def _public_repository_access(project: Project, run_command: RunCommand) -> bool:
-    """Return True when the exact repository can be read without credentials."""
     result = run_command(
         ["git", "ls-remote", project.repository_url, "HEAD"],
         timeout=45,
@@ -47,17 +48,9 @@ def _public_repository_access(project: Project, run_command: RunCommand) -> bool
 
 
 def _resolved_git_environment(project: Project, run_command: RunCommand) -> dict[str, str]:
-    """Resolve repository access before clone/fetch.
-
-    Public repositories are accepted without credentials. Otherwise the canonical
-    GitHub access resolver validates every enabled GitHub credential in the workspace,
-    repairs stale project/organization bindings when possible and returns the proven
-    authentication environment. No clone/fetch is attempted until access is proven.
-    """
     if _public_repository_access(project, run_command):
         return {"GIT_TERMINAL_PROMPT": "0"}
 
-    # Local import avoids service-package import cycles during application bootstrap.
     from app.services.github_access_bridge import resolve_github_access
 
     resolution = resolve_github_access(project)
@@ -68,14 +61,18 @@ def _resolved_git_environment(project: Project, run_command: RunCommand) -> dict
     raise GitHubRepositoryAccessError(f"repository access denied: {message}")
 
 
-def ensure_repository(project: Project, run_command: RunCommand) -> Path:
-    """Prepare checkout only after DevPilot has proven repository access.
+def _prepare_blueprint(project: Project, path: Path) -> None:
+    """Seed a reusable base when selected, but never break normal generation on blueprint failure."""
+    try:
+        from app.blueprint_execution import prepare_blueprint_workspace
 
-    This is a preflight gate: a private/inaccessible repository never reaches an
-    unauthenticated ``git clone`` or ``git fetch``. That keeps GitHub authorization as
-    an administrative system dependency and lets the recovery flow block/revalidate
-    the same task instead of producing a misleading execution failure first.
-    """
+        prepare_blueprint_workspace(project, path)
+    except (ImportError, KeyError, ValueError, OSError) as error:
+        logger.warning("Blueprint preparation failed; continuing with normal generation: %s", error)
+
+
+def ensure_repository(project: Project, run_command: RunCommand) -> Path:
+    """Prepare authenticated checkout and materialize an optional blueprint without overwriting files."""
     path = _repository_path(project)
     git_env = _resolved_git_environment(project, run_command)
 
@@ -94,4 +91,6 @@ def ensure_repository(project: Project, run_command: RunCommand) -> Path:
     )
     if getattr(result, "returncode", 1):
         raise RuntimeError(getattr(result, "stderr", "").strip() or "Unable to fetch repository")
+
+    _prepare_blueprint(project, path)
     return path
