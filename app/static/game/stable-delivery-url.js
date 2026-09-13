@@ -6,8 +6,8 @@
   window.__devpilotStableDeliveryUrlReady = true;
 
   const OPERATORS = new Set(['SUPER_ADMIN', 'OWNER', 'ADMIN']);
-  const RETRY_MS = 5000;
-  const MAX_VALIDATIONS = 6;
+  const RETRY_MS = 4000;
+  const MAX_VALIDATIONS = 60;
   const inFlight = new Set();
   const timers = new Map();
 
@@ -63,6 +63,7 @@
 
   function setRoundGate(panel, delivery) {
     const ready = delivered(delivery);
+    const currentStatus = normalized(delivery);
     const heading = panel.querySelector('h1');
     const kicker = panel.querySelector('.game74-kicker');
     const status = panel.querySelector('.game74-status');
@@ -80,10 +81,17 @@
     }
 
     panel.dataset.deliveryUrlReady = '0';
-    if (kicker) kicker.textContent = 'PUBLICAÇÃO FINAL';
-    if (heading) heading.textContent = 'Finalizando a entrega';
-    if (status) status.innerHTML = '🚀 <strong>Quase pronto.</strong> O código passou pelos gates; falta publicar e validar a URL real.';
-    if (primary) primary.textContent = '🚀 Publicando e validando URL';
+    if (currentStatus === 'repairing') {
+      if (kicker) kicker.textContent = 'CORREÇÃO AUTOMÁTICA';
+      if (heading) heading.textContent = 'Corrigindo o produto final';
+      if (status) status.innerHTML = '🛠️ <strong>Revisando a entrega.</strong> O DevPilot detectou que o produto remoto ainda não correspondia ao pedido e está corrigindo antes de publicar.';
+      if (primary) primary.textContent = '🛠️ Corrigindo produto final';
+    } else {
+      if (kicker) kicker.textContent = 'PUBLICAÇÃO FINAL';
+      if (heading) heading.textContent = 'Finalizando a entrega';
+      if (status) status.innerHTML = '🚀 <strong>Quase pronto.</strong> O produto passou pela validação remota e agora está sendo publicado e testado.';
+      if (primary) primary.textContent = '🚀 Publicando e validando URL';
+    }
     if (newRound) newRound.hidden = true;
   }
 
@@ -106,16 +114,21 @@
 
     const statusText = {
       pending: 'Preparando publicação…',
+      repairing: 'Corrigindo o produto final…',
       provisioning: 'Preparando ambiente de teste…',
       deploying: 'Publicando e validando URL…',
       failed: 'A publicação falhou; tentando corrigir.',
       blocked: 'Publicação bloqueada; procurando solução automática.',
     }[status] || 'Finalizando publicação…';
 
+    const repairDetail = status === 'repairing' && delivery?.repair_task_status
+      ? `<p>Etapa automática: <strong>${esc(delivery.repair_task_status)}</strong>. O deploy só começa quando o branch remoto contiver o sistema solicitado.</p>`
+      : '<p>A missão só será marcada como entregue quando o produto real e uma URL HTTPS estiverem validados.</p>';
+
     node.innerHTML = `
-      <small>URL DO PROJETO</small>
+      <small>${status === 'repairing' ? 'VALIDAÇÃO DO PRODUTO' : 'URL DO PROJETO'}</small>
       <strong>${esc(statusText)}</strong>
-      <p>A missão só será marcada como entregue quando uma URL HTTPS real estiver validada.</p>
+      ${repairDetail}
       ${delivery?.last_error ? `<div class="stable-delivery-url-error">${esc(delivery.last_error)}</div>` : ''}
       ${canOperate() && ['failed', 'blocked'].includes(status) ? '<div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-retry>↻ Corrigir publicação</button></div>' : ''}`;
 
@@ -150,6 +163,12 @@
         return;
       }
 
+      if (status === 'repairing') {
+        render(panel, delivery || {});
+        schedule(panel, projectId, attempt + 1);
+        return;
+      }
+
       if (canOperate() && (status === 'pending' || forceRetry || ['failed', 'blocked'].includes(status))) {
         const action = status === 'pending' && !forceRetry ? '/start' : '/retry';
         delivery = await call(endpoint(projectId, action), {method: 'POST'});
@@ -161,7 +180,7 @@
       }
 
       render(panel, delivery || {});
-      if (!delivered(delivery) && ['pending', 'provisioning', 'deploying', 'failed', 'blocked'].includes(normalized(delivery))) {
+      if (!delivered(delivery) && ['pending', 'repairing', 'provisioning', 'deploying', 'failed', 'blocked'].includes(normalized(delivery))) {
         schedule(panel, projectId, attempt + 1);
       }
     } catch (error) {
