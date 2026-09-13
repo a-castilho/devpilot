@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import threading
-import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select, update
@@ -14,7 +13,7 @@ from app.services.github_access_bridge import resolve_github_access
 
 
 _POLL_SECONDS = 20
-_MAX_CANDIDATES = 100
+_MAX_CANDIDATES = 200
 _MAX_GITHUB_FAILURE_RUNS = 3
 _STARTED = False
 _START_LOCK = threading.Lock()
@@ -50,19 +49,22 @@ def _run_is_github_auth(run: Run) -> bool:
 
 
 def recover_stale_github_failures_once() -> int:
-    """Requeue old GitHub-auth failures when DevPilot can now prove repository access.
+    """Requeue old GitHub-auth failures when repository access is valid again.
 
-    This repairs tasks that were already FAILED/BLOCKED before the self-healing GitHub
-    flow was deployed. The update is conditional on the task still being terminal, so
-    concurrent API/worker instances cannot queue the same task twice.
+    Only original tasks are reconciled here. Recovery tasks remain audit evidence and
+    the original mission is resumed directly. The conditional UPDATE prevents two
+    API/worker processes from queueing the same mission twice.
     """
     recovered = 0
     with SessionLocal() as db:
         tasks = list(
             db.scalars(
                 select(Task)
-                .where(Task.status.in_([TaskStatus.failed, TaskStatus.blocked]))
-                .order_by(Task.updated_at.asc())
+                .where(
+                    Task.status.in_([TaskStatus.failed, TaskStatus.blocked]),
+                    Task.source != "failure-recovery",
+                )
+                .order_by(Task.updated_at.desc())
                 .limit(_MAX_CANDIDATES)
             ).all()
         )
@@ -121,7 +123,6 @@ def recover_stale_github_failures_once() -> int:
 
 
 def _loop() -> None:
-    # Run immediately on boot so old missions do not wait for the first interval.
     while not _STOP.is_set():
         try:
             recover_stale_github_failures_once()
