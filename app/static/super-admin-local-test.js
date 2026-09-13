@@ -45,8 +45,17 @@
 
   function openView(button, section, title) {
     if (!isSuperAdmin()) return window.toast?.('Acesso exclusivo do Super Admin');
-    document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view === section));
+    document.querySelectorAll('.view').forEach(view => {
+      const active = view === section;
+      view.classList.toggle('active', active);
+      view.hidden = !active;
+      view.setAttribute('aria-hidden', active ? 'false' : 'true');
+    });
+    section.hidden = false;
+    section.setAttribute('aria-hidden', 'false');
     document.querySelectorAll('.nav').forEach(item => item.classList.toggle('active', item === button));
+    button.setAttribute('aria-current', 'page');
+    document.documentElement.dataset.devpilotView = 'pipeline-repair';
     const heading = document.getElementById('page-title');
     if (heading) heading.textContent = title;
   }
@@ -180,7 +189,9 @@
     const button = document.createElement('button');
     button.className = 'nav';
     button.type = 'button';
+    button.dataset.view = 'pipeline-repair';
     button.dataset.pipelineRepairNav = '1';
+    button.dataset.superAdmin = 'true';
     button.textContent = '🛠 Reparo & Diagnóstico';
     nav.appendChild(button);
 
