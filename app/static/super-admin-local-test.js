@@ -22,5 +22,7 @@
     document.body.appendChild(script);
   });
 
-  void load('super-admin-local-test-core.js').then(() => load('blueprint-admin.js'));
+  void load('super-admin-local-test-core.js')
+    .then(() => load('blueprint-admin.js'))
+    .then(() => load('blueprint-admin-navigation-fix.js'));
 })();
