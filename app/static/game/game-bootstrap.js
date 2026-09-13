@@ -5,7 +5,7 @@
   const CORE_TIMEOUT_MS = 12000;
   const OPTIONAL_TIMEOUT_MS = 4000;
   const ASSET_REVISION = 'game-flow-v92-20260904';
-  const ENTRY_ASSETS = ['game/task-payload-guard.js','game/objective-controls.js','game/stable-round-ui.js','game/delivery-gate.js','game/recovery-runtime.js','game/flow-keeper.js'];
+  const ENTRY_ASSETS = ['game/task-payload-guard.js','game/objective-controls.js','game/stable-round-ui.js','game/stable-delivery-url.js','game/delivery-gate.js','game/recovery-runtime.js','game/flow-keeper.js'];
   const VICTORY_ASSETS = ['build-game-url-bonus.js','game/final-delivery-summary.js'];
   const ALLOWED_ASSETS = new Set([...ENTRY_ASSETS,...VICTORY_ASSETS]);
   const assetLoads = new Map(); let victoryStarted=false;
