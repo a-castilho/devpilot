@@ -44,7 +44,7 @@
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260913-render-gate1';
+    link.href = '/assets/acs-loader.css?v=20260913-render-gate2';
     document.head.appendChild(link);
   }
 
@@ -105,17 +105,20 @@
     dismiss();
   }, {once: true});
 
-  async function checkBackendHealth() {
+  async function fetchReady(url, {expectAuthStatus = false} = {}) {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    const timeout = window.setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch(`/health?_=${Date.now()}`, {
+      const response = await fetch(`${url}${url.includes('?') ? '&' : '?'}_=${Date.now()}`, {
         method: 'GET',
         cache: 'no-store',
         headers: {'Accept': 'application/json,text/plain,*/*'},
         signal: controller.signal,
       });
-      return response.ok;
+      if (!response.ok) return false;
+      if (!expectAuthStatus) return true;
+      const data = await response.json().catch(() => null);
+      return Boolean(data && typeof data === 'object' && Object.prototype.hasOwnProperty.call(data, 'bootstrap_required'));
     } catch (_) {
       return false;
     } finally {
@@ -123,17 +126,26 @@
     }
   }
 
+  async function checkApplicationReadiness() {
+    const healthReady = await fetchReady('/health');
+    if (!healthReady) return false;
+    return fetchReady('/api/auth/status', {expectAuthStatus: true});
+  }
+
   async function waitForRenderBackend() {
     if (backendReady) return;
 
     let attempt = 0;
+    let consecutiveReady = 0;
     const startedAt = Date.now();
     if (statusText) statusText.textContent = 'Aguardando backend subir na Render…';
 
     while (!removed && !backendReady) {
       attempt += 1;
-      const healthy = await checkBackendHealth();
-      if (healthy) {
+      const ready = await checkApplicationReadiness();
+      consecutiveReady = ready ? consecutiveReady + 1 : 0;
+
+      if (consecutiveReady >= 2) {
         backendReady = true;
         document.documentElement.dataset.devpilotBackendReady = '1';
         dismiss();
@@ -142,15 +154,18 @@
 
       const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
       if (statusText) {
-        statusText.textContent = elapsedSeconds < 30
-          ? 'Aguardando backend subir na Render…'
-          : `Backend ainda iniciando na Render… ${elapsedSeconds}s`;
+        if (ready) {
+          statusText.textContent = 'Confirmando autenticação e banco…';
+        } else {
+          statusText.textContent = elapsedSeconds < 30
+            ? 'Aguardando backend subir na Render…'
+            : `Backend ainda iniciando na Render… ${elapsedSeconds}s`;
+        }
       }
 
-      // Free-tier Render services can take a while to wake up. Keep the gate closed
-      // until the proxied /health endpoint actually succeeds instead of exposing a
-      // login form that cannot authenticate yet.
-      await sleep(attempt < 4 ? 1500 : 2500);
+      // Only reveal authentication after the application readiness endpoint has
+      // succeeded twice. /health alone can become green before auth/database are ready.
+      await sleep(ready ? 700 : (attempt < 4 ? 1500 : 2500));
     }
   }
 
@@ -160,7 +175,7 @@
   }
 
   // Core initialization can finish independently, but on Vercel the loader remains
-  // visible until the Render backend is confirmed healthy.
+  // visible until Render health + auth/database readiness are confirmed.
   window.setTimeout(() => {
     coreReady = true;
     dismiss();
