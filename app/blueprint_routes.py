@@ -22,7 +22,7 @@ REGISTRY_ROOT = Path("data/blueprints")
 registry = BlueprintRegistry(REGISTRY_ROOT)
 install_builtin_blueprints(registry)
 service = BlueprintService(registry)
-router = APIRouter(prefix="/api/blueprints", dependencies=[Depends(require_access)])
+router = APIRouter(prefix="/blueprints", dependencies=[Depends(require_access)])
 
 
 class BlueprintFilePayload(BaseModel):
