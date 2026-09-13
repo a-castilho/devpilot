@@ -5,9 +5,11 @@ from app.services.github_managed_fallback import install_managed_repository_owne
 from app.services.managed_local_repository import install_managed_local_repository_fallback
 from app.services.ai_recovery_bridge import install_ai_last_resort_recovery
 from app.services.stale_github_recovery import start_stale_github_recovery
+from app.services.delivery_stall_recovery import start_delivery_stall_recovery
 
 install_github_access_bridge()
 install_managed_repository_owner_fallback()
 install_managed_local_repository_fallback()
 install_ai_last_resort_recovery()
 start_stale_github_recovery()
+start_delivery_stall_recovery()
