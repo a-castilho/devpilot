@@ -37,3 +37,13 @@ def test_pipeline_repair_panel_and_mobile_menu_sync_are_preserved():
     assert "/admin/pipeline-repair/run" in text
     assert "syncMobileMenuAfterAdminNavChange" in text
     assert "source:'super-admin-diagnostics'" in text
+
+
+def test_pipeline_repair_view_recovers_from_hidden_navigation_state():
+    text = source()
+
+    assert "button.dataset.view = 'pipeline-repair'" in text
+    assert "view.hidden = !active" in text
+    assert "section.hidden = false" in text
+    assert "section.setAttribute('aria-hidden', 'false')" in text
+    assert "document.documentElement.dataset.devpilotView = 'pipeline-repair'" in text
