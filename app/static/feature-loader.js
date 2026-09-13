@@ -145,6 +145,7 @@
       'linux-beginner-coach.js',
       'career-linkedin.js',
       'mission-control.js',
+      'blueprint-admin.js',
       'rag-admin-ui.js',
       'rag-jobs-ui.js',
     ],
