@@ -44,7 +44,7 @@
     const link = document.createElement('link');
     link.id = stylesheetId;
     link.rel = 'stylesheet';
-    link.href = '/assets/acs-loader.css?v=20260911-vercel-ready1';
+    link.href = '/assets/acs-loader.css?v=20260913-render-gate1';
     document.head.appendChild(link);
   }
 
@@ -54,7 +54,7 @@
   loader.setAttribute('role', 'status');
   loader.setAttribute('aria-live', 'polite');
   loader.setAttribute('aria-label', 'Carregando ACS');
-  loader.style.pointerEvents = 'none';
+  loader.style.pointerEvents = 'auto';
   loader.innerHTML = `
     <main class="acs-loader__content">
       <div class="acs-loader__logo-stage" aria-hidden="true">
@@ -70,7 +70,7 @@
           <span class="acs-loader__progress-fill"></span>
         </div>
       </div>
-      <div class="acs-loader__status" aria-hidden="true">
+      <div class="acs-loader__status">
         <span>Inicializando experiência</span>
       </div>
     </main>`;
@@ -80,8 +80,11 @@
   let removed = false;
   let leaving = false;
   let coreReady = false;
-  let platformReady = !/\.vercel\.app$/i.test(window.location.hostname);
+  const requiresBackendGate = /\.vercel\.app$/i.test(window.location.hostname);
+  let backendReady = !requiresBackendGate;
   const statusText = loader.querySelector('.acs-loader__status span');
+
+  const sleep = ms => new Promise(resolve => window.setTimeout(resolve, ms));
 
   const removeNow = () => {
     if (removed) return;
@@ -90,8 +93,9 @@
   };
 
   const dismiss = () => {
-    if (removed || leaving || !coreReady || !platformReady) return;
+    if (removed || leaving || !coreReady || !backendReady) return;
     leaving = true;
+    if (statusText) statusText.textContent = 'Backend disponível. Abrindo login…';
     loader.classList.add('acs-loader--leaving');
     window.setTimeout(removeNow, 220);
   };
@@ -101,47 +105,69 @@
     dismiss();
   }, {once: true});
 
-  async function waitForVercelReadiness() {
-    if (platformReady) return;
-    const started = Date.now();
-    const timeoutMs = 90000;
-    const pollMs = 2000;
-    if (statusText) statusText.textContent = 'Aguardando publicação na Vercel';
-
-    while (!removed && Date.now() - started < timeoutMs) {
-      try {
-        const response = await fetch(`/health?_=${Date.now()}`, {
-          method: 'GET',
-          cache: 'no-store',
-          headers: {'Accept': 'application/json,text/plain,*/*'},
-        });
-        if (response.ok) {
-          platformReady = true;
-          if (statusText) statusText.textContent = 'Aplicação pronta';
-          dismiss();
-          return;
-        }
-      } catch (_) {
-        // Vercel/Render can still be warming up. Retry until the bounded timeout.
-      }
-      await new Promise(resolve => window.setTimeout(resolve, pollMs));
+  async function checkBackendHealth() {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(`/health?_=${Date.now()}`, {
+        method: 'GET',
+        cache: 'no-store',
+        headers: {'Accept': 'application/json,text/plain,*/*'},
+        signal: controller.signal,
+      });
+      return response.ok;
+    } catch (_) {
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
     }
-
-    // Never trap the user indefinitely if a project does not expose /health.
-    platformReady = true;
-    if (statusText) statusText.textContent = 'Abrindo aplicação';
-    dismiss();
   }
 
-  void waitForVercelReadiness();
+  async function waitForRenderBackend() {
+    if (backendReady) return;
 
-  // Local/Render loads keep the fast path; Vercel loads stay visible while the
-  // deployment/backend readiness check is still warming up.
+    let attempt = 0;
+    const startedAt = Date.now();
+    if (statusText) statusText.textContent = 'Aguardando backend subir na Render…';
+
+    while (!removed && !backendReady) {
+      attempt += 1;
+      const healthy = await checkBackendHealth();
+      if (healthy) {
+        backendReady = true;
+        document.documentElement.dataset.devpilotBackendReady = '1';
+        dismiss();
+        return;
+      }
+
+      const elapsedSeconds = Math.max(1, Math.round((Date.now() - startedAt) / 1000));
+      if (statusText) {
+        statusText.textContent = elapsedSeconds < 30
+          ? 'Aguardando backend subir na Render…'
+          : `Backend ainda iniciando na Render… ${elapsedSeconds}s`;
+      }
+
+      // Free-tier Render services can take a while to wake up. Keep the gate closed
+      // until the proxied /health endpoint actually succeeds instead of exposing a
+      // login form that cannot authenticate yet.
+      await sleep(attempt < 4 ? 1500 : 2500);
+    }
+  }
+
+  if (requiresBackendGate) {
+    document.documentElement.dataset.devpilotBackendReady = '0';
+    void waitForRenderBackend();
+  }
+
+  // Core initialization can finish independently, but on Vercel the loader remains
+  // visible until the Render backend is confirmed healthy.
   window.setTimeout(() => {
     coreReady = true;
     dismiss();
-  }, platformReady ? 650 : 1200);
-  window.setTimeout(() => {
-    if (!/\.vercel\.app$/i.test(window.location.hostname)) removeNow();
-  }, 1200);
+  }, requiresBackendGate ? 500 : 650);
+
+  // Non-Vercel/local paths preserve the fast startup behavior.
+  if (!requiresBackendGate) {
+    window.setTimeout(removeNow, 1200);
+  }
 })();
