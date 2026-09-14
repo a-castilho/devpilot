@@ -50,7 +50,7 @@ run_logged() {
 run_logged python-version "$PYTHON_CMD" -c 'import sys; print(sys.executable, sys.version); raise SystemExit(0 if sys.version_info >= (3, 12) else 1)'
 run_logged python-compile "$PYTHON_CMD" -m compileall -q app
 run_logged engineering-standards "$PYTHON_CMD" scripts/check-engineering-standards.py --changed
-run_logged nonblocking-recovery-focused "$PYTHON_CMD" -m pytest -q tests/test_recovery.py tests/test_failure_recovery_flow_contract.py tests/test_nonblocking_recovery_worker_contract.py
+run_logged nonblocking-recovery-focused "$PYTHON_CMD" -m pytest -q tests/test_recovery.py tests/test_failure_recovery_flow_contract.py tests/test_nonblocking_recovery_worker_contract.py tests/test_automation_first_recovery_no_block.py
 
 matrix_args=(
   scripts/critical-quality-matrix.py
