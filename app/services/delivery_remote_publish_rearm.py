@@ -9,16 +9,23 @@ from sqlalchemy import select
 from app.db import SessionLocal
 from app.models import Task, TaskStatus
 from app.services.audit import record
+from app.services.delivery_recovery_generation import current_generation, reset_for_new_generation
 
 
-REARM_MARKER = "[delivery-remote-publish-v1]"
+REARM_MARKER = "[delivery-remote-publish-v2]"
+LEGACY_REARM_MARKER = "[delivery-remote-publish-v1]"
 DELIVERY_MARKER = "[DEVPILOT_DELIVERY_REPAIR_V1]"
 _STARTED = False
 _LOCK = threading.Lock()
 
 
 def rearm_exhausted_delivery_repairs_once() -> int:
-    """Give previously exhausted deliveries one migration attempt with remote publish enabled."""
+    """Give exhausted deliveries one fresh generation after the remote-publish fix.
+
+    Old retry markers are deliberately removed. They belong to a previous execution
+    contract and must not consume the bounded retries of the new publish-capable
+    generation.
+    """
     changed = 0
     now = datetime.now(timezone.utc)
     with SessionLocal() as db:
@@ -38,15 +45,21 @@ def rearm_exhausted_delivery_repairs_once() -> int:
             prompt = str(task.prompt or "")
             if REARM_MARKER in prompt:
                 continue
-            task.prompt = (
-                prompt.rstrip()
-                + "\n\n"
-                + REARM_MARKER
-                + "\nA infraestrutura de entrega foi corrigida para commit/push automático do resultado "
-                  "da recuperação final. Execute uma única nova tentativa completa, materialize o produto "
-                  "real e deixe os arquivos prontos; o DevPilot publicará e verificará o commit remoto após "
-                  "a execução. Não encerre somente com relatório.\n"
-            )[:100_000]
+
+            generation = max(2, current_generation(prompt) + 1)
+            prompt = reset_for_new_generation(prompt, generation)
+            prompt = prompt.rstrip() + "\n\n" + REARM_MARKER + "\n"
+            if LEGACY_REARM_MARKER in prompt:
+                prompt += (
+                    "A tentativa de migração anterior usou o contador legado e não é válida como tentativa "
+                    "desta geração.\n"
+                )
+            prompt += (
+                "A infraestrutura de entrega agora exige commit, push e prova do SHA remoto. Execute uma "
+                "nova tentativa completa, materialize o produto real e não encerre apenas com relatório.\n"
+            )
+
+            task.prompt = prompt[:100_000]
             task.status = TaskStatus.queued
             task.requires_approval = False
             task.approved_at = task.approved_at or now
@@ -59,7 +72,12 @@ def rearm_exhausted_delivery_repairs_once() -> int:
                 actor="delivery-remote-publish-migration",
                 action="project.delivery_repair_rearmed_after_publish_fix",
                 outcome="queued",
-                details={"one_time": True, "capability": "remote_commit_push_verify"},
+                details={
+                    "one_time": True,
+                    "generation": generation,
+                    "capability": "remote_commit_push_verify",
+                    "legacy_retries_reset": True,
+                },
             )
             changed += 1
         if changed:
