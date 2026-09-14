@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import re
 import subprocess
@@ -16,6 +17,10 @@ from app.services.vault import Vault
 
 _GITHUB_HOST_RE = re.compile(r"(?:https?://)?(?:www\.)?github\.com[/:]([^/]+)/([^/#?]+)", re.I)
 _MAX_CREDENTIAL_CANDIDATES = 20
+GITHUB_CREDENTIAL_PROVIDERS = ("github", "cloud:github", "cloud-github")
+_GITHUB_PROVIDER_PRIORITY = {
+    provider: index for index, provider in enumerate(GITHUB_CREDENTIAL_PROVIDERS)
+}
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,28 @@ def _git_environment(token: str) -> dict[str, str]:
     }
 
 
+def _credential_token(credential: ProviderCredential) -> str:
+    """Read GitHub tokens from organization and central Cloud credential formats."""
+    try:
+        secret = Vault().decrypt(credential.encrypted_secret).strip()
+    except (TypeError, ValueError):
+        return ""
+    if not secret:
+        return ""
+
+    # Legacy cloud-github stored {"token": "...", "account_id": "..."} in
+    # the encrypted payload. Canonical cloud:github stores the token directly.
+    try:
+        payload = json.loads(secret)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return secret
+    if isinstance(payload, dict):
+        return str(payload.get("token") or "").strip()
+    if isinstance(payload, str):
+        return payload.strip()
+    return ""
+
+
 def _probe(repository_url: str, token: str) -> bool:
     env = os.environ.copy()
     env.update(_git_environment(token))
@@ -67,9 +94,10 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
     """Resolve a credential by proving access to the exact repository.
 
     Project and organization links are hints, not requirements. The resolver searches
-    active GitHub credentials in the same workspace, validates each one with
-    ``git ls-remote`` and repairs stale links when possible. Secrets never leave the
-    backend and the end user is never responsible for repository authentication.
+    every active GitHub credential managed by the same workspace, including the
+    central Cloud credential, validates each one with ``git ls-remote`` and repairs
+    stale links when possible. Secrets never leave the backend and the end user is
+    never responsible for repository authentication.
     """
     repository_url = str(project.repository_url or "").strip()
     if not repository_url:
@@ -112,7 +140,7 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
             db.scalars(
                 select(ProviderCredential).where(
                     ProviderCredential.workspace_id == project.workspace_id,
-                    ProviderCredential.provider == "github",
+                    ProviderCredential.provider.in_(GITHUB_CREDENTIAL_PROVIDERS),
                     ProviderCredential.enabled.is_(True),
                 )
             ).all()
@@ -127,15 +155,16 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
                 priority_ids.index(str(item.id))
                 if str(item.id) in priority_ids
                 else len(priority_ids),
+                _GITHUB_PROVIDER_PRIORITY.get(
+                    str(getattr(item, "provider", "") or "").strip().lower(),
+                    len(_GITHUB_PROVIDER_PRIORITY),
+                ),
                 str(item.created_at or ""),
             )
         )
 
         for credential in credentials[:_MAX_CREDENTIAL_CANDIDATES]:
-            try:
-                token = Vault().decrypt(credential.encrypted_secret).strip()
-            except (TypeError, ValueError):
-                continue
+            token = _credential_token(credential)
             if not token or not _probe(repository_url, token):
                 continue
 
@@ -163,15 +192,26 @@ def resolve_github_access(project: Project, *, persist: bool = True) -> GitHubAc
     return GitHubAccessResolution(
         False,
         {"GIT_TERMINAL_PROMPT": "0"},
-        message="Nenhuma credencial GitHub administrativa cadastrada no workspace possui acesso ao repositório.",
+        message=(
+            "Nenhuma credencial GitHub administrativa cadastrada no workspace, incluindo a credencial "
+            "central do Cloud, possui acesso ao repositório."
+        ),
     )
 
 
 def install_github_access_bridge() -> None:
-    """Install repository-specific resolution in executor and recovery flows."""
+    """Install repository-specific resolution in every executor and recovery flow."""
     from app.services import executor
     from app.services import failure_recovery
+    from app.services.github_checkout import ensure_repository as ensure_authenticated_repository
     from app.services.recovery import AutoRecoveryService, RecoveryDecision
+
+    if not getattr(executor.ensure_repository, "_devpilot_authenticated_checkout", False):
+        def ensure_repository(project: Project):
+            return ensure_authenticated_repository(project, executor.run)
+
+        setattr(ensure_repository, "_devpilot_authenticated_checkout", True)
+        executor.ensure_repository = ensure_repository
 
     if not getattr(executor.git_environment, "_devpilot_repository_access_bridge", False):
         def git_environment(project: Project) -> dict[str, str]:
