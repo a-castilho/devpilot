@@ -33,7 +33,22 @@
     state?.verifier ? 'gate' : 'phase',
   ].join(':');
   const recoveryFor = state => window.__devpilotGameRecoveryForTask?.(state?.taskId) || null;
-  const isTerminalRecovery = recovery => TERMINAL_RECOVERY_STATES.has(String(recovery?.state || ''));
+  const recoveryCategory = recovery => normalize(
+    recovery?.failure?.category
+    || recovery?.recovery_task?.failure?.category
+    || recovery?.self_healing?.category
+  );
+  const systemManagedGitHubRecovery = recovery => Boolean(
+    recoveryCategory(recovery) === 'github_auth'
+    && (
+      String(recovery?.state || '') === 'awaiting_intervention'
+      || recovery?.recovery_task?.requires_approval
+    )
+  );
+  const isTerminalRecovery = recovery => Boolean(
+    TERMINAL_RECOVERY_STATES.has(String(recovery?.state || ''))
+    && !systemManagedGitHubRecovery(recovery)
+  );
   const missionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task =>
     String(task?.prompt || '').includes(`PARTIDA: ${state.missionId}`) &&
     String(task?.id || '') === String(state.taskId || '')
@@ -98,7 +113,9 @@
       const lastRecoveryCheck = recoveryChecks.get(key) || 0;
 
       // Delegate the failure immediately once. Afterwards only re-read/escalate canonical
-      // recovery every 30s. This prevents request storms and duplicate repair authority.
+      // recovery every 30s. A stale GitHub approval gate is system-managed and gets one
+      // bounded re-evaluation through the backend credential bridge before we stop for a
+      // genuinely exhausted administrative credential set.
       if (!lastRecoveryCheck || now - lastRecoveryCheck >= RECOVERY_RECHECK_MS) {
         recoveryChecks.set(key, now);
         await engine.retry();
