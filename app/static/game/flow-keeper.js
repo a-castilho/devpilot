@@ -33,7 +33,16 @@
     state?.verifier ? 'gate' : 'phase',
   ].join(':');
   const recoveryFor = state => window.__devpilotGameRecoveryForTask?.(state?.taskId) || null;
-  const isTerminalRecovery = recovery => TERMINAL_RECOVERY_STATES.has(String(recovery?.state || ''));
+  const recoveryCategory = recovery => normalize(
+    recovery?.failure?.category
+    || recovery?.recovery_task?.failure?.category
+    || recovery?.self_healing?.category
+  );
+  const systemManagedGitHubRecovery = recovery => recoveryCategory(recovery) === 'github_auth';
+  const isTerminalRecovery = recovery => Boolean(
+    TERMINAL_RECOVERY_STATES.has(String(recovery?.state || ''))
+    && !systemManagedGitHubRecovery(recovery)
+  );
   const missionTask = (tasks, state) => (Array.isArray(tasks) ? tasks : []).find(task =>
     String(task?.prompt || '').includes(`PARTIDA: ${state.missionId}`) &&
     String(task?.id || '') === String(state.taskId || '')
@@ -98,7 +107,8 @@
       const lastRecoveryCheck = recoveryChecks.get(key) || 0;
 
       // Delegate the failure immediately once. Afterwards only re-read/escalate canonical
-      // recovery every 30s. This prevents request storms and duplicate repair authority.
+      // recovery every 30s. System-managed GitHub failures remain observable even when an
+      // older recovery task still carries a legacy intervention/approval state.
       if (!lastRecoveryCheck || now - lastRecoveryCheck >= RECOVERY_RECHECK_MS) {
         recoveryChecks.set(key, now);
         await engine.retry();
