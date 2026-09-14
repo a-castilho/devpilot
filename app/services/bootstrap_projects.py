@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
-from app.models import Project, Workspace
+from app.models import Project, User, Workspace
 
 
 logger = logging.getLogger(__name__)
@@ -85,10 +85,23 @@ def bootstrap_jobpilot_project(engine: Engine) -> bool:
             )
         )
         if existing is not None:
+            logger.info("JobPilot project already present in DevPilot: project_id=%s", existing.id)
             return False
+
+        owner = db.scalar(
+            select(User)
+            .where(
+                User.workspace_id == workspace.id,
+                User.role.in_(["SUPER_ADMIN", "admin"]),
+                User.active.is_(True),
+            )
+            .order_by(User.created_at.asc(), User.id.asc())
+            .limit(1)
+        )
 
         project = Project(
             workspace_id=workspace.id,
+            owner_user_id=(owner.id if owner else None),
             organization_id=None,
             name="JobPilot",
             slug=JOBPILOT_SLUG,
