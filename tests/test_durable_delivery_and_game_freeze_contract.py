@@ -6,6 +6,7 @@ RECOVERY = ROOT / "app/services/delivery_recovery_worker.py"
 PREFLIGHT = ROOT / "app/services/runtime_preflight.py"
 BOOTSTRAP = ROOT / "app/static/game/game-bootstrap.js"
 STABLE = ROOT / "app/static/game/stable-delivery-url.js"
+FINAL_GATE = ROOT / "app/static/game/final-delivery-gate.js"
 
 
 def test_delivery_recovery_is_owned_by_backend_worker():
@@ -31,6 +32,13 @@ def test_game_has_only_one_delivery_orchestrator():
     assert "method: 'POST'" not in stable
     assert "/validate-url" not in stable
     assert "MutationObserver" not in stable
+
+
+def test_final_gate_uses_explicit_events_instead_of_document_wide_observer():
+    source = FINAL_GATE.read_text(encoding="utf-8")
+    assert "MutationObserver" not in source
+    assert "devpilot:delivery:updated" in source
+    assert "devpilot:delivery:ready" in source
 
 
 def test_victory_keeps_read_only_delivery_summary():
