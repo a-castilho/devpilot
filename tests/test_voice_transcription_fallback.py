@@ -5,13 +5,12 @@ import httpx
 
 from app.voice_transcription_routes import (
     _google_response_data,
-    _google_response_text,
     _provider_error,
     _transcribe_google,
 )
 
 
-def test_google_response_text_extracts_transcription():
+def test_google_response_data_extracts_transcription():
     response = httpx.Response(
         200,
         json={
@@ -28,7 +27,10 @@ def test_google_response_text_extracts_transcription():
         },
     )
 
-    assert _google_response_text(response) == "atualizar DevPilot local"
+    text, usage = _google_response_data(response)
+
+    assert text == "atualizar DevPilot local"
+    assert usage == {}
 
 
 def test_google_response_data_preserves_provider_usage():
@@ -52,8 +54,13 @@ def test_google_response_data_preserves_provider_usage():
     assert usage["totalTokenCount"] == 334
 
 
-def test_google_response_text_supports_direct_text_envelope():
-    assert _google_response_text({"output_text": "comando reconhecido"}) == "comando reconhecido"
+def test_google_response_data_supports_direct_text_envelope():
+    response = httpx.Response(200, json={"output_text": "comando reconhecido"})
+
+    text, usage = _google_response_data(response)
+
+    assert text == "comando reconhecido"
+    assert usage == {}
 
 
 def test_provider_error_preserves_quota_signal():
