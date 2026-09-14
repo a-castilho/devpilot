@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "DevPilot",
-  "generated_at": "2026-09-14T16:09:34.123378+00:00",
+  "generated_at": "2026-09-14T16:12:23.028260+00:00",
   "privacy": {
     "mode": "sanitized_allowlist",
     "notice": "Relatório gerado apenas de documentos permitidos. Padrões de credenciais e segredos são omitidos antes da publicação."
@@ -229,7 +229,7 @@
       "category": "Revisões",
       "title": "Revisão PR #397 — fix(render homolog): destravar recovery GitHub na branch publicada",
       "source": "docs/reviews/pr-397.md",
-      "content": "# Revisão PR #397 — fix(render homolog): destravar recovery GitHub na branch publicada\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Aberta\n- **Autor:** @acastilho\n- **Base:** `fix/mobile-standard-top-back`\n- **Head:** `hotfix/render-tracked-github-recovery-20260914`\n- **Atualizada em:** 2026-09-14T16:08:19Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/397\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** NÃO\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 1\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `tests/test_github_recovery_selfheal_contract.py` (+32/-0)\n\n## Descrição e evidências da PR\n\nA homologação real do Render publica `fix/mobile-standard-top-back`, não a snapshot que recebeu o hotfix anterior. Este PR parte exatamente da branch publicada e porta somente o recovery GitHub necessário. Primeiro adiciona o contrato de regressão que reproduz o travamento; depois aplica o delta mínimo, preservando as customizações atuais da homologação.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
+      "content": "# Revisão PR #397 — fix(render homolog): destravar recovery GitHub na branch publicada\n\n> Relatório gerado automaticamente.\n\n## Metadados\n\n- **Estado:** Merged\n- **Autor:** @acastilho\n- **Base:** `fix/mobile-standard-top-back`\n- **Head:** `hotfix/render-tracked-github-recovery-20260914`\n- **Atualizada em:** 2026-09-14T16:11:33Z\n- **Fonte:** https://github.com/a-castilho/devpilot/pull/397\n\n## Sinais automáticos de revisão\n\n- **Referência de issue detectada:** NÃO\n- **Mudança de UI provável:** SIM\n- **Evidência visual detectada:** NÃO\n- **Arquivos alterados:** 4\n\n> Se houver UI provável sem evidência visual, a revisão deve pedir screenshot/registro ou justificativa explícita.\n\n## Arquivos alterados\n\n- `app/static/game/flow-keeper.js` (+19/-2)\n- `app/static/game/recovery-runtime.js` (+24/-3)\n- `app/static/game/stable-round-ui.js` (+24/-2)\n- `tests/test_github_recovery_selfheal_contract.py` (+32/-0)\n\n## Descrição e evidências da PR\n\nA homologação real do Render publica `fix/mobile-standard-top-back`, não a snapshot que recebeu o hotfix anterior. Este PR parte exatamente da branch publicada e porta somente o recovery GitHub necessário. Primeiro adiciona o contrato de regressão que reproduz o travamento; depois aplica o delta mínimo, preservando as customizações atuais da homologação.\n\n## Comparação obrigatória\n\n1. Issue e critérios de aceite.\n2. Diff e arquivos alterados.\n3. Resultado observável/tela.\n4. Divergências antes do merge."
     },
     {
       "id": "docs-reviews-pr-396",
