@@ -7,6 +7,7 @@
 
   const OPERATORS = new Set(['SUPER_ADMIN', 'OWNER', 'ADMIN']);
   const RETRY_MS = 4000;
+  const WATCH_MS = 15000;
   const MAX_VALIDATIONS = 60;
   const inFlight = new Set();
   const timers = new Map();
@@ -43,6 +44,7 @@
       .stable-delivery-url small{color:#72efc5;font-weight:800;letter-spacing:.08em}.stable-delivery-url strong{font-size:1rem}.stable-delivery-url p{margin:0;color:var(--muted,#9eacc2)}
       .stable-delivery-url-value{display:block;padding:11px 12px;border:1px solid rgba(255,255,255,.1);border-radius:10px;background:rgba(0,0,0,.22);font:600 .78rem ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;overflow-wrap:anywhere;color:#8be9fd;text-decoration:none}
       .stable-delivery-url-actions{display:flex;gap:8px;flex-wrap:wrap}.stable-delivery-url-actions a,.stable-delivery-url-actions button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;text-decoration:none}.stable-delivery-url-error{color:#ffc56e;font-size:.78rem}
+      .stable-delivery-url-watch{color:#8be9fd;font-size:.78rem}
       @media(max-width:800px){.stable-delivery-url-actions>*{width:100%}}
     `;
     document.head.appendChild(style);
@@ -61,7 +63,7 @@
     return node;
   }
 
-  function setRoundGate(panel, delivery) {
+  function setRoundGate(panel, delivery, passiveWatch = false) {
     const ready = delivered(delivery);
     const currentStatus = normalized(delivery);
     const heading = panel.querySelector('h1');
@@ -72,6 +74,7 @@
 
     if (ready) {
       panel.dataset.deliveryUrlReady = '1';
+      panel.dataset.deliveryWatch = '0';
       if (kicker) kicker.textContent = 'MISSÃO CUMPRIDA';
       if (heading) heading.textContent = 'Entrega concluída';
       if (status) status.innerHTML = '🏆 <strong>Pronto.</strong> Entrega validada e URL pública disponível para teste.';
@@ -81,23 +84,28 @@
     }
 
     panel.dataset.deliveryUrlReady = '0';
+    panel.dataset.deliveryWatch = passiveWatch ? '1' : '0';
     if (currentStatus === 'repairing') {
       if (kicker) kicker.textContent = 'CORREÇÃO AUTOMÁTICA';
       if (heading) heading.textContent = 'Corrigindo o produto final';
-      if (status) status.innerHTML = '🛠️ <strong>Revisando a entrega.</strong> O DevPilot detectou que o produto remoto ainda não correspondia ao pedido e está corrigindo antes de publicar.';
-      if (primary) primary.textContent = '🛠️ Corrigindo produto final';
+      if (status) status.innerHTML = passiveWatch
+        ? '⏳ <strong>A correção continua em andamento.</strong> Continuo acompanhando automaticamente até o produto e a URL serem validados.'
+        : '🛠️ <strong>Revisando a entrega.</strong> O DevPilot detectou que o produto remoto ainda não correspondia ao pedido e está corrigindo antes de publicar.';
+      if (primary) primary.textContent = passiveWatch ? '⏳ Aguardando correção' : '🛠️ Corrigindo produto final';
     } else {
       if (kicker) kicker.textContent = 'PUBLICAÇÃO FINAL';
       if (heading) heading.textContent = 'Finalizando a entrega';
-      if (status) status.innerHTML = '🚀 <strong>Quase pronto.</strong> O produto passou pela validação remota e agora está sendo publicado e testado.';
-      if (primary) primary.textContent = '🚀 Publicando e validando URL';
+      if (status) status.innerHTML = passiveWatch
+        ? '⏳ <strong>A publicação ainda não terminou.</strong> Continuo acompanhando automaticamente sem travar a missão.'
+        : '🚀 <strong>Quase pronto.</strong> O produto passou pela validação remota e agora está sendo publicado e testado.';
+      if (primary) primary.textContent = passiveWatch ? '⏳ Aguardando publicação' : '🚀 Publicando e validando URL';
     }
     if (newRound) newRound.hidden = true;
   }
 
-  function render(panel, delivery = {}) {
+  function render(panel, delivery = {}, passiveWatch = false) {
     installStyle();
-    setRoundGate(panel, delivery);
+    setRoundGate(panel, delivery, passiveWatch);
     const node = host(panel);
     const status = normalized(delivery);
     const url = safeUrl(delivery?.url);
@@ -129,24 +137,26 @@
       <small>${status === 'repairing' ? 'VALIDAÇÃO DO PRODUTO' : 'URL DO PROJETO'}</small>
       <strong>${esc(statusText)}</strong>
       ${repairDetail}
+      ${passiveWatch ? '<div class="stable-delivery-url-watch">Continuo acompanhando automaticamente e atualizarei esta tela quando o backend mudar de estado.</div>' : ''}
       ${delivery?.last_error ? `<div class="stable-delivery-url-error">${esc(delivery.last_error)}</div>` : ''}
       ${canOperate() && ['failed', 'blocked'].includes(status) ? '<div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-retry>↻ Corrigir publicação</button></div>' : ''}`;
 
-    node.querySelector('[data-stable-delivery-retry]')?.addEventListener('click', () => void refresh(panel, true));
+    node.querySelector('[data-stable-delivery-retry]')?.addEventListener('click', () => void refresh(panel, true, 1, false));
   }
 
-  function schedule(panel, projectId, attempt) {
-    if (!projectId || attempt > MAX_VALIDATIONS) return;
+  function schedule(panel, projectId, attempt, passiveWatch = false) {
+    if (!projectId) return;
     const old = timers.get(projectId);
     if (old) window.clearTimeout(old);
+    const delay = passiveWatch ? WATCH_MS : RETRY_MS;
     const timer = window.setTimeout(() => {
       timers.delete(projectId);
-      if (panel.isConnected) void refresh(panel, false, attempt);
-    }, RETRY_MS);
+      if (panel.isConnected) void refresh(panel, false, attempt, passiveWatch);
+    }, delay);
     timers.set(projectId, timer);
   }
 
-  async function refresh(panel, forceRetry = false, attempt = 1) {
+  async function refresh(panel, forceRetry = false, attempt = 1, passiveWatch = false) {
     const state = controller()?.snapshot?.();
     if (!state?.done || !state.projectId) return;
     const projectId = String(state.projectId);
@@ -163,17 +173,19 @@
         return;
       }
 
-      if (status === 'repairing') {
+      const activeRetry = forceRetry || (!passiveWatch && attempt <= MAX_VALIDATIONS);
+
+      if (status === 'repairing' && activeRetry) {
         delivery = await call(endpoint(projectId, '/auto'), {method: 'POST'});
         status = normalized(delivery);
-        render(panel, delivery || {});
-        if (!delivered(delivery) && ['repairing', 'provisioning', 'deploying', 'failed', 'blocked'].includes(status)) {
-          schedule(panel, projectId, attempt + 1);
-        }
+        const unresolved = !delivered(delivery) && ['repairing', 'provisioning', 'deploying', 'failed', 'blocked'].includes(status);
+        const nextPassiveWatch = passiveWatch || (!forceRetry && attempt >= MAX_VALIDATIONS);
+        render(panel, delivery || {}, unresolved && nextPassiveWatch);
+        if (unresolved) schedule(panel, projectId, attempt + 1, nextPassiveWatch);
         return;
       }
 
-      if (canOperate() && (status === 'pending' || forceRetry || ['failed', 'blocked'].includes(status))) {
+      if (canOperate() && activeRetry && (status === 'pending' || forceRetry || ['failed', 'blocked'].includes(status))) {
         const action = status === 'pending' && !forceRetry ? '/start' : '/retry';
         delivery = await call(endpoint(projectId, action), {method: 'POST'});
         status = normalized(delivery);
@@ -183,13 +195,14 @@
         delivery = await call(endpoint(projectId, '/validate-url'), {method: 'POST'});
       }
 
-      render(panel, delivery || {});
-      if (!delivered(delivery) && ['pending', 'repairing', 'provisioning', 'deploying', 'failed', 'blocked'].includes(normalized(delivery))) {
-        schedule(panel, projectId, attempt + 1);
-      }
+      const unresolved = !delivered(delivery) && ['pending', 'repairing', 'provisioning', 'deploying', 'failed', 'blocked'].includes(normalized(delivery));
+      const nextPassiveWatch = passiveWatch || (!forceRetry && attempt >= MAX_VALIDATIONS);
+      render(panel, delivery || {}, unresolved && nextPassiveWatch);
+      if (unresolved) schedule(panel, projectId, attempt + 1, nextPassiveWatch);
     } catch (error) {
-      render(panel, {status: 'failed', last_error: error?.message || 'Não foi possível validar a URL agora.'});
-      schedule(panel, projectId, attempt + 1);
+      const nextPassiveWatch = passiveWatch || (!forceRetry && attempt >= MAX_VALIDATIONS);
+      render(panel, {status: 'failed', last_error: error?.message || 'Não foi possível validar a URL agora.'}, nextPassiveWatch);
+      schedule(panel, projectId, attempt + 1, nextPassiveWatch);
     } finally {
       inFlight.delete(projectId);
     }
