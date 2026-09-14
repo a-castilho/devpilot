@@ -7,6 +7,7 @@ from app.services.ai_recovery_bridge import install_ai_last_resort_recovery
 from app.services.stale_github_recovery import start_stale_github_recovery
 from app.services.delivery_stall_recovery import start_delivery_stall_recovery
 from app.services.delivery_remote_publish_bridge import install_delivery_remote_publish_bridge
+from app.services.delivery_remote_publish_rearm import start_delivery_remote_publish_rearm
 
 install_github_access_bridge()
 install_managed_repository_owner_fallback()
@@ -15,3 +16,4 @@ install_delivery_remote_publish_bridge()
 install_ai_last_resort_recovery()
 start_stale_github_recovery()
 start_delivery_stall_recovery()
+start_delivery_remote_publish_rearm()
