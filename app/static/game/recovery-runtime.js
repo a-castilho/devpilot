@@ -21,7 +21,13 @@
     || recovery?.recovery_task?.failure?.category
     || recovery?.self_healing?.category
   );
-  const systemManagedGitHubRecovery = recovery => recoveryCategory(recovery) === 'github_auth';
+  const systemManagedGitHubRecovery = recovery => Boolean(
+    recoveryCategory(recovery) === 'github_auth'
+    && (
+      String(recovery?.state || '') === 'awaiting_intervention'
+      || recovery?.recovery_task?.requires_approval
+    )
+  );
 
   const request = async (taskId, action = '', payload = null) => {
     if (typeof window.api !== 'function' || !taskId) throw new Error('Recuperação indisponível.');
