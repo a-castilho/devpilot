@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from shutil import which
 
+from app.services.delivery_recovery_worker import start_delivery_recovery_worker
+
 
 REQUIRED_WORKER_TOOLS = ("git", "codex")
 
@@ -28,4 +30,5 @@ def worker_runtime_paths(required: tuple[str, ...] = REQUIRED_WORKER_TOOLS) -> d
             f"{tools}. Reconstrua a imagem do DevPilot antes de processar tarefas."
         )
 
+    start_delivery_recovery_worker()
     return paths
