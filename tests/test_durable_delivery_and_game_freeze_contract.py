@@ -2,8 +2,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKER = ROOT / "app/worker.py"
 RECOVERY = ROOT / "app/services/delivery_recovery_worker.py"
+PREFLIGHT = ROOT / "app/services/runtime_preflight.py"
 BOOTSTRAP = ROOT / "app/static/game/game-bootstrap.js"
 STABLE = ROOT / "app/static/game/stable-delivery-url.js"
 
@@ -11,13 +11,14 @@ STABLE = ROOT / "app/static/game/stable-delivery-url.js"
 def test_delivery_recovery_is_owned_by_backend_worker():
     assert RECOVERY.exists(), "delivery recovery must continue without an open browser"
     recovery = RECOVERY.read_text(encoding="utf-8")
-    worker = WORKER.read_text(encoding="utf-8")
+    preflight = PREFLIGHT.read_text(encoding="utf-8")
 
     assert "process_delivery_recovery_once" in recovery
+    assert "start_delivery_recovery_worker" in recovery
     assert "blocked" in recovery and "failed" in recovery
     assert "deploying" in recovery and "provisioning" in recovery
     assert "delivery.run_delivery" in recovery
-    assert "process_delivery_recovery_once" in worker
+    assert "start_delivery_recovery_worker" in preflight
 
 
 def test_game_has_only_one_delivery_orchestrator():
