@@ -44,7 +44,7 @@ def _latest_failure(task_id: str) -> dict:
         run = db.scalar(
             select(Run)
             .where(Run.task_id == task_id)
-            .order_by(Run.created_at.desc())
+            .order_by(Run.started_at.desc())
             .limit(1)
         )
         if run is None:
@@ -66,6 +66,7 @@ def _latest_failure(task_id: str) -> dict:
             "message": message[:1200],
             "stderr": stderr[-3000:],
             "remote_publish": remote,
+            "started_at": run.started_at.isoformat() if run.started_at else "",
             "finished_at": run.finished_at.isoformat() if run.finished_at else "",
         }
 
