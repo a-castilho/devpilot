@@ -10,6 +10,7 @@ from app.models import Run, Task, TaskStatus
 from app.services.audit import record
 
 RECOVERY_MARKER = "[DEVPILOT_FAILURE_RECOVERY_V1]"
+DEFERRED_RECOVERY_MARKER = "[DEVPILOT_DEFERRED_RECOVERY_V1]"
 _ORIGIN_RE = re.compile(r"\[failure-origin-task:([^\]]+)\]", re.IGNORECASE)
 
 
@@ -74,6 +75,18 @@ def recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
         "7. Só conclua com sucesso se o ambiente estiver apto a retestar a execução original. O worker do DevPilot recolocará automaticamente a execução original na fila para provar a correção.\n\n"
         f"FALHA DE ORIGEM\nCategoria: {category}\nCódigo: {code}\nMensagem: {message}\nExige autorização externa: {'sim' if authorization else 'não'}\n\n"
         f"OBJETIVO ORIGINAL\nTítulo: {original_task.title}\n{_safe_original_prompt(original_task)}"
+    )[:100_000]
+
+
+def _deferred_recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
+    return (
+        f"{recovery_prompt(original_task, run, failure)}\n\n"
+        f"{DEFERRED_RECOVERY_MARKER}\n"
+        "ACOMPANHAMENTO NÃO BLOQUEANTE\n"
+        "A execução de origem já foi liberada de forma degradada para que etapas independentes continuem. "
+        "Esta missão é interna e assíncrona: procure uma solução segura usando somente acessos já autorizados, registre diagnóstico, solução, testes e limitações. "
+        "Não reabra nem bloqueie a tarefa original apenas por uma dependência externa ainda indisponível. "
+        "Se a correção exigir autorização que o DevPilot não possui, registre exatamente a fronteira externa e encerre esta missão sem criar outra recuperação recursiva."
     )[:100_000]
 
 
@@ -209,6 +222,69 @@ def ensure_failure_recovery_task(
             "failure_code": failure.get("code", "EXECUTION_FAILED"),
             "requires_authorization": requires_authorization,
             "automatic": actor == "worker",
+        },
+    )
+    return recovery
+
+
+def ensure_deferred_failure_recovery_task(
+    db: Session,
+    *,
+    original_task: Task,
+    run: Run | None,
+    failure: dict,
+    actor: str = "worker",
+) -> Task | None:
+    """Create one low-priority AI repair mission without blocking an already-degraded pipeline."""
+    if is_failure_recovery_task(original_task):
+        return None
+
+    existing = find_failure_recovery_task(db, original_task)
+    if existing:
+        now = datetime.now(timezone.utc)
+        existing.requires_approval = False
+        existing.approved_at = existing.approved_at or now
+        existing.priority = max(10, min(60, int(existing.priority or original_task.priority or 50)))
+        if existing.status in {TaskStatus.awaiting_approval, TaskStatus.failed, TaskStatus.blocked}:
+            existing.status = TaskStatus.queued
+            existing.updated_at = now
+        if DEFERRED_RECOVERY_MARKER not in str(existing.prompt or ""):
+            existing.prompt = _deferred_recovery_prompt(original_task, run, failure)
+        db.flush()
+        return existing
+
+    recovery = Task(
+        workspace_id=original_task.workspace_id,
+        owner_user_id=original_task.owner_user_id,
+        project_id=original_task.project_id,
+        title=f"Recuperação em segundo plano · {original_task.title}"[:240],
+        prompt=_deferred_recovery_prompt(original_task, run, failure),
+        source="failure-recovery",
+        status=TaskStatus.queued,
+        priority=max(10, min(60, int(original_task.priority or 50) - 10)),
+        branch_name=original_task.branch_name or "",
+        requires_approval=False,
+        approved_at=datetime.now(timezone.utc),
+    )
+    db.add(recovery)
+    db.flush()
+    record(
+        db,
+        workspace_id=original_task.workspace_id,
+        project_id=original_task.project_id,
+        task_id=recovery.id,
+        actor=actor,
+        action="failure_recovery.deferred_created",
+        outcome="queued",
+        details={
+            "original_task_id": original_task.id,
+            "original_run_id": run.id if run else None,
+            "failure_category": failure.get("category", "unknown"),
+            "failure_code": failure.get("code", "EXECUTION_FAILED"),
+            "requires_authorization": False,
+            "automatic": True,
+            "pipeline_continued": True,
+            "nonblocking": True,
         },
     )
     return recovery
