@@ -8,10 +8,20 @@
   const patched = new WeakSet();
   const inFlight = new Map();
   const recoveryStates = new Map();
-  const RETRYABLE_TERMINAL_STATES = new Set(['intervention_required', 'recovery_exhausted']);
+  const RETRYABLE_TERMINAL_STATES = new Set([
+    'awaiting_intervention',
+    'intervention_required',
+    'recovery_exhausted',
+  ]);
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const canUseCanonicalRecovery = state => ['failed', 'blocked'].includes(normalize(state?.taskStatus));
+  const recoveryCategory = recovery => normalize(
+    recovery?.failure?.category
+    || recovery?.recovery_task?.failure?.category
+    || recovery?.self_healing?.category
+  );
+  const systemManagedGitHubRecovery = recovery => recoveryCategory(recovery) === 'github_auth';
 
   const request = async (taskId, action = '', payload = null) => {
     if (typeof window.api !== 'function' || !taskId) throw new Error('Recuperação indisponível.');
@@ -36,8 +46,13 @@
   const safeTerminalRetry = recovery => Boolean(
     recovery
     && RETRYABLE_TERMINAL_STATES.has(String(recovery.state || ''))
-    && !recovery?.failure?.requires_authorization
-    && !recovery?.recovery_task?.requires_approval
+    && (
+      systemManagedGitHubRecovery(recovery)
+      || (
+        !recovery?.failure?.requires_authorization
+        && !recovery?.recovery_task?.requires_approval
+      )
+    )
   );
 
   const readCanonicalRecovery = async (taskId, {escalate = true} = {}) => {
