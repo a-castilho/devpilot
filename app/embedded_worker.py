@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import threading
 
+from app.db import SessionLocal
+from app.services.delivery_recovery_worker import process_one_pending_delivery
 from app.services.runtime_preflight import worker_runtime_paths
 from app.worker import process_one
 
@@ -11,7 +13,7 @@ class EmbeddedWorker:
 
     Production deployments should keep using a dedicated worker service. This
     helper exists so a free Render web service can exercise the complete queue
-    flow without provisioning a paid background worker.
+    and delivery-recovery flow without provisioning a paid background worker.
     """
 
     def __init__(self, poll_seconds: float = 2.0) -> None:
@@ -44,8 +46,12 @@ class EmbeddedWorker:
 
     def _run(self) -> None:
         while not self._stop.is_set():
+            processed = False
             try:
                 processed = process_one()
+                if not processed:
+                    with SessionLocal() as db:
+                        processed = process_one_pending_delivery(db)
             except Exception as error:  # pragma: no cover - defensive runtime guard
                 print(f"[embedded-worker] task loop error: {error}", flush=True)
                 processed = False
