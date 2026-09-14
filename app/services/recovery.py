@@ -34,13 +34,15 @@ class RecoveryDecision:
     requires_authorization: bool = False
     strategy: str = "none"
     steps: list[dict] = field(default_factory=list)
+    hard_stop: bool = False
+    continue_pipeline: bool = False
 
     def to_dict(self) -> dict:
         return asdict(self)
 
 
 class AutoRecoveryService:
-    """Safe, bounded recovery for failures that can be repaired without destructive actions."""
+    """Safe, bounded recovery with non-blocking continuation whenever integrity permits."""
 
     MAX_ATTEMPTS = 3
 
@@ -58,9 +60,20 @@ class AutoRecoveryService:
     _CODEX_AUTH = ("not logged in", "unauthorized", "invalid api key", "codex login", "401 unauthorized")
     _FILESYSTEM = ("operation not permitted", "permission denied", "read-only file system")
     _DATABASE = ("connection refused", "could not connect to server", "database is unavailable", "sqlalchemy.exc.operationalerror")
+    _SAFETY_INTEGRITY = (
+        "database disk image is malformed",
+        "data corruption detected",
+        "data corruption risk",
+        "irreversible data loss",
+        "would destroy data",
+        "destructive operation is irreversible",
+        "secret exposure detected",
+        "credential exposure detected",
+    )
 
     def classify(self, error_text: str) -> str:
         text = str(error_text or "").casefold()
+        if any(pattern in text for pattern in self._SAFETY_INTEGRITY): return "safety_integrity"
         if any(pattern in text for pattern in self._GITHUB_AUTH): return "github_auth"
         if any(pattern in text for pattern in self._NETWORK): return "git_network"
         if any(pattern in text for pattern in self._REPOSITORY_STATE): return "repository_state"
@@ -69,30 +82,46 @@ class AutoRecoveryService:
         if any(pattern in text for pattern in self._FILESYSTEM): return "filesystem_permission"
         return "unknown"
 
-    def recover(self, project: Project, task: Task, error_text: str, execution_attempt: int) -> RecoveryDecision:
+    def recover(self, project: Project | None, task: Task | None, error_text: str, execution_attempt: int) -> RecoveryDecision:
         category = self.classify(error_text)
         detected = {"state": "detected", "attempt": execution_attempt, "category": category, "message": self._safe_error(error_text)}
+        if category == "safety_integrity":
+            return RecoveryDecision(
+                category="safety_integrity",
+                status="hard_stop",
+                message="A execução encontrou evidência explícita de risco à integridade ou segurança. A esteira foi interrompida somente para evitar perda/corrupção de dados, exposição de segredo ou ação destrutiva irreversível.",
+                retry=False,
+                requires_authorization=False,
+                strategy="protect_integrity",
+                steps=[detected],
+                hard_stop=True,
+                continue_pipeline=False,
+            )
         if category == "github_auth":
+            if project is None:
+                return RecoveryDecision(category, "needs_attention", "Acesso GitHub indisponível; o DevPilot seguirá de forma degradada e manterá a recuperação automática em acompanhamento.", False, False, "defer_github_access", [detected])
             decision = self._recover_github_access(project, execution_attempt); decision.steps.insert(0, detected); return decision
         if category == "git_network" and execution_attempt < self.MAX_ATTEMPTS:
             delay = min(2, max(1, execution_attempt)); time.sleep(delay)
             return RecoveryDecision(category, "retrying", "Falha transitória de rede detectada. O DevPilot tentará novamente automaticamente.", True, False, "bounded_retry", [detected, {"state":"repairing","attempt":execution_attempt,"message":f"Nova tentativa agendada após {delay}s."}])
+        if category == "git_network":
+            return RecoveryDecision(category, "needs_attention", "A conectividade permaneceu indisponível após as tentativas controladas. O diagnóstico será mantido e a esteira poderá seguir de forma degradada.", False, False, "defer_network_failure", [detected])
         if category == "repository_state":
-            repaired = self._quarantine_invalid_repository(project)
-            return RecoveryDecision(category, "resolved" if repaired else "needs_attention", "Área local inconsistente isolada com segurança. O DevPilot retomará a tarefa." if repaired else "O repositório local exige verificação antes de uma correção automática segura.", repaired and execution_attempt < self.MAX_ATTEMPTS, False, "quarantine_invalid_checkout" if repaired else "manual_repository_review", [detected])
+            repaired = self._quarantine_invalid_repository(project) if project is not None else False
+            return RecoveryDecision(category, "resolved" if repaired else "needs_attention", "Área local inconsistente isolada com segurança. O DevPilot retomará a tarefa." if repaired else "O checkout local permanece inconsistente. O DevPilot registrará a pendência e continuará somente com etapas independentes.", repaired and execution_attempt < self.MAX_ATTEMPTS, False, "quarantine_invalid_checkout" if repaired else "defer_repository_repair", [detected])
         if category == "codex_auth":
-            return RecoveryDecision(category, "needs_authorization", "O Codex não está autenticado no ambiente de execução. É necessária autorização para continuar.", False, True, "request_codex_authorization", [detected])
+            return RecoveryDecision(category, "needs_authorization", "O Codex não está autenticado no ambiente desta tentativa. A pendência será informada sem bloquear etapas independentes da esteira.", False, True, "defer_codex_authorization", [detected])
         if category == "filesystem_permission":
-            return RecoveryDecision(category, "needs_authorization", "Permissão do sistema operacional bloqueou a execução. O DevPilot não alterou permissões automaticamente.", False, True, "request_filesystem_authorization", [detected])
+            return RecoveryDecision(category, "needs_authorization", "Uma permissão do sistema operacional impediu esta ação. O DevPilot preservará a evidência e seguirá com o que não depender dessa permissão.", False, True, "defer_filesystem_authorization", [detected])
         if category == "database":
-            return RecoveryDecision(category, "needs_attention", "Falha de banco detectada. A correção automática foi interrompida para evitar operações inseguras sobre dados.", False, False, "database_safety_stop", [detected])
+            return RecoveryDecision(category, "needs_attention", "O banco está indisponível nesta tentativa, sem evidência de corrupção. O DevPilot registrará o diagnóstico e permitirá continuação degradada de etapas independentes.", False, False, "defer_database_unavailability", [detected])
         if execution_attempt < self.MAX_ATTEMPTS:
             delay = min(2, max(1, execution_attempt))
             time.sleep(delay)
             return RecoveryDecision(
                 category="unknown",
                 status="retrying",
-                message="A causa ainda não foi classificada, mas não há evidência de credencial, permissão ou decisão humana. O DevPilot fará uma nova tentativa controlada antes de interromper a etapa.",
+                message="A causa ainda não foi classificada, mas não há evidência de risco destrutivo. O DevPilot fará uma nova tentativa controlada.",
                 retry=True,
                 requires_authorization=False,
                 strategy="bounded_unknown_retry",
@@ -107,28 +136,77 @@ class AutoRecoveryService:
             )
         return RecoveryDecision(
             category="unknown", status="diagnosis_required",
-            message="Não foi possível identificar automaticamente a causa da falha após as tentativas controladas. O erro original foi preservado para diagnóstico; nenhuma autorização será solicitada sem evidência de credencial ou permissão.",
-            retry=False, requires_authorization=False, strategy="diagnose_original_error", steps=[detected],
+            message="Não foi possível identificar automaticamente a causa após as tentativas controladas. O erro foi preservado para recuperação por IA e a esteira poderá continuar de forma degradada quando não houver risco explícito.",
+            retry=False, requires_authorization=False, strategy="defer_ai_diagnosis", steps=[detected],
         )
+
+    def should_continue_pipeline(self, decision: RecoveryDecision) -> bool:
+        """Allow exhausted non-destructive failures to become an auditable degraded continuation."""
+        if decision.hard_stop or decision.retry:
+            return False
+        if decision.status in {"resolved", "retrying", "hard_stop"}:
+            return False
+        return True
+
+    def degraded_result(self, decision: RecoveryDecision, original_error: str, existing_result: dict | None = None) -> dict:
+        """Materialize a non-blocking result without pretending the technical work fully succeeded."""
+        diagnostic = self._safe_error(original_error)
+        result = dict(existing_result or {})
+        decision.continue_pipeline = True
+        result.update(
+            {
+                "mode": "self-healing-degraded",
+                "exit_code": 0,
+                "degraded": True,
+                "summary": f"Continuação degradada: a etapa não foi concluída integralmente. {decision.message}",
+                "client_report": (
+                    "Resumo para o cliente\n"
+                    "A etapa não foi concluída integralmente nesta tentativa. O DevPilot esgotou as alternativas automáticas seguras disponíveis, registrou o diagnóstico e seguirá com as partes da esteira que não dependem desta condição.\n\n"
+                    "O que encontramos\n"
+                    f"Categoria identificada: {decision.category}.\n"
+                    f"Diagnóstico técnico: {diagnostic}\n\n"
+                    "Impacto\n"
+                    "A pendência permanece registrada e não é tratada como entrega técnica concluída. Ela não bloqueará etapas independentes.\n\n"
+                    "Próximo passo\n"
+                    "O DevPilot manterá uma recuperação automática por IA em acompanhamento e registrará a solução ou a limitação encontrada."
+                ),
+                "stderr": diagnostic,
+                "self_healing": {
+                    "status": "deferred",
+                    "category": decision.category,
+                    "requires_authorization": decision.requires_authorization,
+                    "strategy": decision.strategy,
+                    "message": decision.message,
+                    "steps": decision.steps,
+                    "hard_stop": False,
+                    "pipeline_continued": True,
+                },
+            }
+        )
+        return result
 
     def failure_result(self, decision: RecoveryDecision, original_error: str) -> dict:
         diagnostic = self._safe_error(original_error)
-        if decision.requires_authorization:
+        if decision.hard_stop:
+            summary = f"Parada de segurança: {decision.message}"
+            next_step = "Preserve o estado atual e corrija a condição de integridade/segurança antes de retomar esta operação."
+            impact = "A esteira foi interrompida porque continuar poderia causar dano irreversível ou exposição de dados sensíveis."
+        elif decision.requires_authorization:
             summary = f"Intervenção autorizada necessária: {decision.message}"
-            next_step = "Conclua somente a autorização indicada pelo diagnóstico; depois o DevPilot retomará o fluxo automaticamente."
-            impact = "A tarefa foi interrompida porque o diagnóstico comprovou uma dependência de autorização ou permissão."
+            next_step = "A autorização foi registrada como pendência; etapas independentes podem ser tratadas pela política de continuação degradada."
+            impact = "Esta ação específica depende de autorização ou permissão, mas isso não constitui automaticamente um hard stop da esteira."
         elif decision.category == "github_auth":
             summary = f"Configuração administrativa necessária: {decision.message}"
-            next_step = "Revise as credenciais GitHub cadastradas no workspace. O usuário final não deve fornecer token nem autenticar o GitHub."
-            impact = "A execução depende de uma credencial GitHub administrada pelo DevPilot com acesso ao repositório."
+            next_step = "O DevPilot deve continuar tentando as credenciais GitHub administradas e registrar a pendência se o acesso continuar indisponível."
+            impact = "A ação dependente de GitHub não foi concluída nesta tentativa."
         elif decision.category == "unknown":
             summary = f"Diagnóstico necessário: {decision.message}"
-            next_step = "Analise o erro técnico preservado abaixo. Só solicite intervenção humana se o diagnóstico comprovar uma dependência externa."
-            impact = "A tarefa foi interrompida porque a causa ainda não foi classificada com segurança; isso não significa falta de autorização."
+            next_step = "Preserve o erro para a recuperação por IA e continue apenas com etapas independentes quando seguro."
+            impact = "A causa ainda não foi classificada, sem evidência atual de risco destrutivo."
         else:
             summary = f"Atenção necessária: {decision.message}"
-            next_step = "Aplique o ajuste indicado pelo diagnóstico e repita a execução de forma controlada."
-            impact = "A tarefa foi interrompida para evitar uma ação automática sem segurança comprovada."
+            next_step = "Registre a pendência e aplique a política de continuação degradada quando não houver risco explícito."
+            impact = "A ação específica não foi concluída nesta tentativa."
         return {
             "mode": "self-healing", "exit_code": 1, "summary": summary,
             "client_report": (
@@ -137,7 +215,16 @@ class AutoRecoveryService:
                 "Impacto\n" + impact + "\n\nPróximo passo\n" + next_step
             ),
             "stderr": diagnostic,
-            "self_healing": {"status":decision.status,"category":decision.category,"requires_authorization":decision.requires_authorization,"strategy":decision.strategy,"message":decision.message,"steps":decision.steps},
+            "self_healing": {
+                "status": decision.status,
+                "category": decision.category,
+                "requires_authorization": decision.requires_authorization,
+                "strategy": decision.strategy,
+                "message": decision.message,
+                "steps": decision.steps,
+                "hard_stop": decision.hard_stop,
+                "pipeline_continued": False,
+            },
         }
 
     def _recover_github_access(self, project: Project, execution_attempt: int) -> RecoveryDecision:
