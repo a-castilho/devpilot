@@ -25,13 +25,14 @@
   let feedbackWired = false;
   let baseLoadBuildGame = null;
   let loadInFlight = null;
+  let exitInProgress = false;
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
     const link = document.createElement('link');
     link.id = STYLE_ID;
     link.rel = 'stylesheet';
-    link.href = '/assets/game-shell.css?v=20260825-3';
+    link.href = '/assets/game-shell.css?v=20260914-exit-touch';
     document.head.appendChild(link);
   }
 
@@ -61,6 +62,13 @@
     },
   };
 
+  function handleExitInput(event) {
+    if (exitInProgress) return;
+    if (event?.cancelable) event.preventDefault();
+    exitInProgress = true;
+    leaveGameToOverview();
+  }
+
   function ensureRoot() {
     let root = document.getElementById(ROOT_ID);
     if (root) return root;
@@ -84,7 +92,9 @@
       </header>
       <main class="devpilot-game-stage" data-game-slot></main>
     `;
-    root.querySelector('.devpilot-game-exit')?.addEventListener('click', leaveGameToOverview);
+    const exitButton = root.querySelector('.devpilot-game-exit');
+    exitButton?.addEventListener('touchstart', handleExitInput, {passive: false});
+    exitButton?.addEventListener('click', handleExitInput);
     document.body.appendChild(root);
     return root;
   }
@@ -114,6 +124,7 @@
 
   function enterGame(view = document.getElementById(VIEW_ID)) {
     if (!view) return false;
+    exitInProgress = false;
     const root = ensureRoot();
     const slot = root.querySelector('[data-game-slot]');
     if (!slot) return false;
