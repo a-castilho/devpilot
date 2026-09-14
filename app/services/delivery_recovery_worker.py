@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -21,6 +23,10 @@ _RETRY_SECONDS = {
     "blocked": 60,
 }
 _MAX_PROJECT_SCAN = 100
+_LOOP_IDLE_SECONDS = 5
+_LOOP_ACTIVE_SECONDS = 2
+_worker_thread: threading.Thread | None = None
+_worker_lock = threading.Lock()
 
 
 def _delivery_state(project: Project) -> dict | None:
@@ -63,8 +69,8 @@ def process_delivery_recovery_once() -> bool:
 
     Delivery provider functions are idempotent: existing Render services, Vercel
     deployment IDs and persisted public URLs are reused before a new resource is
-    created. Processing only one due project per idle worker cycle also prevents a
-    cloud-provider request storm when several projects are waiting at once.
+    created. Processing only one due project per cycle also limits provider traffic
+    when several projects are waiting at once.
     """
     install_delivery_url_recovery()
     now = datetime.now(timezone.utc)
@@ -84,7 +90,7 @@ def process_delivery_recovery_once() -> bool:
 
             try:
                 delivery.run_delivery(db, project, "worker:delivery-recovery")
-            except Exception as error:  # keep the task worker alive on provider/runtime faults
+            except Exception as error:  # keep task execution alive on cloud/runtime faults
                 print(
                     f"[worker] delivery recovery failed project={project.id}: {error}",
                     flush=True,
@@ -92,3 +98,33 @@ def process_delivery_recovery_once() -> bool:
             return True
 
     return False
+
+
+def _delivery_recovery_loop() -> None:
+    while True:
+        try:
+            advanced = process_delivery_recovery_once()
+        except Exception as error:
+            print(f"[worker] delivery recovery loop error: {error}", flush=True)
+            advanced = False
+        time.sleep(_LOOP_ACTIVE_SECONDS if advanced else _LOOP_IDLE_SECONDS)
+
+
+def start_delivery_recovery_worker() -> threading.Thread:
+    """Start one daemon recovery loop per worker process.
+
+    The browser remains a read-only observer of delivery state. This loop keeps
+    persisted blocked/failed/deploying/provisioning deliveries moving even when the
+    user closes the game or the mobile browser suspends the tab.
+    """
+    global _worker_thread
+    with _worker_lock:
+        if _worker_thread is not None and _worker_thread.is_alive():
+            return _worker_thread
+        _worker_thread = threading.Thread(
+            target=_delivery_recovery_loop,
+            name="devpilot-delivery-recovery",
+            daemon=True,
+        )
+        _worker_thread.start()
+        return _worker_thread
