@@ -76,6 +76,20 @@ def test_worker_automatically_escalates_after_self_healing_and_retests_original(
     assert "resumed_original_task_id" in WORKER
 
 
+def test_deferred_recovery_is_internal_nonblocking_and_low_priority():
+    assert "def ensure_deferred_failure_recovery_task" in SERVICE
+    deferred = SERVICE.split("def ensure_deferred_failure_recovery_task", 1)[1]
+    assert "if is_failure_recovery_task(original_task):" in deferred
+    assert "find_failure_recovery_task(db, original_task)" in deferred
+    assert 'source="failure-recovery"' in deferred
+    assert "status=TaskStatus.queued" in deferred
+    assert "requires_approval=False" in deferred
+    assert "approved_at=datetime.now(timezone.utc)" in deferred
+    assert "failure_recovery.deferred_created" in deferred
+    assert '"pipeline_continued": True' in deferred
+    assert "priority=max(10, min(60" in deferred
+
+
 def test_human_guidance_requeues_same_recovery_task_instead_of_duplicating_it():
     assert "INTERVENÇÃO ASSISTIDA DO USUÁRIO" in SERVICE
     assert "recovery.status = TaskStatus.queued" in SERVICE
