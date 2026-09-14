@@ -1,6 +1,8 @@
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
+from app.services.bootstrap_projects import bootstrap_jobpilot_project
+
 
 def _column_names(inspector, table: str) -> set[str]:
     return {column["name"] for column in inspector.get_columns(table)}
@@ -209,9 +211,9 @@ def ensure_runtime_schema(engine: Engine) -> None:
                 """
             )
 
-    if not statements:
-        return
+    if statements:
+        with engine.begin() as connection:
+            for statement in statements:
+                connection.execute(text(statement))
 
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
+    bootstrap_jobpilot_project(engine)
