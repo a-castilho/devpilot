@@ -1,0 +1,28 @@
+name: JobPilot Bootstrap Verification
+
+on:
+  push:
+    branches:
+      - feat/jobpilot-project-bootstrap
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+      - name: Compile changed Python
+        run: python -m compileall -q app/services/bootstrap_projects.py tests/test_jobpilot_project_bootstrap.py
+      - name: JobPilot bootstrap contract
+        run: python -m pytest -q tests/test_jobpilot_project_bootstrap.py
