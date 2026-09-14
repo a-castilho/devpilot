@@ -62,13 +62,23 @@ def test_explicit_non_github_authorization_decision_remains_authoritative():
     assert details["requires_authorization"] is True
 
 
-def test_existing_stale_github_recovery_gate_is_requeued_even_if_legacy_diagnosis_requested_authorization(monkeypatch):
-    original = SimpleNamespace(
+def _blocked_original_task():
+    return SimpleNamespace(
         id="task-original",
         workspace_id="workspace-1",
         project_id="project-1",
         status=TaskStatus.blocked,
+        source="manual",
+        prompt="Objetivo original",
     )
+
+
+def _fake_db():
+    return SimpleNamespace(flush=lambda: None, get=lambda *_args, **_kwargs: None)
+
+
+def test_existing_stale_github_recovery_gate_is_requeued_even_if_legacy_diagnosis_requested_authorization(monkeypatch):
+    original = _blocked_original_task()
     recovery = SimpleNamespace(
         id="task-recovery",
         requires_approval=True,
@@ -76,7 +86,7 @@ def test_existing_stale_github_recovery_gate_is_requeued_even_if_legacy_diagnosi
         status=TaskStatus.awaiting_approval,
         updated_at=None,
     )
-    db = SimpleNamespace(flush=lambda: None)
+    db = _fake_db()
 
     monkeypatch.setattr(failure_recovery, "find_failure_recovery_task", lambda _db, _task: recovery)
     monkeypatch.setattr(failure_recovery, "record", lambda *args, **kwargs: None)
@@ -101,12 +111,7 @@ def test_existing_stale_github_recovery_gate_is_requeued_even_if_legacy_diagnosi
 
 
 def test_real_external_authorization_gate_is_not_bypassed(monkeypatch):
-    original = SimpleNamespace(
-        id="task-original",
-        workspace_id="workspace-1",
-        project_id="project-1",
-        status=TaskStatus.blocked,
-    )
+    original = _blocked_original_task()
     recovery = SimpleNamespace(
         id="task-recovery",
         requires_approval=True,
@@ -114,7 +119,7 @@ def test_real_external_authorization_gate_is_not_bypassed(monkeypatch):
         status=TaskStatus.awaiting_approval,
         updated_at=None,
     )
-    db = SimpleNamespace(flush=lambda: None)
+    db = _fake_db()
 
     monkeypatch.setattr(failure_recovery, "find_failure_recovery_task", lambda _db, _task: recovery)
     monkeypatch.setattr(failure_recovery, "record", lambda *args, **kwargs: None)
