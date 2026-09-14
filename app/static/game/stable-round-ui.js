@@ -39,9 +39,27 @@
     const taskId = String(state?.taskId || '').trim();
     return recoveryStates.get(taskId) || window.__devpilotGameRecoveryForTask?.(taskId) || null;
   };
-  const isTerminalRecovery = recovery => TERMINAL_RECOVERY_STATES.has(String(recovery?.state || ''));
+  const recoveryCategory = recovery => normalize(
+    recovery?.failure?.category
+    || recovery?.recovery_task?.failure?.category
+    || recovery?.self_healing?.category
+  );
+  const systemManagedGitHubRecovery = recovery => Boolean(
+    recoveryCategory(recovery) === 'github_auth'
+    && (
+      String(recovery?.state || '') === 'awaiting_intervention'
+      || recovery?.recovery_task?.requires_approval
+    )
+  );
+  const isTerminalRecovery = recovery => Boolean(
+    TERMINAL_RECOVERY_STATES.has(String(recovery?.state || ''))
+    && !systemManagedGitHubRecovery(recovery)
+  );
 
   const recoveryStateText = recovery => {
+    if (systemManagedGitHubRecovery(recovery)) {
+      return 'Revalidando automaticamente as credenciais GitHub cadastradas';
+    }
     const map = {
       ready_to_recover: 'Falha detectada; preparando correção automática',
       agent_recovery: 'Correção automática em execução',
@@ -61,6 +79,7 @@
     if (recoveryState === 'retesting') return 'Correção aplicada. Retestando esta mesma etapa…';
     if (recoveryState === 'resolved') return 'Falha corrigida. Retomando a rodada…';
     if (recoverableFailure(state, recovery)) {
+      if (systemManagedGitHubRecovery(recovery)) return 'Revalidando automaticamente as credenciais GitHub cadastradas…';
       if (isTerminalRecovery(recovery)) return 'A correção automática parou com diagnóstico. Veja o motivo e a posição abaixo.';
       if (effectiveTaskStatus(state, recovery) === 'blocked') return 'A execução foi bloqueada. Diagnosticando a causa para retomar esta mesma etapa…';
       return state.verifier
@@ -93,7 +112,10 @@
     const position = `${state.verifier ? 'Gate da etapa' : 'Etapa'} ${state.currentPhaseId || '?'} · ${phaseName}`;
     const attempt = recovery?.original_run?.attempt;
     const recoveryTask = recovery?.recovery_task;
-    const manual = Boolean(recovery?.manual_intervention_required || isTerminalRecovery(recovery));
+    const manual = Boolean(
+      (recovery?.manual_intervention_required || isTerminalRecovery(recovery))
+      && !systemManagedGitHubRecovery(recovery)
+    );
 
     return `
       <section data-game-recovery-diagnostic role="status" style="margin-top:10px;padding:11px 12px;border:1px solid rgba(255,92,113,.52);border-radius:10px;background:rgba(88,13,27,.34);display:grid;gap:7px">
