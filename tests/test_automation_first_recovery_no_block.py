@@ -17,6 +17,28 @@ def test_raw_github_failure_is_classified_for_automatic_recovery():
 
     assert details["category"] == "github_auth"
     assert details["code"] == "GITHUB_ACCESS_DENIED"
+    assert details["requires_authorization"] is False
+
+
+def test_explicit_legacy_github_authorization_is_normalized_to_automatic_recovery():
+    run = SimpleNamespace(
+        status="failed",
+        logs=json.dumps(
+            {
+                "self_healing": {
+                    "category": "github_auth",
+                    "message": "Revalide a credencial GitHub e confirme acesso ao repositório.",
+                    "requires_authorization": True,
+                }
+            }
+        ),
+        summary="GitHub clone failed",
+    )
+
+    details = failure_details(run)
+
+    assert details["category"] == "github_auth"
+    assert details["requires_authorization"] is False
 
 
 def test_explicit_non_github_authorization_decision_remains_authoritative():
