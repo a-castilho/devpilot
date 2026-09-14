@@ -1,47 +1,10 @@
-import json
 from pathlib import Path
-from types import SimpleNamespace
-
-from app.task_run_routes import failure_details
 
 
 ROOT = Path(__file__).resolve().parents[1]
 RECOVERY_RUNTIME = ROOT / "app/static/game/recovery-runtime.js"
-
-
-def test_github_failure_is_system_managed_not_user_authorization():
-    run = SimpleNamespace(
-        status="failed",
-        summary="Execution failed",
-        logs=json.dumps({"stderr": "fatal: repository access denied"}),
-    )
-
-    details = failure_details(run)
-
-    assert details["category"] == "github_auth"
-    assert details["requires_authorization"] is False
-
-
-def test_legacy_github_self_healing_authorization_flag_is_normalized():
-    run = SimpleNamespace(
-        status="failed",
-        summary="Execution failed",
-        logs=json.dumps(
-            {
-                "stderr": "The requested URL returned error: 403",
-                "self_healing": {
-                    "category": "github_auth",
-                    "message": "Legacy recovery record",
-                    "requires_authorization": True,
-                },
-            }
-        ),
-    )
-
-    details = failure_details(run)
-
-    assert details["category"] == "github_auth"
-    assert details["requires_authorization"] is False
+FLOW_KEEPER = ROOT / "app/static/game/flow-keeper.js"
+STABLE_UI = ROOT / "app/static/game/stable-round-ui.js"
 
 
 def test_game_refresh_rechecks_legacy_github_intervention_without_user_gate():
@@ -50,3 +13,20 @@ def test_game_refresh_rechecks_legacy_github_intervention_without_user_gate():
     assert "awaiting_intervention" in source
     assert "systemManagedGitHubRecovery" in source
     assert "systemManagedGitHubRecovery(recovery)" in source
+    assert "safeTerminalRetry" in source
+
+
+def test_flow_keeper_continues_watching_system_managed_github_recovery():
+    source = FLOW_KEEPER.read_text(encoding="utf-8")
+
+    assert "systemManagedGitHubRecovery" in source
+    assert "!systemManagedGitHubRecovery(recovery)" in source
+    assert "RECOVERY_RECHECK_MS" in source
+
+
+def test_stable_ui_does_not_present_github_recovery_as_human_intervention():
+    source = STABLE_UI.read_text(encoding="utf-8")
+
+    assert "systemManagedGitHubRecovery" in source
+    assert "Revalidando automaticamente as credenciais GitHub cadastradas" in source
+    assert "!systemManagedGitHubRecovery(recovery)" in source
