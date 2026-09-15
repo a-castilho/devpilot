@@ -2,6 +2,7 @@ import time
 
 from app.db import SessionLocal
 from app.rag.worker import process_one_rag_job
+from app.services.delivery_recovery_worker import start_delivery_recovery_worker
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.worker import process_one
 
@@ -13,6 +14,7 @@ def main() -> None:
         print(f"[worker] PRECHECK FAILED: {error}", flush=True)
         raise SystemExit(78) from error
 
+    start_delivery_recovery_worker()
     print(
         "[worker] runtime OK: "
         + ", ".join(f"{tool}={path}" for tool, path in runtime.items()),
