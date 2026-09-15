@@ -65,13 +65,7 @@ def _due(state: dict, now: datetime) -> bool:
 
 
 def process_delivery_recovery_once() -> bool:
-    """Advance one persisted delivery without depending on an open browser.
-
-    Delivery provider functions are idempotent: existing Render services, Vercel
-    deployment IDs and persisted public URLs are reused before a new resource is
-    created. Processing only one due project per cycle also limits provider traffic
-    when several projects are waiting at once.
-    """
+    """Advance one persisted delivery without depending on an open browser."""
     install_delivery_url_recovery()
     now = datetime.now(timezone.utc)
 
@@ -87,14 +81,10 @@ def process_delivery_recovery_once() -> bool:
             state = _delivery_state(project)
             if not state or not _due(state, now):
                 continue
-
             try:
                 delivery.run_delivery(db, project, "worker:delivery-recovery")
-            except Exception as error:  # keep task execution alive on cloud/runtime faults
-                print(
-                    f"[worker] delivery recovery failed project={project.id}: {error}",
-                    flush=True,
-                )
+            except Exception as error:
+                print(f"[worker] delivery recovery failed project={project.id}: {error}", flush=True)
             return True
 
     return False
@@ -111,12 +101,7 @@ def _delivery_recovery_loop() -> None:
 
 
 def start_delivery_recovery_worker() -> threading.Thread:
-    """Start one daemon recovery loop per worker process.
-
-    The browser remains a read-only observer of delivery state. This loop keeps
-    persisted blocked/failed/deploying/provisioning deliveries moving even when the
-    user closes the game or the mobile browser suspends the tab.
-    """
+    """Start one daemon recovery loop per worker process."""
     global _worker_thread
     with _worker_lock:
         if _worker_thread is not None and _worker_thread.is_alive():
