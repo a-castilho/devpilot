@@ -135,7 +135,7 @@
       <small>${status === 'repairing' ? 'VALIDAÇÃO DO PRODUTO' : 'URL DO PROJETO'}</small>
       <strong>${esc(statusText)}</strong>
       ${repairDetail}
-      <div class="stable-delivery-url-watch">Continuo acompanhando automaticamente. Esta tela apenas observa o estado; a automação de entrega roda uma única vez no fluxo do jogo.</div>
+      <div class="stable-delivery-url-watch">Continuo acompanhando automaticamente. A recuperação da entrega continua no backend mesmo se você sair desta tela.</div>
       ${delivery?.last_error ? `<div class="stable-delivery-url-error">${esc(delivery.last_error)}</div>` : ''}
       ${canOperate() && ['failed', 'blocked'].includes(status) ? '<div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-retry>↻ Tentar entrega novamente</button></div>' : ''}`;
 

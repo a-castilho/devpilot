@@ -84,9 +84,8 @@
     });
   };
 
-  const observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, {subtree: true, childList: true, attributes: true, attributeFilter: ['data-delivery-url-ready']});
-
+  document.addEventListener('devpilot:delivery:updated', schedule);
+  document.addEventListener('devpilot:delivery:ready', schedule);
   document.addEventListener('devpilot:game:state', schedule);
   document.addEventListener('devpilot:game:rendered', schedule);
   document.addEventListener('devpilot:game:core-ready', schedule);

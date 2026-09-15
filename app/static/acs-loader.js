@@ -54,7 +54,7 @@
   loader.setAttribute('role', 'status');
   loader.setAttribute('aria-live', 'polite');
   loader.setAttribute('aria-label', 'Carregando ACS');
-  loader.style.pointerEvents = 'auto';
+  loader.style.pointerEvents = 'none';
   loader.innerHTML = `
     <main class="acs-loader__content">
       <div class="acs-loader__logo-stage" aria-hidden="true">
@@ -163,8 +163,6 @@
         }
       }
 
-      // Only reveal authentication after the application readiness endpoint has
-      // succeeded twice. /health alone can become green before auth/database are ready.
       await sleep(ready ? 700 : (attempt < 4 ? 1500 : 2500));
     }
   }
@@ -174,14 +172,11 @@
     void waitForRenderBackend();
   }
 
-  // Core initialization can finish independently, but on Vercel the loader remains
-  // visible until Render health + auth/database readiness are confirmed.
   window.setTimeout(() => {
     coreReady = true;
     dismiss();
   }, requiresBackendGate ? 500 : 650);
 
-  // Non-Vercel/local paths preserve the fast startup behavior.
   if (!requiresBackendGate) {
     window.setTimeout(removeNow, 1200);
   }

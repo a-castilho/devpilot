@@ -11,6 +11,7 @@ class WorkerRuntimeError(RuntimeError):
 
 
 def worker_runtime_paths(required: tuple[str, ...] = REQUIRED_WORKER_TOOLS) -> dict[str, str]:
+    """Resolve required executables without starting background services."""
     paths: dict[str, str] = {}
     missing: list[str] = []
 
