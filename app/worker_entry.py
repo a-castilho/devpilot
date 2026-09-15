@@ -14,6 +14,7 @@ def main() -> None:
         print(f"[worker] PRECHECK FAILED: {error}", flush=True)
         raise SystemExit(78) from error
 
+    # Delivery is backend-owned: it must keep progressing after the game tab is closed.
     start_delivery_recovery_worker()
     print(
         "[worker] runtime OK: "
