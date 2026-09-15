@@ -91,6 +91,7 @@ def process_delivery_recovery_once() -> bool:
 
 
 def _delivery_recovery_loop() -> None:
+    # This loop is intentionally independent from browser/game lifecycle.
     while True:
         try:
             advanced = process_delivery_recovery_once()
