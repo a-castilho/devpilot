@@ -19,34 +19,22 @@ def test_git_url_rejects_unapproved_host():
         validate_repository_url("https://example.com/company/project.git")
 
 
-@pytest.mark.parametrize(
-    "repository",
-    [
-        "a-castilho/devpilot",
-        "github.com/a-castilho/devpilot",
-        "https://github.com/a-castilho/devpilot",
-        "https://github.com/a-castilho/devpilot.git",
-        "git@github.com:a-castilho/devpilot.git",
-        "www.github.com/a-castilho/devpilot/",
-        "` https://github.com / a-castilho / devpilot.git `",
-    ],
-)
+@pytest.mark.parametrize("repository", [
+    "a-castilho/devpilot", "github.com/a-castilho/devpilot",
+    "https://github.com/a-castilho/devpilot", "https://github.com/a-castilho/devpilot.git",
+    "git@github.com:a-castilho/devpilot.git", "www.github.com/a-castilho/devpilot/",
+    "` https://github.com / a-castilho / devpilot.git `",
+])
 def test_git_url_normalizes_supported_github_forms(repository):
     assert normalize_repository_url(repository) == "https://github.com/a-castilho/devpilot.git"
 
 
 def test_git_url_normalizes_github_shorthand():
-    assert (
-        normalize_repository_url("a-castilho/regulaai")
-        == "https://github.com/a-castilho/regulaai.git"
-    )
+    assert normalize_repository_url("a-castilho/regulaai") == "https://github.com/a-castilho/regulaai.git"
 
 
 def test_git_url_normalizes_ssh_form_without_credentials():
-    assert (
-        normalize_repository_url("git@github.com:a-castilho/devpilot.git")
-        == "https://github.com/a-castilho/devpilot.git"
-    )
+    assert normalize_repository_url("git@github.com:a-castilho/devpilot.git") == "https://github.com/a-castilho/devpilot.git"
 
 
 def test_git_url_rejects_nested_repository_path():
@@ -60,20 +48,19 @@ def test_git_url_uses_portuguese_format_error():
 
 
 def test_safe_local_task_is_pre_authorized():
-    decision = evaluate_task(
-        "Edite o arquivo local, rode pytest, lint e build e faça um commit local reversível.",
-        requested_approval=False,
-    )
+    decision = evaluate_task("Edite o arquivo local, rode pytest, lint e build e faça um commit local reversível.")
+    assert decision.requires_approval is False
+    assert decision.reasons == ()
+
+
+def test_managed_delivery_pipeline_is_pre_authorized():
+    decision = evaluate_task("Faça git push da branch, merge controlado e deploy em homologação.")
     assert decision.requires_approval is False
     assert decision.reasons == ()
 
 
 def test_task_schema_defaults_to_approval_by_exception():
-    payload = TaskCreate(
-        project_id="project-1",
-        title="Corrigir teste local",
-        prompt="Corrija o teste e valide localmente.",
-    )
+    payload = TaskCreate(project_id="project-1", title="Corrigir teste local", prompt="Corrija o teste e valide localmente.")
     assert payload.requires_approval is False
 
 
@@ -83,20 +70,15 @@ def test_explicit_manual_approval_is_preserved():
     assert decision.reasons == ()
 
 
-@pytest.mark.parametrize(
-    ("prompt", "reason"),
-    [
-        ("Faça git push da branch", "push"),
-        ("Faça merge do PR", "merge"),
-        ("Faça deploy da aplicação", "deploy"),
-        ("Atualize o serviço em produção", "production"),
-        ("Execute npm install para trocar dependências", "dependency"),
-        ("Delete os dados antigos", "destructive"),
-        ("Execute DROP TABLE users", "destructive"),
-        ("Faça uma migration destrutiva com drop da coluna", "destructive-migration"),
-        ("Rotacione a credencial da API", "credential"),
-    ],
-)
+@pytest.mark.parametrize(("prompt", "reason"), [
+    ("Faça force-push da branch", "destructive"),
+    ("Atualize o serviço em produção", "production"),
+    ("Execute npm install para trocar dependências", "dependency"),
+    ("Delete os dados antigos", "destructive"),
+    ("Execute DROP TABLE users", "destructive"),
+    ("Faça uma migration destrutiva com drop da coluna", "destructive-migration"),
+    ("Rotacione a credencial da API", "credential"),
+])
 def test_high_risk_boundaries_require_approval(prompt, reason):
     decision = evaluate_task(prompt, requested_approval=False)
     assert decision.requires_approval is True
@@ -104,10 +86,7 @@ def test_high_risk_boundaries_require_approval(prompt, reason):
 
 
 def test_reversible_local_migration_is_not_blocked_by_word_alone():
-    decision = evaluate_task(
-        "Crie uma migration local reversível que adiciona uma coluna nullable e rode os testes.",
-        requested_approval=False,
-    )
+    decision = evaluate_task("Crie uma migration local reversível que adiciona uma coluna nullable e rode os testes.")
     assert decision.requires_approval is False
     assert "destructive-migration" not in decision.reasons
 
