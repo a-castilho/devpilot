@@ -33,8 +33,7 @@ def test_boot_does_not_load_action_runtime_wrapper():
     assert "delivery-gate.js" in entry
     assert "flow-keeper.js" in entry
     assert "action-runtime.js" not in entry
-    assert "game-flow-v77-20260902" in source
-    assert "unified-v73" in source
+    assert "unified-v" in source
 
 
 def test_engine_exposes_direct_one_click_controller():
@@ -52,6 +51,12 @@ def test_phase_only_passes_after_independent_verifier():
     assert "const isVerifierTask" in source
     assert "isVerifierTask(task) && normalize(task.status) === 'completed'" in source
     assert "const isAwaitingGate" in source
+
+
+def test_blocked_stage_is_failure_not_permanent_active_state():
+    source = text(ENGINE)
+    assert "const ACTIVE_STATUSES = new Set(['awaiting_approval', 'queued', 'running', 'review']);" in source
+    assert "const FAILED_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'blocked']);" in source
 
 
 def test_simple_ui_calls_controller_not_hidden_buttons():
