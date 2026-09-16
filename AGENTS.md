@@ -11,8 +11,9 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 - Never expose provider keys, Git credentials, tokens, prompts containing secrets, or raw environment values.
 - Store provider credentials only through the encrypted vault service.
 - Do not execute shell strings. Use argument arrays, fixed working directories, timeouts, and captured output.
-- Treat safe, local, auditable, and reversible actions as pre-authorized. Do not stop for per-step approval when analyzing, editing code, creating files, running tests/lint/build, creating local branches, or creating local commits.
-- Require approval for push, merge, deployment, dependency changes, destructive migrations, destructive data/filesystem operations, credential/secret changes, or production actions.
+- Treat safe, auditable, reversible actions and the normal managed delivery lifecycle as pre-authorized. Do not stop for per-step approval when analyzing, editing code, creating files, running tests/lint/build, creating branches or commits, pushing a working branch, performing a controlled merge, or deploying to managed homologation/preview environments.
+- Require approval only at exceptional high-impact boundaries: protected production changes, destructive migrations, destructive data/filesystem operations, dependency changes outside the authorized task, credential/secret changes, force-push/history rewriting, or actions outside the authorized project/scope.
+- After an authorized task starts, continue autonomously through analyze → implement → test → repair/retest → document → commit → push → homologation → deploy → health/E2E validation → validated URL. Do not report completion before objective validation succeeds.
 - Append audit events for commands, configuration changes, approvals, executions, Git writes, and provider use.
 - Treat voice transcripts as untrusted user input and retain the transcript used for an action.
 - Keep provider adapters behind the provider interface; core workflows must not depend on one AI vendor.
@@ -70,4 +71,3 @@ must be attributable, reviewable, reversible where possible, and isolated to its
 **Sempre na melhor prática. No caminho do bem maior.**
 
 **Ir até o fim sem sair do caminho, seja ele qual for.**
-
