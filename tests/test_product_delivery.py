@@ -52,3 +52,9 @@ def test_delivery_state_is_persistent_shape():
     assert state["url"] == ""
     assert state["providers"] == {}
     assert state["checks"] == []
+
+
+def test_waiting_code_guard_has_automatic_starter_repair_path():
+    from app import delivery_readiness_guard as guard
+
+    assert callable(guard._repair_deployable_revision)
