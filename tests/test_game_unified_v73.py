@@ -8,7 +8,6 @@ UI = ROOT / "app/static/game/objective-controls.js"
 GUARD = ROOT / "app/static/game/task-payload-guard.js"
 GATE = ROOT / "app/static/game/delivery-gate.js"
 KEEPER = ROOT / "app/static/game/flow-keeper.js"
-STAGE_RECOVERY = ROOT / "app/static/game/blocked-stage-recovery.js"
 
 
 def text(path: Path) -> str:
@@ -26,15 +25,15 @@ def test_entry_has_one_controller_and_visible_v77_fallback():
     assert "/assets/styles.css" not in source
 
 
-def test_boot_loads_autonomous_stage_recovery():
+def test_boot_does_not_load_action_runtime_wrapper():
     source = text(BOOT)
     entry = source.split("const ENTRY_ASSETS = [", 1)[1].split("];", 1)[0]
     assert "task-payload-guard.js" in entry
     assert "objective-controls.js" in entry
     assert "delivery-gate.js" in entry
     assert "flow-keeper.js" in entry
-    assert "blocked-stage-recovery.js" in entry
     assert "action-runtime.js" not in entry
+    assert "unified-v" in source
 
 
 def test_engine_exposes_direct_one_click_controller():
@@ -54,13 +53,10 @@ def test_phase_only_passes_after_independent_verifier():
     assert "const isAwaitingGate" in source
 
 
-def test_blocked_stage_recovery_retries_without_human_click():
-    source = text(STAGE_RECOVERY)
-    assert "state.taskStatus !== 'blocked'" in source
-    assert "await engine.retry()" in source
-    assert "devpilot:game:state" in source
-    assert "devpilot:game:leaving" in source
-    assert "MAX_ATTEMPTS" in source
+def test_blocked_stage_is_failure_not_permanent_active_state():
+    source = text(ENGINE)
+    assert "const ACTIVE_STATUSES = new Set(['awaiting_approval', 'queued', 'running', 'review']);" in source
+    assert "const FAILED_STATUSES = new Set(['failed', 'cancelled', 'canceled', 'blocked']);" in source
 
 
 def test_simple_ui_calls_controller_not_hidden_buttons():
@@ -82,15 +78,14 @@ def test_running_round_does_not_offer_accidental_reset():
     assert "Corrigir e continuar" in source
 
 
-def test_flow_keeper_keeps_round_polling_even_before_first_task_is_visible():
+def test_flow_keeper_handles_waiting_and_all_recoverable_failure_states():
     source = text(KEEPER)
-    assert "__devpilotGameFlowKeeperV76Ready" in source
-    assert "state.missionId" in source
-    assert "state.goal" in source
-    assert "!state.hasTasks" in source
-    assert "await window.loadBuildGame()" in source
-    assert "await engine.refresh()" in source
-    assert "devpilot:game:state" in source
+    assert "waiting_code" in source
+    assert "waiting_repository" in source
+    assert "waiting_worker" in source
+    assert "timeout" in source
+    assert "await engine.retry()" in source
+    assert "await engine.refresh?.()" in source
     assert "visibilitychange" in source
 
 
