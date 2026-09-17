@@ -39,7 +39,7 @@ def _github_token(project: Project) -> str:
     return ""
 
 
-def _published_dockerfile(project: Project) -> tuple[bool, str]:
+def _requires_dockerfile(project: Project) -> bool:\n    return "render" in delivery.selected_providers(project)\n\n\ndef _published_dockerfile(project: Project) -> tuple[bool, str]:\n    if not _requires_dockerfile(project):\n        return True, "Dockerfile not required for selected providers"
     owner, repo = _repository_parts(project)
     if not owner or not repo:
         return True, "non_github_repository"
@@ -107,7 +107,7 @@ def _waiting_state(db, project: Project, proof: str) -> dict:
     state["readiness"] = {
         "ready": False,
         "proof": proof,
-        "required": ["Dockerfile on default branch"],
+        "required": ["Dockerfile on default branch"] if _requires_dockerfile(project) else [],
     }
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     delivery.save_delivery(db, project, state)
