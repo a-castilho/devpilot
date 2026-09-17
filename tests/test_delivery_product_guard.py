@@ -36,6 +36,14 @@ def test_delivery_repair_uses_original_project_scope_and_remote_proof():
     assert "MAX_SAFE_RETRIES = 3" in GUARD
 
 
+def test_exhausted_repair_rolls_over_to_a_fresh_autonomous_task():
+    assert "MAX_REPAIR_GENERATIONS" in GUARD
+    assert "repair_generation" in GUARD
+    assert "project.delivery_repair_rollover" in GUARD
+    assert 'state["status"] = "repairing"' in GUARD
+    assert "repair_exhausted" not in GUARD
+
+
 def test_public_repository_still_gets_inspected_if_saved_github_credential_fails():
     assert "candidates = [dict(base_headers)]" in GUARD
     assert 'authenticated["Authorization"] = f"Bearer {token}"' in GUARD
