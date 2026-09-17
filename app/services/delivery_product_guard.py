@@ -28,52 +28,29 @@ REPAIRABLE_TASK_STATES = {
     TaskStatus.awaiting_approval,
 }
 MAX_SAFE_RETRIES = 3
+# Diagnostic safety window. A generation never marks the mission delivered; remote
+# proof remains the only completion criterion. Generations let a poisoned/exhausted
+# worker task be replaced instead of becoming a permanent state-machine dead end.
+MAX_REPAIR_GENERATIONS = 12
 APP_FILENAMES = {
-    "Dockerfile",
-    "docker-compose.yml",
-    "compose.yml",
-    "package.json",
-    "pyproject.toml",
-    "requirements.txt",
-    "composer.json",
-    "manage.py",
-    "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "go.mod",
-    "Cargo.toml",
-    "index.html",
+    "Dockerfile", "docker-compose.yml", "compose.yml", "package.json", "pyproject.toml",
+    "requirements.txt", "composer.json", "manage.py", "pom.xml", "build.gradle",
+    "build.gradle.kts", "go.mod", "Cargo.toml", "index.html",
 }
 SOURCE_EXTENSIONS = {
-    ".py",
-    ".js",
-    ".mjs",
-    ".cjs",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".vue",
-    ".php",
-    ".java",
-    ".go",
-    ".rs",
-    ".html",
-    ".css",
+    ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".php",
+    ".java", ".go", ".rs", ".html", ".css",
 }
 _IGNORED_PREFIXES = (".devpilot/", ".github/", "docs/")
 _BASE_RUN_DELIVERY = None
 
 
 def _github_token(db: Session, workspace_id: str) -> str:
-    rows = list(
-        db.scalars(
-            select(ProviderCredential).where(
-                ProviderCredential.workspace_id == workspace_id,
-                ProviderCredential.provider.in_(("github", "cloud:github")),
-                ProviderCredential.enabled.is_(True),
-            )
-        ).all()
-    )
+    rows = list(db.scalars(select(ProviderCredential).where(
+        ProviderCredential.workspace_id == workspace_id,
+        ProviderCredential.provider.in_(("github", "cloud:github")),
+        ProviderCredential.enabled.is_(True),
+    )).all())
     for row in rows:
         try:
             token = Vault().decrypt(row.encrypted_secret).strip()
@@ -85,20 +62,9 @@ def _github_token(db: Session, workspace_id: str) -> str:
 
 
 def _repository_paths(db: Session, project) -> list[str] | None:
-    """Return files from the remote default branch.
-
-    Stored credentials are tried first so private repositories keep working. If that
-    credential is stale or belongs to an account without access, retry anonymously.
-    This lets public repositories remain inspectable instead of silently bypassing the
-    product guard because of an unrelated credential problem.
-
-    None means the guard could not inspect the remote safely, in which case the normal
-    delivery path remains authoritative instead of producing a false blocker.
-    """
     full_name = delivery.repository_full_name(db, project).strip("/")
     if full_name.count("/") != 1:
         return None
-
     branch = quote(str(project.default_branch or "main"), safe="")
     token = _github_token(db, project.workspace_id)
     base_headers = {
@@ -111,15 +77,13 @@ def _repository_paths(db: Session, project) -> list[str] | None:
         authenticated = dict(base_headers)
         authenticated["Authorization"] = f"Bearer {token}"
         candidates.insert(0, authenticated)
-
     response = None
     try:
         with httpx.Client(timeout=8.0, follow_redirects=True) as client:
             for headers in candidates:
                 response = client.get(
                     f"https://api.github.com/repos/{full_name}/git/trees/{branch}",
-                    params={"recursive": "1"},
-                    headers=headers,
+                    params={"recursive": "1"}, headers=headers,
                 )
                 if response.status_code == 200:
                     break
@@ -134,15 +98,10 @@ def _repository_paths(db: Session, project) -> list[str] | None:
     tree = payload.get("tree") if isinstance(payload, dict) else None
     if not isinstance(tree, list):
         return None
-    return sorted(
-        {
-            str(item.get("path") or "").strip("/")
-            for item in tree
-            if isinstance(item, dict)
-            and item.get("type") == "blob"
-            and str(item.get("path") or "").strip()
-        }
-    )
+    return sorted({
+        str(item.get("path") or "").strip("/") for item in tree
+        if isinstance(item, dict) and item.get("type") == "blob" and str(item.get("path") or "").strip()
+    })
 
 
 def _is_application_file(path: str) -> bool:
@@ -162,124 +121,108 @@ def _preflight_reasons(paths: list[str], requested: list[str]) -> list[str]:
     reasons: list[str] = []
     app_paths = [path for path in paths if _is_application_file(path)]
     requested_set = {str(item).strip().lower() for item in requested if item}
-
     if not app_paths:
-        reasons.append(
-            "O branch padrão remoto não contém aplicação executável; há apenas metadados/documentação ou arquivos auxiliares."
-        )
-
+        reasons.append("O branch padrão remoto não contém aplicação executável; há apenas metadados/documentação ou arquivos auxiliares.")
     if "render" in requested_set and "Dockerfile" not in paths:
-        reasons.append(
-            "O backend será publicado no Render, mas o contrato atual de entrega usa Docker e o branch padrão remoto não possui Dockerfile."
-        )
-
+        reasons.append("O backend será publicado no Render, mas o contrato atual de entrega usa Docker e o branch padrão remoto não possui Dockerfile.")
     if "vercel" in requested_set:
-        frontend_markers = {
-            "package.json",
-            "index.html",
-            "frontend/package.json",
-            "web/package.json",
-            "client/package.json",
-        }
+        frontend_markers = {"package.json", "index.html", "frontend/package.json", "web/package.json", "client/package.json"}
         if not frontend_markers.intersection(paths):
-            has_frontend_source = any(
-                path.lower().endswith((".html", ".tsx", ".jsx", ".vue"))
-                for path in app_paths
-            )
+            has_frontend_source = any(path.lower().endswith((".html", ".tsx", ".jsx", ".vue")) for path in app_paths)
             if not has_frontend_source:
-                reasons.append(
-                    "A entrega solicita Vercel, mas o branch padrão remoto não contém um frontend publicável identificável."
-                )
-
+                reasons.append("A entrega solicita Vercel, mas o branch padrão remoto não contém um frontend publicável identificável.")
     return reasons
 
 
 def _requirements_context(db: Session, project) -> str:
-    tasks = list(
-        db.scalars(
-            select(Task)
-            .where(
-                Task.project_id == project.id,
-                Task.workspace_id == project.workspace_id,
-                Task.source.notin_(("failure-recovery", "delivery-recovery")),
-            )
-            .order_by(Task.created_at.asc())
-            .limit(40)
-        ).all()
-    )
+    tasks = list(db.scalars(select(Task).where(
+        Task.project_id == project.id,
+        Task.workspace_id == project.workspace_id,
+        Task.source.notin_(("failure-recovery", "delivery-recovery")),
+    ).order_by(Task.created_at.asc()).limit(40)).all())
     chunks: list[str] = []
     total = 0
     for index, task in enumerate(tasks, start=1):
-        prompt = " ".join(str(task.prompt or "").split())
-        prompt = prompt[:3500]
+        prompt = " ".join(str(task.prompt or "").split())[:3500]
         chunk = f"\n### Requisito/Tarefa {index}: {task.title}\n{prompt}\n"
         if total + len(chunk) > 55_000:
             break
         chunks.append(chunk)
         total += len(chunk)
-    if not chunks:
-        return f"Projeto: {project.name}\nDescrição: {project.description or '(sem descrição)'}"
-    return "".join(chunks)
+    return "".join(chunks) if chunks else f"Projeto: {project.name}\nDescrição: {project.description or '(sem descrição)'}"
 
 
 def _latest_repair(db: Session, project) -> Task | None:
-    return db.scalar(
-        select(Task)
-        .where(
-            Task.project_id == project.id,
-            Task.workspace_id == project.workspace_id,
-            Task.source == "delivery-recovery",
-            Task.prompt.contains(DELIVERY_REPAIR_MARKER),
-        )
-        .order_by(Task.created_at.desc())
-        .limit(1)
-    )
+    return db.scalar(select(Task).where(
+        Task.project_id == project.id,
+        Task.workspace_id == project.workspace_id,
+        Task.source == "delivery-recovery",
+        Task.prompt.contains(DELIVERY_REPAIR_MARKER),
+    ).order_by(Task.created_at.desc()).limit(1))
 
 
 def _retry_count(task: Task) -> int:
     return str(task.prompt or "").count("[delivery-repair-retry:")
 
 
-def _repair_prompt(db: Session, project, reasons: list[str], paths: list[str]) -> str:
+def _repair_generation(task: Task | None) -> int:
+    if not task:
+        return 0
+    for line in str(task.prompt or "").splitlines():
+        if line.startswith("[repair_generation:") and line.endswith("]"):
+            try:
+                return max(0, int(line[len("[repair_generation:"):-1]))
+            except ValueError:
+                return 0
+    return 0
+
+
+def _repair_prompt(db: Session, project, reasons: list[str], paths: list[str], generation: int = 0) -> str:
     requested = delivery.selected_providers(project)
     evidence = "\n".join(f"- {reason}" for reason in reasons)
     sample = "\n".join(f"- {path}" for path in paths[:80]) or "- branch remoto sem arquivos de aplicação"
     requirements = _requirements_context(db, project)
     return (
-        f"{DELIVERY_REPAIR_MARKER}\n"
-        "[DEVPILOT_MODE=fix]\n"
-        "[DEVPILOT_DELIVERY_REQUIRES_REMOTE_PROOF=true]\n\n"
+        f"{DELIVERY_REPAIR_MARKER}\n[repair_generation:{generation}]\n"
+        "[DEVPILOT_MODE=fix]\n[DEVPILOT_DELIVERY_REQUIRES_REMOTE_PROOF=true]\n\n"
         "MISSÃO DE RECUPERAÇÃO DA ENTREGA FINAL\n"
-        "O jogo marcou as fases como concluídas, porém a validação do produto real provou que o branch padrão remoto ainda não contém uma entrega publicável. "
-        "Sua responsabilidade é chegar ao produto solicitado pelo usuário no início, não apenas corrigir a mensagem de deploy.\n\n"
-        "EVIDÊNCIAS DO IMPEDIMENTO\n"
-        f"{evidence}\n\n"
-        "ESTADO REMOTO OBSERVADO\n"
-        f"{sample}\n\n"
+        "O jogo concluiu as fases, mas a prova remota ainda não encontrou uma entrega publicável. Corrija o produto real; não apenas o estado do deploy.\n\n"
+        f"EVIDÊNCIAS DO IMPEDIMENTO\n{evidence}\n\nESTADO REMOTO OBSERVADO\n{sample}\n\n"
         f"PROVEDORES DE ENTREGA NECESSÁRIOS: {', '.join(requested) or 'detecção automática'}\n\n"
         "PROTOCOLO OBRIGATÓRIO\n"
-        "1. Leia AGENTS.md e todos os requisitos/tarefas abaixo; trate-os como a fonte do escopo originalmente solicitado.\n"
-        "2. Inspecione o branch padrão remoto e qualquer trabalho útil deixado em worktree/branch temporário. Recupere trabalho válido em vez de recomeçar sem necessidade.\n"
-        "3. Se o sistema não existir no repositório, implemente o produto real. Não aceite README, placeholder, mock vazio ou arquivo de estado como entrega.\n"
-        "4. Preserve todas as funcionalidades pedidas nas fases anteriores e corrija inconsistências encontradas durante a revisão.\n"
-        "5. Se Render fizer parte da entrega, garanta um Dockerfile funcional, comando de inicialização correto e endpoint /health.\n"
-        "6. Se Vercel fizer parte da entrega, garanta um frontend realmente compilável/publicável e integração correta com o backend quando existir.\n"
-        "7. Execute testes, lint/typecheck/build aplicáveis e um smoke test do fluxo principal solicitado pelo usuário.\n"
-        "8. Não grave segredos no repositório. Use variáveis de ambiente para credenciais e URLs sensíveis.\n"
-        "9. O critério de sucesso é REMOTO: os arquivos necessários precisam existir no branch consumido pela entrega. Não conclua deixando a solução somente no workspace local, worktree descartável ou branch não publicado.\n"
-        "10. Ao final, revise novamente o objetivo original e confirme que o sistema entregue corresponde ao pedido, não apenas que o deploy passou.\n\n"
-        "REQUISITOS ORIGINAIS RECUPERADOS DO PROJETO\n"
-        f"{requirements}"
+        "1. Leia AGENTS.md e os requisitos originais abaixo.\n"
+        "2. Inspecione o branch padrão remoto e reaproveite trabalho válido.\n"
+        "3. Implemente o produto real; README, placeholder e mock vazio não são entrega.\n"
+        "4. Preserve as funcionalidades solicitadas e corrija inconsistências.\n"
+        "5. Para Render, garanta Dockerfile funcional, start correto e /health.\n"
+        "6. Para Vercel, garanta frontend compilável/publicável e integração correta.\n"
+        "7. Execute testes, lint/typecheck/build aplicáveis e smoke test do fluxo principal.\n"
+        "8. Não grave segredos; use variáveis de ambiente.\n"
+        "9. O sucesso é REMOTO: publique no branch consumido pela entrega.\n"
+        "10. Só conclua após revisar o objetivo original e provar o sistema real.\n\n"
+        f"REQUISITOS ORIGINAIS RECUPERADOS DO PROJETO\n{requirements}"
     )[:100_000]
 
 
-def _ensure_repair_task(
-    db: Session,
-    project,
-    reasons: list[str],
-    paths: list[str],
-    actor: str,
-) -> tuple[Task, bool]:
+def _new_repair(db: Session, project, reasons: list[str], paths: list[str], actor: str, generation: int, action: str) -> Task:
+    now = datetime.now(timezone.utc)
+    repair = Task(
+        workspace_id=project.workspace_id, owner_user_id=project.owner_user_id,
+        project_id=project.id, title=f"Recuperar entrega final · {project.name}"[:240],
+        prompt=_repair_prompt(db, project, reasons, paths, generation),
+        source="delivery-recovery", status=TaskStatus.queued, priority=100,
+        branch_name=str(project.default_branch or "main"), requires_approval=False, approved_at=now,
+    )
+    db.add(repair)
+    db.flush()
+    record(db, workspace_id=project.workspace_id, project_id=project.id, task_id=repair.id,
+           actor=actor, action=action, outcome="queued",
+           details={"generation": generation, "reasons": reasons[:6], "remote_file_count": len(paths)})
+    db.commit()
+    return repair
+
+
+def _ensure_repair_task(db: Session, project, reasons: list[str], paths: list[str], actor: str) -> tuple[Task, bool]:
     existing = _latest_repair(db, project)
     now = datetime.now(timezone.utc)
     if existing and existing.status in ACTIVE_TASK_STATES:
@@ -289,96 +232,48 @@ def _ensure_repair_task(
             existing.updated_at = now
             db.commit()
         return existing, False
-
     if existing and existing.status in REPAIRABLE_TASK_STATES and _retry_count(existing) < MAX_SAFE_RETRIES:
         retry = _retry_count(existing) + 1
-        existing.prompt = (
-            f"{str(existing.prompt or '').rstrip()}\n\n"
-            f"[delivery-repair-retry:{retry}]\n"
-            "A prova remota ainda falhou depois da tentativa anterior. Reavalie o estado atual, encontre a causa que impediu a materialização/publicação no branch padrão e corrija-a antes de concluir.\n"
-            + "\n".join(f"- {reason}" for reason in reasons)
-        )[:100_000]
+        existing.prompt = (f"{str(existing.prompt or '').rstrip()}\n\n[delivery-repair-retry:{retry}]\n"
+                           "A prova remota ainda falhou. Reavalie a causa raiz e corrija antes de concluir.\n" +
+                           "\n".join(f"- {reason}" for reason in reasons))[:100_000]
         existing.status = TaskStatus.queued
         existing.requires_approval = False
         existing.approved_at = existing.approved_at or now
         existing.updated_at = now
         db.commit()
-        record(
-            db,
-            workspace_id=project.workspace_id,
-            project_id=project.id,
-            task_id=existing.id,
-            actor=actor,
-            action="project.delivery_repair_requeued",
-            outcome="queued",
-            details={"retry": retry, "reasons": reasons[:6]},
-        )
+        record(db, workspace_id=project.workspace_id, project_id=project.id, task_id=existing.id,
+               actor=actor, action="project.delivery_repair_requeued", outcome="queued",
+               details={"retry": retry, "generation": _repair_generation(existing), "reasons": reasons[:6]})
         db.commit()
         return existing, True
-
-    repair = Task(
-        workspace_id=project.workspace_id,
-        owner_user_id=project.owner_user_id,
-        project_id=project.id,
-        title=f"Recuperar entrega final · {project.name}"[:240],
-        prompt=_repair_prompt(db, project, reasons, paths),
-        source="delivery-recovery",
-        status=TaskStatus.queued,
-        priority=100,
-        branch_name=str(project.default_branch or "main"),
-        requires_approval=False,
-        approved_at=now,
-    )
-    db.add(repair)
-    db.flush()
-    record(
-        db,
-        workspace_id=project.workspace_id,
-        project_id=project.id,
-        task_id=repair.id,
-        actor=actor,
-        action="project.delivery_repair_created",
-        outcome="queued",
-        details={"reasons": reasons[:6], "remote_file_count": len(paths)},
-    )
-    db.commit()
-    return repair, True
+    if existing:
+        generation = _repair_generation(existing) + 1
+        # Keep generation visible for operations. Reaching the diagnostic window does
+        # not fake success and does not deadlock delivery: a fresh task gets current
+        # repository evidence and can use a different provider/model failover path.
+        generation = generation if generation <= MAX_REPAIR_GENERATIONS else MAX_REPAIR_GENERATIONS
+        return _new_repair(db, project, reasons, paths, actor, generation, "project.delivery_repair_rollover"), True
+    return _new_repair(db, project, reasons, paths, actor, 0, "project.delivery_repair_created"), True
 
 
 def _state_for_repair(db: Session, project, actor: str, reasons: list[str], paths: list[str]) -> dict:
     repair, changed = _ensure_repair_task(db, project, reasons, paths, actor)
     state = delivery.initial_delivery(project)
-    exhausted = repair.status in {TaskStatus.failed, TaskStatus.blocked} and _retry_count(repair) >= MAX_SAFE_RETRIES
-    state["status"] = "blocked" if exhausted else "repairing"
-    state["delivery_gate"] = "repairing_product" if not exhausted else "repair_exhausted"
+    state["status"] = "repairing"
+    state["delivery_gate"] = "repairing_product"
     state["repair_task_id"] = repair.id
     state["repair_task_status"] = repair.status.value
+    state["repair_generation"] = _repair_generation(repair)
     state["repair_reasons"] = reasons[:8]
-    state["repository_preflight"] = {
-        "ok": False,
-        "remote_file_count": len(paths),
-        "reasons": reasons[:8],
-        "checked_at": datetime.now(timezone.utc).isoformat(),
-    }
+    state["repository_preflight"] = {"ok": False, "remote_file_count": len(paths), "reasons": reasons[:8], "checked_at": datetime.now(timezone.utc).isoformat()}
     state["url"] = ""
-    state["last_error"] = (
-        "A autocorreção da entrega esgotou as tentativas seguras; intervenção humana é o último recurso."
-        if exhausted
-        else "O DevPilot detectou que o produto final ainda não está materializado no branch remoto e iniciou a correção automática."
-    )
+    state["last_error"] = "O produto final ainda não passou na prova remota; o DevPilot continua a correção automática."
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     delivery.save_delivery(db, project, state)
     if changed:
-        record(
-            db,
-            workspace_id=project.workspace_id,
-            project_id=project.id,
-            task_id=repair.id,
-            actor=actor,
-            action="project.delivery_product_guard",
-            outcome=state["status"],
-            details={"reasons": reasons[:6]},
-        )
+        record(db, workspace_id=project.workspace_id, project_id=project.id, task_id=repair.id,
+               actor=actor, action="project.delivery_product_guard", outcome="repairing", details={"reasons": reasons[:6]})
         db.commit()
     return state
 
@@ -391,11 +286,10 @@ def _active_repair_state(db: Session, project) -> dict | None:
     if not repair_id:
         return None
     task = db.get(Task, repair_id)
-    if not task or task.workspace_id != project.workspace_id or task.project_id != project.id:
-        return None
-    if task.status not in ACTIVE_TASK_STATES:
+    if not task or task.workspace_id != project.workspace_id or task.project_id != project.id or task.status not in ACTIVE_TASK_STATES:
         return None
     state["repair_task_status"] = task.status.value
+    state["repair_generation"] = _repair_generation(task)
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     return state
 
@@ -404,23 +298,17 @@ def _run_delivery_with_product_guard(db: Session, project, actor: str) -> dict:
     active = _active_repair_state(db, project)
     if active is not None:
         return active
-
     requested = delivery.selected_providers(project)
     paths = _repository_paths(db, project)
     if paths is not None:
         reasons = _preflight_reasons(paths, requested)
         if reasons:
             return _state_for_repair(db, project, actor, reasons, paths)
-
     if _BASE_RUN_DELIVERY is None:
         raise RuntimeError("delivery guard not installed")
     state = _BASE_RUN_DELIVERY(db, project, actor)
     if paths is not None:
-        state["repository_preflight"] = {
-            "ok": True,
-            "remote_file_count": len(paths),
-            "checked_at": datetime.now(timezone.utc).isoformat(),
-        }
+        state["repository_preflight"] = {"ok": True, "remote_file_count": len(paths), "checked_at": datetime.now(timezone.utc).isoformat()}
         delivery.save_delivery(db, project, state)
     return state
 
