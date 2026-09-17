@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 
 from app.services.runtime_preflight import worker_runtime_paths
@@ -8,22 +9,29 @@ from app.worker import process_one
 
 
 class EmbeddedWorker:
-    """Small in-process worker for single-instance homologation environments.
+    """Bounded in-process worker pool for single-instance homologation.
 
-    Production deployments should keep using a dedicated worker service. This
-    helper exists so a free Render web service can exercise the complete queue
-    flow without provisioning a paid background worker.
+    Atomic task claims and leases remain the concurrency boundary. Multiple consumers
+    prevent one long AI delivery repair from starving every other project's final
+    delivery while keeping concurrency deliberately small for the web-service runtime.
     """
 
-    def __init__(self, poll_seconds: float = 2.0) -> None:
+    def __init__(self, poll_seconds: float = 2.0, concurrency: int | None = None) -> None:
         self.poll_seconds = max(0.05, float(poll_seconds))
+        configured = concurrency if concurrency is not None else int(os.getenv("DEVPILOT_EMBEDDED_WORKER_CONCURRENCY", "3"))
+        self.concurrency = max(1, min(int(configured), 4))
         self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        self._threads: list[threading.Thread] = []
         self._last_stale_recovery_at = 0.0
 
     @property
     def is_running(self) -> bool:
-        return bool(self._thread and self._thread.is_alive())
+        return bool(self._threads) and all(thread.is_alive() for thread in self._threads)
+
+    @property
+    def _thread(self):
+        """Compatibility view for older callers/tests expecting one thread."""
+        return self._threads[0] if self._threads else None
 
     def start(self) -> None:
         if self.is_running:
@@ -32,24 +40,24 @@ class EmbeddedWorker:
         runtime = worker_runtime_paths()
         print(
             "[embedded-worker] runtime OK: "
-            + ", ".join(f"{tool}={path}" for tool, path in runtime.items()),
+            + ", ".join(f"{tool}={path}" for tool, path in runtime.items())
+            + f", concurrency={self.concurrency}",
             flush=True,
         )
-
-        # Recover final-delivery work abandoned by the previous Render instance
-        # before claiming new queue items. This keeps homologation autonomous across
-        # rolling deploys without changing the lease policy for unrelated tasks.
         recovered = recover_stale_delivery_claims()
         if recovered:
             print(f"[embedded-worker] recovered stale delivery tasks={recovered}", flush=True)
 
         self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run,
-            name="devpilot-embedded-worker",
-            daemon=True,
-        )
-        self._thread.start()
+        self._threads = []
+        for index in range(self.concurrency):
+            thread = threading.Thread(
+                target=self._run,
+                name=f"devpilot-embedded-worker-{index + 1}",
+                daemon=True,
+            )
+            self._threads.append(thread)
+            thread.start()
 
     def _run(self) -> None:
         while not self._stop.is_set():
@@ -58,12 +66,12 @@ class EmbeddedWorker:
             except Exception as error:  # pragma: no cover - defensive runtime guard
                 print(f"[embedded-worker] task loop error: {error}", flush=True)
                 processed = False
-
             if not processed:
                 self._stop.wait(self.poll_seconds)
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
-        thread = self._thread
-        if thread and thread.is_alive():
-            thread.join(timeout=max(0.0, timeout))
+        for thread in tuple(self._threads):
+            if thread.is_alive():
+                thread.join(timeout=max(0.0, timeout))
+        self._threads = []
