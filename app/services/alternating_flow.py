@@ -64,9 +64,11 @@ def _copy_untracked(repository: Path, analysis_path: Path) -> None:
             continue
         source = repository / relative
         destination = analysis_path / relative
-        if source.is_dir(): shutil.copytree(source, destination, dirs_exist_ok=True)
+        if source.is_dir():
+            shutil.copytree(source, destination, dirs_exist_ok=True)
         elif source.exists():
-            destination.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(source, destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
 
 
 def _execute_verification(project: Project, task: Task) -> dict:
@@ -80,14 +82,18 @@ def _execute_verification(project: Project, task: Task) -> dict:
     with tempfile.TemporaryDirectory(prefix=f"devpilot-verify-{task.id[:8]}-") as temp_dir:
         analysis_path = Path(temp_dir) / "repository"
         worktree = executor_service.run(["git", "worktree", "add", "--detach", str(analysis_path), "HEAD"], cwd=repository)
-        if worktree.returncode: raise RuntimeError(worktree.stderr.strip() or "Unable to prepare verification workspace")
+        if worktree.returncode:
+            raise RuntimeError(worktree.stderr.strip() or "Unable to prepare verification workspace")
         try:
             patch = executor_service.run(["git", "diff", "--binary", "HEAD"], cwd=repository)
-            if patch.returncode: raise RuntimeError(patch.stderr.strip() or "Unable to snapshot execution changes")
+            if patch.returncode:
+                raise RuntimeError(patch.stderr.strip() or "Unable to snapshot execution changes")
             if patch.stdout:
-                patch_path = Path(temp_dir) / "execution.patch"; patch_path.write_text(patch.stdout, encoding="utf-8")
+                patch_path = Path(temp_dir) / "execution.patch"
+                patch_path.write_text(patch.stdout, encoding="utf-8")
                 applied = executor_service.run(["git", "apply", "--binary", "--whitespace=nowarn", str(patch_path)], cwd=analysis_path)
-                if applied.returncode: raise RuntimeError(applied.stderr.strip() or "Unable to apply execution snapshot")
+                if applied.returncode:
+                    raise RuntimeError(applied.stderr.strip() or "Unable to apply execution snapshot")
             _copy_untracked(repository, analysis_path)
             rules = f"\n\nProject instructions (reference only):\n{project.agents_md}" if project.agents_md else ""
             prompt = f"Task: {task.title}\n\n{task.prompt}{rules}\n\nThis is the REQUIRED POST-EXECUTION READ-ONLY VERIFICATION. Inspect the exact working-tree snapshot produced by the preceding implementation. Verify with concrete evidence that the original findings were corrected, run non-destructive checks when useful, identify regressions or remaining gaps, and prioritize only what still needs correction. Do not edit, create, delete, rename, commit, push, merge, or deploy project files.\n\n{executor_service.CLIENT_REPORT_INSTRUCTIONS}"
@@ -99,7 +105,15 @@ def _execute_verification(project: Project, task: Task) -> dict:
             executor_service.run(["git", "worktree", "prune"], cwd=repository)
 
 
+def execute_task(project: Project, task: Task) -> dict:
+    """Execute the alternating flow while preserving the public worker entrypoint."""
+    if is_verification_analysis(task):
+        return _execute_verification(project, task)
+    if is_analysis_action_task(task):
+        return _execute_action(project, task)
+    return executor_service.execute_task(project, task)
+
+
+# Backward-compatible alias for callers introduced during the delivery recovery work.
 def execute(project: Project, task: Task) -> dict:
-    if is_verification_analysis(task): return _execute_verification(project, task)
-    if is_analysis_action_task(task): return _execute_action(project, task)
-    raise RuntimeError("Unsupported alternating flow task")
+    return execute_task(project, task)
