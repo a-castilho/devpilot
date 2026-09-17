@@ -50,6 +50,23 @@ def _retry_due(project, *, force: bool = False) -> bool:
     return (datetime.now(timezone.utc) - updated).total_seconds() >= _FAILED_RETRY_SECONDS
 
 
+def _result_diagnostics(result: dict) -> str:
+    def clean(value: object, limit: int = 180) -> str:
+        return " ".join(str(value or "").split())[:limit]
+
+    blocked = result.get("blocked_providers")
+    blocked_text = ",".join(clean(item, 40) for item in blocked) if isinstance(blocked, list) else ""
+    parts = [
+        f"blocked_providers={blocked_text}",
+        f"failed_provider={clean(result.get('failed_provider'), 60)}",
+        f"gate={clean(result.get('delivery_gate'), 80)}",
+        f"repair={clean(result.get('repair_task_status'), 80)}",
+        f"waiting_for={clean(result.get('waiting_for'), 80)}",
+        f"error={clean(result.get('last_error'))}",
+    ]
+    return " ".join(parts)[:500]
+
+
 def _run() -> None:
     time.sleep(_INITIAL_DELAY_SECONDS)
     first_pass = True
@@ -76,7 +93,8 @@ def _run() -> None:
                     try:
                         result = delivery.run_delivery(db, project, "system:mandatory-cloud-reconciler")
                         print(
-                            f"[mandatory-cloud] {project.slug}: {result.get('status', 'unknown')} url={result.get('url', '')}",
+                            f"[mandatory-cloud] {project.slug}: {result.get('status', 'unknown')} "
+                            f"url={result.get('url', '')} {_result_diagnostics(result)}",
                             flush=True,
                         )
                     except Exception as error:
