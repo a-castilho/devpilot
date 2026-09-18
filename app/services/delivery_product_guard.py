@@ -268,6 +268,9 @@ def _state_for_repair(db: Session, project, actor: str, reasons: list[str], path
     state["repair_reasons"] = reasons[:8]
     state["repository_preflight"] = {"ok": False, "remote_file_count": len(paths), "reasons": reasons[:8], "checked_at": datetime.now(timezone.utc).isoformat()}
     state["url"] = ""
+    state.pop("failed_provider", None)
+    state.pop("blocked_providers", None)
+    state.pop("waiting_for", None)
     state["last_error"] = "O produto final ainda não passou na prova remota; o DevPilot continua a correção automática."
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     delivery.save_delivery(db, project, state)
