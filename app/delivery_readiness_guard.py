@@ -52,19 +52,19 @@ def _published_dockerfile(project: Project) -> tuple[bool, str]:
     if not owner or not repo:
         return True, "non_github_repository"
     token = _github_token(project)
-    if not token:
-        return False, "github_credential_unavailable"
     branch = str(project.default_branch or "main").strip() or "main"
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "DevPilot-Delivery-Readiness/1.0",
+    }
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     try:
         response = httpx.get(
             f"{_GITHUB_API}/repos/{owner}/{repo}/contents/Dockerfile",
             params={"ref": branch},
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                "User-Agent": "DevPilot-Delivery-Readiness/1.0",
-            },
+            headers=headers,
             timeout=12.0,
         )
     except httpx.HTTPError:
