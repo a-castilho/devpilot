@@ -39,7 +39,13 @@ def _github_token(project: Project) -> str:
     return ""
 
 
-def _requires_dockerfile(project: Project) -> bool:\n    return "render" in delivery.selected_providers(project)\n\n\ndef _published_dockerfile(project: Project) -> tuple[bool, str]:\n    if not _requires_dockerfile(project):\n        return True, "Dockerfile not required for selected providers"
+def _requires_dockerfile(project: Project) -> bool:
+    return "render" in delivery.selected_providers(project)
+
+
+def _published_dockerfile(project: Project) -> tuple[bool, str]:
+    if not _requires_dockerfile(project):
+        return True, "Dockerfile not required for selected providers"
     owner, repo = _repository_parts(project)
     if not owner or not repo:
         return True, "non_github_repository"
