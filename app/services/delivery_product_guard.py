@@ -298,15 +298,38 @@ def _active_repair_state(db: Session, project) -> dict | None:
 
 
 def _run_delivery_with_product_guard(db: Session, project, actor: str) -> dict:
-    active = _active_repair_state(db, project)
-    if active is not None:
-        return active
     requested = delivery.selected_providers(project)
     paths = _repository_paths(db, project)
+    # Remote proof is authoritative. A repair task may still be running after a
+    # previous worker restart even though another recovery path has already
+    # materialized the product. Do not let that stale task deadlock delivery.
     if paths is not None:
         reasons = _preflight_reasons(paths, requested)
         if reasons:
+            active = _active_repair_state(db, project)
+            if active is not None:
+                return active
             return _state_for_repair(db, project, actor, reasons, paths)
+        state = delivery.initial_delivery(project)
+        repair_id = str(state.get("repair_task_id") or "").strip()
+        repair = db.get(Task, repair_id) if repair_id else None
+        if repair and repair.source == "delivery-recovery" and repair.status in ACTIVE_TASK_STATES:
+            repair.status = TaskStatus.completed
+            repair.updated_at = datetime.now(timezone.utc)
+            db.commit()
+        state.pop("repair_task_id", None)
+        state.pop("repair_task_status", None)
+        state.pop("repair_reasons", None)
+        state.pop("repair_generation", None)
+        if str(state.get("delivery_gate") or "") == "repairing_product":
+            state.pop("delivery_gate", None)
+        if str(state.get("status") or "").lower() == "repairing":
+            state["status"] = "pending"
+        delivery.save_delivery(db, project, state)
+    else:
+        active = _active_repair_state(db, project)
+        if active is not None:
+            return active
     if _BASE_RUN_DELIVERY is None:
         raise RuntimeError("delivery guard not installed")
     state = _BASE_RUN_DELIVERY(db, project, actor)
