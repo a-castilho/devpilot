@@ -35,6 +35,29 @@ def _switch_execution_branch(repository: Path, target_branch: str) -> None:
     raise RuntimeError(detail or f"Unable to recover execution branch {target_branch}")
 
 
+def _publish_delivery_recovery(project: Project, task: Task, repository: Path, branch: str) -> str:
+    """Persist a successful final-delivery repair on its configured remote branch."""
+    if task.source != "delivery-recovery":
+        return ""
+    status = executor_service.run(["git", "status", "--porcelain"], cwd=repository)
+    if status.returncode:
+        raise RuntimeError(status.stderr.strip() or "Unable to inspect delivery repair changes")
+    if status.stdout.strip():
+        add = executor_service.run(["git", "add", "--all"], cwd=repository)
+        if add.returncode:
+            raise RuntimeError(add.stderr.strip() or "Unable to stage delivery repair changes")
+        commit = executor_service.run(["git", "commit", "-m", "fix(delivery): materialize final product"], cwd=repository)
+        if commit.returncode:
+            raise RuntimeError(commit.stderr.strip() or "Unable to commit delivery repair changes")
+    sha = executor_service.run(["git", "rev-parse", "HEAD"], cwd=repository)
+    if sha.returncode:
+        raise RuntimeError(sha.stderr.strip() or "Unable to resolve delivery repair commit")
+    push = executor_service.run(["git", "push", "origin", f"HEAD:{project.default_branch}"], cwd=repository)
+    if push.returncode:
+        raise RuntimeError(push.stderr.strip() or "Unable to publish delivery repair")
+    return sha.stdout.strip()
+
+
 def _execute_action(project: Project, task: Task) -> dict:
     if not get_settings().execution_enabled:
         return _disabled_result("flow-execution-disabled")
@@ -52,7 +75,10 @@ def _execute_action(project: Project, task: Task) -> dict:
             raise RuntimeError(checkout.stderr.strip() or "Unable to create task branch")
     result = executor_service.run(executor_service.codex_command(project, executor_service.development_prompt(task)), cwd=path, timeout=executor_service.task_timeout(project))
     client_report = executor_service.extract_client_report(result.stdout)
-    return {"mode": "execute", "exit_code": result.returncode, "summary": "Execução concluída. O fluxo seguirá para validação automática." if result.returncode == 0 else "A execução terminou com falha; o fluxo automático foi interrompido.", "client_report": client_report, "stdout": result.stdout[-100_000:], "stderr": result.stderr[-20_000:], "branch": branch}
+    commit_sha = ""
+    if result.returncode == 0:
+        commit_sha = _publish_delivery_recovery(project, task, path, branch)
+    return {"mode": "execute", "exit_code": result.returncode, "summary": "Execução concluída. O fluxo seguirá para validação automática." if result.returncode == 0 else "A execução terminou com falha; o fluxo automático foi interrompido.", "client_report": client_report, "stdout": result.stdout[-100_000:], "stderr": result.stderr[-20_000:], "branch": branch, "commit_sha": commit_sha}
 
 
 def _copy_untracked(repository: Path, analysis_path: Path) -> None:
