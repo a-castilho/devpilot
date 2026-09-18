@@ -46,6 +46,17 @@ def _requires_dockerfile(project: Project) -> bool:
 
 
 def _published_dockerfile(project: Project) -> tuple[bool, str]:
+    # The product guard performs a full remote tree proof immediately before this
+    # wrapper. Reuse that stronger proof instead of deadlocking on a second GitHub
+    # credential path that can disagree for legacy projects.
+    try:
+        import json
+        config = json.loads(project.codex_config or "{}")
+        preflight = (config.get("delivery") or {}).get("repository_preflight") or {}
+        if preflight.get("ok") is True:
+            return True, "deployable revision proven by remote repository preflight"
+    except (TypeError, ValueError):
+        pass
     if not _requires_dockerfile(project):
         return True, "Dockerfile not required for selected providers"
     owner, repo = _repository_parts(project)
