@@ -134,10 +134,16 @@ def run_delivery_when_code_is_ready(db, project: Project, actor: str):
             proof = f"{proof}; {repair_proof}"
     if not ready:
         return _waiting_state(db, project, proof)
+
+    # A project may have been persisted as waiting_code by an older readiness rule.
+    # Once the current provider-aware proof succeeds, clear the stale gate so the
+    # cloud state machine can actually reach Vercel/Render on this same pass.
     state = delivery.initial_delivery(project)
     readiness = state.setdefault("readiness", {})
     readiness.update({"ready": True, "proof": proof})
     state.pop("waiting_for", None)
+    if str(state.get("status") or "").lower() == "waiting_code":
+        state["status"] = "pending"
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     delivery.save_delivery(db, project, state)
     return _ORIGINAL_RUN_DELIVERY(db, project, actor)
