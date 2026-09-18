@@ -40,6 +40,8 @@ def _github_token(project: Project) -> str:
 
 
 def _requires_dockerfile(project: Project) -> bool:
+    # Render can deploy the managed starter only when a Dockerfile is present.
+    # Vercel-only projects must never be blocked by this backend artifact.
     return "render" in delivery.selected_providers(project)
 
 
