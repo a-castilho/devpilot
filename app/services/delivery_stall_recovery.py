@@ -14,7 +14,7 @@ from app.services.audit import record
 
 POLL_SECONDS = 20
 STARTUP_GRACE_SECONDS = 12
-QUEUED_STALL_SECONDS = 120
+QUEUED_STALL_SECONDS = 900
 MAX_QUEUE_NUDGES_PER_ATTEMPT = 2
 STALL_MARKER = "[delivery-stall-recovery:"
 _STARTED = False
