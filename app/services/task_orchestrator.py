@@ -499,10 +499,14 @@ def claim_next_task(db: Session, owner: str) -> Task | None:
                 TASK_RUNTIME.c.state.in_(tuple(STOP_STATES)),
             )
         )
+        # Final-delivery repair tasks are latency-sensitive: if they sit behind
+        # ordinary priority-100 work, the stall watchdog can mistake queue delay for
+        # a dead worker. Prefer delivery-recovery within the same priority class.
+        delivery_recovery_first = (Task.source == "delivery-recovery").desc()
         task_id = db.scalar(
             select(Task.id)
             .where(Task.status == TaskStatus.queued, ~stopped)
-            .order_by(Task.priority.desc(), Task.created_at, Task.id)
+            .order_by(Task.priority.desc(), delivery_recovery_first, Task.created_at, Task.id)
             .limit(1)
         )
         if not task_id:
