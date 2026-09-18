@@ -124,7 +124,11 @@ def _waiting_state(db, project: Project, proof: str) -> dict:
 
 def run_delivery_when_code_is_ready(db, project: Project, actor: str):
     ready, proof = _published_dockerfile(project)
-    if not ready and proof.startswith("Dockerfile not published"):
+    # Any GitHub project selected for Render must self-heal its deployable
+    # revision. Previously only a literal 404 triggered repair; missing/legacy
+    # GitHub credentials left projects in waiting_code forever even though the
+    # bootstrap path can resolve the managed credential independently.
+    if not ready and _requires_dockerfile(project):
         repaired, repair_proof = _repair_deployable_revision(project)
         if repaired:
             ready, proof = _published_dockerfile(project)
