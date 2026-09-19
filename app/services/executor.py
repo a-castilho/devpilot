@@ -79,10 +79,13 @@ def run(
     environment = os.environ.copy()
     if env_overrides:
         environment.update(env_overrides)
+    environment.setdefault("CI", "1")
+    environment.setdefault("DEBIAN_FRONTEND", "noninteractive")
     return subprocess.run(
         args,
         cwd=cwd,
         text=True,
+        stdin=subprocess.DEVNULL,
         capture_output=True,
         timeout=timeout,
         check=False,
