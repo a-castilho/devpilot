@@ -456,7 +456,21 @@ def controlled_executor_run(task: Task, original_run: Callable):
         environment = os.environ.copy()
         if env_overrides:
             environment.update(env_overrides)
-        process = subprocess.Popen(args, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=environment, start_new_session=True)
+        # Codex is always a non-interactive worker process.  Giving it a closed stdin
+        # prevents CLI versions from waiting for "additional input from stdin" and
+        # leaving the pipeline permanently stuck/failed.
+        environment.setdefault("CI", "1")
+        environment.setdefault("DEBIAN_FRONTEND", "noninteractive")
+        process = subprocess.Popen(
+            args,
+            cwd=cwd,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=environment,
+            start_new_session=True,
+        )
         started = time.monotonic()
         while process.poll() is None:
             control = requested_control(task.id)
