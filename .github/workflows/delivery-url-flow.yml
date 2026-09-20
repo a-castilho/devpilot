@@ -1,0 +1,66 @@
+name: Delivery URL Flow
+
+on:
+  pull_request:
+    paths:
+      - "app/delivery_url_recovery.py"
+      - "app/delivery_cloud_bridge.py"
+      - "app/product_delivery_routes.py"
+      - "app/main.py"
+      - "app/__init__.py"
+      - "app/services/schema.py"
+      - "app/static/build-game-url-bonus.js"
+      - "app/static/game/**"
+      - "tests/test_durable_delivery_url_flow.py"
+      - "tests/test_delivery_auto_pipeline_contract.py"
+      - "tests/test_game_delivery_gate.py"
+      - "tests/test_import_safe_codex_runtime.py"
+      - "tests/test_voice_transcription_fallback.py"
+      - ".github/workflows/delivery-url-flow.yml"
+  push:
+    branches:
+      - fix/mobile-standard-top-back
+    paths:
+      - "app/delivery_url_recovery.py"
+      - "app/delivery_cloud_bridge.py"
+      - "app/product_delivery_routes.py"
+      - "app/main.py"
+      - "app/__init__.py"
+      - "app/services/schema.py"
+      - "app/static/build-game-url-bonus.js"
+      - "app/static/game/**"
+      - "tests/test_durable_delivery_url_flow.py"
+      - "tests/test_delivery_auto_pipeline_contract.py"
+      - "tests/test_game_delivery_gate.py"
+      - "tests/test_import_safe_codex_runtime.py"
+      - "tests/test_voice_transcription_fallback.py"
+      - ".github/workflows/delivery-url-flow.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  delivery-url:
+    name: Gate 7/7 to verified URL
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install focused test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+      - name: Compile changed runtime
+        run: python -m compileall -q app tests
+      - name: Validate durable delivery contracts
+        run: |
+          python -m pytest -q \
+            tests/test_durable_delivery_url_flow.py \
+            tests/test_delivery_auto_pipeline_contract.py \
+            tests/test_game_delivery_gate.py \
+            tests/test_import_safe_codex_runtime.py \
+            tests/test_voice_transcription_fallback.py \
+            tests/test_account_isolation.py::test_runtime_schema_assigns_legacy_rows_to_workspace_super_admin
