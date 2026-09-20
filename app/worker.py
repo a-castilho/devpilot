@@ -12,6 +12,7 @@ from app.services.ai_costs import budget_block_reason
 from app.services.alternating_flow import execute_task
 from app.services.audit import record
 from app.services.failure_recovery import (
+    ensure_deferred_failure_recovery_task,
     ensure_failure_recovery_task,
     is_failure_recovery_task,
     resume_original_after_recovery,
@@ -65,20 +66,20 @@ def _safe_detected_error(decision, fallback: str = "") -> str:
 
 def _failure_recommendation(category: str, requires_authorization: bool) -> str:
     if category == "github_auth":
-        return "Revalidar a credencial GitHub vinculada ao projeto e confirmar acesso ao repositório."
+        return "O DevPilot continuará procurando uma credencial administrativa válida ou uma alternativa segura sem pedir token ao usuário final."
     if category == "codex_auth":
-        return "Autenticar o Codex no ambiente do worker e repetir esta mesma etapa."
+        return "Manter o diagnóstico do Codex em acompanhamento e executar automaticamente as alternativas que já estejam autorizadas."
     if category == "git_network":
-        return "Restabelecer a conectividade com o repositório e repetir a etapa sem alterar o objetivo da rodada."
+        return "Repetir a conectividade de forma controlada em segundo plano e preservar o mesmo objetivo da tarefa."
     if category == "repository_state":
-        return "Reparar ou recriar com segurança o checkout local antes de continuar esta etapa."
+        return "Reparar ou recriar com segurança somente o checkout local afetado, preservando código e histórico válidos."
     if category == "filesystem_permission":
-        return "Corrigir somente a permissão necessária no ambiente de execução e repetir a etapa."
+        return "Tentar caminhos e operações já autorizados; registrar a fronteira externa se uma permissão real continuar necessária."
     if category == "database":
-        return "Restabelecer o banco do DevPilot e validar sua integridade antes de reenfileirar a tarefa."
+        return "Restabelecer o banco e validar a integridade; ausência de serviço sem corrupção não bloqueia etapas independentes."
     if requires_authorization:
-        return "Resolver a autorização indicada pelo diagnóstico e repetir exatamente esta etapa."
-    return "Usar o erro técnico registrado abaixo para corrigir a causa específica e repetir exatamente esta etapa."
+        return "Registrar a autorização como pendência externa e continuar automaticamente com tudo que não dependa dela."
+    return "Usar o erro técnico registrado como entrada da recuperação por IA e buscar uma correção segura em segundo plano."
 
 
 def _contextual_failure_report(project: Project, task: Task, decision, failure_text: str, existing_report: str = "") -> str:
@@ -87,24 +88,45 @@ def _contextual_failure_report(project: Project, task: Task, decision, failure_t
     message = str(getattr(decision, "message", "") or "Falha de execução.").strip()
     recommendation = _failure_recommendation(category, bool(getattr(decision, "requires_authorization", False)))
     existing = str(existing_report or "").strip()
+    continue_pipeline = bool(getattr(decision, "continue_pipeline", False))
 
-    report = (
-        "Resumo para o cliente\n"
-        f"A etapa ‘{task.title}’ do projeto ‘{project.name}’ não foi concluída. "
-        f"O DevPilot executou esta tarefa específica, detectou a causa da interrupção e não marcou a etapa como entregue. {message}\n\n"
-        "O que encontramos\n"
-        f"- Etapa executada: {task.title}.\n"
-        f"- Projeto: {project.name}.\n"
-        f"- Categoria do problema: {category}.\n"
-        f"- Causa registrada: {safe_error}.\n\n"
-        "Impacto\n"
-        "A entrega solicitada nesta etapa permanece pendente. O fluxo não deve avançar como se houvesse uma resposta funcional ou uma implementação concluída.\n\n"
-        "Recomendações\n"
-        f"- {recommendation}\n"
-        "- Manter o mesmo objetivo da tarefa ao repetir a execução, para que a resposta seguinte corresponda ao trabalho realmente solicitado.\n\n"
-        "Próximo passo\n"
-        f"Corrigir a causa registrada e reenfileirar ‘{task.title}’."
-    )
+    if continue_pipeline:
+        report = (
+            "Resumo para o cliente\n"
+            f"A etapa ‘{task.title}’ do projeto ‘{project.name}’ encontrou uma condição que não pôde ser resolvida integralmente nesta tentativa. "
+            "O DevPilot esgotou as autocorreções seguras disponíveis, registrou o diagnóstico e aplicou continuação degradada.\n\n"
+            "O que encontramos\n"
+            f"- Etapa executada: {task.title}.\n"
+            f"- Projeto: {project.name}.\n"
+            f"- Categoria do problema: {category}.\n"
+            f"- Causa registrada: {safe_error}.\n"
+            f"- Decisão automática: {message}\n\n"
+            "Impacto\n"
+            "A pendência não representa entrega técnica concluída, mas também não bloqueará trabalhos independentes. A esteira continuará e o estado degradado permanecerá auditável.\n\n"
+            "Recuperação automática\n"
+            f"- {recommendation}\n"
+            "- Uma missão interna de recuperação por IA será mantida em segundo plano, sem aprovação humana como pré-condição para o restante da esteira.\n\n"
+            "Próximo passo\n"
+            "O DevPilot seguirá automaticamente com as próximas etapas independentes e atualizará o diagnóstico quando encontrar uma solução ou uma fronteira externa real."
+        )
+    else:
+        report = (
+            "Resumo para o cliente\n"
+            f"A etapa ‘{task.title}’ do projeto ‘{project.name}’ não foi concluída. "
+            f"O DevPilot executou esta tarefa específica e detectou uma condição que exige parada de segurança. {message}\n\n"
+            "O que encontramos\n"
+            f"- Etapa executada: {task.title}.\n"
+            f"- Projeto: {project.name}.\n"
+            f"- Categoria do problema: {category}.\n"
+            f"- Causa registrada: {safe_error}.\n\n"
+            "Impacto\n"
+            "A execução foi interrompida somente porque continuar poderia comprometer integridade, segurança ou causar uma ação destrutiva irreversível.\n\n"
+            "Recomendações\n"
+            f"- {recommendation}\n"
+            "- Preserve o estado atual até que a condição de segurança seja removida.\n\n"
+            "Próximo passo\n"
+            "Corrigir a condição de segurança registrada antes de retomar esta operação específica."
+        )
     if existing and len(existing) >= 40:
         report += "\n\nResposta produzida pelo agente antes da interrupção\n" + existing[:30000]
     return report[:60000]
@@ -121,8 +143,14 @@ def _apply_contextual_failure(project: Project, task: Task, result: dict, decisi
         "project_name": project.name,
         "category": str(getattr(decision, "category", "unknown") or "unknown"),
         "cause": safe_error,
+        "pipeline_continued": bool(getattr(decision, "continue_pipeline", False)),
+        "hard_stop": bool(getattr(decision, "hard_stop", False)),
     }
-    result["summary"] = f"{task.title}: {str(getattr(decision, 'message', '') or safe_error)}"
+    message = str(getattr(decision, "message", "") or safe_error)
+    if getattr(decision, "continue_pipeline", False):
+        result["summary"] = f"{task.title}: continuação degradada; a etapa não foi concluída integralmente. {message}"
+    else:
+        result["summary"] = f"{task.title}: {message}"
     return result
 
 
@@ -139,6 +167,8 @@ def _self_healing_payload(events: list[dict], final_status: str) -> dict:
         "message": last.get("message", ""),
         "attempts": len(events),
         "steps": steps,
+        "hard_stop": bool(last.get("hard_stop", False)),
+        "pipeline_continued": bool(last.get("continue_pipeline", False)),
     }
 
 
@@ -358,6 +388,40 @@ def _finish_requested_control(db, task: Task, run: Run, control: str, result: di
     return True
 
 
+def _finalize_recovery_decision(
+    *,
+    recovery: AutoRecoveryService,
+    project: Project,
+    task: Task,
+    decision,
+    failure_text: str,
+    recovery_events: list[dict],
+    result: dict | None,
+) -> dict:
+    if getattr(decision, "hard_stop", False):
+        failed = recovery.failure_result(decision, failure_text)
+        if isinstance(result, dict):
+            for key in ("stdout", "token_usage", "branch"):
+                if key in result:
+                    failed[key] = result[key]
+        return _apply_contextual_failure(project, task, failed, decision, failure_text)
+
+    if recovery.should_continue_pipeline(decision):
+        decision.continue_pipeline = True
+        recovery_events[-1] = decision.to_dict()
+        degraded = recovery.degraded_result(decision, failure_text, existing_result=result)
+        degraded["self_healing"] = _self_healing_payload(recovery_events, "deferred")
+        return _apply_contextual_failure(project, task, degraded, decision, failure_text)
+
+    failed = recovery.failure_result(decision, failure_text)
+    if isinstance(result, dict):
+        for key in ("stdout", "token_usage", "branch"):
+            if key in result:
+                failed[key] = result[key]
+    failed["self_healing"] = _self_healing_payload(recovery_events, decision.status)
+    return _apply_contextual_failure(project, task, failed, decision, failure_text)
+
+
 def process_one() -> bool:
     with SessionLocal() as db:
         task = claim_next_task(db, owner=f"worker:{os.getpid()}")
@@ -427,20 +491,31 @@ def process_one() -> bool:
                 record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.self_healing.retry", outcome="retrying", details={"run_id": run.id, "execution_attempt": execution_attempt, "category": decision.category, "strategy": decision.strategy})
                 db.commit()
                 continue
-            if result is None:
-                result = recovery.failure_result(decision, failure_text)
-                result = _apply_contextual_failure(project, task, result, decision, failure_text)
-            else:
-                result["self_healing"] = _self_healing_payload(recovery_events, decision.status)
-                result = _apply_contextual_failure(project, task, result, decision, failure_text)
+
+            result = _finalize_recovery_decision(
+                recovery=recovery,
+                project=project,
+                task=task,
+                decision=decision,
+                failure_text=failure_text,
+                recovery_events=recovery_events,
+                result=result,
+            )
             break
 
         if result is None:
             failure_text = str(final_error or "Execution failed")
             decision = recovery.recover(project, task, failure_text, recovery.MAX_ATTEMPTS)
             recovery_events.append(decision.to_dict())
-            result = recovery.failure_result(decision, failure_text)
-            result = _apply_contextual_failure(project, task, result, decision, failure_text)
+            result = _finalize_recovery_decision(
+                recovery=recovery,
+                project=project,
+                task=task,
+                decision=decision,
+                failure_text=failure_text,
+                recovery_events=recovery_events,
+                result=None,
+            )
 
         run.status = "success" if result.get("exit_code", 0) == 0 else "failed"
         run.summary = result.get("summary", "Execution completed")
@@ -450,13 +525,49 @@ def process_one() -> bool:
         task.status = _final_task_status(run.status, needs_authorization)
 
         if isinstance(healing, dict):
-            record(db, workspace_id=task.workspace_id, project_id=task.project_id, task_id=task.id, actor="worker", action="task.self_healing", outcome=str(healing.get("status") or "failed"), details={"run_id": run.id, "category": healing.get("category", "unknown"), "strategy": healing.get("strategy", "none"), "attempts": run.attempt, "requires_authorization": needs_authorization})
+            record(
+                db,
+                workspace_id=task.workspace_id,
+                project_id=task.project_id,
+                task_id=task.id,
+                actor="worker",
+                action="task.self_healing",
+                outcome=str(healing.get("status") or "failed"),
+                details={
+                    "run_id": run.id,
+                    "category": healing.get("category", "unknown"),
+                    "strategy": healing.get("strategy", "none"),
+                    "attempts": run.attempt,
+                    "requires_authorization": needs_authorization,
+                    "hard_stop": bool(healing.get("hard_stop")),
+                    "pipeline_continued": bool(healing.get("pipeline_continued")),
+                },
+            )
 
         run.finished_at = datetime.now(timezone.utc)
 
         generated_recovery = None
+        generated_deferred_recovery = None
         resumed_original = None
-        if run.status == "success" and is_failure_recovery_task(task):
+        if result.get("degraded"):
+            if is_failure_recovery_task(task):
+                resumed_original = resume_original_after_recovery(db, recovery_task=task, recovery_run=run)
+            else:
+                failure_payload = {
+                    "category": str((healing or {}).get("category") or "unknown"),
+                    "code": "EXECUTION_DEFERRED",
+                    "message": str((healing or {}).get("message") or run.summary or "Execution deferred"),
+                    "requires_authorization": False,
+                    "pipeline_continued": True,
+                }
+                generated_deferred_recovery = ensure_deferred_failure_recovery_task(
+                    db,
+                    original_task=task,
+                    run=run,
+                    failure=failure_payload,
+                    actor="worker",
+                )
+        elif run.status == "success" and is_failure_recovery_task(task):
             resumed_original = resume_original_after_recovery(db, recovery_task=task, recovery_run=run)
         elif run.status != "success":
             failure_payload = {
@@ -464,6 +575,7 @@ def process_one() -> bool:
                 "code": "EXECUTION_FAILED",
                 "message": str((healing or {}).get("message") or run.summary or "Execution failed"),
                 "requires_authorization": needs_authorization,
+                "hard_stop": bool((healing or {}).get("hard_stop")),
             }
             generated_recovery = ensure_failure_recovery_task(
                 db,
@@ -487,9 +599,12 @@ def process_one() -> bool:
             details={
                 "run_id": run.id,
                 "attempt": run.attempt,
+                "degraded": bool(result.get("degraded")),
+                "pipeline_continued": bool((healing or {}).get("pipeline_continued")),
                 "generated_action_task_id": generated_action.id if generated_action else None,
                 "generated_verification_task_id": generated_verification.id if generated_verification else None,
                 "generated_recovery_task_id": generated_recovery.id if generated_recovery else None,
+                "generated_deferred_recovery_task_id": generated_deferred_recovery.id if generated_deferred_recovery else None,
                 "resumed_original_task_id": resumed_original.id if resumed_original else None,
             },
         )

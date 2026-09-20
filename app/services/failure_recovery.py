@@ -10,7 +10,9 @@ from app.models import Run, Task, TaskStatus
 from app.services.audit import record
 
 RECOVERY_MARKER = "[DEVPILOT_FAILURE_RECOVERY_V1]"
+DEFERRED_RECOVERY_MARKER = "[DEVPILOT_DEFERRED_RECOVERY_V1]"
 _ORIGIN_RE = re.compile(r"\[failure-origin-task:([^\]]+)\]", re.IGNORECASE)
+_SYSTEM_MANAGED_RECOVERY_CATEGORIES = {"github_auth"}
 
 
 def is_failure_recovery_task(task: Task | None) -> bool:
@@ -53,40 +55,76 @@ def _safe_original_prompt(task: Task, limit: int = 20_000) -> str:
     return text if len(text) <= limit else f"{text[:limit].rstrip()}\n\n[conteúdo original truncado pelo fluxo de recuperação]"
 
 
+def _requires_external_authorization(failure: dict) -> bool:
+    """Return True only when current evidence proves an external authorization boundary.
+
+    GitHub access is managed by DevPilot. Legacy runs may still contain
+    ``requires_authorization=true`` for GitHub failures; those stale flags must not
+    reopen an end-user approval gate before the system-managed credentials and
+    fallbacks have been exhausted.
+    """
+    category = str(failure.get("category") or "unknown").strip().lower()
+    if category in _SYSTEM_MANAGED_RECOVERY_CATEGORIES:
+        return False
+    return bool(failure.get("requires_authorization"))
+
+
 def recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
     category = str(failure.get("category") or "unknown")
     code = str(failure.get("code") or "EXECUTION_FAILED")
     message = str(failure.get("message") or "Falha sem mensagem detalhada.")
-    authorization = bool(failure.get("requires_authorization"))
+    authorization = _requires_external_authorization(failure)
     run_id = run.id if run else ""
     return (
         f"{RECOVERY_MARKER}\n[DEVPILOT_MODE=fix]\n[failure-origin-task:{original_task.id}]\n"
         f"[failure-origin-run:{run_id}]\n[failure-category:{category}]\n[failure-code:{code}]\n"
         f"[failure-requires-authorization:{str(authorization).lower()}]\n\n"
-        "MISSÃO DE RECUPERAÇÃO\nUma execução anterior falhou depois do ciclo normal de autocorreção. Sua função é remover a causa raiz de forma verificável, sem repetir cegamente a mesma tentativa.\n\n"
+        "MISSÃO DE RECUPERAÇÃO\nUma execução anterior falhou depois do ciclo normal de autocorreção. Sua função é remover a causa raiz de forma verificável, para não repetir cegamente a mesma tentativa.\n\n"
         "PROTOCOLO OBRIGATÓRIO\n"
         "1. Leia AGENTS.md, documentação aplicável e o estado real do repositório antes de alterar qualquer coisa.\n"
         "2. Use a falha abaixo como evidência inicial, mas confirme a causa raiz no ambiente atual.\n"
         "3. Preserve código estável, dados e credenciais. Não force permissões, não apague dados e não contorne autorizações.\n"
-        "4. Se a causa depender de credencial, autenticação, permissão ou decisão humana ainda ausente, NÃO improvise. Pare e descreva exatamente a intervenção necessária.\n"
+        "4. Se a causa envolver credencial, autenticação, permissão ou dependência externa, esgote primeiro as alternativas automáticas seguras já autorizadas e disponíveis no DevPilot, como credenciais cadastradas, sessão administrada, checkout válido, retry controlado ou reconstrução reversível. Só declare intervenção humana em última instância, quando houver uma fronteira externa comprovada. Não invente acesso nem contorne autorização.\n"
         "5. Quando houver correção segura, implemente-a, execute testes relevantes, build/lint quando aplicável e um smoke test do fluxo que falhou.\n"
-        "6. Registre evidências objetivas do que mudou e por que a causa raiz foi removida.\n"
-        "7. Só conclua com sucesso se o ambiente estiver apto a retestar a execução original. O worker do DevPilot recolocará automaticamente a execução original na fila para provar a correção.\n\n"
+        "6. Informe objetivamente o diagnóstico, a solução aplicada, as evidências e qualquer limitação remanescente sem interromper a esteira por um alerta meramente informativo.\n"
+        "7. Só conclua com sucesso se o ambiente estiver apto a retestar a execução original. O worker do DevPilot recolocará automaticamente a execução original na fila para provar a correção e seguir para a próxima etapa.\n\n"
         f"FALHA DE ORIGEM\nCategoria: {category}\nCódigo: {code}\nMensagem: {message}\nExige autorização externa: {'sim' if authorization else 'não'}\n\n"
         f"OBJETIVO ORIGINAL\nTítulo: {original_task.title}\n{_safe_original_prompt(original_task)}"
     )[:100_000]
 
 
-def _activate_automatic_recovery(db: Session, recovery: Task) -> bool:
-    if recovery.requires_approval:
+def _deferred_recovery_prompt(original_task: Task, run: Run | None, failure: dict) -> str:
+    return (
+        f"{recovery_prompt(original_task, run, failure)}\n\n"
+        f"{DEFERRED_RECOVERY_MARKER}\n"
+        "ACOMPANHAMENTO NÃO BLOQUEANTE\n"
+        "A execução de origem já foi liberada de forma degradada para que etapas independentes continuem. "
+        "Esta missão é interna e assíncrona: procure uma solução segura usando somente acessos já autorizados, registre diagnóstico, solução, testes e limitações. "
+        "Não reabra nem bloqueie a tarefa original apenas por uma dependência externa ainda indisponível. "
+        "Se a correção exigir autorização que o DevPilot não possui, registre exatamente a fronteira externa e encerre esta missão sem criar outra recuperação recursiva."
+    )[:100_000]
+
+
+def _activate_automatic_recovery(
+    db: Session,
+    recovery: Task,
+    *,
+    allow_gate_repair: bool = False,
+) -> bool:
+    if recovery.requires_approval and not allow_gate_repair:
         return False
+
     changed = False
+    now = datetime.now(timezone.utc)
+    if recovery.requires_approval and allow_gate_repair:
+        recovery.requires_approval = False
+        changed = True
     if recovery.approved_at is None:
-        recovery.approved_at = datetime.now(timezone.utc)
+        recovery.approved_at = now
         changed = True
     if recovery.status == TaskStatus.awaiting_approval:
         recovery.status = TaskStatus.queued
-        recovery.updated_at = datetime.now(timezone.utc)
+        recovery.updated_at = now
         changed = True
     return changed
 
@@ -99,15 +137,12 @@ def _reactivate_failed_automatic_recovery(
     failure: dict,
     actor: str,
 ) -> bool:
-    """Requeue a failed recovery only when the current evidence says no human authorization is needed.
-
-    This is intentionally reached through an explicit recovery escalation. It repairs the terminal
-    state shown by the game after a recovery task itself failed with a non-authorization error,
-    without creating a duplicate recovery task or bypassing credential/permission gates.
-    """
+    """Requeue a failed recovery only when current evidence permits automation."""
     if recovery.status not in {TaskStatus.failed, TaskStatus.blocked}:
         return False
-    if recovery.requires_approval or bool(failure.get("requires_authorization")):
+
+    requires_authorization = _requires_external_authorization(failure)
+    if requires_authorization:
         return False
 
     now = datetime.now(timezone.utc)
@@ -119,8 +154,8 @@ def _reactivate_failed_automatic_recovery(
         f"{str(recovery.prompt or '').rstrip()}\n\n"
         f"[failure-safe-retry:{now.isoformat()}]\n"
         "NOVA TENTATIVA SEGURA SOLICITADA\n"
-        "A recuperação anterior falhou sem evidência de credencial, permissão ou decisão humana pendente. "
-        "Reavalie a causa técnica no estado atual, implemente somente uma correção verificável e reteste a tarefa original."
+        "A recuperação anterior falhou sem evidência atual de uma fronteira externa que exija ação humana. "
+        "Reavalie a causa técnica no estado atual, esgote alternativas automáticas seguras, implemente somente uma correção verificável e reteste a tarefa original."
     )[:100_000]
     record(
         db,
@@ -134,6 +169,7 @@ def _reactivate_failed_automatic_recovery(
             "original_task_id": original_task.id,
             "failure_category": failure.get("category", "unknown"),
             "failure_code": failure.get("code", "EXECUTION_FAILED"),
+            "automation_first": True,
         },
     )
     db.flush()
@@ -151,9 +187,17 @@ def ensure_failure_recovery_task(
     if is_failure_recovery_task(original_task) or original_task.status not in {TaskStatus.failed, TaskStatus.blocked}:
         return None
 
+    requires_authorization = _requires_external_authorization(failure)
+    raw_requires_authorization = bool(failure.get("requires_authorization"))
+    system_managed_override = raw_requires_authorization and not requires_authorization
+
     existing = find_failure_recovery_task(db, original_task)
     if existing:
-        if _activate_automatic_recovery(db, existing):
+        if _activate_automatic_recovery(
+            db,
+            existing,
+            allow_gate_repair=not requires_authorization,
+        ):
             record(
                 db,
                 workspace_id=original_task.workspace_id,
@@ -164,7 +208,13 @@ def ensure_failure_recovery_task(
                 outcome="queued",
                 details={
                     "original_task_id": original_task.id,
-                    "reason": "awaiting_approval_without_required_authorization",
+                    "reason": (
+                        "stale_system_managed_authorization_gate"
+                        if system_managed_override
+                        else "awaiting_approval_without_required_authorization"
+                    ),
+                    "failure_category": failure.get("category", "unknown"),
+                    "automation_first": True,
                 },
             )
             db.flush()
@@ -178,7 +228,6 @@ def ensure_failure_recovery_task(
             )
         return existing
 
-    requires_authorization = bool(failure.get("requires_authorization"))
     recovery = Task(
         workspace_id=original_task.workspace_id,
         owner_user_id=original_task.owner_user_id,
@@ -208,7 +257,73 @@ def ensure_failure_recovery_task(
             "failure_category": failure.get("category", "unknown"),
             "failure_code": failure.get("code", "EXECUTION_FAILED"),
             "requires_authorization": requires_authorization,
+            "raw_requires_authorization": raw_requires_authorization,
+            "system_managed_override": system_managed_override,
             "automatic": actor == "worker",
+            "automation_first": True,
+        },
+    )
+    return recovery
+
+
+def ensure_deferred_failure_recovery_task(
+    db: Session,
+    *,
+    original_task: Task,
+    run: Run | None,
+    failure: dict,
+    actor: str = "worker",
+) -> Task | None:
+    """Create one low-priority AI repair mission without blocking an already-degraded pipeline."""
+    if is_failure_recovery_task(original_task):
+        return None
+
+    existing = find_failure_recovery_task(db, original_task)
+    if existing:
+        now = datetime.now(timezone.utc)
+        existing.requires_approval = False
+        existing.approved_at = existing.approved_at or now
+        existing.priority = max(10, min(60, int(existing.priority or original_task.priority or 50)))
+        if existing.status in {TaskStatus.awaiting_approval, TaskStatus.failed, TaskStatus.blocked}:
+            existing.status = TaskStatus.queued
+            existing.updated_at = now
+        if DEFERRED_RECOVERY_MARKER not in str(existing.prompt or ""):
+            existing.prompt = _deferred_recovery_prompt(original_task, run, failure)
+        db.flush()
+        return existing
+
+    recovery = Task(
+        workspace_id=original_task.workspace_id,
+        owner_user_id=original_task.owner_user_id,
+        project_id=original_task.project_id,
+        title=f"Recuperação em segundo plano · {original_task.title}"[:240],
+        prompt=_deferred_recovery_prompt(original_task, run, failure),
+        source="failure-recovery",
+        status=TaskStatus.queued,
+        priority=max(10, min(60, int(original_task.priority or 50) - 10)),
+        branch_name=original_task.branch_name or "",
+        requires_approval=False,
+        approved_at=datetime.now(timezone.utc),
+    )
+    db.add(recovery)
+    db.flush()
+    record(
+        db,
+        workspace_id=original_task.workspace_id,
+        project_id=original_task.project_id,
+        task_id=recovery.id,
+        actor=actor,
+        action="failure_recovery.deferred_created",
+        outcome="queued",
+        details={
+            "original_task_id": original_task.id,
+            "original_run_id": run.id if run else None,
+            "failure_category": failure.get("category", "unknown"),
+            "failure_code": failure.get("code", "EXECUTION_FAILED"),
+            "requires_authorization": False,
+            "automatic": True,
+            "pipeline_continued": True,
+            "nonblocking": True,
         },
     )
     return recovery
@@ -241,6 +356,7 @@ def resume_original_after_recovery(db: Session, *, recovery_task: Task, recovery
             "recovery_run_id": recovery_run.id,
             "previous_status": previous_status.value,
             "proof_required": True,
+            "pipeline_continuation": True,
         },
     )
     return original
