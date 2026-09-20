@@ -13,6 +13,9 @@ def test_backend_reconciles_failed_blocked_and_waiting_url_states():
     assert '"blocked", "failed"' in source
     assert '_RECOVERABLE_GATES = {"waiting_for_testable_url"}' in source
     assert 'recovery_next_at' in source
+    assert 'def _try_claim_recovery(' in source
+    assert 'Project.codex_config == expected_config' in source
+    assert 'int(result.rowcount or 0) != 1' in source
     assert 'recovery_last_attempt_at' in source
     assert '_BLOCKED_RECOVERY_DELAY_SECONDS = 60' in source
     assert '_FAILED_RECOVERY_DELAY_SECONDS = 90' in source
