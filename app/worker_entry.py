@@ -9,6 +9,8 @@ from app.worker import process_one
 
 
 def main() -> None:
+    from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401
+
     try:
         runtime = worker_runtime_paths()
     except WorkerRuntimeError as error:
