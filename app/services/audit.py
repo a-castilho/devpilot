@@ -4,12 +4,12 @@ import hashlib
 import json
 from typing import Any, Iterable
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.linux_agent.audit import verify_attestation
-from app.models import AuditEvent, Project, Task
+from app.models import AuditEvent, Project, Task, Workspace
 from app.services.linux_agent_client import LinuxAgentClient, LinuxAgentError
 
 
@@ -123,6 +123,50 @@ def _event_owner_user_id(
     return None
 
 
+def _workspace_lock_statement(workspace_id: str):
+    return select(Workspace.id).where(Workspace.id == workspace_id).with_for_update()
+
+
+def _sqlite_workspace_write_lock_statement(workspace_id: str):
+    # SQLite has no SELECT ... FOR UPDATE. A no-op UPDATE obtains its transaction
+    # write lock before the audit head is read. Concurrent writers therefore wait
+    # (or fail with SQLITE_BUSY on a stale snapshot) instead of forking the chain.
+    return (
+        update(Workspace)
+        .where(Workspace.id == workspace_id)
+        .values(slug=Workspace.slug)
+    )
+
+
+def _lock_workspace_audit_chain(db: Session, workspace_id: str) -> None:
+    bind = db.get_bind()
+    if bind.dialect.name == "sqlite":
+        db.execute(
+            _sqlite_workspace_write_lock_statement(workspace_id).execution_options(
+                **{_SCOPE_DISABLED_OPTION: True}
+            )
+        )
+        return
+
+    db.scalar(
+        _workspace_lock_statement(workspace_id).execution_options(
+            **{_SCOPE_DISABLED_OPTION: True}
+        )
+    )
+
+
+def _previous_hash_for_workspace(db: Session, workspace_id: str) -> str:
+    _lock_workspace_audit_chain(db, workspace_id)
+    previous_hash = db.scalar(
+        select(AuditEvent.event_hash)
+        .where(AuditEvent.workspace_id == workspace_id)
+        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
+        .limit(1)
+        .execution_options(**{_SCOPE_DISABLED_OPTION: True})
+    )
+    return str(previous_hash or "")
+
+
 def record(
     db: Session,
     *,
@@ -139,16 +183,9 @@ def record(
         actor = str(principal_actor)
 
     # The hash chain is workspace-global even though normal account reads are scoped.
-    # Always resolve the previous event without row-level filtering so every user's
-    # event remains part of one tamper-evident chain visible to SUPER_ADMIN.
-    previous = db.scalar(
-        select(AuditEvent)
-        .where(AuditEvent.workspace_id == workspace_id)
-        .order_by(AuditEvent.created_at.desc(), AuditEvent.id.desc())
-        .limit(1)
-        .execution_options(**{_SCOPE_DISABLED_OPTION: True})
-    )
-    previous_hash = previous.event_hash if previous else ""
+    # Serialize the workspace before reading its head and keep that database lock until
+    # the caller commits/rolls back so concurrent transactions cannot create siblings.
+    previous_hash = _previous_hash_for_workspace(db, workspace_id)
     owner_user_id = _event_owner_user_id(
         db,
         project_id=project_id,
