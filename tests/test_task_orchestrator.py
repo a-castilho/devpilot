@@ -79,6 +79,7 @@ def test_executor_base_run_is_noninteractive(monkeypatch):
         return subprocess.CompletedProcess(args, 0, "", "")
 
     monkeypatch.setattr(executor_service.subprocess, "run", fake_run)
+    monkeypatch.delenv("CI", raising=False)
 
     result = executor_service.run(["codex", "exec", "--json", "prompt"])
 
@@ -106,6 +107,7 @@ def test_controlled_codex_run_closes_stdin_and_sets_noninteractive_environment(m
         return FakeProcess()
 
     monkeypatch.setattr(orchestrator_service.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CI", raising=False)
     task = SimpleNamespace(id="task-noninteractive")
 
     with orchestrator_service.controlled_executor_run(task, executor_service.run) as controlled:
