@@ -1,23 +1,21 @@
-/* DevPilot Build Game delivery gate v75.
- * Creates one independent verifier after each completed base phase and starts final cloud delivery automatically.
+/* DevPilot Build Game delivery gate v77.
+ * Verifies each phase; backend worker owns delivery start, retry and recovery.
  */
 (() => {
   'use strict';
 
-  if (window.__devpilotDeliveryGateV75Ready) return;
-  window.__devpilotDeliveryGateV75Ready = true;
+  if (window.__devpilotDeliveryGateV76Ready) return;
+  window.__devpilotDeliveryGateV76Ready = true;
 
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
   const PROJECT_KEY = 'devpilot-build-game-project';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const MAX_PHASES = 7;
-  const DELIVERY_RETRY_MS = 15000;
-  const DELIVERY_BLOCKED_RETRY_MS = 60000;
   const inFlight = new Set();
   const deliveryInFlight = new Set();
+  const settledMissions = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
-  let deliveryRetryTimer = 0;
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const promptValue = (task, label) => {
@@ -58,15 +56,7 @@
     return true;
   };
 
-  const scheduleDeliveryRetry = (delay = DELIVERY_RETRY_MS) => {
-    if (deliveryRetryTimer) return;
-    deliveryRetryTimer = window.setTimeout(() => {
-      deliveryRetryTimer = 0;
-      schedule();
-    }, delay);
-  };
-
-  const ensureAutomaticDelivery = async projectId => {
+  const observeAutomaticDelivery = async projectId => {
     if (!projectId || deliveryInFlight.has(projectId) || typeof window.api !== 'function') return false;
     deliveryInFlight.add(projectId);
     try {
@@ -74,36 +64,14 @@
         timeoutMs: 5000,
         retry: false,
       });
-      const currentStatus = normalize(current?.status);
-      if (currentStatus === 'ready') {
-        if (deliveryRetryTimer) {
-          window.clearTimeout(deliveryRetryTimer);
-          deliveryRetryTimer = 0;
-        }
+      document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: current}));
+      if (normalize(current?.status) === 'ready') {
         document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: current}));
         return true;
       }
-
-      const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
-        method: 'POST',
-        timeoutMs: 45000,
-        retry: false,
-      });
-      const nextStatus = normalize(next?.status);
-      document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: next}));
-      if (nextStatus === 'ready') {
-        document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: next}));
-        return true;
-      }
-      if (nextStatus === 'blocked') {
-        scheduleDeliveryRetry(DELIVERY_BLOCKED_RETRY_MS);
-      } else if (nextStatus === 'deploying' || nextStatus === 'provisioning' || nextStatus === 'failed') {
-        scheduleDeliveryRetry();
-      }
       return false;
     } catch (error) {
-      console.warn('[DevPilot Automatic Delivery]', error);
-      scheduleDeliveryRetry();
+      console.warn('[DevPilot Delivery Observer]', error);
       return false;
     } finally {
       deliveryInFlight.delete(projectId);
@@ -117,12 +85,12 @@
     if (!projectId || !missionId) return false;
 
     const key = `${projectId}:${missionId}`;
-    if (inFlight.has(key)) return false;
+    if (settledMissions.has(key) || inFlight.has(key)) return false;
     inFlight.add(key);
     try {
       const tasks = await window.api(
         `/tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
-        {timeoutMs:4000, retry:false},
+        {timeoutMs: 4000, retry: false},
       );
       const missionTasks = (Array.isArray(tasks) ? tasks : [])
         .filter(task => isGameTask(task) && missionFromTask(task) === missionId)
@@ -138,17 +106,18 @@
           if (status === 'completed') continue;
           if (retryFailed && FAILED.has(status)) {
             const base = phaseTasks.find(task => !isVerifier(task) && normalize(task.status) === 'completed');
-            if (base) return createVerifier({projectId, missionId, phaseId, sourceTask:base});
+            if (base) return createVerifier({projectId, missionId, phaseId, sourceTask: base});
           }
           break;
         }
 
         if (normalize(latest.status) !== 'completed') break;
-        return createVerifier({projectId, missionId, phaseId, sourceTask:latest});
+        return createVerifier({projectId, missionId, phaseId, sourceTask: latest});
       }
 
       if (finalVerifierApproved(missionTasks)) {
-        await ensureAutomaticDelivery(projectId);
+        settledMissions.add(key);
+        await observeAutomaticDelivery(projectId);
       }
       return false;
     } finally {
@@ -174,13 +143,13 @@
     window.setTimeout(() => {
       scheduled = false;
       void run();
-    }, 300);
+    }, 500);
   };
 
   document.addEventListener('devpilot:game:rendered', schedule);
   document.addEventListener('devpilot:game:enhancements-ready', schedule);
 
   window.__devpilotEnsureDeliveryGate = ensureVerifier;
-  window.__devpilotEnsureAutomaticDelivery = ensureAutomaticDelivery;
+  window.__devpilotEnsureAutomaticDelivery = observeAutomaticDelivery;
   window.__devpilotDeliveryGateDoesNotWrapLoader = true;
 })();

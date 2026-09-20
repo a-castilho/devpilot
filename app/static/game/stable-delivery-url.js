@@ -1,16 +1,14 @@
-/* DevPilot stable game delivery bridge — final round only completes with a validated public URL. */
+/* DevPilot stable game delivery observer — rendering only; backend owns deploy/recovery. */
 (() => {
   'use strict';
 
   if (window.__devpilotStableDeliveryUrlReady) return;
   window.__devpilotStableDeliveryUrlReady = true;
 
-  const OPERATORS = new Set(['SUPER_ADMIN', 'OWNER', 'ADMIN']);
-  const RETRY_MS = 5000;
-  const WATCH_MS = 15000;
-  const MAX_VALIDATIONS = 6;
+  const WATCH_MS = 30000;
   const inFlight = new Set();
   const timers = new Map();
+  const lastRenderSignature = new Map();
 
   const esc = value => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -19,21 +17,16 @@
     const candidate = String(value || '').trim();
     return /^https:\/\//i.test(candidate) ? candidate : '';
   };
-  const role = () => String(
-    (typeof state !== 'undefined' && state.currentUser?.role) || window.state?.currentUser?.role || ''
-  ).toUpperCase();
-  const canOperate = () => OPERATORS.has(role());
   const controller = () => window.__devpilotGameControllerV73;
   const round = () => document.querySelector('#devpilot-game-stable-round-v91 [data-stable-round-card]');
   const normalized = delivery => String(delivery?.status || 'pending').toLowerCase();
   const delivered = delivery => normalized(delivery) === 'ready' && Boolean(safeUrl(delivery?.url));
+  const endpoint = projectId => `/projects/${encodeURIComponent(projectId)}/delivery`;
 
-  const call = async (path, options = {}) => {
+  const call = async path => {
     if (typeof window.api !== 'function') throw new Error('Runtime de comunicação indisponível');
-    return window.api(path, options);
+    return window.api(path, {timeoutMs: 5000, retry: false});
   };
-
-  const endpoint = (projectId, suffix = '') => `/projects/${encodeURIComponent(projectId)}/delivery${suffix}`;
 
   function installStyle() {
     if (document.getElementById('stable-delivery-url-style')) return;
@@ -63,7 +56,7 @@
     return node;
   }
 
-  function setRoundGate(panel, delivery, passiveWatch = false) {
+  function setRoundGate(panel, delivery) {
     const ready = delivered(delivery);
     const heading = panel.querySelector('h1');
     const kicker = panel.querySelector('.game74-kicker');
@@ -71,9 +64,10 @@
     const primary = panel.querySelector('.game74-actions .game74-primary');
     const newRound = panel.querySelector('[data-stable-new]');
 
+    panel.dataset.deliveryUrlReady = ready ? '1' : '0';
+    panel.dataset.deliveryWatch = ready ? '0' : '1';
+
     if (ready) {
-      panel.dataset.deliveryUrlReady = '1';
-      panel.dataset.deliveryWatch = '0';
       if (kicker) kicker.textContent = 'MISSÃO CUMPRIDA';
       if (heading) heading.textContent = 'Entrega concluída';
       if (status) status.innerHTML = '🏆 <strong>Pronto.</strong> Entrega validada e URL pública disponível para teste.';
@@ -82,20 +76,27 @@
       return;
     }
 
-    panel.dataset.deliveryUrlReady = '0';
-    panel.dataset.deliveryWatch = passiveWatch ? '1' : '0';
     if (kicker) kicker.textContent = 'PUBLICAÇÃO FINAL';
     if (heading) heading.textContent = 'Finalizando a entrega';
-    if (status) status.innerHTML = passiveWatch
-      ? '⏳ <strong>A publicação ainda não terminou.</strong> Continuo acompanhando automaticamente sem travar a missão.'
-      : '🚀 <strong>Quase pronto.</strong> O código passou pelos gates; falta publicar e validar a URL real.';
-    if (primary) primary.textContent = passiveWatch ? '⏳ Aguardando publicação' : '🚀 Publicando e validando URL';
+    if (status) status.innerHTML = '⏳ <strong>A publicação ainda não terminou.</strong> O backend continua a recuperação; esta tela apenas acompanha o estado.';
+    if (primary) primary.textContent = '⏳ Aguardando publicação';
     if (newRound) newRound.hidden = true;
   }
 
-  function render(panel, delivery = {}, passiveWatch = false) {
+  const signature = delivery => JSON.stringify({
+    status: normalized(delivery),
+    url: safeUrl(delivery?.url),
+    last_error: String(delivery?.last_error || ''),
+    gate: String(delivery?.delivery_gate || ''),
+  });
+
+  function render(panel, projectId, delivery = {}) {
+    const nextSignature = signature(delivery);
+    if (lastRenderSignature.get(projectId) === nextSignature && panel.querySelector('.stable-delivery-url')) return;
+    lastRenderSignature.set(projectId, nextSignature);
+
     installStyle();
-    setRoundGate(panel, delivery, passiveWatch);
+    setRoundGate(panel, delivery);
     const node = host(panel);
     const status = normalized(delivery);
     const url = safeUrl(delivery?.url);
@@ -114,92 +115,65 @@
       pending: 'Preparando publicação…',
       provisioning: 'Preparando ambiente de teste…',
       deploying: 'Publicando e validando URL…',
-      failed: 'A publicação falhou; tentando corrigir.',
-      blocked: 'Publicação bloqueada; procurando solução automática.',
+      failed: 'A publicação encontrou uma falha; recuperação automática em andamento.',
+      blocked: 'Publicação bloqueada; recuperação automática em andamento.',
     }[status] || 'Finalizando publicação…';
 
     node.innerHTML = `
       <small>URL DO PROJETO</small>
       <strong>${esc(statusText)}</strong>
       <p>A missão só será marcada como entregue quando uma URL HTTPS real estiver validada.</p>
-      ${passiveWatch ? '<div class="stable-delivery-url-watch">Continuo acompanhando automaticamente e atualizarei esta tela quando o deploy mudar de estado.</div>' : ''}
+      <div class="stable-delivery-url-watch">A tela apenas observa. O worker continua o deploy e a recuperação mesmo se você sair daqui.</div>
       ${delivery?.last_error ? `<div class="stable-delivery-url-error">${esc(delivery.last_error)}</div>` : ''}
-      ${canOperate() && ['failed', 'blocked'].includes(status) ? '<div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-retry>↻ Corrigir publicação</button></div>' : ''}`;
+      <div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-refresh>↻ Atualizar estado</button></div>`;
 
-    node.querySelector('[data-stable-delivery-retry]')?.addEventListener('click', () => void refresh(panel, true, 1, false));
+    node.querySelector('[data-stable-delivery-refresh]')?.addEventListener('click', () => void refresh(panel, projectId));
   }
 
-  function schedule(panel, projectId, attempt, passiveWatch = false) {
-    if (!projectId) return;
+  function clearTimer(projectId) {
     const old = timers.get(projectId);
     if (old) window.clearTimeout(old);
-    const delay = passiveWatch ? WATCH_MS : RETRY_MS;
+    timers.delete(projectId);
+  }
+
+  function schedule(panel, projectId) {
+    clearTimer(projectId);
+    if (!projectId || document.visibilityState !== 'visible' || !panel.isConnected) return;
     const timer = window.setTimeout(() => {
       timers.delete(projectId);
-      if (panel.isConnected) void refresh(panel, false, attempt, passiveWatch);
-    }, delay);
+      if (document.visibilityState === 'visible' && panel.isConnected) void refresh(panel, projectId);
+    }, WATCH_MS);
     timers.set(projectId, timer);
   }
 
-  async function refresh(panel, forceRetry = false, attempt = 1, passiveWatch = false) {
-    const state = controller()?.snapshot?.();
-    if (!state?.done || !state.projectId) return;
-    const projectId = String(state.projectId);
-    if (inFlight.has(projectId)) return;
+  async function refresh(panel, projectId) {
+    if (!projectId || document.visibilityState !== 'visible' || inFlight.has(projectId)) return;
     inFlight.add(projectId);
-
     try {
-      let delivery = await call(endpoint(projectId));
-      let status = normalized(delivery);
-
-      if (delivered(delivery)) {
-        delivery = await call(endpoint(projectId, '/validate-url'), {method: 'POST'});
-        render(panel, delivery || {});
-        return;
-      }
-
-      const activeRetry = forceRetry || (!passiveWatch && attempt <= MAX_VALIDATIONS);
-      if (canOperate() && activeRetry && (status === 'pending' || forceRetry || ['failed', 'blocked'].includes(status))) {
-        const action = status === 'pending' && !forceRetry ? '/start' : '/retry';
-        delivery = await call(endpoint(projectId, action), {method: 'POST'});
-        status = normalized(delivery);
-      }
-
-      if (['provisioning', 'deploying'].includes(status)) {
-        delivery = await call(endpoint(projectId, '/validate-url'), {method: 'POST'});
-      }
-
-      const unresolved = !delivered(delivery) && ['pending', 'provisioning', 'deploying', 'failed', 'blocked'].includes(normalized(delivery));
-      const nextPassiveWatch = passiveWatch || (!forceRetry && attempt >= MAX_VALIDATIONS);
-      render(panel, delivery || {}, unresolved && nextPassiveWatch);
-      if (unresolved) {
-        if (nextPassiveWatch) schedule(panel, projectId, attempt + 1, true);
-        else schedule(panel, projectId, attempt + 1, false);
-      }
+      const delivery = await call(endpoint(projectId));
+      render(panel, projectId, delivery || {});
+      if (!delivered(delivery)) schedule(panel, projectId);
+      else clearTimer(projectId);
     } catch (error) {
-      const nextPassiveWatch = passiveWatch || (!forceRetry && attempt >= MAX_VALIDATIONS);
-      render(panel, {status: 'failed', last_error: error?.message || 'Não foi possível validar a URL agora.'}, nextPassiveWatch);
-      schedule(panel, projectId, attempt + 1, nextPassiveWatch);
+      render(panel, projectId, {status: 'failed', last_error: error?.message || 'Não foi possível consultar a entrega agora.'});
+      schedule(panel, projectId);
     } finally {
       inFlight.delete(projectId);
     }
   }
 
   function sync() {
+    if (document.visibilityState !== 'visible') return;
     const state = controller()?.snapshot?.();
     const panel = round();
     if (!panel || !state?.done || !state.projectId) return;
-    if (panel.dataset.deliveryUrlHydrating === '1') return;
-    panel.dataset.deliveryUrlHydrating = '1';
-    render(panel, {status: 'provisioning'});
-    void refresh(panel).finally(() => {
-      if (panel.isConnected) panel.dataset.deliveryUrlHydrating = '0';
-    });
+    const projectId = String(state.projectId);
+    void refresh(panel, projectId);
   }
 
   let scheduled = false;
   const requestSync = () => {
-    if (scheduled) return;
+    if (scheduled || document.visibilityState !== 'visible') return;
     scheduled = true;
     window.requestAnimationFrame(() => {
       scheduled = false;
@@ -210,6 +184,12 @@
   document.addEventListener('devpilot:game:state', requestSync);
   document.addEventListener('devpilot:game:rendered', requestSync);
   document.addEventListener('devpilot:game:core-ready', requestSync);
-  document.addEventListener('visibilitychange', requestSync);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') {
+      for (const projectId of timers.keys()) clearTimer(projectId);
+      return;
+    }
+    requestSync();
+  });
   requestSync();
 })();

@@ -5,25 +5,15 @@ BOOT = ROOT / "app/static/game/game-bootstrap.js"
 AUTO = ROOT / "app/static/game/delivery-auto-progress.js"
 
 
-def test_auto_progress_asset_is_loaded_after_stable_delivery_ui():
+def test_legacy_auto_progress_is_not_loaded():
     boot = BOOT.read_text(encoding="utf-8")
-    assert "game/delivery-auto-progress.js" in boot
-    assert boot.index("game/stable-delivery-url.js") < boot.index("game/delivery-auto-progress.js")
+    assert "game/delivery-auto-progress.js" not in boot
+    assert "game/stable-delivery-url.js" in boot
+    assert "game/delivery-gate.js" in boot
 
 
-def test_auto_progress_continues_backend_state_machine_until_real_url_is_ready():
+def test_legacy_auto_progress_cannot_mutate_delivery():
     source = AUTO.read_text(encoding="utf-8")
-    assert "`${endpoint(projectId)}/auto`" in source
-    assert "method: 'POST'" in source
-    assert "normalized(state?.status) === 'ready'" in source
-    assert r"/^https:\/\//i" in source
-    assert "schedule(projectId" in source
-    assert "devpilot:game:delivery-ready" in source
-
-
-def test_auto_progress_does_not_require_operator_role_in_browser():
-    source = AUTO.read_text(encoding="utf-8")
-    assert "SUPER_ADMIN" not in source
-    assert "OWNER" not in source
-    assert "ADMIN" not in source
-    assert "window.api" in source
+    assert "/delivery/auto" not in source
+    assert "method: 'POST'" not in source
+    assert "__devpilotDeliveryAutoProgressReady" in source
