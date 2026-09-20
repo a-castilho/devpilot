@@ -216,4 +216,5 @@ def ensure_runtime_schema(engine: Engine) -> None:
             for statement in statements:
                 connection.execute(text(statement))
 
-    bootstrap_jobpilot_project(engine)
+    if {"workspaces", "users", "projects"}.issubset(tables):
+        bootstrap_jobpilot_project(engine)
