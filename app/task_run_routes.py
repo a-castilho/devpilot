@@ -33,6 +33,8 @@ _FAILURE_CODES = {
     "unknown": "EXECUTION_FAILED",
 }
 
+_SYSTEM_MANAGED_FAILURE_CATEGORIES = {"github_auth"}
+
 _GITHUB_AUTH_PATTERNS = (
     "requested url returned error: 401",
     "requested url returned error: 403",
@@ -142,11 +144,17 @@ def classify_failure_text(value: str) -> str:
     return "unknown"
 
 
+def _requires_authorization(category: str, requested: bool = False) -> bool:
+    if str(category or "").strip().lower() in _SYSTEM_MANAGED_FAILURE_CATEGORIES:
+        return False
+    return bool(requested)
+
+
 def _friendly_failure_message(category: str, fallback: str = "") -> str:
     messages = {
         "github_auth": (
-            "Credencial GitHub sem acesso ao repositório. Revalide a integração da organização "
-            "e permita leitura do repositório antes de executar novamente."
+            "Falha de acesso ao repositório GitHub. O DevPilot tentará automaticamente as credenciais "
+            "e alternativas já cadastradas antes de considerar intervenção externa."
         ),
         "codex_auth": (
             "O Codex não está autenticado no ambiente de execução. Autorize o Codex no worker "
@@ -188,7 +196,10 @@ def failure_details(run: Run | None) -> dict:
                     "category": category,
                     "code": _FAILURE_CODES.get(category, _FAILURE_CODES["unknown"]),
                     "message": message,
-                    "requires_authorization": bool(healing.get("requires_authorization", False)),
+                    "requires_authorization": _requires_authorization(
+                        category,
+                        bool(healing.get("requires_authorization", False)),
+                    ),
                 }
 
         raw_error = str(payload.get("stderr") or payload.get("raw") or "")
@@ -199,11 +210,10 @@ def failure_details(run: Run | None) -> dict:
                 "category": category,
                 "code": _FAILURE_CODES[category],
                 "message": _friendly_failure_message(category, raw_message),
-                "requires_authorization": category in {
-                    "github_auth",
-                    "codex_auth",
-                    "filesystem_permission",
-                },
+                "requires_authorization": _requires_authorization(
+                    category,
+                    category in {"codex_auth", "filesystem_permission"},
+                ),
             }
         if raw_message:
             return {
@@ -220,11 +230,10 @@ def failure_details(run: Run | None) -> dict:
             "category": category,
             "code": _FAILURE_CODES[category],
             "message": _friendly_failure_message(category, summary),
-            "requires_authorization": category in {
-                "github_auth",
-                "codex_auth",
-                "filesystem_permission",
-            },
+            "requires_authorization": _requires_authorization(
+                category,
+                category in {"codex_auth", "filesystem_permission"},
+            ),
         }
     if summary:
         return {

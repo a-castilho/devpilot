@@ -19,7 +19,8 @@ def test_failure_reason_converts_repository_access_denied_to_client_message():
 
     reason = failure_reason(run)
 
-    assert reason.startswith("Credencial GitHub sem acesso ao repositório")
+    assert reason.startswith("Falha de acesso ao repositório GitHub")
+    assert "tentará automaticamente" in reason
     assert "fatal:" not in reason
 
 
@@ -41,11 +42,12 @@ def test_failure_details_classifies_github_403_without_exposing_raw_git_error():
 
     assert details["category"] == "github_auth"
     assert details["code"] == "GITHUB_ACCESS_DENIED"
-    assert details["requires_authorization"] is True
+    assert details["requires_authorization"] is False
     assert "403" not in details["message"]
+    assert "tentará automaticamente" in details["message"]
 
 
-def test_failure_details_prefers_self_healing_message():
+def test_failure_details_prefers_self_healing_message_without_reopening_github_gate():
     run = SimpleNamespace(
         status="failed",
         summary="Execution failed",
@@ -65,7 +67,7 @@ def test_failure_details_prefers_self_healing_message():
 
     assert details["message"] == "As credenciais GitHub foram testadas e nenhuma possui acesso."
     assert details["category"] == "github_auth"
-    assert details["requires_authorization"] is True
+    assert details["requires_authorization"] is False
 
 
 def test_failure_reason_falls_back_to_summary():
