@@ -1,8 +1,10 @@
 (() => {
   const startButton = document.querySelector('#voice-start');
   const statusNode = document.querySelector('#voice-status');
+  const transcriptInput = document.querySelector('#voice-transcript');
+  const modal = document.querySelector('#voice-modal');
 
-  if (!startButton || !statusNode || startButton.dataset.permissionGuard === '1') return;
+  if (!startButton || !statusNode || !transcriptInput || !modal || startButton.dataset.permissionGuard === '1') return;
 
   const originalStart = startButton.onclick;
   if (typeof originalStart !== 'function') return;
@@ -33,6 +35,12 @@
     return 'Não foi possível solicitar acesso ao microfone.';
   };
 
+  function enforceMobileRecorderCapture() {
+    modal.querySelectorAll('input[type="file"][accept*="audio"]').forEach((input) => {
+      input.setAttribute('capture', 'microphone');
+    });
+  }
+
   async function requestMicrophonePermission() {
     if (!navigator.mediaDevices?.getUserMedia) return true;
 
@@ -50,7 +58,34 @@
     }
   }
 
+  function submitConversationWhenReady() {
+    const transcript = transcriptInput.value.trim();
+    if (!transcript) return;
+    const submit = window.devpilotVoiceConversationSubmit;
+    if (typeof submit !== 'function') return;
+    queueMicrotask(() => {
+      try {
+        const result = submit();
+        if (result?.catch) {
+          result.catch((error) => {
+            statusNode.textContent = error?.message || 'Não foi possível enviar a fala para a IA.';
+          });
+        }
+      } catch (error) {
+        statusNode.textContent = error?.message || 'Não foi possível enviar a fala para a IA.';
+      }
+    });
+  }
+
+  const statusObserver = new MutationObserver(() => {
+    const value = String(statusNode.textContent || '').trim().toLowerCase();
+    if (value.startsWith('transcrição pronta')) submitConversationWhenReady();
+  });
+  statusObserver.observe(statusNode, { childList: true, characterData: true, subtree: true });
+
   startButton.onclick = async function guardedVoiceStart(event) {
+    enforceMobileRecorderCapture();
+
     // While recording, the original handler must stop immediately; requesting
     // permission again here would delay the stop action.
     if (/parar/i.test(startButton.textContent || '')) {
@@ -68,4 +103,7 @@
 
     return originalStart.call(startButton, event);
   };
+
+  modal.addEventListener('close', () => statusObserver.disconnect(), { once: true });
+  enforceMobileRecorderCapture();
 })();
