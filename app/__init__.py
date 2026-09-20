@@ -4,7 +4,6 @@ from app import render_autoprovision_bootstrap as _render_autoprovision_bootstra
 from app import public_git_fallback as _public_git_fallback  # noqa: F401,E402
 from app import github_optional_org as _github_optional_org  # noqa: F401,E402
 from app import execution_preflight_guard as _execution_preflight_guard  # noqa: F401,E402
-from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401,E402
 from app import task_queue_guard as _task_queue_guard  # noqa: F401,E402
 from app import recovery_classification_guard as _recovery_classification_guard  # noqa: F401,E402
 from app import execution_quota_guard as _execution_quota_guard  # noqa: F401,E402
