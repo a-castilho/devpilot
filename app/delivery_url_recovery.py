@@ -9,7 +9,7 @@ from urllib.parse import quote, urlparse
 
 import httpx
 from fastapi import Depends
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
@@ -300,6 +300,46 @@ def _recovery_due(state: dict, now: datetime) -> bool:
     return next_at is None or next_at <= now
 
 
+def _try_claim_recovery(
+    db: Session,
+    project: Project,
+    state: dict,
+    *,
+    now: datetime,
+) -> bool:
+    """Atomically claim one provider retry across multiple backend instances."""
+    expected_config = str(project.codex_config or "{}")
+    claimed = dict(state)
+    status = str(claimed.get("status") or "").strip().lower()
+    claimed["recovery_last_attempt_at"] = now.isoformat()
+    claimed["recovery_next_at"] = (
+        now + timedelta(seconds=_recovery_delay(status))
+    ).isoformat()
+    claimed["recovery_owner"] = "backend-reconciler"
+    claimed["recovery_last_error"] = ""
+
+    config = delivery.config_for(project)
+    config["delivery"] = claimed
+    encoded = json.dumps(config, ensure_ascii=False, separators=(",", ":"))
+    result = db.execute(
+        update(Project)
+        .where(
+            Project.id == project.id,
+            Project.codex_config == expected_config,
+        )
+        .values(codex_config=encoded)
+    )
+    if int(result.rowcount or 0) != 1:
+        db.rollback()
+        return False
+
+    db.commit()
+    db.refresh(project)
+    state.clear()
+    state.update(claimed)
+    return True
+
+
 def _persist_recovery_schedule(
     db: Session,
     project: Project,
@@ -356,9 +396,10 @@ def _reconcile_once() -> int:
 
             previous_status = status
             try:
-                # Claim the next retry window before external provider I/O. A crash
-                # or Render restart therefore cannot create a hot retry loop.
-                _persist_recovery_schedule(db, project, state, now=now)
+                # Atomically claim the retry window before provider I/O. This
+                # prevents two Render instances from provisioning the same project.
+                if not _try_claim_recovery(db, project, state, now=now):
+                    continue
                 result = delivery.run_delivery(db, project, "delivery-reconciler")
                 result_status = str(result.get("status") or "").strip().lower()
 
