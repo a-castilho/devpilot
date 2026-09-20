@@ -301,11 +301,7 @@ async def _transcribe_openai(
     raise _provider_error("openai", statuses)
 
 
-def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
-    try:
-        payload = response.json()
-    except ValueError:
-        return "", {}
+def _google_payload_data(payload: object) -> tuple[str, dict]:
     if not isinstance(payload, dict):
         return "", {}
     collected: list[str] = []
@@ -325,6 +321,23 @@ def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
                 break
     usage = payload.get("usageMetadata")
     return text, usage if isinstance(usage, dict) else {}
+
+
+def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return "", {}
+    return _google_payload_data(payload)
+
+
+def _google_response_text(response_or_payload: httpx.Response | dict) -> str:
+    """Compatibility helper retained for callers that only need transcript text."""
+    if isinstance(response_or_payload, httpx.Response):
+        text, _usage = _google_response_data(response_or_payload)
+        return text
+    text, _usage = _google_payload_data(response_or_payload)
+    return text
 
 
 async def _transcribe_google(
