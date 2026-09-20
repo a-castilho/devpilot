@@ -113,12 +113,14 @@ jobs:
           echo "LOCAL_COMMIT=$(git rev-parse HEAD)"
           git log -1 --oneline
 
-      - name: Build and start local app
+      - name: Build and start local runtime
         if: steps.scope.outputs.fast != 'true'
         run: |
           set -euo pipefail
           cd "$HOME/Documents/devpilot"
-          docker compose up -d --build postgres redis app
+          # app/worker/rag-worker are separate Compose build targets. Rebuild all code
+          # services so a backend hotfix cannot leave the task worker on a stale image.
+          docker compose up -d --build postgres redis app worker rag-worker
 
       - name: Wait for local health
         if: steps.scope.outputs.fast != 'true'
@@ -134,6 +136,13 @@ jobs:
           cd "$HOME/Documents/devpilot"
           docker compose logs --tail=120 app postgres || true
           exit 1
+
+      - name: Verify task worker received the current runtime
+        if: steps.scope.outputs.fast != 'true'
+        run: |
+          set -euo pipefail
+          cd "$HOME/Documents/devpilot"
+          docker compose exec -T worker python -c "import inspect; from app.services import executor, task_orchestrator; assert 'stdin=subprocess.DEVNULL' in inspect.getsource(executor.run); assert 'stdin=subprocess.DEVNULL' in inspect.getsource(task_orchestrator.controlled_executor_run); print('WORKER_NONINTERACTIVE_EXECUTION_OK')"
 
       - name: Verify project and game runtime are served locally
         if: steps.scope.outputs.fast != 'true'
