@@ -2,6 +2,7 @@ import time
 
 from app.db import SessionLocal
 from app.rag.worker import process_one_rag_job
+from app.services.failure_recovery import recover_stale_noninteractive_failures
 from app.services.runtime_preflight import WorkerRuntimeError, worker_runtime_paths
 from app.worker import process_one
 
@@ -12,6 +13,12 @@ def main() -> None:
     except WorkerRuntimeError as error:
         print(f"[worker] PRECHECK FAILED: {error}", flush=True)
         raise SystemExit(78) from error
+
+    with SessionLocal() as db:
+        recovered = recover_stale_noninteractive_failures(db)
+        if recovered:
+            db.commit()
+            print(f"[worker] recovered stale stdin incident tasks: {recovered}", flush=True)
 
     print(
         "[worker] runtime OK: "
