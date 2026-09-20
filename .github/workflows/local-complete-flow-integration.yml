@@ -29,7 +29,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           LOCAL_REPO="$HOME/Documents/devpilot"
-          STATE="/tmp/devpilot-complete-flow-${GITHUB_RUN_ID}.env"
+          STATE="/tmp/devpilot-complete-flow-state.env"
           test -d "$LOCAL_REPO/.git"
           cd "$LOCAL_REPO"
 
@@ -44,8 +44,7 @@ jobs:
           printf 'BEFORE_SHA=%q\n' "$BEFORE_SHA" > "$STATE"
           printf 'BEFORE_BRANCH=%q\n' "$BEFORE_BRANCH" >> "$STATE"
           printf 'LOCAL_REPO=%q\n' "$LOCAL_REPO" >> "$STATE"
-          echo "DEVPILOT_COMPLETE_FLOW_STATE=$STATE" >> "$GITHUB_ENV"
-
+          rm -f "$STATE"
           backup_service() {
             local service="$1" upper cid image_id image_ref
             upper="${service^^}"
@@ -170,8 +169,8 @@ jobs:
         shell: bash
         run: |
           set +e
-          STATE="${DEVPILOT_COMPLETE_FLOW_STATE:-}"
-          [[ -n "$STATE" && -f "$STATE" ]] || exit 0
+          STATE="/tmp/devpilot-complete-flow-state.env"
+          [[ -f "$STATE" ]] || exit 0
           # shellcheck disable=SC1090
           source "$STATE"
           cd "$LOCAL_REPO" || exit 0
