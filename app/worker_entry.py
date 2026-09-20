@@ -25,8 +25,9 @@ def main() -> None:
         delivery_processed = False
         with SessionLocal() as db:
             rag_processed = process_one_rag_job(db)
-            if not rag_processed:
-                delivery_processed = process_one_pending_delivery(db)
+        with SessionLocal() as db:
+            delivery_processed = process_one_pending_delivery(db)
+
         task_processed = process_one()
         if not rag_processed and not delivery_processed and not task_processed:
             time.sleep(2)
