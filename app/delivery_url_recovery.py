@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app import product_delivery_routes as delivery
 from app.db import SessionLocal
 from app.delivery_cloud_bridge import install_delivery_cloud_bridge
-from app.models import AuditEvent, Project
+from app.models import AuditEvent, Project, ProjectStatus, Task, TaskStatus
 from app.services.audit import record
 from app.services.delivery_product_guard import install_delivery_product_guard
 
@@ -29,6 +29,10 @@ _FAILED_RECOVERY_DELAY_SECONDS = 90
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GENERIC_DELIVERY_ERROR = "Não foi possível concluir esta etapa. Tente novamente."
+_GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
+_VERIFIER_MARKER = "[DEVPILOT_DELIVERY_VERIFIER_V1]"
+_GAME_TASK_LIMIT = 80
+_PROMPT_FIELD_RE = re.compile(r"^(?P<label>[A-Z_]+):\\s*(?P<value>.+)$", re.MULTILINE)
 _ORIGINAL_RUN_DELIVERY = delivery.run_delivery
 _RECONCILER_STARTED = False
 _RECONCILER_LOCK = threading.Lock()
@@ -273,6 +277,64 @@ def _run_delivery_with_public_url_recovery(
     return state
 
 
+def _prompt_field(prompt: object, label: str) -> str:
+    wanted = str(label or "").strip().upper()
+    for match in _PROMPT_FIELD_RE.finditer(str(prompt or "")):
+        if match.group("label").strip().upper() == wanted:
+            return match.group("value").strip()
+    return ""
+
+
+def _task_status(task: Task) -> str:
+    value = getattr(task, "status", "")
+    if hasattr(value, "value"):
+        value = value.value
+    return str(value or "").strip().lower()
+
+
+def _phase_from_task(task: Task) -> int:
+    raw = _prompt_field(task.prompt, "FASE")
+    try:
+        return int(raw.split("/", 1)[0])
+    except (TypeError, ValueError):
+        return 0
+
+
+def _final_gate_completed(db: Session, project_id: str) -> bool:
+    """Require all seven verifier tasks from the latest game mission before first deploy."""
+    tasks = list(
+        db.scalars(
+            select(Task)
+            .where(
+                Task.project_id == project_id,
+                Task.prompt.contains(_GAME_MARKER),
+            )
+            .order_by(Task.created_at.desc())
+            .limit(_GAME_TASK_LIMIT)
+        ).all()
+    )
+    if not tasks:
+        return False
+
+    latest_mission = _prompt_field(tasks[0].prompt, "PARTIDA")
+    if not latest_mission:
+        return False
+
+    mission_tasks = [
+        task for task in tasks
+        if _prompt_field(task.prompt, "PARTIDA") == latest_mission
+    ]
+    for phase in range(1, 8):
+        latest = next((task for task in mission_tasks if _phase_from_task(task) == phase), None)
+        if latest is None:
+            return False
+        prompt = str(latest.prompt or "")
+        is_verifier = _VERIFIER_MARKER in prompt or str(latest.title or "").startswith("[Jogo] Gate")
+        if not is_verifier or _task_status(latest) != TaskStatus.completed.value:
+            return False
+    return True
+
+
 def _parse_recovery_timestamp(value: object) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
@@ -366,40 +428,49 @@ def _clear_recovery_schedule(db: Session, project: Project, state: dict) -> None
 
 
 def _reconcile_once() -> int:
-    """Advance recoverable final deliveries without depending on an open browser.
+    """Advance one or more final deliveries without depending on an open browser.
 
-    Persisted backoff protects providers from aggressive retries while guaranteeing
-    that blocked/failed/deploying deliveries are revisited by the backend until a
-    real HTTPS URL is validated.
+    Pending delivery starts only after the latest game mission has all seven
+    independent verifier gates completed. All provider retries use a persisted,
+    atomic lease so multiple backend loops/instances cannot race the same project.
     """
     processed = 0
-    now = datetime.now(timezone.utc)
     with SessionLocal() as db:
         projects = list(
             db.scalars(
                 select(Project)
-                .where(Project.repository_url.is_not(None))
+                .where(
+                    Project.status == ProjectStatus.active,
+                    Project.repository_url.is_not(None),
+                    Project.repository_url != "",
+                )
                 .order_by(Project.created_at.desc())
                 .limit(200)
             ).all()
         )
         for project in projects:
             state = delivery.initial_delivery(project)
-            status = str(state.get("status") or "").strip().lower()
+            status = str(state.get("status") or "pending").strip().lower()
             gate = str(state.get("delivery_gate") or "").strip().lower()
+
             if gate == "delivered":
                 continue
-            if status not in _RECONCILE_STATUSES and gate not in _RECOVERABLE_GATES:
+
+            if status == "pending":
+                if not _final_gate_completed(db, project.id):
+                    continue
+            elif status not in _RECONCILE_STATUSES and gate not in _RECOVERABLE_GATES:
                 continue
-            if not _recovery_due(state, now):
+
+            attempt_now = datetime.now(timezone.utc)
+            if not _recovery_due(state, attempt_now):
                 continue
 
             previous_status = status
             try:
-                # Atomically claim the retry window before provider I/O. This
-                # prevents two Render instances from provisioning the same project.
-                if not _try_claim_recovery(db, project, state, now=now):
+                if not _try_claim_recovery(db, project, state, now=attempt_now):
                     continue
+
                 result = delivery.run_delivery(db, project, "delivery-reconciler")
                 result_status = str(result.get("status") or "").strip().lower()
 
@@ -420,7 +491,10 @@ def _reconcile_once() -> int:
                     db.commit()
                 else:
                     _persist_recovery_schedule(
-                        db, project, result, now=datetime.now(timezone.utc)
+                        db,
+                        project,
+                        result,
+                        now=datetime.now(timezone.utc),
                     )
                 processed += 1
             except Exception as error:
@@ -452,6 +526,7 @@ def _reconcile_once() -> int:
                     flush=True,
                 )
     return processed
+
 
 def _reconciler_loop() -> None:
     # Give application startup/migrations time to settle, then continue delivery
