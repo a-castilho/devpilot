@@ -31,6 +31,7 @@
     "app/services/rag_*.py",
     "app/services/alternating_flow.py",
     "app/services/executor.py",
+    "app/services/task_orchestrator.py",
     "app/services/git_reader.py",
     "app/services/github_*.py",
     "app/services/ollama_git_context.py",
@@ -70,6 +71,7 @@
         "app/*task*.py",
         "app/*worker*.py",
         "app/embedded_worker.py",
+        "app/services/task_orchestrator.py",
         "app/services/alternating_flow.py",
         "app/services/executor.py",
         "app/static/task-*.js",
@@ -79,7 +81,8 @@
         "tests/test_alternating_task_flow.py",
         "tests/test_embedded_worker.py",
         "tests/test_task_*.py",
-        "tests/test_tasks_*.py"
+        "tests/test_tasks_*.py",
+        "tests/test_worker_lease_fencing.py"
       ],
       "browser_tests": [
         "tests/test_critical_flows_browser_e2e.py"
