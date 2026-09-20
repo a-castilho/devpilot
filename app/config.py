@@ -4,6 +4,25 @@ from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_LOCAL_ENVIRONMENTS = frozenset({"development", "dev", "local", "test", "testing", "ci"})
+_INSECURE_AUTH_PLACEHOLDERS = frozenset(
+    {
+        "development-only-token-change-me",
+        "change-me-with-at-least-32-characters",
+        "change-me-with-a-random-secret-at-least-32-characters",
+    }
+)
+_MIN_AUTH_SECRET_LENGTH = 32
+
+
+def _insecure_auth_secret(value: str) -> bool:
+    normalized = value.strip()
+    return (
+        len(normalized) < _MIN_AUTH_SECRET_LENGTH
+        or normalized.casefold() in _INSECURE_AUTH_PLACEHOLDERS
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DEVPILOT_", env_file=".env", extra="ignore")
 
@@ -77,6 +96,27 @@ class Settings(BaseSettings):
             if item.strip()
         }
 
+    @property
+    def deployed_environment(self) -> bool:
+        return self.env.strip().lower() not in _LOCAL_ENVIRONMENTS
+
+    def validate_auth_runtime(self) -> None:
+        """Reject predictable authentication secrets before a deployed process starts."""
+        if not self.deployed_environment:
+            return
+
+        invalid: list[str] = []
+        if _insecure_auth_secret(self.auth_secret):
+            invalid.append("DEVPILOT_AUTH_SECRET")
+        if _insecure_auth_secret(self.bootstrap_token):
+            invalid.append("DEVPILOT_BOOTSTRAP_TOKEN")
+        if invalid:
+            names = ", ".join(invalid)
+            raise RuntimeError(
+                "Configuração de autenticação insegura para ambiente não local. "
+                f"Defina segredos aleatórios com pelo menos {_MIN_AUTH_SECRET_LENGTH} caracteres: {names}"
+            )
+
     def prepare(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.repositories_dir.mkdir(parents=True, exist_ok=True)
@@ -89,5 +129,6 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     settings = Settings()
+    settings.validate_auth_runtime()
     settings.prepare()
     return settings
