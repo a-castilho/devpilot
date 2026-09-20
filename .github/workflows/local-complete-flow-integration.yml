@@ -1,0 +1,217 @@
+name: Complete Flow Integration Local
+
+on:
+  push:
+    branches:
+      - fix/complete-flow-integration-20260919
+    paths:
+      - ".github/workflows/local-complete-flow-integration.yml"
+      - "app/**"
+      - "tests/**"
+      - "Dockerfile"
+      - "docker-compose*.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: devpilot-local-complete-flow-integration
+  cancel-in-progress: true
+
+jobs:
+  local-complete-flow:
+    name: Complete flow on local Linux
+    runs-on: self-hosted
+    timeout-minutes: 40
+    steps:
+      - name: Prepare local integration checkout
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          LOCAL_REPO="$HOME/Documents/devpilot"
+          STATE="/tmp/devpilot-complete-flow-${GITHUB_RUN_ID}.env"
+          test -d "$LOCAL_REPO/.git"
+          cd "$LOCAL_REPO"
+
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "LOCAL_WORKTREE_DIRTY"
+            git status --short
+            exit 42
+          fi
+
+          BEFORE_SHA="$(git rev-parse HEAD)"
+          BEFORE_BRANCH="$(git branch --show-current)"
+          printf 'BEFORE_SHA=%q\n' "$BEFORE_SHA" > "$STATE"
+          printf 'BEFORE_BRANCH=%q\n' "$BEFORE_BRANCH" >> "$STATE"
+          printf 'LOCAL_REPO=%q\n' "$LOCAL_REPO" >> "$STATE"
+          echo "DEVPILOT_COMPLETE_FLOW_STATE=$STATE" >> "$GITHUB_ENV"
+
+          backup_service() {
+            local service="$1" upper cid image_id image_ref
+            upper="${service^^}"
+            upper="${upper//-/_}"
+            cid="$(docker compose ps -q "$service" 2>/dev/null || true)"
+            [[ -n "$cid" ]] || return 0
+            image_id="$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)"
+            image_ref="$(docker inspect --format '{{.Config.Image}}' "$cid" 2>/dev/null || true)"
+            [[ -n "$image_id" && -n "$image_ref" ]] || return 0
+            printf 'OLD_%s_ID=%q\n' "$upper" "$image_id" >> "$STATE"
+            printf 'OLD_%s_REF=%q\n' "$upper" "$image_ref" >> "$STATE"
+          }
+
+          backup_service app
+          backup_service worker
+          backup_service rag-worker
+
+          git fetch origin fix/complete-flow-integration-20260919
+          git switch -C fix/complete-flow-integration-20260919 origin/fix/complete-flow-integration-20260919
+          echo "LOCAL_TARGET_SHA=$(git rev-parse HEAD)"
+          git log -1 --oneline
+
+      - name: Validate source and build replacement images
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$HOME/Documents/devpilot"
+
+          python3 -m compileall -q app
+          node --check app/static/game/delivery-gate.js
+          node --check app/static/game/stable-delivery-url.js
+
+          grep -q "stdin=subprocess.DEVNULL" app/services/executor.py
+          grep -q "stdin=subprocess.DEVNULL" app/services/task_orchestrator.py
+          grep -q "recover_stale_noninteractive_failures" app/worker_entry.py
+          grep -q "process_one_pending_delivery" app/worker_entry.py
+
+          docker compose build app worker rag-worker
+
+          docker compose run --rm --no-deps --entrypoint python worker -c "import inspect; from app.services import executor, task_orchestrator; from app.services.delivery_recovery_worker import process_one_pending_delivery; from app.services.failure_recovery import recover_stale_noninteractive_failures; from app.services.runtime_preflight import worker_runtime_paths; worker_runtime_paths(); assert 'stdin=subprocess.DEVNULL' in inspect.getsource(executor.run); assert 'stdin=subprocess.DEVNULL' in inspect.getsource(task_orchestrator.controlled_executor_run); assert callable(process_one_pending_delivery); assert callable(recover_stale_noninteractive_failures); print('COMPLETE_FLOW_IMAGE_PREFLIGHT_OK')"
+
+      - name: Replace local runtime
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$HOME/Documents/devpilot"
+          docker compose up -d postgres redis app worker rag-worker
+
+          for i in $(seq 1 60); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8080/health >/tmp/devpilot-complete-flow-health.json; then
+              cat /tmp/devpilot-complete-flow-health.json
+              break
+            fi
+            if [[ "$i" == "60" ]]; then
+              docker compose logs --tail=180 app worker rag-worker postgres || true
+              exit 1
+            fi
+            sleep 2
+          done
+
+          docker compose exec -T worker python -c "import inspect; from app.services import executor, task_orchestrator; from app.services.delivery_recovery_worker import process_one_pending_delivery; from app.services.failure_recovery import recover_stale_noninteractive_failures; assert 'stdin=subprocess.DEVNULL' in inspect.getsource(executor.run); assert 'stdin=subprocess.DEVNULL' in inspect.getsource(task_orchestrator.controlled_executor_run); assert callable(process_one_pending_delivery); assert callable(recover_stale_noninteractive_failures); print('COMPLETE_FLOW_LIVE_WORKER_OK')"
+          docker compose logs --tail=80 worker | tail -n 80
+
+      - name: Inspect Luz das estrelas and wait for delivery
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          cd "$HOME/Documents/devpilot"
+
+          for i in $(seq 1 60); do
+            docker compose exec -T app python - <<'PY' >/tmp/luz-delivery-state.txt
+          from sqlalchemy import select
+          from app.db import SessionLocal
+          from app.models import Project, Task
+          from app import product_delivery_routes as delivery
+
+          with SessionLocal() as db:
+              project = db.scalar(
+                  select(Project)
+                  .where(Project.name.ilike("%Luz das estrelas%"))
+                  .order_by(Project.created_at.desc())
+                  .limit(1)
+              )
+              if not project:
+                  print("LUZ_PROJECT_NOT_FOUND")
+                  raise SystemExit(0)
+
+              state = delivery.initial_delivery(project)
+              tasks = list(
+                  db.scalars(
+                      select(Task)
+                      .where(Task.project_id == project.id)
+                      .order_by(Task.created_at.desc())
+                      .limit(20)
+                  ).all()
+              )
+              print(f"LUZ_PROJECT_ID={project.id}")
+              print(f"LUZ_PROJECT_NAME={project.name}")
+              print(f"LUZ_DELIVERY_STATUS={state.get('status') or ''}")
+              print(f"LUZ_DELIVERY_URL={state.get('url') or ''}")
+              print(f"LUZ_DELIVERY_GATE={state.get('delivery_gate') or ''}")
+              for task in tasks:
+                  status = task.status.value if hasattr(task.status, "value") else str(task.status)
+                  print(f"LUZ_TASK={status}|{task.title}")
+          PY
+            cat /tmp/luz-delivery-state.txt
+
+            if grep -Eq '^LUZ_DELIVERY_STATUS=ready$' /tmp/luz-delivery-state.txt               && grep -Eq '^LUZ_DELIVERY_URL=https://' /tmp/luz-delivery-state.txt; then
+              echo "LUZ_COMPLETE_FLOW_READY"
+              exit 0
+            fi
+
+            sleep 15
+          done
+
+          echo "LUZ_COMPLETE_FLOW_STILL_PROCESSING"
+          docker compose logs --tail=220 worker app || true
+          exit 3
+
+      - name: Roll back runtime on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          STATE="${DEVPILOT_COMPLETE_FLOW_STATE:-}"
+          [[ -n "$STATE" && -f "$STATE" ]] || exit 0
+          # shellcheck disable=SC1090
+          source "$STATE"
+          cd "$LOCAL_REPO" || exit 0
+
+          echo "ROLLBACK_COMPLETE_FLOW_START"
+
+          restore_image() {
+            local service="$1" upper id_var ref_var image_id image_ref
+            upper="${service^^}"
+            upper="${upper//-/_}"
+            id_var="OLD_${upper}_ID"
+            ref_var="OLD_${upper}_REF"
+            image_id="${!id_var:-}"
+            image_ref="${!ref_var:-}"
+            [[ -n "$image_id" && -n "$image_ref" ]] || return 0
+            docker image inspect "$image_id" >/dev/null 2>&1 || return 0
+            docker tag "$image_id" "$image_ref" || true
+          }
+
+          restore_image app
+          restore_image worker
+          restore_image rag-worker
+
+          if [[ -n "${BEFORE_BRANCH:-}" ]]; then
+            git switch "$BEFORE_BRANCH" || git switch --detach "$BEFORE_SHA"
+          else
+            git switch --detach "$BEFORE_SHA"
+          fi
+          git reset --hard "$BEFORE_SHA"
+
+          docker compose up -d --no-build --force-recreate app worker rag-worker || true
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 3 http://127.0.0.1:8080/health >/tmp/devpilot-rollback-health.json; then
+              cat /tmp/devpilot-rollback-health.json
+              echo "ROLLBACK_COMPLETE_FLOW_OK"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          docker compose logs --tail=160 app worker rag-worker postgres || true
+          echo "ROLLBACK_COMPLETE_FLOW_UNVERIFIED"
+          exit 0
