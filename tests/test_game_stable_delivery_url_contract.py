@@ -32,32 +32,22 @@ def test_final_round_exposes_clickable_project_url_when_ready():
     assert 'rel="noopener noreferrer"' in source
 
 
-def test_delivery_uses_existing_backend_flow_and_bounded_active_retries():
+def test_final_round_is_get_only_observer():
     source = DELIVERY.read_text(encoding="utf-8")
-    assert "/delivery${suffix}" in source
-    assert "'/start'" in source
-    assert "'/retry'" in source
-    assert "'/validate-url'" in source
-    assert "MAX_VALIDATIONS = 6" in source
-    assert "RETRY_MS = 5000" in source
-    assert "['SUPER_ADMIN', 'OWNER', 'ADMIN']" in source
-
-
-def test_delivery_keeps_passively_watching_after_active_retries_are_exhausted():
-    source = DELIVERY.read_text(encoding="utf-8")
-    assert "WATCH_MS = 15000" in source
-    assert "schedule(panel, projectId, attempt + 1, true)" in source
-    assert "passiveWatch" in source
-    assert "Continuo acompanhando automaticamente" in source
-    assert "attempt > MAX_VALIDATIONS" not in source
+    assert "WATCH_MS = 30000" in source
+    assert "/delivery/start" not in source
+    assert "/delivery/retry" not in source
+    assert "/delivery/validate-url" not in source
+    assert "method: 'POST'" not in source
+    assert "document.visibilityState" in source
+    assert "backend continua a recuperação" in source.lower()
 
 
 def run_contract():
     test_stable_delivery_asset_is_loaded_with_round_ui()
     test_final_round_requires_validated_https_url_before_completion()
     test_final_round_exposes_clickable_project_url_when_ready()
-    test_delivery_uses_existing_backend_flow_and_bounded_active_retries()
-    test_delivery_keeps_passively_watching_after_active_retries_are_exhausted()
+    test_final_round_is_get_only_observer()
     print("GAME_STABLE_DELIVERY_URL=OK")
 
 
