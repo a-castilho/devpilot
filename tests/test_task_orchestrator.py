@@ -1,3 +1,9 @@
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
+
+from app.services import executor as executor_service
+from app.services import task_orchestrator as orchestrator_service
 from app.task_documentation_routes import _command_action, router
 
 
@@ -63,3 +69,57 @@ def test_task_bundle_exposes_contextual_controls_without_eager_boot_change():
     assert "runtime?.state === 'archived'" in source
     assert "task-completion-documentation.js" in loader
     assert "task-completion-documentation.js" in loader.split("tasks:", 1)[1].split("],", 1)[0]
+
+
+def test_executor_base_run_is_noninteractive(monkeypatch):
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured.update(kwargs)
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(executor_service.subprocess, "run", fake_run)
+
+    result = executor_service.run(["codex", "exec", "--json", "prompt"])
+
+    assert result.returncode == 0
+    assert captured["stdin"] is subprocess.DEVNULL
+    assert captured["env"]["CI"] == "1"
+    assert captured["env"]["DEBIAN_FRONTEND"] == "noninteractive"
+
+
+def test_controlled_codex_run_closes_stdin_and_sets_noninteractive_environment(monkeypatch):
+    captured = {}
+
+    class FakeProcess:
+        pid = 31337
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+        def communicate(self, timeout=None):
+            return "", ""
+
+    def fake_popen(args, **kwargs):
+        captured.update(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(orchestrator_service.subprocess, "Popen", fake_popen)
+    task = SimpleNamespace(id="task-noninteractive")
+
+    with orchestrator_service.controlled_executor_run(task, executor_service.run) as controlled:
+        result = controlled(["codex", "exec", "--json", "prompt"])
+
+    assert result.returncode == 0
+    assert captured["stdin"] is subprocess.DEVNULL
+    assert captured["env"]["CI"] == "1"
+    assert captured["env"]["DEBIAN_FRONTEND"] == "noninteractive"
+
+
+def test_local_linux_update_rebuilds_worker_and_verifies_noninteractive_runtime():
+    source = Path(".github/workflows/local-linux-smoke.yml").read_text(encoding="utf-8")
+
+    assert "docker compose up -d --build postgres redis app worker rag-worker" in source
+    assert "docker compose exec -T worker python -c" in source
+    assert "WORKER_NONINTERACTIVE_EXECUTION_OK" in source
