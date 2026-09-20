@@ -53,6 +53,7 @@
       ],
       "tests": [
         "tests/test_auth.py",
+        "tests/test_auth_workspace_login_isolation.py",
         "tests/test_account_isolation.py",
         "tests/test_authenticated_minimal_boot.py",
         "tests/test_explicit_login_and_safe_core_runtime.py",

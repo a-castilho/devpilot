@@ -90,6 +90,36 @@ def _local_bootstrap_available(request: Request) -> bool:
     return env not in {"production", "prod"} and _is_loopback_request(request)
 
 
+def _authenticated_user(db: Session, email: str, password: str) -> User | None:
+    """Resolve password login without ever choosing a tenant arbitrarily.
+
+    E-mail uniqueness is scoped to ``(workspace_id, email)``, so the same normalized e-mail
+    can legitimately exist in more than one workspace. A password-only login is safe only
+    when the supplied credential identifies exactly one active account. If zero or multiple
+    active accounts match, fail closed and let the public login endpoint return its generic
+    authentication error.
+    """
+    candidates = list(
+        db.scalars(select(User).where(func.lower(User.email) == email)).all()
+    )
+    if not candidates:
+        # Preserve a real password verification on unknown e-mails to avoid a trivial
+        # timing distinction from the single-account failure path.
+        verify_password(password, _DUMMY_PASSWORD_HASH)
+        return None
+
+    matches: list[User] = []
+    for candidate in candidates:
+        password_hash = candidate.password_hash or _DUMMY_PASSWORD_HASH
+        password_valid = verify_password(password, password_hash)
+        if candidate.active and candidate.password_hash and password_valid:
+            matches.append(candidate)
+
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
 @router.get("/status", response_model=AuthStatusResponse)
 def status(request: Request, db: Session = Depends(get_db)):
     users = db.scalar(select(func.count(User.id))) or 0
@@ -136,10 +166,8 @@ def bootstrap_user(
 @router.post("/login", response_model=AccessTokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     email = normalized_email(payload.email)
-    user = db.scalar(select(User).where(func.lower(User.email) == email))
-    password_hash = user.password_hash if user and user.password_hash else _DUMMY_PASSWORD_HASH
-    password_valid = verify_password(payload.password, password_hash)
-    if user is None or not user.active or not user.password_hash or not password_valid:
+    user = _authenticated_user(db, email, payload.password)
+    if user is None:
         raise HTTPException(status_code=401, detail="E-mail ou senha inválidos")
 
     token, ttl = create_access_token(user)
