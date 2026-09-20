@@ -601,10 +601,13 @@ def install_delivery_url_recovery() -> None:
     install_delivery_product_guard()
     current = delivery.run_delivery
     if getattr(current, "_devpilot_public_url_recovery", False):
-        _start_reconciler()
         return
     global _ORIGINAL_RUN_DELIVERY
     _ORIGINAL_RUN_DELIVERY = current
     setattr(_run_delivery_with_public_url_recovery, "_devpilot_public_url_recovery", True)
     delivery.run_delivery = _run_delivery_with_public_url_recovery
+
+
+def start_delivery_url_recovery() -> None:
+    """Start durable delivery recovery after the application schema is ready."""
     _start_reconciler()
