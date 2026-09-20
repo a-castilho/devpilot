@@ -7,12 +7,14 @@
   const GAME_PROJECT_KEY = 'devpilot-build-game-project';
   const GAME_MISSION_KEY = 'devpilot-build-game-mission';
   const GAME_URL = '/game/index.html';
+  const AUTO_DELIVERY_POLL_MS = 30000;
+  const autoDeliveryInFlight = new Set();
 
   const mobileViewport = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
   const lowPower = () => document.documentElement.classList.contains('devpilot-low-power') || mobileViewport();
   const batchSize = () => lowPower() ? 6 : 15;
   const fetchLimit = () => lowPower() ? 12 : 50;
-  const isSuperAdminUser = () => String(window.state?.currentUser?.role || '').toUpperCase() === 'SUPER_ADMIN';
+  const normalizeStatus = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
 
   let renderLimit = batchSize();
   let projectsSource = null;
@@ -100,8 +102,27 @@
       #projects-list [data-project-game] {
         border-color:rgba(155,108,255,.42);
       }
-      #projects-list [data-project-deploy] {
-        border-color:rgba(54,211,153,.45);
+      #projects-list .project-public-url {
+        display:block;
+        margin-top:10px;
+        padding:10px 12px;
+        border:1px solid rgba(54,211,153,.30);
+        border-radius:12px;
+        background:rgba(54,211,153,.06);
+        color:#7ce7cf;
+        text-decoration:none;
+        overflow:hidden;
+        text-overflow:ellipsis;
+        white-space:nowrap;
+        font-weight:800;
+        font-size:12px;
+      }
+      #projects-list .project-auto-delivery-state {
+        display:block;
+        margin-top:8px;
+        color:#89a4b5;
+        font-size:11px;
+        line-height:1.35;
       }
 
       html.devpilot-low-power #projects-view .project-visual-overview {
@@ -192,30 +213,16 @@
       </div>`;
   }
 
-  function projectActions(card) {
-    return card.querySelector('.list-row > div:last-child') || card.querySelector('.list-row') || card;
-  }
-
   function ensureGameButton(card, project) {
     if (!card || !project?.id || card.querySelector('[data-project-game]')) return;
+    const actions = card.querySelector('.list-row > div:last-child') || card.querySelector('.list-row') || card;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'link project-game-action';
     button.dataset.projectGame = String(project.id);
     button.textContent = 'Jogar';
     button.setAttribute('aria-label', `Jogar com o projeto ${project.name || ''}`);
-    projectActions(card).appendChild(button);
-  }
-
-  function ensureDeployButton(card, project) {
-    if (!isSuperAdminUser() || !card || !project?.id || card.querySelector('[data-project-deploy]')) return;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'link project-deploy-action';
-    button.dataset.projectDeploy = String(project.id);
-    button.textContent = 'Deploy';
-    button.setAttribute('aria-label', `Configurar ou executar deploy do projeto ${project.name || ''}`);
-    projectActions(card).appendChild(button);
+    actions.appendChild(button);
   }
 
   function ensureLiteShip(card, project, index) {
@@ -226,14 +233,70 @@
     card.dataset.shipLiteEnhanced = '1';
   }
 
+  function deliveryHost(card) {
+    return card.querySelector('.product-delivery-box') || card;
+  }
+
+  function renderDeliveryState(card, delivery) {
+    if (!card || !delivery) return;
+    const host = deliveryHost(card);
+    const url = String(delivery.url || '').trim();
+    if (url) {
+      let link = card.querySelector('.project-public-url');
+      if (!link) {
+        link = document.createElement('a');
+        link.className = 'project-public-url';
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        host.appendChild(link);
+      }
+      link.href = url;
+      link.textContent = `🌐 ${url}`;
+      link.title = 'Abrir produto publicado';
+    }
+
+    let stateLine = card.querySelector('.project-auto-delivery-state');
+    if (!stateLine) {
+      stateLine = document.createElement('small');
+      stateLine.className = 'project-auto-delivery-state';
+      host.appendChild(stateLine);
+    }
+    const status = normalizeStatus(delivery.status || 'pending');
+    stateLine.textContent = ({
+      pending:'Entrega automática aguardando o código ficar pronto.',
+      provisioning:'Preparando infraestrutura automaticamente…',
+      deploying:'Publicando e validando URL automaticamente…',
+      ready:'Produto publicado e URL validada.',
+      failed:'Publicação falhou; o DevPilot fará tentativas controladas.',
+      blocked:'Publicação bloqueada por uma dependência externa.',
+    })[status] || 'Entrega automática em acompanhamento.';
+  }
+
+  async function advanceAutoDelivery(project, card) {
+    if (!project?.id || !String(project.repository_url || '').trim() || typeof api !== 'function') return;
+    const key = String(project.id);
+    if (autoDeliveryInFlight.has(key)) return;
+
+    autoDeliveryInFlight.add(key);
+    try {
+      const current = await api(`/projects/${encodeURIComponent(key)}/delivery`);
+      renderDeliveryState(card, current || {});
+    } catch (error) {
+      console.warn('[DevPilot] entrega automática em observação:', error?.message || error);
+    } finally {
+      autoDeliveryInFlight.delete(key);
+    }
+  }
+
   function decorateProjectCards(projects, target) {
     const cards = Array.from(target.children).filter(node => node.classList?.contains('project-card'));
     cards.forEach((card, index) => {
       const project = projects[index];
       if (!project) return;
+      card.dataset.projectId = String(project.id || '');
       ensureGameButton(card, project);
-      ensureDeployButton(card, project);
       ensureLiteShip(card, project, index);
+      void advanceAutoDelivery(project, card);
     });
   }
 
@@ -365,17 +428,6 @@
     window.location.assign(GAME_URL);
   }
 
-  async function openDeploy(projectId) {
-    const id = String(projectId || '').trim();
-    if (!id) return;
-    if (!isSuperAdminUser()) return window.toast?.('Acesso restrito ao Super Admin');
-    const loadFeature = window.__devpilotLoadFeature;
-    if (typeof loadFeature === 'function') await loadFeature('admin');
-    const opener = window.DevPilotDeploy?.openProject;
-    if (typeof opener !== 'function') return window.toast?.('Tela de deploy indisponível');
-    await opener(id);
-  }
-
   function loadMore() {
     const projects = typeof state !== 'undefined' && Array.isArray(state.projects)
       ? state.projects
@@ -385,6 +437,16 @@
     if (typeof window.renderProjects === 'function') window.renderProjects();
   }
 
+  async function refreshVisibleAutoDelivery() {
+    if (!document.querySelector('#projects-view.active')) return;
+    const allProjects = typeof state !== 'undefined' && Array.isArray(state.projects) ? state.projects : [];
+    const cards = [...document.querySelectorAll('#projects-list .project-card')];
+    for (const card of cards.slice(0, batchSize())) {
+      const project = allProjects.find(item => String(item?.id || '') === String(card.dataset.projectId || ''));
+      if (project) await advanceAutoDelivery(project, card);
+    }
+  }
+
   injectStyles();
   installRenderGuard();
   installLoadGuard();
@@ -392,13 +454,6 @@
   document.addEventListener('click', event => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
-
-    const deploy = target.closest('[data-project-deploy]');
-    if (deploy) {
-      event.preventDefault();
-      void openDeploy(deploy.dataset.projectDeploy);
-      return;
-    }
 
     const game = target.closest('[data-project-game]');
     if (game) {
@@ -419,5 +474,10 @@
     loadMore();
   });
 
-  console.info('[DevPilot] Mobile Projects Runtime V34 ativo');
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void refreshVisibleAutoDelivery();
+  });
+  window.setInterval(() => void refreshVisibleAutoDelivery(), AUTO_DELIVERY_POLL_MS);
+
+  console.info('[DevPilot] Mobile Projects Runtime V34 ativo · entrega automática até URL');
 })();

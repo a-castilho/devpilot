@@ -1,11 +1,11 @@
 /* DevPilot Build Game delivery gate v77.
- * Creates independent verifier gates; backend starts and owns final cloud delivery after 7/7.
+ * Verifies each phase; backend worker owns delivery start, retry and recovery.
  */
 (() => {
   'use strict';
 
-  if (window.__devpilotDeliveryGateV77Ready) return;
-  window.__devpilotDeliveryGateV77Ready = true;
+  if (window.__devpilotDeliveryGateV76Ready) return;
+  window.__devpilotDeliveryGateV76Ready = true;
 
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
@@ -14,6 +14,7 @@
   const MAX_PHASES = 7;
   const inFlight = new Set();
   const deliveryInFlight = new Set();
+  const settledMissions = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
@@ -55,9 +56,7 @@
     return true;
   };
 
-  const ensureAutomaticDelivery = async projectId => {
-    // Compatibility name: this function is intentionally observer-only.
-    // The backend detects Gate 7/7 and owns delivery start/retry/recovery.
+  const observeAutomaticDelivery = async projectId => {
     if (!projectId || deliveryInFlight.has(projectId) || typeof window.api !== 'function') return false;
     deliveryInFlight.add(projectId);
     try {
@@ -86,12 +85,12 @@
     if (!projectId || !missionId) return false;
 
     const key = `${projectId}:${missionId}`;
-    if (inFlight.has(key)) return false;
+    if (settledMissions.has(key) || inFlight.has(key)) return false;
     inFlight.add(key);
     try {
       const tasks = await window.api(
         `/tasks?project_id=${encodeURIComponent(projectId)}&limit=24`,
-        {timeoutMs:4000, retry:false},
+        {timeoutMs: 4000, retry: false},
       );
       const missionTasks = (Array.isArray(tasks) ? tasks : [])
         .filter(task => isGameTask(task) && missionFromTask(task) === missionId)
@@ -107,17 +106,18 @@
           if (status === 'completed') continue;
           if (retryFailed && FAILED.has(status)) {
             const base = phaseTasks.find(task => !isVerifier(task) && normalize(task.status) === 'completed');
-            if (base) return createVerifier({projectId, missionId, phaseId, sourceTask:base});
+            if (base) return createVerifier({projectId, missionId, phaseId, sourceTask: base});
           }
           break;
         }
 
         if (normalize(latest.status) !== 'completed') break;
-        return createVerifier({projectId, missionId, phaseId, sourceTask:latest});
+        return createVerifier({projectId, missionId, phaseId, sourceTask: latest});
       }
 
       if (finalVerifierApproved(missionTasks)) {
-        await ensureAutomaticDelivery(projectId);
+        settledMissions.add(key);
+        await observeAutomaticDelivery(projectId);
       }
       return false;
     } finally {
@@ -143,13 +143,13 @@
     window.setTimeout(() => {
       scheduled = false;
       void run();
-    }, 300);
+    }, 500);
   };
 
   document.addEventListener('devpilot:game:rendered', schedule);
   document.addEventListener('devpilot:game:enhancements-ready', schedule);
 
   window.__devpilotEnsureDeliveryGate = ensureVerifier;
-  window.__devpilotEnsureAutomaticDelivery = ensureAutomaticDelivery;
+  window.__devpilotEnsureAutomaticDelivery = observeAutomaticDelivery;
   window.__devpilotDeliveryGateDoesNotWrapLoader = true;
 })();

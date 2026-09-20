@@ -1,15 +1,14 @@
-/* DevPilot stable game delivery surface — lightweight observer for final public URL. */
+/* DevPilot stable game delivery observer — rendering only; backend owns deploy/recovery. */
 (() => {
   'use strict';
 
   if (window.__devpilotStableDeliveryUrlReady) return;
   window.__devpilotStableDeliveryUrlReady = true;
 
-  const OPERATORS = new Set(['SUPER_ADMIN', 'OWNER', 'ADMIN']);
-  const WATCH_MS = 15000;
+  const WATCH_MS = 30000;
   const inFlight = new Set();
   const timers = new Map();
-  let lastRenderSignature = '';
+  const lastRenderSignature = new Map();
 
   const esc = value => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
@@ -18,10 +17,6 @@
     const candidate = String(value || '').trim();
     return /^https:\/\//i.test(candidate) ? candidate : '';
   };
-  const role = () => String(
-    (typeof state !== 'undefined' && state.currentUser?.role) || window.state?.currentUser?.role || ''
-  ).toUpperCase();
-  const canOperate = () => OPERATORS.has(role());
   const controller = () => window.__devpilotGameControllerV73;
   const round = () => document.querySelector('#devpilot-game-stable-round-v91 [data-stable-round-card]');
   const normalized = delivery => String(delivery?.status || 'pending').toLowerCase();
@@ -63,15 +58,16 @@
 
   function setRoundGate(panel, delivery) {
     const ready = delivered(delivery);
-    const currentStatus = normalized(delivery);
     const heading = panel.querySelector('h1');
     const kicker = panel.querySelector('.game74-kicker');
     const status = panel.querySelector('.game74-status');
     const primary = panel.querySelector('.game74-actions .game74-primary');
     const newRound = panel.querySelector('[data-stable-new]');
 
+    panel.dataset.deliveryUrlReady = ready ? '1' : '0';
+    panel.dataset.deliveryWatch = ready ? '0' : '1';
+
     if (ready) {
-      panel.dataset.deliveryUrlReady = '1';
       if (kicker) kicker.textContent = 'MISSÃO CUMPRIDA';
       if (heading) heading.textContent = 'Entrega concluída';
       if (status) status.innerHTML = '🏆 <strong>Pronto.</strong> Entrega validada e URL pública disponível para teste.';
@@ -80,30 +76,27 @@
       return;
     }
 
-    panel.dataset.deliveryUrlReady = '0';
-    if (currentStatus === 'repairing') {
-      if (kicker) kicker.textContent = 'CORREÇÃO AUTOMÁTICA';
-      if (heading) heading.textContent = 'Corrigindo o produto final';
-      if (status) status.innerHTML = '⏳ <strong>A correção continua em andamento.</strong> Continuo acompanhando automaticamente até o produto e a URL serem validados.';
-      if (primary) primary.textContent = '⏳ Aguardando correção';
-    } else {
-      if (kicker) kicker.textContent = 'PUBLICAÇÃO FINAL';
-      if (heading) heading.textContent = 'Finalizando a entrega';
-      if (status) status.innerHTML = '⏳ <strong>A publicação ainda não terminou.</strong> Continuo acompanhando automaticamente sem sobrecarregar o navegador.';
-      if (primary) primary.textContent = '⏳ Aguardando publicação';
-    }
+    if (kicker) kicker.textContent = 'PUBLICAÇÃO FINAL';
+    if (heading) heading.textContent = 'Finalizando a entrega';
+    if (status) status.innerHTML = '⏳ <strong>A publicação ainda não terminou.</strong> O backend continua a recuperação; esta tela apenas acompanha o estado.';
+    if (primary) primary.textContent = '⏳ Aguardando publicação';
     if (newRound) newRound.hidden = true;
   }
 
-  function render(panel, delivery = {}) {
-    installStyle();
-    const signature = JSON.stringify([
-      normalized(delivery), delivery?.url || '', delivery?.last_error || '', delivery?.repair_task_status || ''
-    ]);
-    setRoundGate(panel, delivery);
-    if (signature === lastRenderSignature && panel.querySelector('.stable-delivery-url')) return;
-    lastRenderSignature = signature;
+  const signature = delivery => JSON.stringify({
+    status: normalized(delivery),
+    url: safeUrl(delivery?.url),
+    last_error: String(delivery?.last_error || ''),
+    gate: String(delivery?.delivery_gate || ''),
+  });
 
+  function render(panel, projectId, delivery = {}) {
+    const nextSignature = signature(delivery);
+    if (lastRenderSignature.get(projectId) === nextSignature && panel.querySelector('.stable-delivery-url')) return;
+    lastRenderSignature.set(projectId, nextSignature);
+
+    installStyle();
+    setRoundGate(panel, delivery);
     const node = host(panel);
     const status = normalized(delivery);
     const url = safeUrl(delivery?.url);
@@ -120,138 +113,83 @@
 
     const statusText = {
       pending: 'Preparando publicação…',
-      repairing: 'Corrigindo o produto final…',
       provisioning: 'Preparando ambiente de teste…',
       deploying: 'Publicando e validando URL…',
-      failed: 'A publicação falhou; a recuperação automática continua no backend.',
-      blocked: 'Publicação bloqueada; acompanhando a recuperação automática.',
+      failed: 'A publicação encontrou uma falha; recuperação automática em andamento.',
+      blocked: 'Publicação bloqueada; recuperação automática em andamento.',
     }[status] || 'Finalizando publicação…';
 
-    const repairDetail = status === 'repairing' && delivery?.repair_task_status
-      ? `<p>Etapa automática: <strong>${esc(delivery.repair_task_status)}</strong>. O deploy só começa quando o produto estiver válido.</p>`
-      : '<p>A missão só será marcada como entregue quando o produto real e uma URL HTTPS estiverem validados.</p>';
-
     node.innerHTML = `
-      <small>${status === 'repairing' ? 'VALIDAÇÃO DO PRODUTO' : 'URL DO PROJETO'}</small>
+      <small>URL DO PROJETO</small>
       <strong>${esc(statusText)}</strong>
-      ${repairDetail}
-      <div class="stable-delivery-url-watch">Continuo acompanhando automaticamente. Esta tela apenas observa o estado; o backend inicia e recupera a entrega após o Gate 7/7.</div>
+      <p>A missão só será marcada como entregue quando uma URL HTTPS real estiver validada.</p>
+      <div class="stable-delivery-url-watch">A tela apenas observa. O worker continua o deploy e a recuperação mesmo se você sair daqui.</div>
       ${delivery?.last_error ? `<div class="stable-delivery-url-error">${esc(delivery.last_error)}</div>` : ''}
-      ${canOperate() && ['failed', 'blocked'].includes(status) ? '<div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-retry>↻ Tentar entrega novamente</button></div>' : ''}`;
+      <div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-refresh>↻ Atualizar estado</button></div>`;
 
-    node.querySelector('[data-stable-delivery-retry]')?.addEventListener('click', () => void retryOnce(panel));
+    node.querySelector('[data-stable-delivery-refresh]')?.addEventListener('click', () => void refresh(panel, projectId));
   }
 
-  function clearProjectTimer(projectId) {
-    const timer = timers.get(projectId);
-    if (timer) window.clearTimeout(timer);
+  function clearTimer(projectId) {
+    const old = timers.get(projectId);
+    if (old) window.clearTimeout(old);
     timers.delete(projectId);
   }
 
   function schedule(panel, projectId) {
-    if (!projectId || delivered(panel.__devpilotLastDelivery)) return;
-    clearProjectTimer(projectId);
+    clearTimer(projectId);
+    if (!projectId || document.visibilityState !== 'visible' || !panel.isConnected) return;
     const timer = window.setTimeout(() => {
       timers.delete(projectId);
-      if (!panel.isConnected) return;
-      if (document.hidden) {
-        schedule(panel, projectId);
-        return;
-      }
-      void refresh(panel);
+      if (document.visibilityState === 'visible' && panel.isConnected) void refresh(panel, projectId);
     }, WATCH_MS);
     timers.set(projectId, timer);
   }
 
-  async function refresh(panel) {
-    const gameState = controller()?.snapshot?.();
-    if (!gameState?.done || !gameState.projectId || !panel?.isConnected) return;
-    const projectId = String(gameState.projectId);
-    if (inFlight.has(projectId)) return;
-    if (document.hidden) {
-      schedule(panel, projectId);
-      return;
-    }
-
+  async function refresh(panel, projectId) {
+    if (!projectId || document.visibilityState !== 'visible' || inFlight.has(projectId)) return;
     inFlight.add(projectId);
     try {
       const delivery = await call(endpoint(projectId));
-      panel.__devpilotLastDelivery = delivery || {};
-      render(panel, panel.__devpilotLastDelivery);
-      if (delivered(delivery)) clearProjectTimer(projectId);
-      else schedule(panel, projectId);
+      render(panel, projectId, delivery || {});
+      if (!delivered(delivery)) schedule(panel, projectId);
+      else clearTimer(projectId);
     } catch (error) {
-      const fallback = {
-        ...(panel.__devpilotLastDelivery || {}),
-        last_error: error?.message || 'Não foi possível consultar a publicação agora.',
-      };
-      panel.__devpilotLastDelivery = fallback;
-      render(panel, fallback);
+      render(panel, projectId, {status: 'failed', last_error: error?.message || 'Não foi possível consultar a entrega agora.'});
       schedule(panel, projectId);
     } finally {
       inFlight.delete(projectId);
     }
   }
 
-  async function retryOnce(panel) {
-    const gameState = controller()?.snapshot?.();
-    if (!gameState?.projectId || typeof window.api !== 'function' || !canOperate()) return;
-    const projectId = String(gameState.projectId);
-    try {
-      const delivery = await window.api(`${endpoint(projectId)}/retry`, {
-        method: 'POST',
-        timeoutMs: 45000,
-        retry: false,
-      });
-      if (panel?.isConnected) {
-        panel.__devpilotLastDelivery = delivery || {};
-        render(panel, panel.__devpilotLastDelivery);
-      }
-      document.dispatchEvent(new CustomEvent(
-        delivered(delivery) ? 'devpilot:delivery:ready' : 'devpilot:delivery:updated',
-        {detail: delivery || {}},
-      ));
-    } catch (error) {
-      if (panel?.isConnected) {
-        const fallback = {
-          ...(panel.__devpilotLastDelivery || {}),
-          last_error: error?.message || 'A tentativa manual de entrega falhou.',
-        };
-        panel.__devpilotLastDelivery = fallback;
-        render(panel, fallback);
-      }
-    } finally {
-      if (panel?.isConnected) void refresh(panel);
-    }
-  }
-
   function sync() {
-    const gameState = controller()?.snapshot?.();
+    if (document.visibilityState !== 'visible') return;
+    const state = controller()?.snapshot?.();
     const panel = round();
-    if (!panel || !gameState?.done || !gameState.projectId) return;
-    const projectId = String(gameState.projectId);
-    if (!panel.querySelector('.stable-delivery-url')) {
-      render(panel, panel.__devpilotLastDelivery || {status: 'provisioning'});
-    }
-    if (!timers.has(projectId) && !inFlight.has(projectId)) void refresh(panel);
+    if (!panel || !state?.done || !state.projectId) return;
+    const projectId = String(state.projectId);
+    void refresh(panel, projectId);
   }
 
-  const acceptDeliveryEvent = event => {
-    const panel = round();
-    const gameState = controller()?.snapshot?.();
-    if (!panel || !gameState?.done || !gameState.projectId || !event?.detail) return;
-    panel.__devpilotLastDelivery = event.detail;
-    render(panel, event.detail);
-    if (delivered(event.detail)) clearProjectTimer(String(gameState.projectId));
-    else schedule(panel, String(gameState.projectId));
+  let scheduled = false;
+  const requestSync = () => {
+    if (scheduled || document.visibilityState !== 'visible') return;
+    scheduled = true;
+    window.requestAnimationFrame(() => {
+      scheduled = false;
+      sync();
+    });
   };
 
-  document.addEventListener('devpilot:delivery:updated', acceptDeliveryEvent);
-  document.addEventListener('devpilot:delivery:ready', acceptDeliveryEvent);
-  document.addEventListener('devpilot:game:rendered', sync);
-  document.addEventListener('devpilot:game:core-ready', sync);
+  document.addEventListener('devpilot:game:state', requestSync);
+  document.addEventListener('devpilot:game:rendered', requestSync);
+  document.addEventListener('devpilot:game:core-ready', requestSync);
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) sync();
+    if (document.visibilityState !== 'visible') {
+      for (const projectId of timers.keys()) clearTimer(projectId);
+      return;
+    }
+    requestSync();
   });
-  sync();
+  requestSync();
 })();

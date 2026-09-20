@@ -11,6 +11,13 @@ from app.services.audit import record
 
 RECOVERY_MARKER = "[DEVPILOT_FAILURE_RECOVERY_V1]"
 _ORIGIN_RE = re.compile(r"\[failure-origin-task:([^\]]+)\]", re.IGNORECASE)
+_STDIN_RUNTIME_SIGNATURE = "reading additional input from stdin"
+_ACTIVE_RECOVERY_STATUSES = {
+    TaskStatus.queued,
+    TaskStatus.planning,
+    TaskStatus.running,
+    TaskStatus.review,
+}
 
 
 def is_failure_recovery_task(task: Task | None) -> bool:
@@ -31,6 +38,76 @@ def latest_run_for_task(db: Session, task_id: str) -> Run | None:
         .order_by(Run.started_at.desc(), Run.attempt.desc())
         .limit(1)
     )
+
+
+
+def is_noninteractive_runtime_failure(run: Run | None) -> bool:
+    """Recognize the historical Codex CLI failure caused by an inherited/open stdin."""
+    if not run:
+        return False
+    evidence = f"{str(run.summary or '')}\n{str(run.logs or '')}".casefold()
+    return _STDIN_RUNTIME_SIGNATURE in evidence
+
+
+def recover_stale_noninteractive_failures(
+    db: Session,
+    *,
+    actor: str = "worker-bootstrap",
+    limit: int = 100,
+) -> int:
+    """Requeue original tasks that failed only because the old worker inherited stdin.
+
+    This repair is deliberately narrow: it runs only after the worker has booted with
+    the corrected runtime, ignores recovery tasks, never bypasses a still-unapproved
+    task, and avoids competing with an already active recovery task.
+    """
+    candidates = list(
+        db.scalars(
+            select(Task)
+            .where(Task.status.in_((TaskStatus.failed, TaskStatus.blocked)))
+            .order_by(Task.updated_at.desc())
+            .limit(max(1, min(int(limit), 500)))
+        ).all()
+    )
+    recovered = 0
+    now = datetime.now(timezone.utc)
+
+    for task in candidates:
+        if is_failure_recovery_task(task):
+            continue
+        run = latest_run_for_task(db, task.id)
+        if not is_noninteractive_runtime_failure(run):
+            continue
+        if task.requires_approval and task.approved_at is None:
+            continue
+
+        recovery = find_failure_recovery_task(db, task)
+        if recovery and recovery.status in _ACTIVE_RECOVERY_STATUSES:
+            continue
+
+        previous_status = task.status
+        task.status = TaskStatus.queued
+        task.updated_at = now
+        record(
+            db,
+            workspace_id=task.workspace_id,
+            project_id=task.project_id,
+            task_id=task.id,
+            actor=actor,
+            action="task.runtime_incident_requeued",
+            outcome="queued",
+            details={
+                "run_id": run.id if run else None,
+                "previous_status": previous_status.value,
+                "incident": "codex_stdin_inherited",
+                "automatic": True,
+            },
+        )
+        recovered += 1
+
+    if recovered:
+        db.flush()
+    return recovered
 
 
 def find_failure_recovery_task(db: Session, original_task: Task) -> Task | None:
