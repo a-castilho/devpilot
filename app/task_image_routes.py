@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 
-from app.security import require_access
+from app.security import Principal, require_access, session_principal
 from app.services.task_images import (
     IMAGE_ID_RE,
     MAX_TASK_IMAGE_BYTES,
@@ -40,8 +40,18 @@ def _safe_delete(path: Path) -> None:
         pass
 
 
+def _principal_workspace(principal: Principal) -> str:
+    workspace_id = str(principal.workspace_id or "").strip()
+    if not workspace_id:
+        raise HTTPException(401, "Sessão sem workspace válido")
+    return workspace_id
+
+
 @router.post("", status_code=201)
-async def upload_task_image(image: UploadFile = File(...)):
+async def upload_task_image(
+    image: UploadFile = File(...),
+    principal: Principal = Depends(session_principal),
+):
     declared_extension = _IMAGE_TYPES.get(str(image.content_type or "").lower())
     if not declared_extension:
         raise HTTPException(415, "Envie uma imagem PNG, JPG ou WEBP")
@@ -58,7 +68,7 @@ async def upload_task_image(image: UploadFile = File(...)):
         raise HTTPException(415, "O arquivo enviado não corresponde a uma imagem válida")
 
     image_id = f"{uuid4().hex}{detected_extension}"
-    target = task_images_dir() / image_id
+    target = task_images_dir(_principal_workspace(principal)) / image_id
     try:
         target.write_bytes(content)
     except OSError as error:
@@ -75,9 +85,12 @@ async def upload_task_image(image: UploadFile = File(...)):
 
 
 @router.delete("/{image_id}", status_code=204)
-def delete_task_image(image_id: str):
+def delete_task_image(
+    image_id: str,
+    principal: Principal = Depends(session_principal),
+):
     normalized = str(image_id or "").lower()
     if not IMAGE_ID_RE.fullmatch(normalized):
         raise HTTPException(404, "Imagem não encontrada")
-    _safe_delete(task_images_dir() / normalized)
+    _safe_delete(task_images_dir(_principal_workspace(principal)) / normalized)
     return None

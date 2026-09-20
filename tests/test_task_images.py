@@ -20,13 +20,26 @@ def test_image_markers_are_deduplicated_and_stripped():
     assert "DEVPILOT_IMAGE" not in clean
 
 
-def test_codex_image_command_uses_image_flag_and_prompt_via_stdin(monkeypatch, tmp_path):
-    image_name = f"{'b' * 32}.webp"
-    image_path = tmp_path / image_name
-    image_path.write_bytes(b"RIFF0000WEBP")
-    monkeypatch.setattr(task_images, "task_images_dir", lambda: tmp_path)
+def test_task_image_directories_are_isolated_by_workspace(monkeypatch, tmp_path):
+    monkeypatch.setattr(task_images, "task_images_root", lambda: tmp_path)
 
-    project = SimpleNamespace()
+    first = task_images.task_images_dir("workspace-a")
+    second = task_images.task_images_dir("workspace-b")
+
+    assert first == tmp_path / "workspace-a"
+    assert second == tmp_path / "workspace-b"
+    assert first != second
+
+
+def test_codex_image_command_uses_only_project_workspace(monkeypatch, tmp_path):
+    image_name = f"{'b' * 32}.webp"
+    workspace_dir = tmp_path / "workspace-a"
+    workspace_dir.mkdir()
+    image_path = workspace_dir / image_name
+    image_path.write_bytes(b"RIFF0000WEBP")
+    monkeypatch.setattr(task_images, "task_images_dir", lambda workspace_id: tmp_path / workspace_id)
+
+    project = SimpleNamespace(workspace_id="workspace-a")
 
     def original_command(_project, prompt):
         return ["codex", "exec", "--json", prompt]
@@ -44,11 +57,42 @@ def test_codex_image_command_uses_image_flag_and_prompt_via_stdin(monkeypatch, t
     assert "DEVPILOT_IMAGE" not in " ".join(command)
 
 
-def test_codex_image_command_fails_if_uploaded_image_is_missing(monkeypatch, tmp_path):
+def test_codex_cannot_reuse_marker_from_another_workspace(monkeypatch, tmp_path):
     image_name = f"{'c' * 32}.jpg"
-    monkeypatch.setattr(task_images, "task_images_dir", lambda: tmp_path)
+    foreign = tmp_path / "workspace-b"
+    foreign.mkdir()
+    (foreign / image_name).write_bytes(b"\xff\xd8\xfffake")
+    own = tmp_path / "workspace-a"
+    own.mkdir()
+    monkeypatch.setattr(task_images, "task_images_dir", lambda workspace_id: tmp_path / workspace_id)
+
+    with pytest.raises(RuntimeError, match="neste workspace"):
+        task_images.build_codex_image_command(
+            lambda _project, prompt: ["codex", "exec", prompt],
+            SimpleNamespace(workspace_id="workspace-a"),
+            f"Analise.\n[DEVPILOT_IMAGE={image_name}]",
+        )
+
+
+def test_codex_image_command_fails_if_uploaded_image_is_missing(monkeypatch, tmp_path):
+    image_name = f"{'d' * 32}.jpg"
+    workspace_dir = tmp_path / "workspace-a"
+    workspace_dir.mkdir()
+    monkeypatch.setattr(task_images, "task_images_dir", lambda workspace_id: tmp_path / workspace_id)
 
     with pytest.raises(RuntimeError, match="não está mais disponível"):
+        task_images.build_codex_image_command(
+            lambda _project, prompt: ["codex", "exec", prompt],
+            SimpleNamespace(workspace_id="workspace-a"),
+            f"Analise.\n[DEVPILOT_IMAGE={image_name}]",
+        )
+
+
+def test_image_marker_requires_project_workspace(monkeypatch, tmp_path):
+    image_name = f"{'e' * 32}.png"
+    monkeypatch.setattr(task_images, "task_images_dir", lambda workspace_id: tmp_path / workspace_id)
+
+    with pytest.raises(RuntimeError, match="Projeto sem workspace"):
         task_images.build_codex_image_command(
             lambda _project, prompt: ["codex", "exec", prompt],
             SimpleNamespace(),
