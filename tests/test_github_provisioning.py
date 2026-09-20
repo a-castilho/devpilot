@@ -102,6 +102,31 @@ def test_create_github_repository_creates_private_initialized_repository(monkeyp
     assert result["full_name"] == "a-castilho/novo-projeto"
 
 
+def test_repository_description_is_normalized_before_github_request(monkeypatch):
+    prepare(monkeypatch, [FakeResponse(201, github_repository_payload())])
+    description = "  Linha 1\nLinha\t2\x00  " + ("conteúdo " * 80)
+
+    create_github_repository(
+        "a-castilho",
+        "novo-projeto",
+        description,
+        "secret-token",
+    )
+
+    sent_description = FakeClient.requests[0][1]["description"]
+    assert sent_description == github_provisioning.sanitize_repository_description(description)
+    assert len(sent_description) == github_provisioning.MAX_REPOSITORY_DESCRIPTION_LENGTH
+    assert "\n" not in sent_description
+    assert "\t" not in sent_description
+    assert "\x00" not in sent_description
+    assert "  " not in sent_description
+
+
+def test_repository_description_sanitizer_keeps_short_valid_text_unchanged():
+    description = "API segura para pedidos e faturamento"
+    assert github_provisioning.sanitize_repository_description(description) == description
+
+
 def test_repository_name_collision_is_resolved_without_user_action(monkeypatch):
     prepare(
         monkeypatch,
@@ -146,6 +171,48 @@ def test_second_collision_uses_next_available_suffix(monkeypatch):
         "novo-projeto-3",
     ]
     assert result["name"] == "novo-projeto-3"
+
+
+def test_description_validation_error_is_specific_and_not_retried(monkeypatch):
+    prepare(
+        monkeypatch,
+        [
+            FakeResponse(
+                422,
+                {
+                    "message": "Repository creation failed.",
+                    "errors": [
+                        {
+                            "resource": "Repository",
+                            "field": "description",
+                            "code": "custom",
+                            "message": "description control characters are not allowed",
+                        },
+                        {
+                            "resource": "Repository",
+                            "field": "description",
+                            "code": "custom",
+                            "message": "description cannot be more than 350 characters",
+                        },
+                    ],
+                },
+            )
+        ],
+    )
+
+    with pytest.raises(GitHubProvisioningError) as error:
+        create_github_repository(
+            "a-castilho", "novo-projeto", "descrição válida", "secret-token"
+        )
+
+    assert error.value.status_code == 422
+    assert len(FakeClient.requests) == 1
+    message = str(error.value)
+    assert "campo de descrição" in message
+    assert "normalização automática" in message
+    assert "não em credencial ou permissão" in message
+    assert "regra de validação da organização" not in message
+    assert "Verifique políticas" not in message
 
 
 def test_non_collision_validation_error_is_not_retried_or_misreported(monkeypatch):
