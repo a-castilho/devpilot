@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: devpilot-local-linux-smoke
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   local-linux-smoke:
@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 25
     steps:
       - name: Checkout repository snapshot
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 2
 
