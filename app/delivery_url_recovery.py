@@ -4,6 +4,7 @@ import json
 import re
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlparse
 
 import httpx
@@ -20,7 +21,11 @@ from app.services.delivery_product_guard import install_delivery_product_guard
 
 
 _RECOVERABLE_STATUSES = {"blocked", "failed", "deploying", "provisioning", "repairing"}
-_RECONCILE_STATUSES = {"repairing", "provisioning", "deploying"}
+_RECONCILE_STATUSES = {"repairing", "provisioning", "deploying", "blocked", "failed"}
+_RECOVERABLE_GATES = {"waiting_for_testable_url"}
+_ACTIVE_RECOVERY_DELAY_SECONDS = 15
+_BLOCKED_RECOVERY_DELAY_SECONDS = 60
+_FAILED_RECOVERY_DELAY_SECONDS = 90
 _ALLOWED_PUBLIC_SUFFIXES = (".vercel.app", ".onrender.com")
 _REPO_FULL_NAME_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 _GENERIC_DELIVERY_ERROR = "Não foi possível concluir esta etapa. Tente novamente."
@@ -268,26 +273,142 @@ def _run_delivery_with_public_url_recovery(
     return state
 
 
+def _parse_recovery_timestamp(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _recovery_delay(status: str) -> int:
+    normalized = str(status or "").strip().lower()
+    if normalized == "blocked":
+        return _BLOCKED_RECOVERY_DELAY_SECONDS
+    if normalized == "failed":
+        return _FAILED_RECOVERY_DELAY_SECONDS
+    return _ACTIVE_RECOVERY_DELAY_SECONDS
+
+
+def _recovery_due(state: dict, now: datetime) -> bool:
+    next_at = _parse_recovery_timestamp(state.get("recovery_next_at"))
+    return next_at is None or next_at <= now
+
+
+def _persist_recovery_schedule(
+    db: Session,
+    project: Project,
+    state: dict,
+    *,
+    now: datetime,
+    error: str = "",
+) -> None:
+    status = str(state.get("status") or "").strip().lower()
+    state["recovery_last_attempt_at"] = now.isoformat()
+    state["recovery_next_at"] = (
+        now + timedelta(seconds=_recovery_delay(status))
+    ).isoformat()
+    state["recovery_owner"] = "backend-reconciler"
+    state["recovery_last_error"] = " ".join(error.split())[:300] if error else ""
+    delivery.save_delivery(db, project, state)
+
+
+def _clear_recovery_schedule(db: Session, project: Project, state: dict) -> None:
+    state["recovery_next_at"] = ""
+    state["recovery_owner"] = "backend-reconciler"
+    state["recovery_last_error"] = ""
+    delivery.save_delivery(db, project, state)
+
+
 def _reconcile_once() -> int:
+    """Advance recoverable final deliveries without depending on an open browser.
+
+    Persisted backoff protects providers from aggressive retries while guaranteeing
+    that blocked/failed/deploying deliveries are revisited by the backend until a
+    real HTTPS URL is validated.
+    """
     processed = 0
+    now = datetime.now(timezone.utc)
     with SessionLocal() as db:
-        projects = list(db.scalars(select(Project).order_by(Project.created_at.desc()).limit(200)).all())
+        projects = list(
+            db.scalars(
+                select(Project)
+                .where(Project.repository_url.is_not(None))
+                .order_by(Project.created_at.desc())
+                .limit(200)
+            ).all()
+        )
         for project in projects:
             state = delivery.initial_delivery(project)
-            status = str(state.get("status") or "").lower()
-            if status not in _RECONCILE_STATUSES or state.get("delivery_gate") == "delivered":
+            status = str(state.get("status") or "").strip().lower()
+            gate = str(state.get("delivery_gate") or "").strip().lower()
+            if gate == "delivered":
                 continue
+            if status not in _RECONCILE_STATUSES and gate not in _RECOVERABLE_GATES:
+                continue
+            if not _recovery_due(state, now):
+                continue
+
+            previous_status = status
             try:
-                delivery.run_delivery(db, project, "delivery-reconciler")
+                # Claim the next retry window before external provider I/O. A crash
+                # or Render restart therefore cannot create a hot retry loop.
+                _persist_recovery_schedule(db, project, state, now=now)
+                result = delivery.run_delivery(db, project, "delivery-reconciler")
+                result_status = str(result.get("status") or "").strip().lower()
+
+                if result_status == "ready" and _safe_public_url(result.get("url")):
+                    _clear_recovery_schedule(db, project, result)
+                    record(
+                        db,
+                        workspace_id=project.workspace_id,
+                        project_id=project.id,
+                        actor="delivery-reconciler",
+                        action="project.delivery_recovery_completed",
+                        outcome="success",
+                        details={
+                            "url": result.get("url"),
+                            "previous_status": previous_status,
+                        },
+                    )
+                    db.commit()
+                else:
+                    _persist_recovery_schedule(db, project, result, now=now)
                 processed += 1
             except Exception as error:
                 db.rollback()
+                refreshed = db.get(Project, project.id)
+                if refreshed is not None:
+                    failed_state = delivery.initial_delivery(refreshed)
+                    _persist_recovery_schedule(
+                        db,
+                        refreshed,
+                        failed_state,
+                        now=now,
+                        error=str(error),
+                    )
+                    record(
+                        db,
+                        workspace_id=refreshed.workspace_id,
+                        project_id=refreshed.id,
+                        actor="delivery-reconciler",
+                        action="project.delivery_recovery_retry_scheduled",
+                        outcome="pending",
+                        details={"error": " ".join(str(error).split())[:180]},
+                    )
+                    db.commit()
+                processed += 1
                 print(
-                    f"[delivery-reconciler] project={project.id} status={status} error={type(error).__name__}: {str(error)[:180]}",
+                    f"[delivery-reconciler] project={project.id} status={status} "
+                    f"error={type(error).__name__}: {str(error)[:180]}",
                     flush=True,
                 )
     return processed
-
 
 def _reconciler_loop() -> None:
     # Give application startup/migrations time to settle, then continue delivery
