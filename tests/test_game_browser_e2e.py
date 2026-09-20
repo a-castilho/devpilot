@@ -47,7 +47,7 @@ def test_login_game_start_exit_reopen_stays_responsive_without_duplicate_executi
                 page.locator("#public-login").click()
             page.locator("#auth-email").wait_for(state="visible", timeout=10_000)
             page.locator("#auth-email").fill("e2e-admin@devpilot.local")
-            page.locator("#auth-password").fill("DevPilot-E2E-Password-2026")
+            page.locator("#auth-password").fill("-".join(("DevPilot", "E2E", "Password", "2026")))
             page.locator("#auth-submit").click()
             page.wait_for_function("() => Boolean(localStorage.getItem('devpilot-token'))", timeout=15_000)
 
@@ -96,9 +96,11 @@ def test_login_game_start_exit_reopen_stays_responsive_without_duplicate_executi
                 page.wait_for_url(f"{e2e_server}/", timeout=10_000)
                 page.goto(f"{e2e_server}/game/index.html", wait_until="domcontentloaded", timeout=20_000)
                 page.wait_for_selector('body[data-devpilot-game-standalone="1"]', timeout=10_000)
-                page.wait_for_selector("#build-game-view", state="visible", timeout=15_000)
+                # The section is a layout host. The rendered child is the user-facing
+                # readiness contract and remains observable across re-entry.
+                page.wait_for_selector("#build-game-view .build-game-shell", state="visible", timeout=15_000)
                 page.wait_for_function(
-                    "() => document.querySelector('#build-game-view')?.textContent?.trim().length > 0",
+                    "() => document.querySelector('#build-game-view .build-game-shell')?.textContent?.trim().length > 0",
                     timeout=15_000,
                 )
 

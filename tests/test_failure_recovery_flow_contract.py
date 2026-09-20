@@ -1,7 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from app.services.failure_recovery import RECOVERY_MARKER, recovery_prompt
+from app.services.failure_recovery import (
+    RECOVERY_MARKER,
+    is_noninteractive_runtime_failure,
+    recovery_prompt,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -11,6 +15,7 @@ UI = (ROOT / "app/static/task-recovery-flow.js").read_text(encoding="utf-8")
 LOADER = (ROOT / "app/static/feature-loader.js").read_text(encoding="utf-8")
 MAIN = (ROOT / "app/main.py").read_text(encoding="utf-8")
 WORKER = (ROOT / "app/worker.py").read_text(encoding="utf-8")
+WORKER_ENTRY = (ROOT / "app/worker_entry.py").read_text(encoding="utf-8")
 
 
 def test_recovery_prompt_requires_root_cause_and_proof_before_original_retry():
@@ -99,3 +104,18 @@ def test_execution_ui_loads_recovery_flow_and_displays_three_levels():
 def test_recovery_router_is_registered_in_application():
     assert "from app.failure_recovery_routes import router as failure_recovery_router" in MAIN
     assert "app.include_router(failure_recovery_router)" in MAIN
+
+
+
+def test_known_stdin_runtime_incident_is_recognized_and_recovered_on_worker_boot():
+    failed_run = SimpleNamespace(
+        summary="Falha diagnosticada",
+        logs='{"stderr":"Reading additional input from stdin..."}',
+    )
+    unrelated_run = SimpleNamespace(summary="Falha", logs='{"stderr":"test failed"}')
+
+    assert is_noninteractive_runtime_failure(failed_run) is True
+    assert is_noninteractive_runtime_failure(unrelated_run) is False
+    assert "recover_stale_noninteractive_failures" in SERVICE
+    assert "task.runtime_incident_requeued" in SERVICE
+    assert "recover_stale_noninteractive_failures(db)" in WORKER_ENTRY
