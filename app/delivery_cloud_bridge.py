@@ -4,13 +4,13 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import product_delivery_routes as delivery
 from app.config import get_settings
 from app.models import ProviderCredential, Workspace
+from app.services.safe_http_probe import probe_public_https_url
 from app.services.vault import Vault
 
 
@@ -194,12 +194,11 @@ def _adaptive_selected_providers(project) -> list[str]:
 
 
 def _probe(url: str) -> tuple[bool, int]:
-    try:
-        with httpx.Client(timeout=12.0, follow_redirects=True) as client:
-            response = client.get(url, headers={"Accept": "application/json,text/html,*/*"})
-    except httpx.HTTPError:
-        return False, 0
-    return 200 <= response.status_code < 400, response.status_code
+    return probe_public_https_url(
+        url,
+        timeout_seconds=12.0,
+        accept="application/json,text/html,*/*",
+    )
 
 
 def _gated_provision_vercel(
