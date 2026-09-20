@@ -4,8 +4,8 @@
 (() => {
   'use strict';
 
-  if (window.__devpilotDeliveryGateV76Ready) return;
-  window.__devpilotDeliveryGateV76Ready = true;
+  if (window.__devpilotDeliveryGateV77Ready) return;
+  window.__devpilotDeliveryGateV77Ready = true;
 
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
