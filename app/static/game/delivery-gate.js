@@ -1,22 +1,21 @@
-/* DevPilot Build Game delivery gate v74.
+/* DevPilot Build Game delivery gate v76.
  * Creates one independent verifier after each completed base phase and starts final cloud delivery automatically.
  */
 (() => {
   'use strict';
 
-  if (window.__devpilotDeliveryGateV74Ready) return;
-  window.__devpilotDeliveryGateV74Ready = true;
+  if (window.__devpilotDeliveryGateV76Ready) return;
+  window.__devpilotDeliveryGateV76Ready = true;
 
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
   const PROJECT_KEY = 'devpilot-build-game-project';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const MAX_PHASES = 7;
-  const DELIVERY_RETRY_MS = 15000;
   const inFlight = new Set();
   const deliveryInFlight = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
-  let deliveryRetryTimer = 0;
+  const deliveryStarted = new Set();
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const promptValue = (task, label) => {
@@ -57,14 +56,6 @@
     return true;
   };
 
-  const scheduleDeliveryRetry = () => {
-    if (deliveryRetryTimer) return;
-    deliveryRetryTimer = window.setTimeout(() => {
-      deliveryRetryTimer = 0;
-      schedule();
-    }, DELIVERY_RETRY_MS);
-  };
-
   const ensureAutomaticDelivery = async projectId => {
     if (!projectId || deliveryInFlight.has(projectId) || typeof window.api !== 'function') return false;
     deliveryInFlight.add(projectId);
@@ -74,32 +65,43 @@
         retry: false,
       });
       const currentStatus = normalize(current?.status);
-      if (currentStatus === 'ready') {
-        if (deliveryRetryTimer) {
-          window.clearTimeout(deliveryRetryTimer);
-          deliveryRetryTimer = 0;
-        }
-        document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: current}));
-        return true;
-      }
-      if (currentStatus === 'blocked') return false;
 
-      const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
-        method: 'POST',
-        timeoutMs: 45000,
-        retry: false,
-      });
-      const nextStatus = normalize(next?.status);
-      document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: next}));
-      if (nextStatus === 'ready') {
-        document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: next}));
+      if (currentStatus === 'ready') {
+        document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: current}));
+        deliveryStarted.add(projectId);
         return true;
       }
-      if (nextStatus === 'deploying' || nextStatus === 'provisioning') scheduleDeliveryRetry();
-      return false;
+
+      // Once the backend owns a real delivery state, the browser becomes an
+      // observer. blocked/failed/deploying/provisioning are recovered server-side.
+      if (currentStatus && currentStatus !== 'pending') {
+        deliveryStarted.add(projectId);
+        document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: current}));
+        return false;
+      }
+      if (deliveryStarted.has(projectId)) return false;
+
+      deliveryStarted.add(projectId);
+      try {
+        const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
+          method: 'POST',
+          timeoutMs: 45000,
+          retry: false,
+        });
+        document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: next}));
+        if (normalize(next?.status) === 'ready') {
+          document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: next}));
+          return true;
+        }
+        return false;
+      } catch (error) {
+        // The request may have failed before reaching the backend. Allow a later
+        // render to retry only this initial handoff; never run provider retries here.
+        deliveryStarted.delete(projectId);
+        throw error;
+      }
     } catch (error) {
       console.warn('[DevPilot Automatic Delivery]', error);
-      scheduleDeliveryRetry();
       return false;
     } finally {
       deliveryInFlight.delete(projectId);
