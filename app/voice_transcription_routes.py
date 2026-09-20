@@ -301,6 +301,38 @@ async def _transcribe_openai(
     raise _provider_error("openai", statuses)
 
 
+def _google_response_text(response: httpx.Response | dict) -> str:
+    """Extract transcription text from Google response or a decoded envelope."""
+    if isinstance(response, dict):
+        payload = response
+    else:
+        try:
+            payload = response.json()
+        except ValueError:
+            return ""
+    if not isinstance(payload, dict):
+        return ""
+
+    collected: list[str] = []
+    for candidate in payload.get("candidates") or []:
+        if not isinstance(candidate, dict):
+            continue
+        content = candidate.get("content") or {}
+        for part in content.get("parts") or [] if isinstance(content, dict) else []:
+            if isinstance(part, dict):
+                value = part.get("text")
+                if isinstance(value, str) and value.strip():
+                    collected.append(value.strip())
+    if collected:
+        return " ".join(collected).strip()
+
+    for key in ("text", "output_text", "response"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
 def _google_response_data(response: httpx.Response) -> tuple[str, dict]:
     try:
         payload = response.json()
