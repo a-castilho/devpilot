@@ -13,6 +13,8 @@ def main() -> None:
         print(f"[worker] PRECHECK FAILED: {error}", flush=True)
         raise SystemExit(78) from error
 
+    from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401
+
     print(
         "[worker] runtime OK: "
         + ", ".join(f"{tool}={path}" for tool, path in runtime.items()),

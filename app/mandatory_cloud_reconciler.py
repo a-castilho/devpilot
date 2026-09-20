@@ -67,46 +67,26 @@ def _result_diagnostics(result: dict) -> str:
 
 
 def _run() -> None:
+    """Compatibility loop delegated to the authoritative delivery reconciler.
+
+    This module used to call providers independently, including pending projects.
+    Delegating keeps legacy startup wiring intact while guaranteeing that all
+    provider writes use the same Gate 7/7 eligibility check and persisted lease.
+    """
     time.sleep(_INITIAL_DELAY_SECONDS)
-    first_pass = True
     while True:
         try:
-            from sqlalchemy import select
+            from app.delivery_url_recovery import _reconcile_once
 
-            from app import product_delivery_routes as delivery
-            from app.db import SessionLocal
-            from app.models import Project, ProjectStatus
-
-            with SessionLocal() as db:
-                projects = list(
-                    db.scalars(
-                        select(Project).where(
-                            Project.status == ProjectStatus.active,
-                            Project.repository_url != "",
-                        )
-                    ).all()
-                )
-                for project in projects:
-                    if _delivery_status(project) not in _ACTIVE_STATES or not _retry_due(project, force=first_pass):
-                        continue
-                    try:
-                        result = delivery.run_delivery(db, project, "system:mandatory-cloud-reconciler")
-                        print(
-                            f"[mandatory-cloud] {project.slug}: {result.get('status', 'unknown')} "
-                            f"url={result.get('url', '')} {_result_diagnostics(result)}",
-                            flush=True,
-                        )
-                    except Exception as error:
-                        print(
-                            f"[mandatory-cloud] {project.slug}: {type(error).__name__}: {error}",
-                            flush=True,
-                        )
-            first_pass = False
+            processed = _reconcile_once()
+            if processed:
+                print(f"[mandatory-cloud] delegated processed={processed}", flush=True)
         except Exception as error:
-            print(f"[mandatory-cloud] reconciler error: {type(error).__name__}: {error}", flush=True)
-            first_pass = False
+            print(
+                f"[mandatory-cloud] delegated reconciler error: {type(error).__name__}: {error}",
+                flush=True,
+            )
         time.sleep(_RECONCILE_SECONDS)
-
 
 def start() -> None:
     global _STARTED

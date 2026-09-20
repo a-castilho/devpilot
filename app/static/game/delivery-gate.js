@@ -1,22 +1,20 @@
-/* DevPilot Build Game delivery gate v74.
- * Creates one independent verifier after each completed base phase and starts final cloud delivery automatically.
+/* DevPilot Build Game delivery gate v77.
+ * Creates independent verifier gates; backend starts and owns final cloud delivery after 7/7.
  */
 (() => {
   'use strict';
 
-  if (window.__devpilotDeliveryGateV74Ready) return;
-  window.__devpilotDeliveryGateV74Ready = true;
+  if (window.__devpilotDeliveryGateV77Ready) return;
+  window.__devpilotDeliveryGateV77Ready = true;
 
   const GAME_MARKER = '[DEVPILOT_BUILD_GAME_V1]';
   const VERIFIER_MARKER = '[DEVPILOT_DELIVERY_VERIFIER_V1]';
   const PROJECT_KEY = 'devpilot-build-game-project';
   const MISSION_KEY = 'devpilot-build-game-mission';
   const MAX_PHASES = 7;
-  const DELIVERY_RETRY_MS = 15000;
   const inFlight = new Set();
   const deliveryInFlight = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
-  let deliveryRetryTimer = 0;
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const promptValue = (task, label) => {
@@ -57,15 +55,9 @@
     return true;
   };
 
-  const scheduleDeliveryRetry = () => {
-    if (deliveryRetryTimer) return;
-    deliveryRetryTimer = window.setTimeout(() => {
-      deliveryRetryTimer = 0;
-      schedule();
-    }, DELIVERY_RETRY_MS);
-  };
-
   const ensureAutomaticDelivery = async projectId => {
+    // Compatibility name: this function is intentionally observer-only.
+    // The backend detects Gate 7/7 and owns delivery start/retry/recovery.
     if (!projectId || deliveryInFlight.has(projectId) || typeof window.api !== 'function') return false;
     deliveryInFlight.add(projectId);
     try {
@@ -73,33 +65,14 @@
         timeoutMs: 5000,
         retry: false,
       });
-      const currentStatus = normalize(current?.status);
-      if (currentStatus === 'ready') {
-        if (deliveryRetryTimer) {
-          window.clearTimeout(deliveryRetryTimer);
-          deliveryRetryTimer = 0;
-        }
+      document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: current}));
+      if (normalize(current?.status) === 'ready') {
         document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: current}));
         return true;
       }
-      if (currentStatus === 'blocked') return false;
-
-      const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
-        method: 'POST',
-        timeoutMs: 45000,
-        retry: false,
-      });
-      const nextStatus = normalize(next?.status);
-      document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: next}));
-      if (nextStatus === 'ready') {
-        document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: next}));
-        return true;
-      }
-      if (nextStatus === 'deploying' || nextStatus === 'provisioning') scheduleDeliveryRetry();
       return false;
     } catch (error) {
-      console.warn('[DevPilot Automatic Delivery]', error);
-      scheduleDeliveryRetry();
+      console.warn('[DevPilot Delivery Observer]', error);
       return false;
     } finally {
       deliveryInFlight.delete(projectId);

@@ -16,7 +16,7 @@ from app.career_routes import router as career_router
 from app.chat_mode_routes import router as chat_mode_router
 from app.cloud_admin_routes import router as cloud_admin_router
 from app.config import get_settings
-from app.delivery_url_recovery import install_delivery_url_recovery
+from app.delivery_url_recovery import install_delivery_url_recovery, start_delivery_url_recovery
 from app.deploy_routes import router as deploy_router
 from app.embedded_worker import EmbeddedWorker
 from app.failure_recovery_routes import router as failure_recovery_router
@@ -331,6 +331,8 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema(engine)
     ensure_rag_schema(engine, embedding_dimensions=get_settings().rag_embedding_dimensions)
+    from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401
+    start_delivery_url_recovery()
     embedded_worker: EmbeddedWorker | None = None
     if get_settings().embedded_worker:
         embedded_worker = EmbeddedWorker()

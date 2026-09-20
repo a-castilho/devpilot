@@ -24,13 +24,14 @@ def test_backend_url_is_injected_before_a_rebuild():
     assert 'vercel["backend_url"] = effective_backend_url' in source
 
 
-def test_game_starts_delivery_after_final_verifier():
+def test_game_observes_delivery_after_final_verifier_without_provider_mutation():
     source = GAME_GATE.read_text(encoding="utf-8")
     assert "finalVerifierApproved" in source
     assert "ensureAutomaticDelivery" in source
-    assert "/delivery/auto`" in source
-    assert "DELIVERY_RETRY_MS = 15000" in source
-    assert "scheduleDeliveryRetry" in source
+    assert "/delivery/auto" not in source
+    assert "method: 'POST'" not in source.split("const ensureAutomaticDelivery", 1)[1].split("const ensureVerifier", 1)[0]
+    assert "DELIVERY_RETRY_MS" not in source
+    assert "scheduleDeliveryRetry" not in source
     assert "devpilot:delivery:ready" in source
 
 
@@ -51,7 +52,7 @@ def test_frontend_only_is_not_forced_through_render_gate():
 def run_contract():
     test_render_must_be_healthy_before_vercel()
     test_backend_url_is_injected_before_a_rebuild()
-    test_game_starts_delivery_after_final_verifier()
+    test_game_observes_delivery_after_final_verifier_without_provider_mutation()
     test_automatic_delivery_does_not_require_owner_or_admin()
     test_frontend_only_is_not_forced_through_render_gate()
     print("DELIVERY_AUTO_PIPELINE=OK")

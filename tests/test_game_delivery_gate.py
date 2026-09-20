@@ -15,8 +15,10 @@ def test_game_mission_ui_requires_verified_url_before_completion():
     assert "CHEFE FINAL VENCIDO · ENTREGA PENDENTE" in script
     assert "A missão só será concluída quando uma URL pública real responder com sucesso." in script
     assert "missionDelivered" in script
-    assert "/delivery/validate-url" in script
     assert "MISSÃO CONCLUÍDA" in script
+    assert "WATCH_MS = 15000" in script
+    assert "/delivery/validate-url" not in script
+    assert "method: 'POST'" not in script
 
 
 def test_delivery_validation_route_is_registered():

@@ -135,7 +135,7 @@
       <small>${status === 'repairing' ? 'VALIDAÇÃO DO PRODUTO' : 'URL DO PROJETO'}</small>
       <strong>${esc(statusText)}</strong>
       ${repairDetail}
-      <div class="stable-delivery-url-watch">Continuo acompanhando automaticamente. Esta tela apenas observa o estado; a automação de entrega roda uma única vez no fluxo do jogo.</div>
+      <div class="stable-delivery-url-watch">Continuo acompanhando automaticamente. Esta tela apenas observa o estado; o backend inicia e recupera a entrega após o Gate 7/7.</div>
       ${delivery?.last_error ? `<div class="stable-delivery-url-error">${esc(delivery.last_error)}</div>` : ''}
       ${canOperate() && ['failed', 'blocked'].includes(status) ? '<div class="stable-delivery-url-actions"><button class="game74-secondary" type="button" data-stable-delivery-retry>↻ Tentar entrega novamente</button></div>' : ''}`;
 
@@ -195,10 +195,31 @@
 
   async function retryOnce(panel) {
     const gameState = controller()?.snapshot?.();
-    if (!gameState?.projectId || typeof window.__devpilotEnsureAutomaticDelivery !== 'function') return;
+    if (!gameState?.projectId || typeof window.api !== 'function' || !canOperate()) return;
     const projectId = String(gameState.projectId);
     try {
-      await window.__devpilotEnsureAutomaticDelivery(projectId);
+      const delivery = await window.api(`${endpoint(projectId)}/retry`, {
+        method: 'POST',
+        timeoutMs: 45000,
+        retry: false,
+      });
+      if (panel?.isConnected) {
+        panel.__devpilotLastDelivery = delivery || {};
+        render(panel, panel.__devpilotLastDelivery);
+      }
+      document.dispatchEvent(new CustomEvent(
+        delivered(delivery) ? 'devpilot:delivery:ready' : 'devpilot:delivery:updated',
+        {detail: delivery || {}},
+      ));
+    } catch (error) {
+      if (panel?.isConnected) {
+        const fallback = {
+          ...(panel.__devpilotLastDelivery || {}),
+          last_error: error?.message || 'A tentativa manual de entrega falhou.',
+        };
+        panel.__devpilotLastDelivery = fallback;
+        render(panel, fallback);
+      }
     } finally {
       if (panel?.isConnected) void refresh(panel);
     }
