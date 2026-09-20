@@ -8,11 +8,7 @@
   const GAME_MISSION_KEY = 'devpilot-build-game-mission';
   const GAME_URL = '/game/index.html';
   const AUTO_DELIVERY_POLL_MS = 30000;
-  const AUTO_DELIVERY_MAX_RETRIES = 3;
-  const AUTO_ACTIVE = new Set(['queued','planning','running','in_progress','approved','processing','review','awaiting_approval']);
-  const AUTO_FAILURE = new Set(['failed','error','blocked']);
   const autoDeliveryInFlight = new Set();
-  const autoDeliveryRetries = new Map();
 
   const mobileViewport = () => window.matchMedia?.('(max-width: 900px)')?.matches === true;
   const lowPower = () => document.documentElement.classList.contains('devpilot-low-power') || mobileViewport();
@@ -276,51 +272,17 @@
     })[status] || 'Entrega automática em acompanhamento.';
   }
 
-  async function projectTasksReady(projectId) {
-    try {
-      const result = await api(`/tasks?project_id=${encodeURIComponent(projectId)}&limit=40`);
-      const items = Array.isArray(result) ? result : [];
-      if (!items.length) return false;
-      if (items.some(item => AUTO_ACTIVE.has(normalizeStatus(item?.status)))) return false;
-      if (items.some(item => AUTO_FAILURE.has(normalizeStatus(item?.status)))) return false;
-      return items.some(item => ['completed','done'].includes(normalizeStatus(item?.status)));
-    } catch (_) {
-      return false;
-    }
-  }
-
   async function advanceAutoDelivery(project, card) {
     if (!project?.id || !String(project.repository_url || '').trim() || typeof api !== 'function') return;
     const key = String(project.id);
     if (autoDeliveryInFlight.has(key)) return;
 
-    let current;
-    try {
-      current = await api(`/projects/${encodeURIComponent(key)}/delivery`);
-    } catch (_) {
-      return;
-    }
-    renderDeliveryState(card, current);
-    const status = normalizeStatus(current?.status || 'pending');
-    if (status === 'ready' && current?.url) return;
-    if (!(await projectTasksReady(key))) return;
-
-    const retryable = status === 'failed' || status === 'blocked';
-    const retries = autoDeliveryRetries.get(key) || 0;
-    if (retryable && retries >= AUTO_DELIVERY_MAX_RETRIES) return;
-    if (!['pending','provisioning','deploying','failed','blocked'].includes(status)) return;
-
     autoDeliveryInFlight.add(key);
     try {
-      const next = await api(`/projects/${encodeURIComponent(key)}/delivery/auto`, {method:'POST'});
-      if (retryable) autoDeliveryRetries.set(key, retries + 1);
-      renderDeliveryState(card, next || current);
-      if (normalizeStatus(next?.status) === 'ready' && next?.url) {
-        window.toast?.(`Produto pronto: ${next.url}`);
-      }
+      const current = await api(`/projects/${encodeURIComponent(key)}/delivery`);
+      renderDeliveryState(card, current || {});
     } catch (error) {
-      if (retryable) autoDeliveryRetries.set(key, retries + 1);
-      console.warn('[DevPilot] entrega automática pendente:', error?.message || error);
+      console.warn('[DevPilot] entrega automática em observação:', error?.message || error);
     } finally {
       autoDeliveryInFlight.delete(key);
     }
