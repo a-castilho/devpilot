@@ -29,8 +29,10 @@ def test_game_starts_delivery_after_final_verifier():
     assert "finalVerifierApproved" in source
     assert "ensureAutomaticDelivery" in source
     assert "/delivery/auto`" in source
-    assert "DELIVERY_RETRY_MS = 15000" in source
-    assert "scheduleDeliveryRetry" in source
+    assert "deliveryStarted" in source
+    assert "currentStatus && currentStatus !== 'pending'" in source
+    assert "DELIVERY_RETRY_MS" not in source
+    assert "scheduleDeliveryRetry" not in source
     assert "devpilot:delivery:ready" in source
 
 
