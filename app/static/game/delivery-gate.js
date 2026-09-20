@@ -1,5 +1,5 @@
-/* DevPilot Build Game delivery gate v76.
- * Creates one independent verifier after each completed base phase and starts final cloud delivery automatically.
+/* DevPilot Build Game delivery gate v77.
+ * Creates independent verifier gates; backend starts and owns final cloud delivery after 7/7.
  */
 (() => {
   'use strict';
@@ -15,7 +15,6 @@
   const inFlight = new Set();
   const deliveryInFlight = new Set();
   const FAILED = new Set(['failed', 'cancelled', 'canceled']);
-  const deliveryStarted = new Set();
 
   const normalize = value => String(value || '').trim().toLowerCase().replaceAll(' ', '_');
   const promptValue = (task, label) => {
@@ -57,6 +56,8 @@
   };
 
   const ensureAutomaticDelivery = async projectId => {
+    // Compatibility name: this function is intentionally observer-only.
+    // The backend detects Gate 7/7 and owns delivery start/retry/recovery.
     if (!projectId || deliveryInFlight.has(projectId) || typeof window.api !== 'function') return false;
     deliveryInFlight.add(projectId);
     try {
@@ -64,44 +65,14 @@
         timeoutMs: 5000,
         retry: false,
       });
-      const currentStatus = normalize(current?.status);
-
-      if (currentStatus === 'ready') {
+      document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: current}));
+      if (normalize(current?.status) === 'ready') {
         document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: current}));
-        deliveryStarted.add(projectId);
         return true;
       }
-
-      // Once the backend owns a real delivery state, the browser becomes an
-      // observer. blocked/failed/deploying/provisioning are recovered server-side.
-      if (currentStatus && currentStatus !== 'pending') {
-        deliveryStarted.add(projectId);
-        document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: current}));
-        return false;
-      }
-      if (deliveryStarted.has(projectId)) return false;
-
-      deliveryStarted.add(projectId);
-      try {
-        const next = await window.api(`/projects/${encodeURIComponent(projectId)}/delivery/auto`, {
-          method: 'POST',
-          timeoutMs: 45000,
-          retry: false,
-        });
-        document.dispatchEvent(new CustomEvent('devpilot:delivery:updated', {detail: next}));
-        if (normalize(next?.status) === 'ready') {
-          document.dispatchEvent(new CustomEvent('devpilot:delivery:ready', {detail: next}));
-          return true;
-        }
-        return false;
-      } catch (error) {
-        // The request may have failed before reaching the backend. Allow a later
-        // render to retry only this initial handoff; never run provider retries here.
-        deliveryStarted.delete(projectId);
-        throw error;
-      }
+      return false;
     } catch (error) {
-      console.warn('[DevPilot Automatic Delivery]', error);
+      console.warn('[DevPilot Delivery Observer]', error);
       return false;
     } finally {
       deliveryInFlight.delete(projectId);
