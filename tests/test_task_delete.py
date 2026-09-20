@@ -1,13 +1,16 @@
+from datetime import datetime, timezone
+import json
 from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, insert, select
 from sqlalchemy.orm import Session
 
 from app.db import Base
 from app.models import AuditEvent, Project, Run, Task, TaskStatus, Workspace
 from app.project_delete_routes import delete_task
+from app.services.task_orchestrator import TASK_LEARNING, TASK_RUNTIME
 
 
 def _session() -> Session:
@@ -43,6 +46,24 @@ def _task_fixture(db: Session, status: TaskStatus) -> tuple[Task, Run]:
     return task, run
 
 
+def _runtime(db: Session, task_id: str, *, state: str, owner: str = "") -> None:
+    db.execute(
+        insert(TASK_RUNTIME).values(
+            task_id=task_id,
+            state=state,
+            version=1,
+            auto_advance=False,
+            claim_owner=owner,
+            lease_expires_at=None,
+            last_action="test",
+            last_message="",
+            archived_at=None,
+            updated_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+
+
 @pytest.mark.parametrize(
     "task_status",
     [
@@ -72,10 +93,61 @@ def test_delete_terminal_task_removes_task_and_runs_and_keeps_audit_event(task_s
     assert event.details
 
 
+def test_delete_unclaimed_queued_task_is_fenced_then_removed_with_runtime_cleanup():
+    db = _session()
+    task, run = _task_fixture(db, TaskStatus.queued)
+    task_id = task.id
+    run_id = run.id
+    _runtime(db, task_id, state="queued")
+    db.execute(
+        insert(TASK_LEARNING).values(
+            task_id=task_id,
+            step="queued",
+            happened="fila antiga",
+            rationale="teste",
+            concept="fencing",
+            observe="registro",
+            learned="seguro",
+            evidence="{}",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    db.commit()
+
+    response = delete_task(task_id, db=db, actor="super-admin@example.com")
+
+    assert response.status_code == 204
+    assert db.scalar(select(Task).where(Task.id == task_id)) is None
+    assert db.scalar(select(Run).where(Run.id == run_id)) is None
+    assert db.execute(select(TASK_RUNTIME.c.task_id).where(TASK_RUNTIME.c.task_id == task_id)).scalar_one_or_none() is None
+    assert db.execute(select(TASK_LEARNING.c.task_id).where(TASK_LEARNING.c.task_id == task_id)).scalar_one_or_none() is None
+    event = db.scalar(
+        select(AuditEvent)
+        .where(AuditEvent.task_id == task_id, AuditEvent.action == "task.deleted")
+        .order_by(AuditEvent.created_at.desc())
+    )
+    assert event is not None
+    assert json.loads(event.details)["status"] == "queued"
+
+
+def test_delete_queued_task_with_active_worker_claim_is_rejected():
+    db = _session()
+    task, _ = _task_fixture(db, TaskStatus.queued)
+    task_id = task.id
+    _runtime(db, task_id, state="running", owner="worker:test")
+
+    with pytest.raises(HTTPException) as error:
+        delete_task(task_id, db=db, actor="super-admin@example.com")
+
+    assert error.value.status_code == 409
+    assert error.value.detail == "Queued task is already claimed and cannot be deleted"
+    assert db.scalar(select(Task).where(Task.id == task_id)) is not None
+    assert db.execute(select(TASK_RUNTIME.c.task_id).where(TASK_RUNTIME.c.task_id == task_id)).scalar_one_or_none() == task_id
+
+
 @pytest.mark.parametrize(
     "task_status",
     [
-        TaskStatus.queued,
         TaskStatus.planning,
         TaskStatus.running,
         TaskStatus.review,
@@ -115,4 +187,17 @@ def test_task_delete_ui_contract_includes_refresh_and_no_global_observer():
     assert "detailsRow?.remove();" in source
     assert "row.remove();" in source
     assert "window.loadAllTasks(true)" in source
-    assert "MutationObserver" not in source
+    assert "projectsObserver.observe(target, {childList:true, subtree:true})" in source
+    assert "projectsObserver.observe(document.body" not in source
+
+
+def test_task_action_cards_offer_super_admin_delete_for_queued_and_terminal_tasks():
+    source = Path("app/static/task-completion-documentation.js").read_text(encoding="utf-8")
+
+    assert "const DELETABLE_TASK_STATUSES" in source
+    assert "'queued'" in source
+    assert "button.className = 'link delete-task'" in source
+    assert "button.dataset.taskDelete" in source
+    assert "isSuperAdmin()" in source
+    assert "await api(`/tasks/${encodeURIComponent(taskId)}`, {method: 'DELETE'})" in source
+    assert "Esta ação não pode ser desfeita" in source

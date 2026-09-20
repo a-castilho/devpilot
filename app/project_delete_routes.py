@@ -15,9 +15,12 @@ from app.models import Project, Repository, Task, TaskStatus, Workspace
 from app.quest_models import QuestMission
 from app.security import require_access, require_super_admin
 from app.services.audit import record
+from app.services.task_orchestrator import TASK_LEARNING, TASK_RUNTIME
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
+
+_ACTIVE_RUNTIME_STATES = {"running", "pause_requested", "cancel_requested"}
 
 
 def _workspace(db: Session) -> Workspace:
@@ -57,8 +60,25 @@ def _delete_project_dependents(db: Session, project_id: str) -> None:
 
 
 def _delete_task_dependents(db: Session, task_id: str) -> None:
-    """QuestMission referencia Task diretamente e precisa sair antes da tarefa."""
+    """Remove vínculos auxiliares antes da tarefa, inclusive runtime sem FK."""
     db.execute(delete(QuestMission).where(QuestMission.task_id == task_id))
+    db.execute(delete(TASK_LEARNING).where(TASK_LEARNING.c.task_id == task_id))
+    db.execute(delete(TASK_RUNTIME).where(TASK_RUNTIME.c.task_id == task_id))
+
+
+def _queued_task_has_active_claim(db: Session, task_id: str) -> bool:
+    runtime = db.execute(
+        select(
+            TASK_RUNTIME.c.state,
+            TASK_RUNTIME.c.claim_owner,
+        ).where(TASK_RUNTIME.c.task_id == task_id)
+    ).mappings().first()
+    if runtime is None:
+        return False
+    return (
+        str(runtime["state"] or "") in _ACTIVE_RUNTIME_STATES
+        or bool(str(runtime["claim_owner"] or "").strip())
+    )
 
 
 @router.delete("/projects/{project_id}", status_code=204)
@@ -139,7 +159,6 @@ def delete_task(
         raise HTTPException(404, "Task not found")
 
     active_statuses = {
-        TaskStatus.queued,
         TaskStatus.planning,
         TaskStatus.running,
         TaskStatus.review,
@@ -152,6 +171,26 @@ def delete_task(
     project_id = task.project_id
 
     try:
+        if task.status == TaskStatus.queued:
+            if _queued_task_has_active_claim(db, task.id):
+                raise HTTPException(409, "Queued task is already claimed and cannot be deleted")
+
+            # Fence atômico contra o worker: somente um lado pode trocar o estado
+            # enquanto a tarefa ainda está queued. Se o worker vencer a corrida,
+            # a exclusão falha sem tocar em runs, runtime ou auditoria.
+            fenced = db.execute(
+                update(Task)
+                .where(
+                    Task.id == task.id,
+                    Task.workspace_id == ws.id,
+                    Task.status == TaskStatus.queued,
+                )
+                .values(status=TaskStatus.failed)
+            )
+            if int(fenced.rowcount or 0) != 1:
+                db.rollback()
+                raise HTTPException(409, "Queued task changed state and cannot be deleted")
+
         _delete_task_dependents(db, task.id)
 
         record(
@@ -171,6 +210,9 @@ def delete_task(
         # como evidência da ação destrutiva sem manter a tarefa no dashboard.
         db.delete(task)
         db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
     except IntegrityError as exc:
         db.rollback()
         raise HTTPException(
