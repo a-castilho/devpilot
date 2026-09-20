@@ -54,7 +54,7 @@
   loader.setAttribute('role', 'status');
   loader.setAttribute('aria-live', 'polite');
   loader.setAttribute('aria-label', 'Carregando ACS');
-  loader.style.pointerEvents = 'auto';
+  loader.style.pointerEvents = 'none';
   loader.innerHTML = `
     <main class="acs-loader__content">
       <div class="acs-loader__logo-stage" aria-hidden="true">
