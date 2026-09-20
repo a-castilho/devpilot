@@ -331,6 +331,7 @@ async def lifespan(_: FastAPI):
     Base.metadata.create_all(bind=engine)
     ensure_runtime_schema(engine)
     ensure_rag_schema(engine, embedding_dimensions=get_settings().rag_embedding_dimensions)
+    from app import codex_runtime_auth as _codex_runtime_auth  # noqa: F401
     embedded_worker: EmbeddedWorker | None = None
     if get_settings().embedded_worker:
         embedded_worker = EmbeddedWorker()
