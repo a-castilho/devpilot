@@ -56,7 +56,8 @@
     return true;
   };
 
-  const observeAutomaticDelivery = async projectId => {
+  // Browser only observes; backend detects Gate 7/7 and owns delivery/recovery.
+  const ensureAutomaticDelivery = async projectId => {
     if (!projectId || deliveryInFlight.has(projectId) || typeof window.api !== 'function') return false;
     deliveryInFlight.add(projectId);
     try {
@@ -117,7 +118,7 @@
 
       if (finalVerifierApproved(missionTasks)) {
         settledMissions.add(key);
-        await observeAutomaticDelivery(projectId);
+        await ensureAutomaticDelivery(projectId);
       }
       return false;
     } finally {
@@ -150,6 +151,6 @@
   document.addEventListener('devpilot:game:enhancements-ready', schedule);
 
   window.__devpilotEnsureDeliveryGate = ensureVerifier;
-  window.__devpilotEnsureAutomaticDelivery = observeAutomaticDelivery;
+  window.__devpilotEnsureAutomaticDelivery = ensureAutomaticDelivery;
   window.__devpilotDeliveryGateDoesNotWrapLoader = true;
 })();
