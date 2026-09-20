@@ -5,25 +5,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.models import Project, Run, Task, TaskStatus, Workspace
+from app.models import Project, Run, Task, TaskStatus
 from app.schemas import TaskCreate
-from app.security import Principal, Role, require_access, require_roles
+from app.security import Principal, Role, require_access, require_roles, session_principal
 from app.services.audit import record
 from app.services.bootstrap_admin_tasks import bootstrap_regulaai_radar_admin_task
 from app.services.policy import evaluate_task
+from app.services.workspace_scope import workspace_for_principal
 
 
 router = APIRouter(prefix="/api/ui", dependencies=[Depends(require_access)])
 
 _GAME_MARKER = "[DEVPILOT_BUILD_GAME_V1]"
 _GAME_METADATA_LABELS = ("PARTIDA", "FASE", "OBJETIVO")
-
-
-def _workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        raise HTTPException(503, "Workspace not initialized")
-    return item
 
 
 def _task_summary(row, *, project_name: str = "", pull_request_url: str = "") -> dict:
@@ -135,6 +129,7 @@ def project_summaries(
     limit: int = Query(50, ge=1, le=100),
     include_project_id: str | None = None,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
 ):
     """Small project payload for navigation and selectors.
 
@@ -143,7 +138,7 @@ def project_summaries(
     immediately after login. ``include_project_id`` preserves a previously
     selected project even when it falls outside the first lightweight page.
     """
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     project_columns = (
         Project.id,
         Project.organization_id,
@@ -182,9 +177,10 @@ def task_summaries(
     limit: int = Query(20, ge=1, le=50),
     project_id: str | None = None,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
 ):
     """Small task payload; prompt is loaded only when the user asks for it."""
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     query = select(
         Task.id,
         Task.project_id,
@@ -216,7 +212,8 @@ def task_summaries(
             item.id: item.name
             for item in db.scalars(
                 select(Project).where(
-                    Project.id.in_(project_ids)
+                    Project.workspace_id == ws.id,
+                    Project.id.in_(project_ids),
                 )
             ).all()
         }
@@ -240,7 +237,7 @@ def super_admin_task_summaries(
     bootstrap_regulaai_radar_admin_task(db.get_bind())
     db.expire_all()
 
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     tasks = db.scalars(
         select(Task)
         .where(
@@ -256,7 +253,12 @@ def super_admin_task_summaries(
     if project_ids:
         projects = {
             item.id: item.name
-            for item in db.scalars(select(Project).where(Project.id.in_(project_ids))).all()
+            for item in db.scalars(
+                select(Project).where(
+                    Project.workspace_id == ws.id,
+                    Project.id.in_(project_ids),
+                )
+            ).all()
         }
 
     output = []
@@ -284,7 +286,7 @@ def create_super_admin_task(
     principal: Principal = Depends(require_roles(Role.SUPER_ADMIN)),
 ):
     """Create an auditable task explicitly owned by the current Super Admin."""
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     project = db.scalar(
         select(Project).where(
             Project.id == payload.project_id,
@@ -323,9 +325,13 @@ def create_super_admin_task(
 
 
 @router.get("/tasks/{task_id}")
-def task_detail(task_id: str, db: Session = Depends(get_db)):
+def task_detail(
+    task_id: str,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
+):
     """Fetch one task's human-facing context only on explicit user action."""
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     item = db.scalar(
         select(Task).where(Task.id == task_id, Task.workspace_id == ws.id)
     )
@@ -360,9 +366,10 @@ def game_task_summaries(
     project_id: str,
     limit: int = Query(24, ge=1, le=50),
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
 ):
     """Compact game history for constrained browsers."""
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     rows = db.execute(
         select(
             Task.id,

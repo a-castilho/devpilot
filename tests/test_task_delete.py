@@ -8,12 +8,22 @@ from sqlalchemy.orm import Session
 from app.db import Base
 from app.models import AuditEvent, Project, Run, Task, TaskStatus, Workspace
 from app.project_delete_routes import delete_task
+from app.security import Principal, Role
 
 
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     return Session(engine)
+
+
+def _principal(workspace_id: str) -> Principal:
+    return Principal(
+        user_id="super-admin-1",
+        workspace_id=workspace_id,
+        email="super-admin@example.com",
+        role=Role.SUPER_ADMIN,
+    )
 
 
 def _task_fixture(db: Session, status: TaskStatus) -> tuple[Task, Run]:
@@ -58,7 +68,12 @@ def test_delete_terminal_task_removes_task_and_runs_and_keeps_audit_event(task_s
     task_id = task.id
     run_id = run.id
 
-    response = delete_task(task_id, db=db, actor="super-admin@example.com")
+    response = delete_task(
+        task_id,
+        db=db,
+        principal=_principal(task.workspace_id),
+        actor="super-admin@example.com",
+    )
 
     assert response.status_code == 204
     assert db.scalar(select(Task).where(Task.id == task_id)) is None
@@ -69,6 +84,7 @@ def test_delete_terminal_task_removes_task_and_runs_and_keeps_audit_event(task_s
         .order_by(AuditEvent.created_at.desc())
     )
     assert event is not None
+    assert event.workspace_id == task.workspace_id
     assert event.details
 
 
@@ -87,7 +103,12 @@ def test_delete_active_task_is_rejected_without_removing_it(task_status):
     task_id = task.id
 
     with pytest.raises(HTTPException) as error:
-        delete_task(task_id, db=db, actor="super-admin@example.com")
+        delete_task(
+            task_id,
+            db=db,
+            principal=_principal(task.workspace_id),
+            actor="super-admin@example.com",
+        )
 
     assert error.value.status_code == 409
     assert error.value.detail == "Active task cannot be deleted"
@@ -101,10 +122,52 @@ def test_delete_missing_task_returns_404():
     db.commit()
 
     with pytest.raises(HTTPException) as error:
-        delete_task("missing-task", db=db, actor="super-admin@example.com")
+        delete_task(
+            "missing-task",
+            db=db,
+            principal=_principal(workspace.id),
+            actor="super-admin@example.com",
+        )
 
     assert error.value.status_code == 404
     assert error.value.detail == "Task not found"
+
+
+def test_delete_task_from_another_workspace_is_hidden_and_preserved():
+    db = _session()
+    own_workspace = Workspace(name="Cliente A", slug="cliente-a")
+    other_workspace = Workspace(name="Cliente B", slug="cliente-b")
+    db.add_all([own_workspace, other_workspace])
+    db.flush()
+    other_project = Project(
+        workspace_id=other_workspace.id,
+        name="Projeto B",
+        slug="projeto-b",
+        repository_url="https://github.com/example/projeto-b.git",
+    )
+    db.add(other_project)
+    db.flush()
+    other_task = Task(
+        workspace_id=other_workspace.id,
+        project_id=other_project.id,
+        title="Tarefa B",
+        prompt="teste",
+        status=TaskStatus.completed,
+    )
+    db.add(other_task)
+    db.commit()
+
+    with pytest.raises(HTTPException) as error:
+        delete_task(
+            other_task.id,
+            db=db,
+            principal=_principal(own_workspace.id),
+            actor="super-admin@example.com",
+        )
+
+    assert error.value.status_code == 404
+    assert error.value.detail == "Task not found"
+    assert db.scalar(select(Task).where(Task.id == other_task.id)) is not None
 
 
 def test_task_delete_ui_contract_includes_refresh_and_no_global_observer():

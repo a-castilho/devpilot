@@ -11,20 +11,14 @@ from app.investia_models import (
     InvestiaProjectConfig,
     InvestiaProjectCost,
 )
-from app.models import Project, Repository, Task, TaskStatus, Workspace
+from app.models import Project, Repository, Task, TaskStatus
 from app.quest_models import QuestMission
-from app.security import require_access, require_super_admin
+from app.security import Principal, require_access, require_super_admin, session_principal
 from app.services.audit import record
+from app.services.workspace_scope import workspace_for_principal
 
 
 router = APIRouter(prefix="/api", dependencies=[Depends(require_access)])
-
-
-def _workspace(db: Session) -> Workspace:
-    item = db.scalar(select(Workspace).where(Workspace.slug == "default"))
-    if not item:
-        raise HTTPException(404, "Workspace not found")
-    return item
 
 
 def _delete_project_dependents(db: Session, project_id: str) -> None:
@@ -65,9 +59,10 @@ def _delete_task_dependents(db: Session, task_id: str) -> None:
 def delete_project(
     project_id: str,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_super_admin),
 ):
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     project = db.scalar(
         select(Project).where(
             Project.id == project_id,
@@ -126,9 +121,10 @@ def delete_project(
 def delete_task(
     task_id: str,
     db: Session = Depends(get_db),
+    principal: Principal = Depends(session_principal),
     actor: str = Depends(require_super_admin),
 ):
-    ws = _workspace(db)
+    ws = workspace_for_principal(db, principal)
     task = db.scalar(
         select(Task).where(
             Task.id == task_id,
