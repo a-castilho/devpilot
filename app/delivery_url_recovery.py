@@ -419,7 +419,9 @@ def _reconcile_once() -> int:
                     )
                     db.commit()
                 else:
-                    _persist_recovery_schedule(db, project, result, now=now)
+                    _persist_recovery_schedule(
+                        db, project, result, now=datetime.now(timezone.utc)
+                    )
                 processed += 1
             except Exception as error:
                 db.rollback()
@@ -430,7 +432,7 @@ def _reconcile_once() -> int:
                         db,
                         refreshed,
                         failed_state,
-                        now=now,
+                        now=datetime.now(timezone.utc),
                         error=str(error),
                     )
                     record(
