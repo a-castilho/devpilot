@@ -245,7 +245,10 @@ def ensure_failure_recovery_task(
                 },
             )
             db.flush()
-        elif actor == "owner":
+        elif actor in {"owner", "worker"}:
+            # The worker must be able to recover an existing recovery task that
+            # previously failed for a technical reason. The recovery task itself
+            # is excluded by the guard above, so this does not create recursion.
             _reactivate_failed_automatic_recovery(
                 db,
                 original_task=original_task,
