@@ -15,6 +15,9 @@
   const runDetailCache = new Map();
   const workflowEvidenceCache = new Map();
   const workflowEvidencePromises = new Map();
+  const deploymentEvidenceCache = new Map();
+  const deploymentEvidencePromises = new Map();
+  let liveTimer = null;
 
   const escapeHtml = value => typeof esc === 'function'
     ? esc(value)
@@ -60,7 +63,8 @@
       .task-workflow-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;padding:10px 12px;margin:0 0 8px;border:1px solid var(--border,#2a3342);border-radius:10px;background:rgba(0,0,0,.12)}
       .task-workflow-stage{min-width:0;padding:8px;border-radius:8px;background:rgba(255,255,255,.025)}
       .task-workflow-stage b,.task-workflow-stage span{display:block}.task-workflow-stage span{margin-top:3px;font-size:11px;opacity:.75;overflow-wrap:anywhere}
-      .task-workflow-stage a{display:inline-block;margin-top:4px;font-size:11px;overflow-wrap:anywhere}
+       .task-workflow-stage a{display:inline-block;margin-top:4px;font-size:11px;overflow-wrap:anywhere}
+      .task-workflow-timeline{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.task-workflow-timeline span{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border-radius:999px;background:rgba(255,255,255,.04);font-size:10px;opacity:.55}.task-workflow-timeline span.done{opacity:1}.task-workflow-timeline i{width:6px;height:6px;border-radius:50%;background:currentColor}
       .task-workflow-jobs{margin:5px 0 0;padding-left:16px;font-size:11px;opacity:.82}
       @media(max-width:700px){.task-workflow-detail{grid-template-columns:1fr}.task-workflow-health{align-items:flex-start;flex-direction:column}}
     `;
@@ -136,6 +140,38 @@
     return detail || null;
   }
 
+  async function loadDeploymentEvidence(taskId, force = false) {
+    const key = String(taskId);
+    if (deploymentEvidenceCache.has(key) && !force) return deploymentEvidenceCache.get(key);
+    if (deploymentEvidencePromises.has(key)) return deploymentEvidencePromises.get(key);
+    const promise = api('/tasks/' + encodeURIComponent(taskId) + '/deployment-evidence')
+      .then(value => { deploymentEvidenceCache.set(key, value || null); return value || null; })
+      .catch(error => {
+        const value = {correlated:false, reason:'query_failed', error:error?.message || 'Falha ao consultar deploy', deployment:null};
+        deploymentEvidenceCache.set(key, value); return value;
+      })
+      .finally(() => deploymentEvidencePromises.delete(key));
+    deploymentEvidencePromises.set(key, promise); return promise;
+  }
+
+  function workflowTimeline(task) {
+    const latest = latestRunsByTask.get(String(task.id));
+    const detail = latest?.run_id ? runDetailCache.get(String(latest.run_id)) : null;
+    const evidence = workflowEvidenceCache.get(String(task.id));
+    const deployment = deploymentEvidenceCache.get(String(task.id));
+    const items = [['Tarefa criada',true],['Execução',Boolean(latest)],['Commit / PR',Boolean(detail?.commit_sha || detail?.pull_request_url)],['CI / Quality',Boolean(evidence?.correlated)],['Deploy',Boolean(deployment?.correlated || deployment?.deployment)],['Health Check',Boolean(deployment?.deployment?.health_verified || deployment?.deployment?.health_status)],['Concluído',String(task?.status || '').toLowerCase() === 'completed']];
+    return '<div class="task-workflow-timeline">' + items.map(item => '<span class="' + (item[1] ? 'done' : '') + '"><i></i>' + escapeHtml(item[0]) + '</span>').join('') + '</div>';
+  }
+
+  function deploymentStage(task) {
+    const evidence = deploymentEvidenceCache.get(String(task.id));
+    if (!evidence) return '<span>Consultando deploy/health pelo commit persistido…</span>';
+    if (!evidence.correlated) return '<span>Não correlacionado · ' + escapeHtml(evidence.error || evidence.reason || 'sem deploy para o commit') + '</span>';
+    const d = evidence.deployment || {};
+    const status = d.health_status || d.status || 'unknown';
+    const url = d.url || d.environment_url || '';
+    return '<span>' + escapeHtml(status) + '</span>' + (url ? '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">Abrir URL</a>' : '');
+  }
   async function loadWorkflowEvidence(taskId, force = false) {
     const key = String(taskId);
     if (workflowEvidenceCache.has(key) && !force) return workflowEvidenceCache.get(key);
@@ -206,7 +242,7 @@
         <div class="task-workflow-stage"><b>Commit / PR</b>${codeStage(task)}</div>
         <div class="task-workflow-stage"><b>Runner</b><span>${escapeHtml(runnerValue)} · ${escapeHtml(runnerDetail)}</span></div>
         <div class="task-workflow-stage"><b>CI</b>${ciStage(task)}</div>
-        <div class="task-workflow-stage"><b>Deploy / Health</b><span>Será exibido somente após evidência correlacionada ao mesmo commit/deploy.</span></div>
+        <div class="task-workflow-stage"><b>Deploy / Health</b>${deploymentStage(task)}</div><div class="task-workflow-stage" style="grid-column:1/-1"><b>Timeline ponta a ponta</b>${workflowTimeline(task)}</div>
       </div>`;
   }
 
@@ -215,7 +251,7 @@
     if (latest?.run_id && !runDetailCache.has(String(latest.run_id))) {
       try { await loadRunDetail(latest.run_id); } catch (_) { /* mantém estado desconhecido */ }
     }
-    if (latest?.run_id) await loadWorkflowEvidence(task.id);
+    if (latest?.run_id) await Promise.all([loadWorkflowEvidence(task.id, true), loadDeploymentEvidence(task.id, true)]);
     const detailRow = row.nextElementSibling;
     if (detailRow?.classList.contains('task-workflow-row')) {
       const cell = detailRow.querySelector('td');
@@ -292,6 +328,7 @@
   document.addEventListener('devpilot:feature-ready', event => {
     if (event.detail?.feature === 'tasks') {
       workflowEvidenceCache.clear();
+      deploymentEvidenceCache.clear();
       void loadLatestRuns(true);
       scheduleEnhancement();
     }
@@ -301,4 +338,18 @@
   enhanceRows();
   void loadLatestRuns();
   void loadRunner();
+  function startLiveMonitoring() {
+    if (liveTimer) window.clearInterval(liveTimer);
+    liveTimer = window.setInterval(async () => {
+      try {
+        await loadLatestRuns(true);
+        for (const task of taskList().slice(0, 100)) {
+          const latest = latestRunsByTask.get(String(task.id));
+          if (latest?.run_id) { void loadWorkflowEvidence(task.id, true); void loadDeploymentEvidence(task.id, true); }
+        }
+        scheduleEnhancement();
+      } catch (_) {}
+    }, 5000);
+  }
+  startLiveMonitoring();
 })();
