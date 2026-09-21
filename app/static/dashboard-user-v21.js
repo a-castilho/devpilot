@@ -235,4 +235,99 @@
   document.addEventListener('devpilot:view-changed', event => {
     if (event.detail?.view === 'overview' || qs('#overview-view.active')) installWhenAvailable();
   });
+  function workflowMonitorStyles() {
+    if (qs('#dp-v22-monitor-style')) return;
+    const style=document.createElement('style'); style.id='dp-v22-monitor-style';
+    style.textContent=`
+      #overview-view .dp-v22-monitor{padding:15px;border:1px solid rgba(76,156,197,.22);border-radius:16px;background:rgba(6,20,33,.94)}
+      #overview-view .dp-v22-monitor-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:12px}
+      #overview-view .dp-v22-monitor-head strong{font-size:15px}.dp-v22-live-state{font-size:10px;color:#8fe9da}
+      #overview-view .dp-v22-flow{display:grid;grid-template-columns:repeat(7,minmax(80px,1fr));gap:7px}
+      #overview-view .dp-v22-step{padding:9px 7px;border-radius:9px;background:rgba(255,255,255,.035);border:1px solid rgba(100,150,180,.12);min-width:0}
+      #overview-view .dp-v22-step b{display:block;font-size:10px}.dp-v22-step small{display:block;margin-top:4px;font-size:9px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #overview-view .dp-v22-step.active{border-color:rgba(82,174,244,.55);box-shadow:0 0 12px rgba(82,174,244,.08)}
+      #overview-view .dp-v22-step.done{border-color:rgba(86,214,169,.42)}.dp-v22-step.fail{border-color:rgba(255,135,135,.5)}
+      #overview-view .dp-v22-task{margin-top:10px;padding:9px;border-radius:9px;background:rgba(255,255,255,.025);font-size:10px}
+      @media(max-width:900px){#overview-view .dp-v22-flow{grid-template-columns:repeat(4,minmax(80px,1fr))}}
+      @media(max-width:520px){#overview-view .dp-v22-flow{grid-template-columns:repeat(2,minmax(90px,1fr))}}
+    `; document.head.appendChild(style);
+  }
+
+  function workflowStage(task, run) {
+    const status=String(task?.status||'').toLowerCase();
+    const runStatus=String(run?.run_status||'').toLowerCase();
+    const failed=['failed','blocked','error'].includes(status)||runStatus==='failed';
+    const complete=['completed','done','success'].includes(status)||runStatus==='success';
+    if(failed) return {active:0,failed:true,label:'Falhou'};
+    if(complete) return {active:6,label:'Concluída'};
+    if(['queued','awaiting_approval','approved'].includes(status)) return {active:0,label:status.replaceAll('_',' ')};
+    if(['running','planning','processing','in_progress','review'].includes(status)||runStatus==='running') return {active:1,label:'Executando'};
+    return {active:2,label:status||'em andamento'};
+  }
+
+  function workflowMonitorMarkup(items) {
+    const item=items[0]; if(!item) return '<div class="dp-v22-task">Nenhuma execução recente para monitorar.</div>';
+    const task=item.task||item;
+    const run=item.run||item.latest_run||item;
+    const s=workflowStage(task,run);
+    const labels=['Fila','Codex / Worker','Recuperação','Validação','Deploy','URL / Health','Concluída'];
+    const details=[
+      task.status||'—',
+      run.run_status||'—',
+      String(task.status||'').toLowerCase().includes('recover')?'ativa':'aguardando',
+      'evidência registrada',
+      'aguardando evidência',
+      'aguardando URL válida',
+      s.label
+    ];
+    const steps=labels.map((label,i)=>{
+      const cls=s.failed&&i===s.active?'fail':i<s.active||s.active===6?'done':i===s.active?'active':'';
+      return '<div class="dp-v22-step '+cls+'"><b>'+label+'</b><small>'+details[i]+'</small></div>';
+    }).join('');
+    const url=task.delivery_url||task.test_url||task.deploy_url||task.url||run.delivery_url||run.test_url||'';
+    return '<div class="dp-v22-flow">'+steps+'</div><div class="dp-v22-task"><b>Última tarefa:</b> '+String(task.title||task.id||'—')+' · <b>status:</b> '+String(task.status||'—')+(url?' · <a href="'+String(url).replace(/"/g,'&quot;')+'" target="_blank" rel="noopener noreferrer">URL válida</a>':' · URL ainda não registrada')+'</div>';
+  }
+
+  async function refreshWorkflowMonitor() {
+    const view=qs('#overview-view'); if(!view) return;
+    const host=qs('#dp-v22-monitor',view); if(!host) return;
+    try {
+      const [tasks,runs]=await Promise.all([
+        api('/ui/tasks?limit=20'),
+        api('/task-runs/latest?limit=100')
+      ]);
+      const list=Array.isArray(tasks)?tasks:(tasks?.tasks||[]);
+      const latest=Array.isArray(runs)?runs:[];
+      const byTask=new Map(latest.map(x=>[String(x.task_id),x]));
+      const items=list.map(t=>({task:t,run:byTask.get(String(t.id))})).filter(x=>x.task);
+      host.querySelector('.dp-v22-live-state').textContent='Atualizado '+new Date().toLocaleTimeString();
+      host.querySelector('.dp-v22-content').innerHTML=workflowMonitorMarkup(items);
+    } catch(error) {
+      host.querySelector('.dp-v22-live-state').textContent='Falha ao atualizar: '+(error?.message||'erro');
+    }
+  }
+
+  function installWorkflowMonitor() {
+    const view=qs('#overview-view'); if(!view||qs('#dp-v22-monitor',view)) return;
+    workflowMonitorStyles();
+    const strip=qs('.operations-strip',view);
+    if(!strip?.parentNode) return;
+    const host=document.createElement('section'); host.id='dp-v22-monitor'; host.className='dp-v22-monitor';
+    host.innerHTML='<div class="dp-v22-monitor-head"><strong>Monitoramento ponta a ponta</strong><span class="dp-v22-live-state">Atualizando…</span></div><div class="dp-v22-content"></div>';
+    strip.insertAdjacentElement('afterend',host);
+    void refreshWorkflowMonitor();
+    if(!window.__devpilotWorkflowMonitorTimer) {
+      window.__devpilotWorkflowMonitorTimer=window.setInterval(()=>{
+        if(qs('#overview-view.active')) void refreshWorkflowMonitor();
+      },5000);
+    }
+  }
+
+  function patchWorkflowMonitor() {
+    installWorkflowMonitor();
+    document.addEventListener('devpilot:view-changed',()=>window.setTimeout(installWorkflowMonitor,50));
+    document.addEventListener('devpilot:dashboard-revealed',()=>window.setTimeout(installWorkflowMonitor,50));
+  }
+
+  patchWorkflowMonitor();
 })();
